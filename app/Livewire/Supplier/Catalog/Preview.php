@@ -86,66 +86,98 @@ class Preview extends Component
         $this->loadCatalogData($isAdmin ? null : $this->supplier->id);
     }
 
-// داخل کلاس Preview.php
-
-    public function loadCatalogData()
+    private function loadCatalogData($supplierId = null)
     {
-        $settings = $this->template->settings ?? [];
-        $config = $this->template->config ?? [];
+        $categoryIds = $this->settings['categories']
+            ?? $this->template->selected_categories
+            ?? 'all';
 
-        // ۱. استخراج کانفیگ‌های یکپارچه
-        $supplierIds = $config['supplier_ids'] ?? ($this->supplier ? [$this->supplier->id] : []);
-        $categoryIds = $settings['categories'] ?? [];
-        $selectedPriceTypes = $settings['price_types'] ?? PriceType::values();
+        $selectedSupplierIds = $this->settings['suppliers']
+            ?? ($this->template->config['supplier_ids'] ?? [])
+            ?? ($supplierId ? [$supplierId] : []);
 
-        // ۲. کوئری اصلی
         $query = Product::query()
             ->where('status', ProductStatus::ACTIVE->value);
 
-        // ۳. فیلتر دسته‌بندی
-        if (!empty($categoryIds)) {
+        if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
+            $query->whereHas('productSuppliers', function ($q) use ($selectedSupplierIds) {
+                $q->whereIn('supplier_id', $selectedSupplierIds)
+                    ->where('is_active', true)
+                    ->whereHas('prices', function ($priceQuery) {
+                        $priceQuery->where('is_active', true);
+                    });
+            });
+        } elseif ($supplierId) {
+            $query->whereHas('productSuppliers', function ($q) use ($supplierId) {
+                $q->where('supplier_id', $supplierId)
+                    ->where('is_active', true)
+                    ->whereHas('prices', function ($priceQuery) {
+                        $priceQuery->where('is_active', true);
+                    });
+            });
+        }
+
+        if ($categoryIds !== 'all' && is_array($categoryIds) && count($categoryIds) > 0) {
             $query->whereIn('category_id', $categoryIds);
         }
 
-        // ۴. فیلتر تامین‌کننده و قیمت (همگام با سرویس)
-        $query->whereHas('productSuppliers', function ($q) use ($supplierIds, $selectedPriceTypes) {
-            $q->where('is_active', true)
-                ->whereIn('supplier_id', $supplierIds)
-                ->whereHas('prices', function ($p) use ($selectedPriceTypes) {
-                    $p->activeAndValid()->whereIn('price_type', $selectedPriceTypes);
-                });
-        });
-
-        // ۵. دریافت داده‌ها با Eager Loading یکسان
         $products = $query->with([
-            'productSuppliers' => function ($q) use ($supplierIds, $selectedPriceTypes) {
+            'category',
+            'primaryImage',
+            'productSuppliers' => function ($q) use ($selectedSupplierIds, $supplierId) {
+                if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
+                    $q->whereIn('supplier_id', $selectedSupplierIds);
+                } elseif ($supplierId) {
+                    $q->where('supplier_id', $supplierId);
+                }
+
                 $q->where('is_active', true)
-                    ->whereIn('supplier_id', $supplierIds)
-                    ->with(['prices' => function ($p) use ($selectedPriceTypes) {
-                        $p->activeAndValid()->whereIn('price_type', $selectedPriceTypes);
+                    ->with(['prices' => function ($priceQuery) {
+                        $priceQuery->where('is_active', true);
                     }]);
             }
         ])->get();
 
-        // ۶. تبدیل داده‌ها برای نمایش (Transformation)
-        $this->groupedProducts = $products->map(function ($product) use ($selectedPriceTypes) {
-            $supplier = $product->productSuppliers->first();
+        $allItems = [];
 
-            // استخراج قیمت‌ها بر اساس نوع
+        foreach ($products as $product) {
+            $catName = $product->category?->name ?? 'بدون دسته‌بندی';
+            $productSupplier = $product->productSuppliers->first();
+
             $prices = [];
-            foreach ($selectedPriceTypes as $type) {
-                $priceModel = $supplier->prices->firstWhere('price_type', $type);
-                $prices[$type] = $priceModel ? $priceModel->price : null;
+            if ($productSupplier && $productSupplier->prices) {
+                foreach ($productSupplier->prices as $p) {
+                    $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                    $prices[$key] = $p->price;
+                }
             }
 
-            return [
-                'id'            => $product->id,
-                'title'         => $product->title,
-                'category_name' => $product->category?->name ?? 'بدون دسته‌بندی',
-                'prices'        => $prices,
-                // سایر فیلدها...
+            if (empty($prices)) {
+                continue;
+            }
+
+            $allItems[] = [
+                'id'             => $product->id,
+                'title'          => $product->title,
+                'sku'            => $product->sku,
+                'image'          => $product->primaryImage?->getVersionPath('sm') ?? $product->primaryImage?->file_path,
+                'brand'          => $product->brand,
+                'category_name'  => $catName,
+                'category_order' => $product->category?->sort_order ?? 0,
+                'prices'         => $prices,
             ];
-        })->groupBy('category_name');
+        }
+
+        $grouped = [];
+        if ($this->separateCategories) {
+            foreach ($allItems as $item) {
+                $grouped[$item['category_name']][] = $item;
+            }
+        } else {
+            $grouped['all'] = $allItems;
+        }
+
+        $this->groupedProducts = $grouped;
     }
 
     private function compareItems($a, $b, $sortKey, $dir)
