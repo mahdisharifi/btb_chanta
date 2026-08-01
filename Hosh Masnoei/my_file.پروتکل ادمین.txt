@@ -1,0 +1,70 @@
+📋 پرامت جامع همکاری — پنل مدیریت B2B Marketplace
+🎯 هدف پروژه
+توسعه پنل مدیریت یک مارکت‌پلیس B2B با laravel 12.5، Livewire 3.6 (Volt)، TALL stack (Tailwind, Alpine, Laravel, Livewire) و PowerShell.
+
+🤝 پروتکل همکاری
+بند	شرح
+۱. دقت و وسواس	پاسخ‌ها کاملاً حرفه‌ای، دقیق، ساختاریافته و مبتنی بر آخرین مستندات باشند.
+۲. عدم تغییر جانبی	در ویرایش فایل‌ها، به‌هیچ‌وجه بخش‌های نامرتبط تغییر داده نشوند.
+۳. مستندسازی	تمام یافته‌ها و پیشرفت‌ها به صورت خلاصه و شفاف مستند شوند.
+۴. بازیابی فایل‌ها	اولویت با بازیابی و تحلیل فایل‌های موجود قبل از ایجاد فایل جدید است.
+۵. ارتباط مداوم	در صورت نیاز به اطلاعات بیشتر، ابهام یا تصمیم‌گیری، بلافاصله مطرح شود.
+۶. توسعه فازبندی شده	هر فاز پس از تأیید، شروع و پس از تکمیل، مرور نهایی می‌شود.
+۷. فانکشنال بودن	خروجی هر فاز باید کاملاً functional و قابل تست باشد.
+📊 وضعیت کلی پروژه
+تکمیل شده ████████░░░░░░░░░░░░░░░░ ~۲۰٪
+
+نیازمند ایجاد ░░░░░░░░████████████████ ~۸۰٪
+
+آیتم	مورد نیاز	موجود	مفقود
+Enum‌ها	۲	۲ ✅	—
+Model‌ها	۱+	۱ ✅	—
+مسیرهای admin	۲۲ مسیر	۲۲ ✅	—
+کامپوننت Volt	۲۰	۴ ✅	۱۶ ❌
+Livewire Forms	۵+	۰	۵ ❌
+Controller	۱	۰	۱ ❌
+Policy‌ها	۳+	۰	۳ ❌
+🗺️ فازهای توسعه
+فاز ۱: تکمیل زیرساخت کاربران (هفته اول)
+گام	فایل	شرح
+1.1	app/Livewire/Forms/UserForm.php	ایجاد کلاس Livewire Form با فیلدهای name, email, password, password_confirmation, role, is_active، متدهای store(), update(), setUser() و قوانین اعتبارسنجی
+1.2	app/Policies/UserPolicy.php	Policy برای view, create, update, delete
+1.3	اصلاح index.blade.php	تطبیق با فیلد role (Enum UserRole)
+فاز ۲: داشبورد ادمین (هفته اول)
+گام	فایل	شرح
+2.1	app/Http/Controllers/Admin/DashboardController.php	ویجت‌های آمار: کاربران، محصولات، سفارشات
+2.2	resources/views/admin/dashboard.blade.php	کارت‌های آمار + نمودار
+فاز ۳: مدیریت محصولات (هفته دوم)
+گام	فایل	شرح
+3.1	app/Livewire/Forms/ProductForm.php	فرم محصولات
+3.2–3.5	resources/views/livewire/admin/products/{index,create,show,edit}.blade.php	۴ کامپوننت CRUD
+3.6	app/Policies/ProductPolicy.php	Policy محصولات
+فاز ۴: مدیریت دسته‌بندی‌ها (هفته دوم)
+گام	فایل	شرح
+4.1	app/Livewire/Forms/CategoryForm.php	فرم دسته‌بندی
+4.2	resources/views/livewire/admin/categories/*.blade.php	۴ کامپوننت CRUD
+4.3	app/Policies/CategoryPolicy.php	Policy
+فاز ۵: مدیریت تأمین‌کنندگان (هفته سوم)
+گام	فایل	شرح
+5.1	app/Livewire/Forms/SupplierForm.php	فرم تأمین‌کننده
+5.2	resources/views/livewire/admin/suppliers/*.blade.php	۴ کامپوننت CRUD
+5.3	app/Policies/SupplierPolicy.php	Policy
+فاز ۶: مدیریت قیمت‌های خرده‌فروشی (هفته سوم)
+گام	فایل	شرح
+6.1	app/Livewire/Forms/RetailPriceForm.php	فرم قیمت
+6.2	resources/views/livewire/admin/retail-prices/*.blade.php	۴ کامپوننت CRUD
+🔍 یافته‌های کلیدی از تحلیل فایل‌ها
+UserForm‌ (استنتاج شده از create.blade.php و edit.blade.php):
+
+Namespace: App\Livewire\Forms
+Properties: name, email, password, password_confirmation, role (Enum UserRole), is_active (boolean)
+Methods: setUser(User $user), store(), update(User $user)
+اعتبارسنجی در سطح کامپوننت‌های Blade روی form.*
+Enum‌ها:
+
+UserRole: موارد Admin, Manager, Customer (یا مشابه)
+ProductStatus: موارد draft, active, archived (یا مشابه)
+مدل‌ها:
+
+User: فیلد role از نوع Enum UserRole
+Product: شامل فیلدهای استاندارد محصول به‌همراه status از نوع Enum ProductStatus

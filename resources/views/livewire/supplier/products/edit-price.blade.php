@@ -1,0 +1,111 @@
+<div>
+    {{-- ═══════════ Page Header ═══════════ --}}
+    <div class="mb-8">
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">ویرایش قیمت و موجودی</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            محصول: <span class="font-semibold text-gray-600 dark:text-gray-300">{{ $product->title }}</span>
+        </p>
+    </div>
+
+    {{-- ═══════════ Main Card Form ═══════════ --}}
+    <x-card>
+        <form wire:submit="save">
+            {{-- ─── Form Body ─── --}}
+            <div class="p-6">
+
+                {{-- ─── Section 1: General Supplier Info for this Product ─── --}}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6">
+                    {{-- توضیحات بخش --}}
+                    <div class="md:col-span-1">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">اطلاعات عرضه</h3>
+                        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                            شناسه محصول، تعداد موجودی و وضعیت نمایش محصول شما برای این کالا.
+                        </p>
+                    </div>
+
+                    {{-- فیلدهای بخش --}}
+                    <div class="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div>
+                            <x-input-label for="sku" value="شناسه انحصاری شما (SKU)" />
+                            <x-text-input wire:model="sku" id="sku" type="text" class="mt-1 block w-full" placeholder="مثلا: PROD-12345" />
+                            <x-input-error :messages="$errors->get('sku')" class="mt-2" />
+                        </div>
+
+                        <div>
+                            <x-input-label for="stock_quantity" value="تعداد موجودی" />
+                            <x-text-input wire:model="stock_quantity" id="stock_quantity" type="number" class="mt-1 block w-full" placeholder="برای نامحدود خالی بگذارید" />
+                            <x-input-error :messages="$errors->get('stock_quantity')" class="mt-2" />
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <label for="is_active" class="flex items-center cursor-pointer">
+                                <x-checkbox wire:model="is_active" id="is_active" />
+                                <span class="ms-3 text-sm text-gray-600 dark:text-gray-300">این محصول را برای فروش فعال کن</span>
+                            </label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-7">
+                                در صورت فعال بودن، این محصول با قیمت‌های شما به مشتریان نمایش داده می‌شود.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-8 border-gray-200 dark:border-gray-700">
+
+                {{-- ─── Section 2: Prices ─── --}}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6">
+                    {{-- توضیحات بخش --}}
+                    <div class="md:col-span-1">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">لیست قیمت‌ها</h3>
+                        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                            قیمت‌های مختلف را بر اساس نوع فروش وارد کنید. تنها فیلدهای دارای قیمت ذخیره خواهند شد.
+                        </p>
+                    </div>
+
+                    {{-- فیلدهای بخش --}}
+                    <div class="md:col-span-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            {{-- Check if PriceType Enum exists to prevent errors --}}
+                            @if(class_exists(\App\Enums\PriceType::class))
+                            @foreach (\App\Enums\PriceType::cases() as $priceType)
+                            <div>
+                                <x-input-label for="price-{{ $priceType->value }}">
+                                    {{ $priceType->label() }}
+                                </x-input-label>
+                                <div class="relative mt-1">
+                                    <x-text-input
+                                        wire:model.live.debounce.500ms="prices.{{ $priceType->value }}.price"
+                                        id="price-{{ $priceType->value }}"
+                                        type="number"
+                                        class="block w-full pe-16"
+                                        placeholder="0"
+                                    />
+                                    <div class="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3">
+                                        <span class="text-gray-500 sm:text-sm">تومان</span>
+                                    </div>
+                                </div>
+                                <x-input-error :messages="$errors->get('prices.' . $priceType->value . '.price')" class="mt-2" />
+                            </div>
+                            @endforeach
+                            @else
+                            <p class="text-red-500 text-sm sm:col-span-2">
+                                خطا: ENUM مربوط به انواع قیمت (PriceType) یافت نشد.
+                            </p>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- ─── Form Footer ─── --}}
+            <div class="flex items-center justify-end gap-x-4 bg-gray-50 dark:bg-gray-800/50 px-6 py-4 rounded-b-lg">
+                <x-action-message class="me-3" on="saved">
+                    <span class="text-green-600 font-semibold">ذخیره شد.</span>
+                </x-action-message>
+
+                <x-primary-button>
+                    ذخیره تغییرات
+                </x-primary-button>
+            </div>
+        </form>
+    </x-card>
+</div>

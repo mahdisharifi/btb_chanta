@@ -1,0 +1,15 @@
+User-agent: *
+
+Allow: /
+
+Disallow: /admin/
+
+Disallow: /livewire/
+
+Disallow: /api/
+
+Disallow: /*?
+
+Disallow: /storage/
+Sitemap: https://chanta.ir/sitemap.xml
+

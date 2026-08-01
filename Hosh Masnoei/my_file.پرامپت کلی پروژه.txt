@@ -1,0 +1,987 @@
+پرامپت جامع توسعه پلتفرم B2B/B2C با Laravel 12
+1. معرفی پروژه و معماری کلی
+نام پروژه: پلتفرم تجاری B2B/B2C چندسطحی
+
+شرح کلی:
+
+یک پلتفرم تجارت الکترونیک پیشرفته که سه نوع کاربر را پشتیبانی می‌کند:
+
+تامین‌کنندگان (Suppliers): واردکنندگان و تولیدکنندگان که محصولات را با قیمت‌گذاری چندسطحی ارائه می‌دهند
+کاسبان (Retailers): دو نوع - عادی (تک‌فروش) و ویژه (دسترسی به قیمت‌های عمده)
+مشتریان نهایی (End Consumers): خریداران عادی
+معماری فنی:
+
+Framework: Laravel 12
+Performance: Octane با FrankenPHP/RoadRunner
+Cache: Redis (چند لایه)
+Queue: Redis/SQS برای پردازش async
+Database: MySQL/PostgreSQL با read replicas و sharding capability
+Search: Laravel Scout + Meilisearch/Algolia
+Monitoring: Telescope + Horizon
+معماری سیستم:
+
+Modular Monolith با قابلیت تبدیل به Microservices:
+
+├── Core Module (Authentication, Authorization, User Management)
+
+├── Catalog Module (Products, Categories, Attributes)
+
+├── Pricing Module (Multi-tier pricing engine)
+
+├── Order Module (Order processing, workflows)
+
+├── Inventory Module (Stock management)
+
+├── Payment Module (Gateway integration)
+
+└── Admin Module (Management panels)
+
+2. ساختار دیتابیس و مدل‌های اصلی
+2.1 جداول کاربران و نقش‌ها
+users
+
+id
+name
+email
+password
+phone
+user_type (enum: supplier, retailer_special, retailer_regular, consumer)
+status (enum: active, pending, suspended)
+email_verified_at
+timestamps
+roles & permissions (استفاده از Spatie Permission)
+
+Roles:
+
+super_admin
+supplier
+retailer_special
+retailer_regular
+consumer
+supplier_profiles
+
+id
+user_id (FK)
+company_name
+business_license
+tax_id
+address
+description
+logo
+verification_status
+timestamps
+retailer_profiles
+
+id
+user_id (FK)
+business_name
+business_type
+tier (enum: regular, special)
+credit_limit (decimal)
+timestamps
+2.2 جداول محصولات و دسته‌بندی
+categories
+
+id
+parent_id (self-referencing FK)
+name
+slug
+description
+image
+meta_title
+meta_description
+meta_keywords
+order
+is_active
+timestamps
+brands
+
+id
+name
+slug
+logo
+description
+timestamps
+products
+
+id
+supplier_id (FK to users)
+category_id (FK)
+brand_id (FK)
+name
+slug
+sku
+description
+short_description
+meta_title
+meta_description
+meta_keywords
+status (enum: draft, active, inactive)
+featured
+view_count
+timestamps
+soft_deletes
+product_images
+
+id
+product_id (FK)
+image_path
+order
+is_primary
+timestamps
+product_videos
+
+id
+product_id (FK)
+video_path
+video_url
+timestamps
+product_attributes (برای مشخصات فنی)
+
+id
+product_id (FK)
+attribute_name
+attribute_value
+timestamps
+2.3 جداول قیمت‌گذاری (بخش کلیدی)
+product_prices
+
+id
+product_id (FK)
+supplier_id (FK)
+price_type (enum: consumer, wholesale_under_carton, wholesale_carton, warranty_6m, warranty_12m, warranty_18m, check_30d, check_60d, custom)
+price (decimal)
+min_quantity
+max_quantity
+is_active
+valid_from
+valid_until
+timestamps
+retailer_product_prices (قیمت‌های تعیین شده توسط کاسبان)
+
+id
+retailer_id (FK to users)
+product_id (FK)
+selling_price (decimal)
+margin_percentage
+is_active
+timestamps
+2.4 جداول موجودی
+inventory
+
+id
+product_id (FK)
+supplier_id (FK)
+quantity
+reserved_quantity
+warehouse_location
+last_updated_at
+timestamps
+2.5 جداول سفارش
+orders
+
+id
+order_number (unique)
+user_id (FK)
+supplier_id (FK) - nullable برای سفارشات چند تامین‌کننده
+status (enum: pending, confirmed, processing, shipped, delivered, cancelled)
+subtotal
+tax
+shipping_cost
+discount
+total
+payment_status
+payment_method
+shipping_address
+billing_address
+notes
+timestamps
+order_items
+
+id
+order_id (FK)
+product_id (FK)
+supplier_id (FK)
+price_type
+quantity
+unit_price
+subtotal
+timestamps
+order_status_history
+
+id
+order_id (FK)
+status
+notes
+6. API Architecture
+Authentication:
+
+Laravel Sanctum (SPA/Mobile)
+Laravel Passport (در صورت نیاز به OAuth2 پیشرفته)
+API Structure:
+
+/api/v1/
+
+├── auth/
+
+├── products/
+
+├── categories/
+
+├── suppliers/
+
+├── orders/
+
+├── dashboard/
+
+└── admin/
+
+API Resources:
+
+ProductResource
+ProductDetailResource
+SupplierResource
+OrderResource
+7. UI/UX Design System (مرجع طراحی)
+7.1 هویت بصری
+Color Palette:
+
+Primary: #0A2342 (Navy Blue) یا #014421
+Secondary: #333333
+Accent: #D4AF37 یا #CC5500
+Background: #FFFFFF, #F8F9FA
+Typography:
+
+Headings: Vazirmatn / IRANSansX (Bold/SemiBold)
+Body: Regular
+Line height مناسب برای خوانایی بالا
+Icons:
+
+Line Icons
+مینیمال و یکپارچه
+8. صفحات عمومی
+8.1 Homepage
+Sections:
+
+Hero + CTA
+Value Propositions (3-4 آیتم)
+Popular Categories
+Featured Suppliers
+How It Works (3-4 مرحله)
+Footer کامل
+8.2 Product Listing Page (PLP)
+Breadcrumb
+SEO Description
+Advanced Filters
+Sorting
+Grid/List Toggle
+Dynamic pricing based on user role
+8.3 Product Detail Page (PDP)
+Two-column layout:
+
+Gallery (Zoom enabled)
+Dynamic Pricing Table (based on role)
+Tabs: Description / Specs / Reviews
+9. Supplier Dashboard
+KPI Dashboard (Charts)
+Product Management Table
+Multi-step Product Form:
+Basic Info
+Pricing Engine
+Media Upload
+SEO
+Order Management
+10. Retailer Panel
+Selected Products
+Custom Selling Price
+Profit Estimation
+Add to My Store
+11. Admin Panel
+Global Dashboard
+User Management (Role switching)
+Supplier Verification
+Category Tree Management
+Global Product Control
+Site Settings
+12. Performance Strategy
+Redis caching (Products, Categories)
+Query optimization با eager loading
+Database indexing (slug, sku, supplier_id, category_id)
+CDN برای media files
+Queue برای:
+Email notifications
+Inventory sync
+Bulk price updates
+Report generation
+13. Security Considerations
+RBAC با Spatie
+Rate limiting
+CSRF protection
+Input validation (Form Requests)
+Activity logging (Audit Trail)
+Two-factor authentication برای تامین‌کنندگان
+14. Mobile-First & Responsive
+Mobile-first layout
+Collapsible filters در موبایل
+Responsive tables
+Sticky CTA در PDP
+Hamburger menu
+نحوه استفاده از این پرامپت
+این متن را به عنوان System / Reference Prompt به هوش مصنوعی بده و بگو:
+
+بر اساس این سند، به عنوان معمار ارشد نرم‌افزار و طراح UI/UX عمل کن.
+
+تمام پیشنهادات طراحی دیتابیس، معماری، API، و طراحی رابط کاربری باید با این سند هم‌راستا باشد.
+
+هر ماژول را به صورت مرحله‌ای، قابل پیاده‌سازی در Laravel 12 و Production-Ready طراحی کن.
+
+از بهترین شیوه‌های مقیاس‌پذیری، امنیت و Clean Architecture استفاده کن.
+
+اگر بخواهی، می‌توانم نسخه‌ای حتی حرفه‌ای‌تر و بهینه‌شده مخصوص استفاده به عنوان System Prompt برای مدل‌های سطح بالا هم برایت آماده کنم که خروجی‌ها کاملاً ساختاریافته و مهندسی‌شده باشند.
+
+یک پروژه جدید و کاملا تجاری
+مواردی که در هر دستور باید رعایت بشه
+هر کد جدید که نیاز به نصب و یا ایجاد یک بخش جدید دارد، دستور نصب و ایجاد را ارائه بده
+من از فریم ورک لاراول 12، لایوایر 3 ،تلوین، بریزمیخواهم استفاده کنم
+پروژه مربوط به سایت یک فروشگاه (BTB) هست ( نرم افزار اندروید و ایفون هم در توسعه باید تولید بشه)
+منطق کلی این است که من به عنوان یک شرکت تمتم عمده فروشی های سطح اول(یعنی کسانی که وارد کننده کالا هستند ) را به سایت خود دعوت و ثبت نام میکنم
+این افراد کالا های خود را در سایت معرفی و برای هر کالا میتوانند قیمت های مختلفی تعییذ کنند ( مثلا قیمت زیر کارتن، قیمت کارتن،قیمت با گارانتی(با تعیین مدت گارانتی)، قیمت چکی 1 ماه  و چکی 2 ماه و ... )
+لازمه بگم که تمام کالا ها به صورت دسته بندی شده قابل ثبت و ویرایش یابد باشند مثلا دسته بندی اصلی مثل لوازم الکترونیک  چند زیر دسته دارد، مثلا موبایل ، لپ تاپ و ... که محصولات با دسته بندی موبایل زیرمجموعه موبایل ثبت و قابل جستجو هستند
+هر محصول یک گالری شامل ویدئو کوتاه و چند عکس هست که باید در ذخیره و فراخوانی به سادگی قابل مدیریت باشند
+در ثبت و نمایش محصولات باید موارد مربوط به SEO رعایت شود
+در ساخت تمام صفحات موارد مربوط به SEO باید در نظر گرفته شود
+
+موارد بالا برای تامین کننده های سطح اول بود
+که در پنل مدیریت باید تمام موارد ثبت ،کنترول و ویرایش انجام بشه
+حالا در سمت کاربرمنطق دیگری بانجام میشود و طرح و قالب کاملا متفاوت است
+کاربران به چند دسترسی تبدیل میشوند
+کاربران کاسب (تک فروش ویژه)این کاربران به اطلاعاتی که تامین کنندگان وارد میکنند ( تمام قیمت ها و نام و مشخصات تامین کنندگان) دسترسی دارند و میتوانند قیمت تک فروشی برای هر کالا تعیین کنند که فقط برای کاربران عادی قابل مشاهده هست
+کاربران کاسب( تک فروش ) این کاربران میتوانند برای محصولات قیمت تک فروشی تعیین کنند( به قیمت های تامین کنندگاه و اطلاعات آنها دسترسی ندارند
+کاربران عادی این کاربران فقط به اطلاعات محصول دسترسی دارن و یک قیمت تک فروشی را مشاهده میکنند
+تمام کاربران میتوانند به اطلاعات محصول و گالری محصول و ... دسترسی داشته باشند و محدودیت آنها فقط دسترسی به اطلاعات تامین کنندگان سطح یک و قیمت هایی که آنها تعیین میکنند محدود میشود
+
+
+یک پرامپت کامل بهم بده که  بتونم ظاهر یک سایت تجاری رو برام طراحی کنه
+(تمام صفحات)
+پرامپت جامع طراحی UI/UX پلتفرم B2B تجاری
+مشخصات پروژه و الزامات طراحی
+1. معرفی پروژه
+یک پلتفرم تجارت الکترونیک B2B/B2C با معماری چندسطحی که سه نوع کاربر اصلی دارد:
+
+تامین‌کنندگان (Tier-1 Suppliers): واردکنندگان و عمده‌فروشان اصلی
+کاسبان (Retailers): دو نوع - ویژه (دسترسی کامل) و عادی (دسترسی محدود)
+مشتریان نهایی (End Consumers): خریداران عادی
+Stack فنی:
+
+Laravel 12
+Livewire 3
+Tailwind CSS
+Breeze (Authentication)
+Spatie Permission (RBAC)
+Laravel Scout + Meilisearch (Search)
+2. هویت بصری و Design System
+2.1 Color Palette
+css
+
+/* Primary Colors */
+
+–primary-900: #0A2342; /* Navy Blue - Headers, Important CTAs */
+
+–primary-700: #1E3A5F; /* Darker shade */
+
+–primary-500: #2E5C8A; /* Medium shade */
+
+–primary-300: #5B8BC4; /* Light shade */
+
+/* Secondary Colors */
+
+–secondary-900: #333333; /* Charcoal - Body text */
+
+–secondary-700: #555555; /* Medium gray */
+
+–secondary-500: #777777; /* Light gray */
+
+–secondary-300: #AAAAAA; /* Very light gray */
+
+/* Accent Colors */
+
+–accent-gold: #D4AF37; /* Soft Gold - Premium features */
+
+–accent-orange: #CC5500; /* Burnt Orange - CTAs, Highlights */
+
+–accent-green: #28A745; /* Success states */
+
+–accent-red: #DC3545; /* Error states */
+
+/* Background Colors */
+
+–bg-white: #FFFFFF;
+
+–bg-light: #F8F9FA;
+
+–bg-lighter: #F1F3F5;
+
+–bg-dark: #E9ECEF;
+
+/* Border Colors */
+
+–border-light: #DEE2E6;
+
+–border-medium: #CED4DA;
+
+2.2 Typography
+css
+
+/* Font Family */
+
+font-family: ‘Vazirmatn’, ‘IRANSansX’, sans-serif;
+
+/* Font Sizes */
+
+–text-xs: 0.75rem; /* 12px */
+
+–text-sm: 0.875rem; /* 14px */
+
+–text-base: 1rem; /* 16px */
+
+–text-lg: 1.125rem; /* 18px */
+
+–text-xl: 1.25rem; /* 20px */
+
+–text-2xl: 1.5rem; /* 24px */
+
+–text-3xl: 1.875rem; /* 30px */
+
+–text-4xl: 2.25rem; /* 36px */
+
+–text-5xl: 3rem; /* 48px */
+
+/* Font Weights */
+
+–font-regular: 400;
+
+–font-medium: 500;
+
+–font-semibold: 600;
+
+–font-bold: 700;
+
+/* Line Heights */
+
+–leading-tight: 1.25;
+
+–leading-normal: 1.5;
+
+–leading-relaxed: 1.75;
+
+2.3 Spacing System
+css
+
+/* Tailwind Default Scale */
+
+0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 56, 64
+
+2.4 Border Radius
+css
+
+–radius-sm: 0.25rem; /* 4px */
+
+–radius-md: 0.375rem; /* 6px */
+
+–radius-lg: 0.5rem; /* 8px */
+
+–radius-xl: 0.75rem; /* 12px */
+
+–radius-2xl: 1rem; /* 16px */
+
+–radius-full: 9999px; /* Fully rounded */
+
+2.5 Shadows
+css
+
+–shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+–shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+–shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+–shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+2.6 Icon System
+استفاده از Heroicons (Line style)
+سایز استاندارد: 20px, 24px, 32px
+رنگ: همسان با متن یا Primary color
+3. Layout Structure
+3.1 Grid System
+Container Max-Width:
+
+sm: 640px
+md: 768px
+lg: 1024px
+xl: 1280px
+2xl: 1536px
+Grid Columns: 12-column system
+
+Gap: 16px (default), 24px (large screens)
+
+3.2 Header (Global)
+Height: 80px (Desktop), 64px (Mobile)
+
+Structure:
+
+┌─────────────────────────────────────────────────────┐
+
+│ Logo | Search Bar | Navigation | User Menu | Cart │
+
+└─────────────────────────────────────────────────────┘
+
+Components:
+
+Logo (Right side, 180px width)
+Search Bar (Center, expandable, with autocomplete)
+Main Navigation (Categories dropdown, About, Contact)
+User Menu (Login/Register or Profile dropdown)
+Cart Icon (with badge counter)
+Mobile:
+
+Hamburger menu (Right)
+Logo (Center)
+Search icon + Cart (Left)
+3.3 Footer (Global)
+Structure:
+
+┌─────────────────────────────────────────────────────┐
+
+│ Column 1 Column 2 Column 3 │
+
+│ Quick Links Categories Contact Info │
+
+│ │
+
+│ Social Media Icons │
+
+│ Trust Badges (eNamad, Samandehi) │
+
+│ Copyright © 2025 │
+
+└─────────────────────
+
+در ادامه یک پرامپت حرفه‌ای و آماده استفاده می‌دهم که بتوانی به هر AI طراحی UI (یا حتی خود من در مراحل بعد) بدهی تا کل ظاهر سایت تجاری B2B را مطابق معماری Laravel 12 + Livewire 3 + Tailwind طراحی کند.
+
+این پرامپت طوری نوشته شده که:
+
+تمام صفحات سایت طراحی شوند
+ساختار کاملاً Production Ready باشد
+با SEO ، Livewire ، Tailwind سازگار باشد
+در صورت نیاز دستور نصب پکیج‌ها هم ارائه شود
+پرامپت طراحی کامل UI/UX برای پلتفرم B2B
+از این متن به عنوان Reference Prompt استفاده کن:
+
+تو یک Senior UI/UX Architect و Laravel Frontend Architect هستی.
+
+باید ظاهر کامل یک پلتفرم تجاری B2B را طراحی کنی که با تکنولوژی‌های زیر ساخته می‌شود:
+
+STACK:
+
+Laravel 12
+
+Livewire 3
+
+TailwindCSS
+
+Laravel Breeze
+
+AlpineJS
+
+Heroicons
+
+اگر برای هر بخش نیاز به پکیج یا ابزار جدید بود:
+
+1- دستور نصب آن را بده
+
+2- دستور ایجاد فایل یا کامپوننت را بده
+
+3- ساختار فایل‌ها را مشخص کن
+
+تمام طراحی باید:
+
+Production Ready باشد
+SEO Friendly باشد
+Mobile First باشد
+قابل پیاده سازی با Livewire باشد
+نوع پلتفرم
+این سیستم یک پلتفرم B2B است که در آن:
+
+یک شرکت مرکزی
+
+تمام واردکنندگان و عمده فروشان سطح اول را به سیستم دعوت می‌کند.
+
+این افراد:
+
+محصولات خود را در سایت ثبت می‌کنند.
+
+هر محصول می‌تواند چند قیمت داشته باشد:
+
+قیمت زیر کارتن
+
+قیمت کارتنی
+
+قیمت با گارانتی (مدت مشخص)
+
+قیمت چکی 1 ماه
+
+قیمت چکی 2 ماه
+
+قیمت چکی 3 ماه
+
+قیمت نقدی
+
+دسته بندی محصولات
+محصولات باید در یک دسته بندی درختی ثبت شوند.
+
+مثال:
+
+لوازم الکترونیک
+
+موبایل
+
+لپ تاپ
+
+تبلت
+
+هر محصول باید در یک دسته ثبت شود.
+
+کاربران بتوانند:
+
+جستجو کنند
+
+فیلتر کنند
+
+مرتب سازی کنند
+
+گالری محصول
+هر محصول باید داشته باشد:
+
+چند تصویر
+
+یک ویدئو کوتاه
+
+گالری باید:
+
+Lazy Load
+
+Zoom
+
+Slider
+
+باشد.
+
+SEO الزامی
+در طراحی تمام صفحات باید رعایت شود:
+
+Meta Title
+
+Meta Description
+
+Schema Markup
+
+Breadcrumb
+
+Slug SEO Friendly
+
+در فرم ثبت محصول باید فیلدهای زیر باشد:
+
+Meta Title
+
+Meta Description
+
+Keywords
+
+Slug
+
+انواع کاربران
+کاربران 4 نوع هستند:
+
+SUPPLIER
+
+واردکننده یا عمده فروش سطح اول
+
+RETAILER_SPECIAL
+
+کاسب ویژه
+
+RETAILER
+
+کاسب عادی
+
+CUSTOMER
+
+کاربر عادی
+
+سطح دسترسی کاربران
+تامین کننده
+می تواند:
+
+محصول ثبت کند
+
+قیمت های مختلف تعیین کند
+
+گالری محصول اضافه کند
+
+موجودی ثبت کند
+
+پنل اختصاصی دارد.
+
+کاسب ویژه
+دسترسی دارد به:
+
+اطلاعات تامین کننده
+
+تمام قیمت ها
+
+می تواند:
+
+برای محصول قیمت تک فروشی تعیین کند.
+
+کاسب عادی
+به قیمت تامین کننده دسترسی ندارد.
+
+فقط می تواند:
+
+برای محصول قیمت تک فروشی ثبت کند.
+
+کاربر عادی
+فقط می تواند:
+
+محصول را ببیند
+
+گالری محصول را ببیند
+
+یک قیمت تک فروشی مشاهده کند.
+
+صفحات سایت که باید طراحی شوند
+طراحی کامل تمام صفحات لازم است.
+
+صفحات عمومی
+Homepage
+
+Product Categories
+
+Product Listing
+
+Product Detail
+
+Search Page
+
+Supplier Profile
+
+Blog
+
+About Us
+
+Contact
+
+صفحه اصلی
+Sections:
+
+Hero Section
+
+Search Product
+
+Popular Categories
+
+Top Suppliers
+
+Featured Products
+
+How Platform Works
+
+Trust Badges
+
+Blog Posts
+
+Footer
+
+صفحه لیست محصولات
+Features:
+
+Filters
+
+Brand
+
+Price
+
+Supplier
+
+Category
+
+Sorting
+
+Newest
+
+Best selling
+
+Price
+
+View modes
+
+Grid
+
+List
+
+صفحه محصول
+Layout:
+
+Gallery Left
+
+Info Right
+
+Product Name
+
+Brand
+
+Category
+
+SKU
+
+Dynamic Pricing Table
+
+Tabs:
+
+Description
+
+Specifications
+
+Reviews
+
+Supplier Info
+
+پنل تامین کننده
+Supplier Dashboard
+
+Pages:
+
+Dashboard
+
+Products
+
+Add Product
+
+Orders
+
+Inventory
+
+Analytics
+
+Profile
+
+پنل کاسب
+Retailer Dashboard
+
+Pages:
+
+Dashboard
+
+Browse Products
+
+My Products
+
+Pricing
+
+Orders
+
+Reports
+
+پنل مدیریت
+Admin Panel
+
+Sections:
+
+Dashboard
+
+Users
+
+Suppliers
+
+Retailers
+
+Products
+
+Categories
+
+Orders
+
+Payments
+
+Reports
+
+Settings
+
+طراحی UI
+Design Style:
+
+Modern
+
+Clean
+
+Professional
+
+Corporate
+
+Color Palette
+Primary
+
+#0A2342
+
+Secondary
+
+#333333
+
+Accent
+
+#D4AF37
+
+Background
+
+#F8F9FA
+
+Typography
+Vazirmatn
+
+IRANSansX
+
+الزامات Mobile
+تمام صفحات باید:
+
+Responsive
+
+Mobile First
+
+باشند.
+
+خروجی مورد انتظار
+برای هر صفحه باید ارائه شود:
+
+Layout Structure
+
+Components
+
+Wireframe Description
+
+Tailwind Classes
+
+Livewire Components
+
+File Structure
+
+در صورت نیاز:
+
+دستور ساخت کامپوننت:
+
+php artisan make:livewire
+
+یا نصب پکیج:
+
+composer require
+
+نیز ارائه شود.

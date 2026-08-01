@@ -1,0 +1,1598 @@
+<?php
+
+namespace App\Http\Controllers\Web;
+
+use App\Http\Controllers\Controller;
+use App\Models\Attribute;
+use App\Models\Product;
+use App\Models\Category;
+use App\Models\RetailPrice;
+use App\Models\Supplier;
+use App\Models\ProductSupplier;
+use App\Enums\ProductStatus;
+use App\Enums\UserRole;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
+use App\Models\AttributeValue;
+
+class ProductController extends Controller
+{
+    // ══════════════════════════════════════════════════════════
+    //  CONSTANTS & CONFIGURATION
+    // ══════════════════════════════════════════════════════════
+    /** تعداد محصولات پیش‌فرض در هر صفحه */
+    private const DEFAULT_PER_PAGE = 24;
+
+    /** مقادیر مجاز برای تعداد آیتم در صفحه */
+    private const ALLOWED_PER_PAGE = [12, 24, 48, 96];
+
+    /** مقادیر مجاز برای مرتب‌سازی */
+    private const ALLOWED_SORT_OPTIONS = [
+        'latest',
+        'oldest',
+        'popular',
+        'price_low',
+        'price_high',
+        'name_asc',
+        'name_desc',
+        'most_viewed',
+    ];
+
+    /** کلیدهای کش */
+    private const CACHE_CATEGORIES_TREE   = 'web:categories:tree:active';
+    private const CACHE_CATEGORIES_COUNTS = 'web:categories:product_counts';
+    private const CACHE_FEATURED_PRODUCTS = 'web:products:featured';
+    private const CACHE_PRICE_RANGE       = 'web:products:price_range';
+
+    /** مدت زمان کش (ثانیه) */
+    private const CACHE_TTL_SHORT  = 600;    // 10 دقیقه
+    private const CACHE_TTL_MEDIUM = 1800;   // 30 دقیقه
+    private const CACHE_TTL_LONG   = 3600;   // 1 ساعت
+
+    /** روابط مشترک برای Eager Loading در لیست */
+    private const INDEX_RELATIONS = [
+        'category:id,name,slug,icon,parent_id',
+        'supplier:id,company_name,brand_name,logo_path,is_verified',
+    ];
+
+    // ══════════════════════════════════════════════════════════
+    //  INDEX - لیست محصولات با فیلترهای پیشرفته
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * صفحه لیست محصولات عمومی
+     */
+    public function index(Request $request): View
+    {
+        // ─── 1. اعتبارسنجی پارامترهای ورودی ───
+        $validated = $this->validateIndexRequest($request);
+
+        // ─── 2. ساخت کوئری پایه ───
+        $query = $this->buildBaseProductQuery();
+
+        // ─── 3. اعمال فیلترها ───
+        $query = $this->applyCategoryFilter($query, $request);
+        $query = $this->applyAttributeFilter($query, $request);
+        $query = $this->applyPriceFilter($query, $request);
+        $query = $this->applySupplierFilter($query, $request);
+        $query = $this->applyStockFilter($query, $request);
+        $query = $this->applyFeaturedFilter($query, $request);
+
+
+        // ─── 4. اعمال جستجو ───
+        $query = $this->applySearch($query, $request);
+
+        // ─── 5. اعمال مرتب‌سازی ───
+        $query = $this->applySorting($query, $request);
+
+        // ─── 6. صفحه‌بندی ───
+        $perPage  = $this->resolvePerPage($request);
+        $products = $query->paginate($perPage)->withQueryString();
+
+        // ─── 7. داده‌های جانبی (کش شده) ───
+        $sidebarData = $this->getIndexSidebarData($request);
+
+        // ─── 8. SEO Meta Tags ───
+        $seoData = $this->buildIndexSeo($request);
+
+        return view('pages.products.index', array_merge([
+            'products'      => $products,
+            'activeFilters' => $this->getActiveFilters($request),
+            'sortBy'        => $request->get('sort', 'latest'),
+            'perPage'       => $perPage,
+            'searchQuery'   => $request->get('q', ''),
+            'seo'           => $seoData,
+        ], $sidebarData));
+    }
+
+
+
+    /**
+     * صفحه جزئیات محصول - بهینه‌شده
+     *
+     * بهبودها:
+     * - کاهش تعداد کوئری‌ها با eager loading هوشمند
+     * - حذف N+1 در روابط تو در تو
+     * - استفاده از select برای محدود کردن ستون‌ها
+     * - بهینه‌سازی محاسبات قیمت
+     */
+    public function show(Product $product): \Illuminate\View\View
+    {
+        // ─── 1. اطمینان از فعال بودن محصول ───
+        abort_unless(
+            $product->is_active && $product->status === \App\Enums\ProductStatus::ACTIVE,
+            404
+        );
+
+        // ─── 2. افزایش بازدید (Rate Limited) ───
+        $this->incrementViewCount($product, request());
+
+        // ─── 3. ذخیره در بازدیدهای اخیر ───
+        $this->trackRecentlyViewed($product->id, request());
+
+        // ─── 4. بارگذاری روابط پایه - بهینه‌شده با select ───
+        $product->load([
+            'category:id,name,slug,parent_id' => [
+                'parent:id,name,slug,parent_id' => [
+                    'parent:id,name,slug,parent_id'
+                ]
+            ],
+            'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
+            // 👇 مشخصات فنی با ساختار EAV اضافه شد 👇
+            'attributeValues.attribute',
+            // 👇 فیلدهای file_type و alt_text به این بخش اضافه شدند 👇
+            'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text'])
+                ->orderByDesc('is_primary')
+                ->orderBy('sort_order'),
+            'prices' => fn($q) => $q->select(['id', 'product_id', 'price', 'price_type', 'min_quantity', 'is_active', 'valid_from', 'valid_until'])
+                ->where('is_active', true)
+                ->where(function ($sub) {
+                    $sub->whereNull('valid_until')
+                        ->orWhere('valid_until', '>=', now());
+                })
+                ->where(function ($sub) {
+                    $sub->whereNull('valid_from')
+                        ->orWhere('valid_from', '<=', now());
+                })
+                ->orderBy('price', 'asc'),
+            'retailPrices' => fn($q) => $q->select(['id', 'product_id', 'user_id', 'retail_price', 'is_published'])
+                ->where('is_published', true)
+                ->with('user:id,name')
+                ->orderBy('retail_price', 'asc'),
+        ]);
+
+        // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده ───
+        $productSuppliers = $product->productSuppliers()
+            ->active()
+            ->select(['id', 'product_id', 'supplier_id', 'is_primary', 'sort_order'])
+            ->with([
+                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
+                'activePrices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type', 'min_quantity', 'is_active', 'valid_from', 'valid_until'])
+                    ->where('is_active', true)
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_until')
+                            ->orWhere('valid_until', '>=', now());
+                    })
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_from')
+                            ->orWhere('valid_from', '<=', now());
+                    })
+                    ->orderBy('price', 'asc'),
+            ])
+            ->orderByDesc('is_primary')
+            ->orderBy('sort_order')
+            ->get();
+
+        $hasMultipleSuppliers = $productSuppliers->count() > 1;
+
+        // ─── 6. محاسبه قیمت‌های کلی - بهینه‌شده ───
+        $allSupplierPrices = $productSuppliers->flatMap(fn($ps) => $ps->activePrices);
+        $usePivotPrices = $allSupplierPrices->isNotEmpty();
+
+        if ($usePivotPrices) {
+            $overallLowestPrice = $allSupplierPrices->min('price');
+            $overallHighestPrice = $allSupplierPrices->max('price');
+            $directPrices = collect();
+        } else {
+            $directPrices = $product->prices;
+            $overallLowestPrice = $directPrices->min('price');
+            $overallHighestPrice = $directPrices->max('price');
+        }
+
+        // ─── 8. آمار مقایسه تأمین‌کنندگان ───
+        $supplierStats = [];
+        if ($usePivotPrices && $productSuppliers->isNotEmpty()) {
+            $supplierStats = [
+                'total_suppliers'   => $productSuppliers->count(),
+                'lowest_price'      => $overallLowestPrice,
+                'highest_price'     => $overallHighestPrice,
+                'avg_price'         => (int) round($allSupplierPrices->avg('price')),
+                'price_types_count' => $allSupplierPrices->pluck('price_type')->unique()->count(),
+            ];
+        }
+
+        // ─── 9. قیمت‌های خرده‌فروشی (بدون کوئری اضافی) ───
+        $retailPrices = $product->retailPrices;
+        $displayRetailPrice = $retailPrices->first(); // چون قبلاً order شده
+
+        // ─── 10. تعیین نقش و داده‌های قابل مشاهده ───
+        $userRole = $this->resolveUserRole();
+        $roleData = $this->resolveVisibleDataByRole($product, $userRole);
+
+        if ($usePivotPrices && in_array($userRole, ['retailer_premium', 'super_admin', 'supplier'])) {
+            $roleData['showWholesalePrices'] = true;
+        }
+
+        $showWholesalePrices = $roleData['showWholesalePrices'] ?? false;
+        $showSupplierInfo    = $roleData['showSupplierInfo'] ?? false;
+        $canViewSupplierInfo = $roleData['showSupplierInfo'] ?? false;
+
+        // ─── 11. محصولات مرتبط ───
+        $relatedProducts = $this->getRelatedProducts($product, 8);
+
+        // ─── 12. بازدیدهای اخیر ───
+        $recentlyViewed = $this->getRecentlyViewed($product->id, request(), 8);
+
+        // ─── 13. ساخت Breadcrumb ───
+        $breadcrumb = [];
+        if ($product->category) {
+            $categoryChain = $this->getCategoryAncestors($product->category);
+            foreach ($categoryChain as $cat) {
+                $breadcrumb[] = [
+                    'name' => $cat->name ?? 'دسته‌بندی',
+                    'url'  => route('categories.show', ['category' => $cat->slug ?? 'unknown']),
+                ];
+            }
+        }
+        $breadcrumb[] = ['name' => $product->title, 'url' => null];
+
+        $breadcrumbs = array_merge(
+            [['name' => 'خانه', 'url' => route('home')]],
+            $breadcrumb
+        );
+
+        // ─── 14. ساخت SEO Data ───
+        $seo = $this->buildSeoData($product, $breadcrumbs);
+
+        // ─── 15. ارسال به View ───
+        return view('pages.products.show', [
+            'product'               => $product,
+            'productSuppliers'      => $productSuppliers,
+            'hasMultipleSuppliers'  => $hasMultipleSuppliers,
+            'overallLowestPrice'    => $overallLowestPrice,
+            'overallHighestPrice'   => $overallHighestPrice,
+            'retailPrices'          => $retailPrices,
+            'relatedProducts'       => $relatedProducts,
+
+            'breadcrumbs'           => $breadcrumbs,
+            'seo'                   => $seo,
+            'recentlyViewed'        => $recentlyViewed,
+            'userRole'              => $userRole,
+            'displayRetailPrice'    => $displayRetailPrice,
+
+            'usePivotPrices'        => $usePivotPrices,
+            'directPrices'          => $directPrices,
+            'supplierStats'         => $supplierStats,
+
+            'canViewSupplierInfo'   => $canViewSupplierInfo,
+            'showWholesalePrices'   => $showWholesalePrices,
+            'showSupplierInfo'      => $showSupplierInfo,
+
+            'supplierInfo'          => $roleData['supplierInfo'] ?? null,
+            'wholesalePrices'       => $roleData['wholesalePrices'] ?? collect(),
+            'retailPrice'           => $roleData['retailPrice'] ?? null,
+            'myRetailPrice'         => $roleData['myRetailPrice'] ?? null,
+            'profitMargin'          => $roleData['profitMargin'] ?? null,
+            'canSetRetailPrice'     => $roleData['canSetRetailPrice'] ?? false,
+        ]);
+    }
+
+
+
+
+
+
+
+
+            // ══════════════════════════════════════════════════════════
+    //  CATEGORY PRODUCTS - محصولات یک دسته‌بندی
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * محصولات یک دسته‌بندی خاص
+     * URL: /categories/{slug}
+     */
+    public function byCategory(Request $request, string $categorySlug): View
+    {
+        $category = Category::where('slug', $categorySlug)
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        // تمام زیردسته‌ها را جمع‌آوری کن
+        $categoryIds = $this->getAllDescendantIds($category);
+
+        // کوئری محصولات
+        $query = $this->buildBaseProductQuery()
+            ->whereIn('products.category_id', $categoryIds);
+
+        // اعمال فیلترها، جستجو و مرتب‌سازی
+        $query = $this->applyPriceFilter($query, $request);
+        $query = $this->applySupplierFilter($query, $request);
+        $query = $this->applyStockFilter($query, $request);
+        $query = $this->applySearch($query, $request);
+        $query = $this->applySorting($query, $request);
+
+        $perPage  = $this->resolvePerPage($request);
+        $products = $query->paginate($perPage)->withQueryString();
+
+        // زیردسته‌های مستقیم
+        $subcategories = Category::where('parent_id', $category->id)
+            ->where('is_active', true)
+            ->withCount(['products' => fn($q) => $q->where('is_active', true)->where('status', ProductStatus::ACTIVE)])
+            ->orderBy('sort_order')
+            ->get();
+
+        $sidebarData = $this->getIndexSidebarData($request);
+        $breadcrumbs = $this->buildCategoryBreadcrumb($category);
+        $seoData     = $this->buildCategorySeo($category);
+
+        return view('pages.categories.show', array_merge([
+            'category'      => $category,
+            'subcategories' => $subcategories,
+            'products'      => $products,
+            'activeFilters' => $this->getActiveFilters($request),
+            'sortBy'        => $request->get('sort', 'latest'),
+            'perPage'       => $perPage,
+            'searchQuery'   => $request->get('q', ''),
+            'breadcrumbs'   => $breadcrumbs,
+            'seo'           => $seoData,
+        ], $sidebarData));
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  SEARCH - صفحه نتایج جستجو
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * صفحه نتایج جستجو
+     * URL: /search?q={query}
+     */
+    public function search(Request $request): View
+    {
+        $searchQuery = trim($request->get('q', ''));
+
+        if (empty($searchQuery)) {
+            return redirect()->route('products.index');
+        }
+
+        $query = $this->buildBaseProductQuery();
+        $query = $this->applyFullTextSearch($query, $searchQuery);
+        $query = $this->applyPriceFilter($query, $request);
+        $query = $this->applySupplierFilter($query, $request);
+        $query = $this->applySorting($query, $request);
+
+        $perPage  = $this->resolvePerPage($request);
+        $products = $query->paginate($perPage)->withQueryString();
+
+        $sidebarData = $this->getIndexSidebarData($request);
+
+        return view('pages.products.search', array_merge([
+            'products'      => $products,
+            'searchQuery'   => $searchQuery,
+            'activeFilters' => $this->getActiveFilters($request),
+            'sortBy'        => $request->get('sort', 'latest'),
+            'perPage'       => $perPage,
+            'seo'           => [
+                'title'       => "جستجوی «{$searchQuery}» — " . config('app.name'),
+                'description' => "نتایج جستجو برای «{$searchQuery}» در فروشگاه",
+                'robots'      => 'noindex, follow',
+                'canonical'   => url('/search') . '?q=' . urlencode($searchQuery),
+            ],
+        ], $sidebarData));
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: QUERY BUILDERS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * ساخت کوئری پایه محصولات فعال
+     */
+    private function buildBaseProductQuery(): Builder
+    {
+        return Product::query()
+            ->select([
+                'products.id',
+                'products.title',
+                'products.slug',
+                'products.short_description',
+                'products.sku',
+                'products.category_id',
+                'products.supplier_id',
+                'products.view_count',
+                'products.is_featured',
+                'products.is_active',
+                'products.status',
+                'products.created_at',
+                'products.updated_at',
+            ])
+            ->where('products.is_active', true)
+            ->where('products.status', ProductStatus::ACTIVE)
+            ->with([
+                'category:id,name,slug,icon,parent_id',
+
+                'supplier:id,company_name,brand_name,logo_path,is_verified',
+                'galleries' => function ($q) {
+                    $q->select([
+                        'id', 'product_id', 'file_path', 'file_type',
+                        'alt_text', 'sort_order', 'is_primary',
+                    ])
+                        ->where('file_type', 'image')
+                        ->orderByDesc('is_primary')
+                        ->orderBy('sort_order')
+                        ->limit(1);
+                },
+                'prices' => function ($q) {
+                    $q->select([
+                        'id', 'product_id', 'price_type', 'price',
+                        'min_quantity', 'is_active', 'valid_from', 'valid_until',
+                    ])
+                        ->where('is_active', true)
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_until')
+                                ->orWhere('valid_until', '>=', now());
+                        })
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_from')
+                                ->orWhere('valid_from', '<=', now());
+                        })
+                        ->orderBy('price', 'asc');
+                },
+                'retailPrices' => function ($q) {
+                    $q->select([
+                        'id', 'product_id', 'user_id', 'retail_price', 'is_published',
+                    ])
+                        ->where('is_published', true)
+                        ->orderBy('retail_price', 'asc');
+                },
+            ]);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: FILTERS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * اعتبارسنجی پارامترهای ورودی صفحه لیست
+     */
+    private function validateIndexRequest(Request $request): array
+    {
+        return $request->validate([
+            'q'            => 'nullable|string|max:200',
+            'category'     => 'nullable|string|max:100',
+            'min_price'    => 'nullable|numeric|min:0',
+            'max_price'    => 'nullable|numeric|min:0',
+            'supplier'     => 'nullable|string|max:100',
+            'in_stock'     => 'nullable|in:0,1',
+            'featured'     => 'nullable|in:0,1',
+            'sort'         => 'nullable|string|in:' . implode(',', self::ALLOWED_SORT_OPTIONS),
+            'per_page'     => 'nullable|integer|in:' . implode(',', self::ALLOWED_PER_PAGE),
+            'page'         => 'nullable|integer|min:1',
+            'attributes' => ['nullable', 'array'],
+            'attributes.*' => ['nullable', 'array'],
+            'attributes.*.*' => ['integer', 'exists:attribute_values,id'],
+        ]);
+    }
+
+
+    private function applyAttributeFilter(Builder $query, Request $request): Builder
+    {
+        $selectedAttributes = $request->input('attributes', []);
+
+        if (!is_array($selectedAttributes) || empty($selectedAttributes)) {
+            return $query;
+        }
+
+        $normalizedAttributes = collect($selectedAttributes)
+            ->filter(fn ($value) => is_array($value) && !empty($value))
+            ->map(fn ($value) => collect($value)
+                ->filter(fn ($item) => filled($item) && is_numeric($item))
+                ->map(fn ($item) => (int) $item)
+                ->unique()
+                ->values()
+                ->all()
+            )
+            ->filter(fn ($value) => !empty($value));
+
+        if ($normalizedAttributes->isEmpty()) {
+            return $query;
+        }
+
+        foreach ($normalizedAttributes as $attributeId => $valueIds) {
+            $query->whereHas('attributeValues', function ($attributeValueQuery) use ($attributeId, $valueIds) {
+                $attributeValueQuery
+                    ->where('attribute_values.attribute_id', (int) $attributeId)
+                    ->whereIn('attribute_values.id', $valueIds);
+            });
+        }
+
+        return $query;
+    }
+
+
+
+    /**
+     * فیلتر بر اساس دسته‌بندی (شامل تمام زیردسته‌ها)
+     */
+    private function applyCategoryFilter(Builder $query, Request $request): Builder
+    {
+        if (!$request->filled('category')) {
+            return $query;
+        }
+
+        $category = Cache::remember(
+            "web:category:slug:{$request->category}",
+            self::CACHE_TTL_MEDIUM,
+            fn() => Category::where('slug', $request->category)
+                ->where('is_active', true)
+                ->first()
+        );
+
+        if ($category) {
+            $categoryIds = $this->getAllDescendantIds($category);
+            $query->whereIn('products.category_id', $categoryIds);
+        }
+
+        return $query;
+    }
+
+    /**
+     * فیلتر بر اساس بازه قیمت
+     */
+    private function applyPriceFilter(Builder $query, Request $request): Builder
+    {
+        if (!$request->filled('min_price') && !$request->filled('max_price')) {
+            return $query;
+        }
+
+        $minPrice = $request->filled('min_price')
+            ? (int) ($request->min_price * 10)
+            : null;
+
+        $maxPrice = $request->filled('max_price')
+            ? (int) ($request->max_price * 10)
+            : null;
+
+        $userRole = $this->resolveUserRole();
+
+        if ($userRole === 'retailer_premium') {
+            $query->whereHas('prices', function ($priceQuery) use ($minPrice, $maxPrice) {
+                $priceQuery->where('is_active', true)
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_until')
+                            ->orWhere('valid_until', '>=', now());
+                    });
+
+                if ($minPrice !== null) {
+                    $priceQuery->where('price', '>=', $minPrice);
+                }
+                if ($maxPrice !== null) {
+                    $priceQuery->where('price', '<=', $maxPrice);
+                }
+            });
+        } else {
+            $query->whereHas('retailPrices', function ($priceQuery) use ($minPrice, $maxPrice) {
+                $priceQuery->where('is_published', true);
+
+                if ($minPrice !== null) {
+                    $priceQuery->where('retail_price', '>=', $minPrice);
+                }
+                if ($maxPrice !== null) {
+                    $priceQuery->where('retail_price', '<=', $maxPrice);
+                }
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * فیلتر بر اساس تأمین‌کننده
+     */
+    private function applySupplierFilter(Builder $query, Request $request): Builder
+    {
+        if (!$request->filled('supplier')) {
+            return $query;
+        }
+
+        $supplierSlug = $request->supplier;
+
+        $query->whereHas('supplier', function ($supplierQuery) use ($supplierSlug) {
+            $supplierQuery->where('is_active', true)
+                ->where(function ($sub) use ($supplierSlug) {
+                    $sub->where('brand_name', 'LIKE', "%{$supplierSlug}%")
+                        ->orWhere('company_name', 'LIKE', "%{$supplierSlug}%");
+                });
+        });
+
+        return $query;
+    }
+
+    /**
+     * فیلتر بر اساس وضعیت موجودی
+     */
+    private function applyStockFilter(Builder $query, Request $request): Builder
+    {
+        if (!$request->filled('in_stock')) {
+            return $query;
+        }
+
+        if ($request->in_stock == '1') {
+            $query->where('products.status', '!=', ProductStatus::OUT_OF_STOCK)
+                ->whereHas('prices', function ($q) {
+                    $q->where('is_active', true)
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_until')
+                                ->orWhere('valid_until', '>=', now());
+                        });
+                });
+        }
+
+        return $query;
+    }
+
+    /**
+     * فیلتر محصولات ویژه
+     */
+    private function applyFeaturedFilter(Builder $query, Request $request): Builder
+    {
+        if ($request->filled('featured') && $request->featured == '1') {
+            $query->where('products.is_featured', true);
+        }
+
+        return $query;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: SEARCH
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * جستجوی ساده — استفاده در صفحه index
+     */
+    private function applySearch(Builder $query, Request $request): Builder
+    {
+        if (!$request->filled('q')) {
+            return $query;
+        }
+
+        return $this->applyFullTextSearch($query, trim($request->q));
+    }
+
+    /**
+     * جستجوی پیشرفته چندفیلدی
+     */
+    private function applyFullTextSearch(Builder $query, string $searchTerm): Builder
+    {
+        if (empty($searchTerm)) {
+            return $query;
+        }
+
+        $escapedTerm = str_replace(['%', '_'], ['\%', '\_'], $searchTerm);
+        $likeTerm    = "%{$escapedTerm}%";
+
+        $query->where(function (Builder $q) use ($likeTerm, $escapedTerm) {
+            $q->where('products.title', 'LIKE', $likeTerm)
+                ->orWhere('products.short_description', 'LIKE', $likeTerm)
+                ->orWhere('products.sku', 'LIKE', $likeTerm);
+
+            $q->orWhereHas('supplier', function (Builder $supplierQuery) use ($likeTerm) {
+                $supplierQuery->where('company_name', 'LIKE', $likeTerm)
+                    ->orWhere('brand_name', 'LIKE', $likeTerm);
+            });
+
+            $q->orWhereHas('category', function (Builder $categoryQuery) use ($likeTerm) {
+                $categoryQuery->where('name', 'LIKE', $likeTerm);
+            });
+        });
+
+        $query->orderByRaw("
+            CASE
+                WHEN products.title LIKE ? THEN 1
+                WHEN products.sku = ? THEN 2
+                WHEN products.short_description LIKE ? THEN 3
+                ELSE 4
+            END ASC
+        ", [$likeTerm, $escapedTerm, $likeTerm]);
+
+        return $query;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: SORTING
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * اعمال مرتب‌سازی بر اساس پارامتر ورودی
+     */
+    private function applySorting(Builder $query, Request $request): Builder
+    {
+        $sort = $request->get('sort', 'latest');
+
+        if (!in_array($sort, self::ALLOWED_SORT_OPTIONS)) {
+            $sort = 'latest';
+        }
+
+        return match ($sort) {
+            'latest'      => $query->orderByDesc('products.created_at'),
+            'oldest'      => $query->orderBy('products.created_at'),
+            'popular',
+            'most_viewed' => $query->orderByDesc('products.view_count'),
+            'name_asc'    => $query->orderBy('products.title'),
+            'name_desc'   => $query->orderByDesc('products.title'),
+            'price_low'   => $this->sortByPrice($query, 'asc'),
+            'price_high'  => $this->sortByPrice($query, 'desc'),
+            default       => $query->orderByDesc('products.created_at'),
+        };
+    }
+
+    /**
+     * مرتب‌سازی بر اساس قیمت با Subquery
+     */
+    private function sortByPrice(Builder $query, string $direction): Builder
+    {
+        $userRole = $this->resolveUserRole();
+
+        if ($userRole === 'retailer_premium') {
+            $query->addSelect([
+                'sort_price' => DB::table('product_prices')
+                    ->selectRaw('MIN(price)')
+                    ->whereColumn('product_prices.product_id', 'products.id')
+                    ->where('product_prices.is_active', true)
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_until')
+                            ->orWhere('valid_until', '>=', now());
+                    })
+                    ->limit(1),
+            ]);
+        } else {
+            $query->addSelect([
+                'sort_price' => DB::table('retail_prices')
+                    ->selectRaw('MIN(retail_price)')
+                    ->whereColumn('retail_prices.product_id', 'products.id')
+                    ->where('retail_prices.is_published', true)
+                    ->limit(1),
+            ]);
+        }
+
+        $query->orderByRaw("sort_price IS NULL ASC")
+            ->orderBy('sort_price', $direction);
+
+        return $query;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: PRODUCT DETAIL HELPERS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * افزایش شمارنده بازدید با Rate Limiting
+     */
+    private function incrementViewCount(Product $product, Request $request): void
+    {
+        $key = "product_view:{$product->id}:" . $request->ip();
+
+        RateLimiter::attempt(
+            key: $key,
+            maxAttempts: 1,
+            callback: function () use ($product) {
+                $product->incrementQuietly('view_count');
+            },
+            decaySeconds: 300
+        );
+    }
+
+    /**
+     * تشخیص نقش کاربر فعلی
+     */
+    private function resolveUserRole(): string
+    {
+        $user = Auth::user();
+
+        if (!$user) {
+            return 'guest';
+        }
+
+        if ($user->hasRole('super_admin')) {
+            return 'super_admin';
+        }
+
+        if ($user->hasRole('supplier')) {
+            return 'supplier';
+        }
+
+        if ($user->hasRole('retailer_premium')) {
+            return 'retailer_premium';
+        }
+
+        if ($user->hasRole('retailer_basic')) {
+            return 'retailer_basic';
+        }
+
+        return 'end_user';
+    }
+
+    /**
+     * تعیین داده‌های قابل مشاهده بر اساس نقش کاربر
+     */
+    private function resolveVisibleDataByRole(Product $product, string $userRole): array
+    {
+        $data = [
+            'showSupplierInfo'    => false,
+            'showWholesalePrices' => false,
+            'showRetailPrice'     => true,
+            'canSetRetailPrice'   => false,
+            'supplierInfo'        => null,
+            'wholesalePrices'     => collect(),
+            'retailPrice'         => null,
+            'myRetailPrice'       => null,
+            'profitMargin'        => null,
+        ];
+
+        // قیمت خرده‌فروشی (برای همه)
+        $lowestRetailPrice = $product->retailPrices
+            ->where('is_published', true)
+            ->sortBy('retail_price')
+            ->first();
+
+        $data['retailPrice'] = $lowestRetailPrice;
+
+        switch ($userRole) {
+            case 'retailer_premium':
+                $data['showSupplierInfo']    = true;
+                $data['showWholesalePrices'] = true;
+                $data['canSetRetailPrice']   = true;
+
+                $data['supplierInfo'] = [
+                    'company_name' => $product->supplier->company_name ?? null,
+                    'brand_name'   => $product->supplier->brand_name ?? null,
+                    'logo_path'    => $product->supplier->logo_path ?? null,
+                    'is_verified'  => $product->supplier->is_verified ?? false,
+                    'phone'        => $product->supplier->phone ?? null,
+                    'mobile'       => $product->supplier->mobile ?? null,
+                    'email'        => $product->supplier->email ?? null,
+                    'website'      => $product->supplier->website ?? null,
+                ];
+
+                $data['wholesalePrices'] = $product->prices;
+
+                // قیمت خرده‌فروشی خود کاربر
+                $myPrice = $product->retailPrices
+                    ->where('user_id', Auth::id())
+                    ->first();
+
+                $data['myRetailPrice'] = $myPrice;
+
+                // محاسبه حاشیه سود
+                if ($myPrice && $product->prices->isNotEmpty()) {
+                    $lowestWholesale = $product->prices->min('price');
+                    if ($lowestWholesale > 0) {
+                        $profitAmount     = $myPrice->retail_price - $lowestWholesale;
+                        $profitPercentage = round(($profitAmount / $lowestWholesale) * 100, 1);
+
+                        $data['profitMargin'] = [
+                            'wholesale_price'   => $lowestWholesale,
+                            'retail_price'      => $myPrice->retail_price,
+                            'profit_amount'     => $profitAmount,
+                            'profit_percentage' => $profitPercentage,
+                        ];
+                    }
+                }
+                break;
+
+            case 'retailer_basic':
+                $data['canSetRetailPrice'] = true;
+                $data['myRetailPrice'] = $product->retailPrices
+                    ->where('user_id', Auth::id())
+                    ->first();
+                break;
+
+            case 'supplier':
+            case 'super_admin':
+                $data['showSupplierInfo']    = true;
+                $data['showWholesalePrices'] = true;
+                $data['supplierInfo']        = $product->supplier;
+                $data['wholesalePrices']     = $product->prices;
+                break;
+
+            case 'end_user':
+            case 'guest':
+            default:
+                break;
+        }
+
+        return $data;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: RELATED & RECENTLY VIEWED
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * محصولات مرتبط (هم‌دسته‌بندی)
+     */
+    private function getRelatedProducts(Product $product, int $limit = 8): Collection
+    {
+        $cacheKey = "web:product:{$product->id}:related:{$limit}";
+
+        return Cache::remember($cacheKey, self::CACHE_TTL_SHORT, function () use ($product, $limit) {
+            return Product::where('category_id', $product->category_id)
+                ->where('id', '!=', $product->id)
+                ->where('is_active', true)
+                ->where('status', ProductStatus::ACTIVE)
+                ->with([
+                    'galleries' => fn($q) => $q->where('file_type', 'image')
+                        ->orderByDesc('is_primary')
+                        ->orderBy('sort_order')
+                        ->limit(1),
+                    'retailPrices' => fn($q) => $q->where('is_published', true)
+                        ->orderBy('retail_price')
+                        ->limit(1),
+                    'category:id,name,slug',
+                ])
+                ->inRandomOrder()
+                ->limit($limit)
+                ->get();
+        });
+    }
+
+    /**
+     * ذخیره محصول در لیست بازدیدهای اخیر (Session)
+     */
+    private function trackRecentlyViewed(int $productId, Request $request): void
+    {
+        $recentIds = session()->get('recently_viewed', []);
+
+        $recentIds = array_values(array_diff($recentIds, [$productId]));
+        array_unshift($recentIds, $productId);
+
+        $recentIds = array_slice($recentIds, 0, 20);
+
+        session()->put('recently_viewed', $recentIds);
+    }
+
+    /**
+     * دریافت محصولات اخیراً بازدید شده
+     */
+    private function getRecentlyViewed(int $excludeProductId, Request $request, int $limit = 8): Collection
+    {
+        $recentIds = session()->get('recently_viewed', []);
+
+        $recentIds = array_values(array_diff($recentIds, [$excludeProductId]));
+        $recentIds = array_slice($recentIds, 0, $limit);
+
+        if (empty($recentIds)) {
+            return collect();
+        }
+
+        return Product::whereIn('id', $recentIds)
+            ->where('is_active', true)
+            ->where('status', ProductStatus::ACTIVE)
+            ->with([
+                'galleries' => fn($q) => $q->where('file_type', 'image')
+                    ->orderByDesc('is_primary')
+                    ->orderBy('sort_order')
+                    ->limit(1),
+                'retailPrices' => fn($q) => $q->where('is_published', true)
+                    ->orderBy('retail_price')
+                    ->limit(1),
+                'category:id,name,slug',
+            ])
+            ->get()
+            ->sortBy(function ($product) use ($recentIds) {
+                return array_search($product->id, $recentIds);
+            });
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: SIDEBAR & VIEW DATA
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * داده‌های ساید‌بار صفحه لیست (کش شده)
+     */
+    private function getIndexSidebarData(Request $request): array
+    {
+        $filterableAttributes = collect();
+        $selectedAttributeFilters = $request->input('attributes', []);
+
+        $categoriesTree = Cache::remember('categories.tree.active', now()->addHours(6), function () {
+            return Category::query()
+                ->whereNull('parent_id')
+                ->where('is_active', true)
+                // محاسبه تعداد محصولات مستقیم متصل به دسته‌های ریشه
+                ->withCount(['products as total_products_count' => function ($query) {
+                    $query->where('products.is_active', true)
+                        ->where('products.status', 'active');
+                }])
+                ->with([
+                    'children' => function ($query) {
+                        $query->where('is_active', true)
+                            ->orderBy('sort_order')
+                            // محاسبه تعداد محصولات مستقیم برای فرزندان
+                            ->withCount(['products as total_products_count' => function ($q) {
+                                $q->where('products.is_active', true)
+                                    ->where('products.status', 'active');
+                            }])
+                            ->with([
+                                'children' => function ($subQuery) {
+                                    $subQuery->where('is_active', true)
+                                        ->orderBy('sort_order')
+                                        // محاسبه تعداد محصولات برای فرزندان سطح سوم
+                                        ->withCount(['products as active_products_count' => function ($sq) {
+                                            $sq->where('products.is_active', true)
+                                                ->where('products.status', 'active');
+                                        }]);
+                                }
+                            ]);
+                    }
+                ])
+                ->orderBy('sort_order')
+                ->get();
+        });
+
+        $priceRange = Cache::remember('products.price_range', now()->addHours(1), function () {
+            return [
+                'min' => RetailPrice::query()->where('is_published', true)->min('retail_price') ?? 0,
+                'max' => RetailPrice::query()->where('is_published', true)->max('retail_price') ?? 0,
+            ];
+        });
+
+        $suppliers = Supplier::query()
+            ->select('id', 'company_name', 'brand_name', 'logo_path', 'is_verified')
+            ->where('is_active', true)
+            ->orderBy('brand_name')
+            ->get();
+
+        $sortOptions = [
+            'latest' => 'جدیدترین',
+            'oldest' => 'قدیمی‌ترین',
+            'price_asc' => 'ارزان‌ترین',
+            'price_desc' => 'گران‌ترین',
+            'popular' => 'پربازدیدترین',
+        ];
+
+        $perPageOptions = [24, 48, 72, 96];
+
+        if ($request->filled('category')) {
+            $category = Category::query()
+                ->where('slug', $request->string('category')->toString())
+                ->first();
+
+            if ($category) {
+                $categoryIds = $category->descendantsAndSelf()->pluck('id');
+
+                $filterableAttributes = Attribute::query()
+                    ->where('is_filterable', true)
+                    ->whereHas('categories', function ($query) use ($categoryIds) {
+                        $query->whereIn('categories.id', $categoryIds);
+                    })
+                    ->with([
+                        'values' => function ($query) use ($categoryIds) {
+                            $query->whereHas('products', function ($productQuery) use ($categoryIds) {
+                                $productQuery
+                                    ->whereIn('products.category_id', $categoryIds)
+                                    ->where('products.is_active', true)
+                                    ->where('products.status', 'active');
+                            })->orderBy('value');
+                        },
+                    ])
+                    ->orderBy('name')
+                    ->get()
+                    ->filter(fn ($attribute) => $attribute->values->isNotEmpty())
+                    ->values();
+            }
+        }
+
+        return [
+            'categories' => $categoriesTree,
+            'priceRange' => $priceRange,
+            'suppliers' => $suppliers,
+            'sortOptions' => $sortOptions,
+            'perPageOptions' => $perPageOptions,
+            'filterableAttributes' => $filterableAttributes,
+            'selectedAttributeFilters' => $selectedAttributeFilters,
+        ];
+    }
+
+    /**
+     * لیست گزینه‌های مرتب‌سازی
+     */
+    private function getSortOptions(): array
+    {
+        return [
+            'latest'      => 'جدیدترین',
+            'oldest'      => 'قدیمی‌ترین',
+            'popular'     => 'محبوب‌ترین',
+            'most_viewed' => 'پربازدیدترین',
+            'price_low'   => 'ارزان‌ترین',
+            'price_high'  => 'گران‌ترین',
+            'name_asc'    => 'نام (الف-ی)',
+            'name_desc'   => 'نام (ی-الف)',
+        ];
+    }
+
+    /**
+     * فیلترهای فعال فعلی (برای نمایش badge)
+     */
+    private function getActiveFilters(Request $request): array
+    {
+        $filters = [];
+
+        if ($request->filled('category')) {
+            $category = Category::where('slug', $request->category)->first();
+            $filters['category'] = [
+                'label' => 'دسته‌بندی: ' . ($category->name ?? $request->category),
+                'key'   => 'category',
+                'value' => $request->category,
+            ];
+        }
+
+        if ($request->filled('min_price')) {
+            $filters['min_price'] = [
+                'label' => 'حداقل قیمت: ' . number_format($request->min_price) . ' تومان',
+                'key'   => 'min_price',
+                'value' => $request->min_price,
+            ];
+        }
+
+        if ($request->filled('max_price')) {
+            $filters['max_price'] = [
+                'label' => 'حداکثر قیمت: ' . number_format($request->max_price) . ' تومان',
+                'key'   => 'max_price',
+                'value' => $request->max_price,
+            ];
+        }
+
+        if ($request->filled('supplier')) {
+            $filters['supplier'] = [
+                'label' => 'تأمین‌کننده: ' . $request->supplier,
+                'key'   => 'supplier',
+                'value' => $request->supplier,
+            ];
+        }
+
+        if ($request->filled('in_stock') && $request->in_stock == '1') {
+            $filters['in_stock'] = [
+                'label' => 'فقط موجود',
+                'key'   => 'in_stock',
+                'value' => '1',
+            ];
+        }
+
+        if ($request->filled('featured') && $request->featured == '1') {
+            $filters['featured'] = [
+                'label' => 'فقط ویژه',
+                'key'   => 'featured',
+                'value' => '1',
+            ];
+        }
+
+        if ($request->filled('q')) {
+            $filters['search'] = [
+                'label' => 'جستجو: ' . $request->q,
+                'key'   => 'q',
+                'value' => $request->q,
+            ];
+        }
+
+        $selectedAttributes = $request->input('attributes', []);
+
+        if (is_array($selectedAttributes) && !empty($selectedAttributes)) {
+            $attributeValueIds = collect($selectedAttributes)
+                ->filter(fn ($valueIds) => is_array($valueIds) && !empty($valueIds))
+                ->flatMap(fn ($valueIds) => $valueIds)
+                ->filter(fn ($valueId) => filled($valueId) && is_numeric($valueId))
+                ->map(fn ($valueId) => (int) $valueId)
+                ->unique()
+                ->values();
+
+            if ($attributeValueIds->isNotEmpty()) {
+                $attributeValues = AttributeValue::query()
+                    ->with('attribute')
+                    ->whereIn('id', $attributeValueIds)
+                    ->get()
+                    ->keyBy('id');
+
+                foreach ($selectedAttributes as $attributeId => $valueIds) {
+                    if (!is_array($valueIds) || empty($valueIds)) {
+                        continue;
+                    }
+
+                    foreach ($valueIds as $valueId) {
+                        if (!filled($valueId) || !is_numeric($valueId)) {
+                            continue;
+                        }
+
+                        $valueId = (int) $valueId;
+                        $attributeValue = $attributeValues->get($valueId);
+
+                        if (!$attributeValue || !$attributeValue->attribute) {
+                            continue;
+                        }
+
+                        $updatedAttributes = $selectedAttributes;
+
+                        if (isset($updatedAttributes[$attributeId]) && is_array($updatedAttributes[$attributeId])) {
+                            $updatedAttributes[$attributeId] = array_values(array_filter(
+                                $updatedAttributes[$attributeId],
+                                fn ($selectedValueId) => (int) $selectedValueId !== $valueId
+                            ));
+
+                            if (empty($updatedAttributes[$attributeId])) {
+                                unset($updatedAttributes[$attributeId]);
+                            }
+                        }
+
+                        $query = $request->except(['page']);
+                        $query['attributes'] = $updatedAttributes;
+
+                        if (empty($query['attributes'])) {
+                            unset($query['attributes']);
+                        }
+
+                        $filters["attribute_{$attributeId}_{$valueId}"] = [
+                            'label' => $attributeValue->attribute->name . ': ' . $attributeValue->value,
+                            'key' => 'attributes',
+                            'value' => $valueId,
+                            'remove_url' => route('products.index', $query),
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $filters;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: BREADCRUMBS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * ساخت breadcrumb برای صفحه محصول
+     */
+    private function buildProductBreadcrumb($product): array
+    {
+        $breadcrumbs = [];
+
+        $breadcrumbs[] = [
+            'name' => 'خانه',
+            'url'  => route('home'),
+        ];
+
+        if ($product->category) {
+            $categoryChain = $this->getCategoryAncestors($product->category);
+
+            foreach ($categoryChain as $cat) {
+                $breadcrumbs[] = [
+                    'name' => $cat->name ?? 'دسته‌بندی',
+                    'url'  => route('categories.show', ['category' => $cat->slug ?? 'unknown']),
+                ];
+            }
+        }
+
+        $breadcrumbs[] = [
+            'name' => $product->title ?? 'محصول',
+            'url'  => null,
+        ];
+
+        return $breadcrumbs;
+    }
+
+    /**
+     * ساخت breadcrumb برای صفحه دسته‌بندی
+     */
+    // ProductController.php
+
+private function buildCategoryBreadcrumb(Category $category): array
+{
+    $breadcrumbs = [
+        ['name' => 'خانه', 'url' => route('home')],
+        ['name' => 'محصولات', 'url' => route('products.index')],
+    ];
+
+    $chain = $this->getCategoryChain($category);
+
+    foreach ($chain as $index => $cat) {
+        $isLast = ($index === count($chain) - 1);
+        $breadcrumbs[] = [
+            'name' => $cat->name,
+            'url'  => $isLast ? null : route('categories.show', ['category' => $cat->slug]),
+        ];
+    }
+
+    return $breadcrumbs;
+}
+
+
+
+    /**
+     * بازیابی بازگشتی اجداد دسته‌بندی (از ریشه تا فعلی)
+     */
+   // ProductController.php
+
+private function eagerLoadParents(Category $category, int $depth =2): void
+{
+    $relations = [];
+    $path = 'parent';
+
+    for ($i = 0; $i < $depth; $i++) {
+        $relations[] = $path;
+        $path .= '.parent';
+    }
+
+    $category->loadMissing($relations);
+}
+
+private function getCategoryAncestors(Category $category): array
+{
+    $this->eagerLoadParents($category);
+
+    $ancestors = [];
+    $current   = $category;
+    $visited   = [];
+
+    while ($current) {
+        if (in_array($current->id, $visited, true)) {
+            break;
+        }
+
+        $visited[] = $current->id;
+        array_unshift($ancestors, $current);
+
+        $current = $current->parent; // بدون کوئری جدید
+    }
+
+    return $ancestors;
+}
+
+private function getCategoryChain(Category $category): array
+{
+    $this->eagerLoadParents($category);
+
+    $chain   = [$category];
+    $current = $category;
+
+    while ($current->parent) {
+        array_unshift($chain, $current->parent);
+        $current = $current->parent; // بدون کوئری جدید
+    }
+
+    return $chain;
+}
+
+    /**
+     * تمام شناسه‌های زیردسته‌ها (بازگشتی)
+     */
+    private function getAllDescendantIds(Category $category): array
+    {
+        $ids = [$category->id];
+
+        $children = Category::where('parent_id', $category->id)
+            ->where('is_active', true)
+            ->get();
+
+        foreach ($children as $child) {
+            $ids = array_merge($ids, $this->getAllDescendantIds($child));
+        }
+
+        return $ids;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: SEO
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * SEO برای صفحه محصول
+     */
+    private function buildSeoData(Product $product, array $breadcrumbs): array
+    {
+        $categoryName = $product->category?->name ?? 'محصولات';
+        $siteName = config('app.name', 'فروشگاه B2B');
+
+        $primaryImage = $product->galleries?->where('is_primary', true)->first()
+            ?? $product->galleries?->first();
+
+        $imageUrl = $primaryImage
+            ? asset('storage/' . $primaryImage->file_path)
+            : asset('images/default-product.jpg');
+
+        return [
+            'title'             => $product->seo_title
+                ?? $product->title . ' | ' . $categoryName . ' | ' . $siteName,
+            'description'       => $product->seo_description
+                ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 160),
+            'keywords'          => $product->seo_keywords
+                ?? $product->title . ',' . $categoryName,
+            'canonical_url'     => $product->seo_canonical_url
+                ?? url('/products/' . $product->slug),
+            'og_title'          => $product->seo_title ?? $product->title ?? '',
+            'og_description'    => $product->seo_description
+                ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 160),
+            'og_image'          => $imageUrl,
+            'og_type'           => 'product',
+            'og_url'            => url('/products/' . $product->slug),
+            'schema'            => $this->buildProductSchema($product, $breadcrumbs),
+            'breadcrumb_schema' => $this->buildBreadcrumbSchema($breadcrumbs),
+        ];
+    }
+
+    /**
+     * Schema.org Product JSON-LD
+     */
+    private function buildProductSchema(Product $product, array $breadcrumbs): array
+    {
+        $schema = [
+            '@context'    => 'https://schema.org',
+            '@type'       => 'Product',
+            'name'        => $product->title ?? '',
+            'description' => strip_tags($product->short_description ?? ''),
+            'sku'         => $product->sku ?? '',
+            'url'         => url('/products/' . $product->slug),
+        ];
+
+        $primaryImage = $product->galleries?->where('is_primary', true)->first();
+        if ($primaryImage) {
+            $schema['image'] = asset('storage/' . $primaryImage->file_path);
+        }
+
+        if ($product->category) {
+            $schema['category'] = $product->category->name ?? '';
+        }
+
+        if ($product->supplier) {
+            $schema['brand'] = [
+                '@type' => 'Brand',
+                'name'  => $product->supplier->brand_name ?? $product->supplier->company_name ?? config('app.name'),
+            ];
+        }
+
+        $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+        if ($retailPrice) {
+            $schema['offers'] = [
+                '@type'         => 'Offer',
+                'priceCurrency' => 'IRR',
+                'price'         => $retailPrice->retail_price ?? 0,
+                'availability'  => 'https://schema.org/InStock',
+                'url'           => url('/products/' . $product->slug),
+            ];
+        }
+
+        return $schema;
+    }
+
+    /**
+     * Schema.org BreadcrumbList JSON-LD
+     */
+    private function buildBreadcrumbSchema(array $breadcrumbs): array
+    {
+        $items = [];
+        foreach ($breadcrumbs as $index => $crumb) {
+            $items[] = [
+                '@type'    => 'ListItem',
+                'position' => $index + 1,
+                'name'     => $crumb['name'] ?? '',
+                'item'     => $crumb['url'] ?? request()->url(),
+            ];
+        }
+
+        return [
+            '@context'        => 'https://schema.org',
+            '@type'           => 'BreadcrumbList',
+            'itemListElement' => $items,
+        ];
+    }
+
+    /**
+     * SEO برای صفحه لیست
+     */
+    private function buildIndexSeo(Request $request): array
+    {
+        $title = 'محصولات';
+        $description = 'لیست محصولات فروشگاه — مشاهده و مقایسه انواع محصولات با قیمت‌های رقابتی';
+
+        if ($request->filled('q')) {
+            $title = "جستجوی «{$request->q}» در محصولات";
+            $description = "نتایج جستجوی «{$request->q}» در فروشگاه";
+        }
+
+        if ($request->filled('category')) {
+            $category = Category::where('slug', $request->category)->first();
+            if ($category) {
+                $title = "محصولات {$category->name}";
+                $description = $category->seo_description
+                    ?: "مشاهده تمام محصولات دسته‌بندی {$category->name}";
+            }
+        }
+
+        return [
+            'title'       => $title . ' — ' . config('app.name'),
+            'description' => mb_substr($description, 0, 160),
+            'keywords'    => $request->get('q', 'محصولات, خرید عمده, فروشگاه B2B'),
+            'canonical'   => $request->fullUrlWithQuery(
+                array_diff_key($request->query(), ['page' => null])
+            ),
+            'robots'      => 'index, follow',
+            'og' => [
+                'title'       => $title,
+                'description' => mb_substr($description, 0, 200),
+                'type'        => 'website',
+                'url'         => $request->fullUrl(),
+                'image'       => asset('images/og-default.jpg'),
+            ],
+            'schema' => [
+                '@context' => 'https://schema.org',
+                '@type'    => 'ItemList',
+                'name'     => $title,
+                'url'      => $request->fullUrl(),
+            ],
+        ];
+    }
+
+    /**
+     * SEO برای صفحه دسته‌بندی
+     */
+    private function buildCategorySeo(Category $category): array
+    {
+        $title       = $category->seo_title ?: "محصولات {$category->name}";
+        $description = $category->seo_description
+            ?: "مشاهده و خرید عمده محصولات دسته‌بندی {$category->name}";
+
+        return [
+            'title'       => $title . ' — ' . config('app.name'),
+            'description' => mb_substr($description, 0, 160),
+            'keywords'    => $category->seo_keywords ?: $category->name,
+            'canonical'   => route('categories.show', ['category' => $category->slug]),
+            'robots'      => 'index, follow',
+            'og' => [
+                'title'       => $title,
+                'description' => mb_substr($description, 0, 200),
+                'type'        => 'website',
+                'url'         => route('categories.show', ['category' => $category->slug]),
+                'image'       => $category->image_path
+                    ? asset('storage/' . $category->image_path)
+                    : asset('images/og-default.jpg'),
+            ],
+            'schema' => [
+                '@context' => 'https://schema.org',
+                '@type'    => 'ItemList',
+                'name'     => $title,
+                'url'      => route('categories.show', ['category' => $category->slug]),
+            ],
+        ];
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRIVATE: UTILITIES
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * تعیین تعداد آیتم‌ها در هر صفحه
+     */
+    private function resolvePerPage(Request $request): int
+    {
+        $perPage = (int) $request->get('per_page', self::DEFAULT_PER_PAGE);
+
+        return in_array($perPage, self::ALLOWED_PER_PAGE)
+            ? $perPage
+            : self::DEFAULT_PER_PAGE;
+    }
+}

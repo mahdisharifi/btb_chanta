@@ -1,0 +1,9 @@
+<!-- public/images/placeholders/product-default.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+  <rect width="400" height="400" fill="#F9FAFB" rx="16"/>
+  <rect width="400" height="400" fill="none" stroke="#E5E7EB" stroke-width="2" rx="16"/>
+  <circle cx="200" cy="155" r="45" fill="#F3F4F6"/>
+  <text x="200" y="170" text-anchor="middle" font-size="36">🖼️</text>
+  <text x="200" y="235" text-anchor="middle" fill="#9CA3AF" font-size="14" font-family="Tahoma,Arial,sans-serif">بدون تصویر</text>
+  <text x="200" y="258" text-anchor="middle" fill="#D1D5DB" font-size="11" font-family="Arial,sans-serif">No Image Available</text>
+</svg>
