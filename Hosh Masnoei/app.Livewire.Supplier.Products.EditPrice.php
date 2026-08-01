@@ -80,6 +80,7 @@ class EditPrice extends Component
             // Validate general supplier product info
             'sku' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
+
         ];
     }
 
@@ -125,6 +126,8 @@ class EditPrice extends Component
                         'product_id' => $this->product->id, // این خط اضافه شود
                         'price' => $data['price'],
                         'min_quantity' => $data['min_quantity'] ?? 1,
+                        'is_active' => $this->is_active,
+
 
                     ]
                 );

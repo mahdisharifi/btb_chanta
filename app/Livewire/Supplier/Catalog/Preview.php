@@ -30,9 +30,11 @@ class Preview extends Component
     public function mount($catalog)
     {
         $user = Auth::user();
-        $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin') || $user->hasRole('super-admin');
+        $this->isAdmin = $user->hasRole('admin')
+            || $user->hasRole('super_admin')
+            || $user->hasRole('super-admin');
 
-        if ($isAdmin) {
+        if ($this->isAdmin) {
             $this->template = CatalogTemplate::findOrFail($catalog);
 
             if ($this->template->supplier_id) {
@@ -85,7 +87,7 @@ class Preview extends Component
             $this->selectedPriceTypes = PriceType::values();
         }
 
-        $this->loadCatalogData($isAdmin ? null : $this->supplier->id);
+        $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
     }
 
     private function loadCatalogData($supplierId = null)
@@ -158,11 +160,23 @@ class Preview extends Component
                 }
             } else {
                 // تامین‌کننده: فقط تامین‌کننده جاری
-                $productSupplier = $product->productSuppliers->first();
-                if ($productSupplier && $productSupplier->prices) {
-                    foreach ($productSupplier->prices as $p) {
-                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                        $prices[$key] = $p->price;
+                $prices = [];
+                if ($this->isAdmin) {
+                    foreach ($product->productSuppliers as $ps) {
+                        foreach ($ps->prices as $p) {
+                            $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                            if (!isset($prices[$key]) || $p->price < $prices[$key]) {
+                                $prices[$key] = $p->price;
+                            }
+                        }
+                    }
+                } else {
+                    $productSupplier = $product->productSuppliers->first();
+                    if ($productSupplier && $productSupplier->prices) {
+                        foreach ($productSupplier->prices as $p) {
+                            $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                            $prices[$key] = $p->price;
+                        }
                     }
                 }
             }

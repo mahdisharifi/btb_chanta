@@ -75,6 +75,7 @@
             white-space: nowrap;
         }
 
+
         .price-value {
             font-size: 12px;
             font-weight: bold;
