@@ -2,90 +2,81 @@
 
 namespace App\Services;
 
-use App\Models\CatalogTemplate;
-use App\Models\ProductSupplier;
+use App\Models\Product;
+use App\Models\ProductPrice;
+use App\Enums\ProductStatus;
+use App\Enums\PriceType;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
-use Livewire\Attributes\Layout;
-
 
 class CatalogQueryService
 {
-    /**
-     * بازیابی و فیلتر کردن محصولات برای یک کاتالوگ مشخص
-     */
-    public function getProductsForTemplate(CatalogTemplate $template): Builder
+    public function getProductsForTemplate($template)
     {
-        // تشخیص نوع کاتالوگ بر اساس وجود supplier_id یا پیکربندی config
-        $supplierId = $template->supplier_id;
+        $settings = $template->settings ?? [];
         $config = $template->config ?? [];
-        $supplierIds = $config['supplier_ids'] ?? [];
 
-        $query = ProductSupplier::query()
-            ->where('product_suppliers.is_active', true)
-            ->join('products', 'product_suppliers.product_id', '=', 'products.id')
-            ->select('product_suppliers.*', 'products.name as product_name', 'products.category_id');
+        $supplierIds = $config['supplier_ids'] ?? ($template->supplier_id ? [$template->supplier_id] : []);
+        $categoryIds = $settings['categories'] ?? [];
+        $selectedPriceTypes = $settings['price_types'] ?? PriceType::values();
 
-        // فیلتر بر اساس تامین‌کننده (یک یا چند تامین‌کننده)
-        if ($supplierId) {
-            $query->where('product_suppliers.supplier_id', $supplierId);
-        } elseif (!empty($supplierIds)) {
-            $query->whereIn('product_suppliers.supplier_id', $supplierIds);
+        $query = Product::query()
+            ->where('status', ProductStatus::ACTIVE->value);
+
+        // ۱. فیلتر دسته‌بندی
+        if (!empty($categoryIds)) {
+            $query->whereIn('category_id', $categoryIds);
         }
 
-        // فیلتر بر اساس دسته‌بندی‌ها (در قالب JSON در دیتابیس ذخیره شده است)
-        if (!empty($template->categories)) {
-            $categories = (array) $template->categories;
-            $query->where(function ($q) use ($categories) {
-                foreach ($categories as $categoryId) {
-                    $q->orWhere('products.category_id', $categoryId);
-                }
-            });
-        }
+        // ۲. فیلتر تامین‌کننده و قیمت‌های فعال و معتبر
+        $query->whereHas('productSuppliers', function (Builder $q) use ($supplierIds, $selectedPriceTypes) {
+            $q->where('is_active', true)
+                ->whereIn('supplier_id', $supplierIds)
+                ->whereHas('prices', function ($priceQuery) use ($selectedPriceTypes) {
+                    $priceQuery->activeAndValid()
+                        ->whereIn('price_type', $selectedPriceTypes);
+                });
+        });
 
-        // اعمال ترتیب‌ مرتب‌سازی‌های سه‌گانه کاتالوگ
-        $query = $this->applySorting($query, $template);
+        // ۳. Eager Loading بهینه
+        $query->with([
+            'category',
+            'primaryImage',
+            'productSuppliers' => function ($q) use ($supplierIds, $selectedPriceTypes) {
+                $q->where('is_active', true)
+                    ->whereIn('supplier_id', $supplierIds)
+                    ->with(['prices' => function ($priceQuery) use ($selectedPriceTypes) {
+                        $priceQuery->activeAndValid()
+                            ->whereIn('price_type', $selectedPriceTypes);
+                    }]);
+            }
+        ]);
 
-        return $query;
+        // ۴. مرتب‌سازی با Subquery (پرفرمنس بهینه)
+        $this->applySorting($query, $settings['sort'] ?? []);
+
+        return $query->get();
     }
 
-    /**
-     * اعمال مرتب‌سازی پویا بر اساس تنظیمات کاتالوگ
-     */
-    protected function applySorting($query, CatalogTemplate $template)
+    protected function applySorting(Builder $query, array $sorts)
     {
-        $sorts = $template->settings['sort'] ?? [];
-        $sortApplied = false;
-
         foreach ($sorts as $sort) {
             $field = $sort['field'] ?? null;
-            $dir = strtolower($sort['dir'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
+            $direction = $sort['direction'] ?? 'asc';
+            if (!$field) continue;
 
-            if (! $field) {
-                continue;
+            if (str_starts_with($field, 'price_')) {
+                $type = str_replace('price_', '', $field);
+                $query->orderBy(
+                    ProductPrice::select('price')
+                        ->whereColumn('product_id', 'products.id')
+                        ->where('price_type', $type)
+                        ->activeAndValid()
+                        ->limit(1),
+                    $direction
+                );
+            } else {
+                $query->orderBy($field, $direction);
             }
-
-            $column = match (true) {
-                $field === 'category' => 'products.category_id',
-                $field === 'name' => 'products.title',
-                $field === 'created_at' => 'products.created_at',
-                $field === 'price_updated_at' => 'product_suppliers.price_updated_at',
-                str_starts_with($field, 'price_') => 'product_suppliers.price',
-                default => null,
-            };
-
-            if (! $column) {
-                continue;
-            }
-
-            $query->orderBy($column, $dir);
-            $sortApplied = true;
         }
-
-        if (! $sortApplied) {
-            $query->orderBy('products.title');
-        }
-
-        return $query;
     }
 }
