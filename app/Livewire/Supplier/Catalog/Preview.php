@@ -12,6 +12,8 @@ use PDF;
 
 class Preview extends Component
 {
+    public bool $isAdmin = false;
+
     public $catalog;
     public $supplierLogoUrl;
     public $supplierLogoPath;
@@ -142,13 +144,26 @@ class Preview extends Component
 
         foreach ($products as $product) {
             $catName = $product->category?->name ?? 'بدون دسته‌بندی';
-            $productSupplier = $product->productSuppliers->first();
 
             $prices = [];
-            if ($productSupplier && $productSupplier->prices) {
-                foreach ($productSupplier->prices as $p) {
-                    $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                    $prices[$key] = $p->price;
+            if ($this->isAdmin && !empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
+                // ادمین: کمترین قیمت هر نوع از بین همه تامین‌کنندگان انتخابی
+                foreach ($product->productSuppliers as $ps) {
+                    foreach ($ps->prices as $p) {
+                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                        if (!isset($prices[$key]) || $p->price < $prices[$key]) {
+                            $prices[$key] = $p->price;
+                        }
+                    }
+                }
+            } else {
+                // تامین‌کننده: فقط تامین‌کننده جاری
+                $productSupplier = $product->productSuppliers->first();
+                if ($productSupplier && $productSupplier->prices) {
+                    foreach ($productSupplier->prices as $p) {
+                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                        $prices[$key] = $p->price;
+                    }
                 }
             }
 
