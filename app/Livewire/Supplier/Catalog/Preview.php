@@ -186,16 +186,34 @@ class Preview extends Component
             }
 
             $allItems[] = [
-                'id'             => $product->id,
-                'title'          => $product->title,
-                'sku'            => $product->sku,
-                'image'          => $product->primaryImage?->getVersionPath('sm') ?? $product->primaryImage?->file_path,
-                'brand'          => $product->brand,
-                'category_name'  => $catName,
-                'category_order' => $product->category?->sort_order ?? 0,
-                'prices'         => $prices,
+                'id'               => $product->id,
+                'title'            => $product->title,
+                'sku'              => $product->sku,
+                'image'            => $product->primaryImage?->getVersionPath('sm') ?? $product->primaryImage?->file_path,
+                'brand'            => $product->brand,
+                'category_name'    => $catName,
+                'category_order'   => $product->category?->sort_order ?? 0,
+                'prices'           => $prices,
+                'created_at'       => $product->created_at?->timestamp ?? 0,
+                'price_updated_at' => $product->productSuppliers->max('price_updated_at')?->timestamp ?? 0,
             ];
+
         }
+
+        $sorts = $this->settings['sort'] ?? [];
+        if (!empty($sorts)) {
+            usort($allItems, function ($a, $b) use ($sorts) {
+                foreach ($sorts as $sort) {
+                    $field = $sort['field'] ?? null;
+                    if (!$field) continue;
+                    $dir = strtolower($sort['dir'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
+                    $result = $this->compareItems($a, $b, $field, $dir);
+                    if ($result !== 0) return $result;
+                }
+                return 0;
+            });
+        }
+
 
         $grouped = [];
         if ($this->separateCategories) {
@@ -238,7 +256,12 @@ class Preview extends Component
             'category_order' => 'category_order',
             'sku'            => 'sku',
             'brand'          => 'brand',
+            'name'           => 'title',            // کلید فرم ادمین
+            'created_at'     => 'created_at',
+            'price_updated_at' => 'price_updated_at',
         ];
+
+
 
         $key = $map[$sortKey] ?? $sortKey;
         return $item[$key] ?? '';

@@ -183,7 +183,6 @@ class Form extends Component
         $settings['sort'] = $sorts;
         $settings['categories'] = $selectedCategories;
         $settings['price_types'] = $selectedPriceTypes;
-
         $data = [
             'name' => trim($validated['name']),
             'supplier_id' => count($supplierIds) === 1 ? $supplierIds[0] : null,
