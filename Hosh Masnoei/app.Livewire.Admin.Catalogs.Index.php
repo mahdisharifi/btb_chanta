@@ -27,6 +27,7 @@ class Index extends Component
         return view('livewire.admin.catalogs.index', [
             'catalogs' => CatalogTemplate::query()
                 ->latest('id')
+                ->whereNull('supplier_id')
                 ->paginate(15),
         ]);
     }

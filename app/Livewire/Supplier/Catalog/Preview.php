@@ -294,12 +294,12 @@ class Preview extends Component
             'supplier'           => $this->supplier,
         ];
 
-        $pdf = PDF::loadView($view, $data, [], [
-            'format' => 'A4',
-            'margin_left'   => 10,
-            'margin_right'  => 10,
-            'margin_top'    => 10,
-            'margin_bottom' => 10,
+        $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
+            'format'        => 'A4',
+            'margin_left'   => 6,   // قبلاً 10
+            'margin_right'  => 6,   // قبلاً 10
+            'margin_top'    => 6,   // قبلاً 10
+            'margin_bottom' => 6,   // قبلاً 10
             'mode'          => 'utf-8',
         ]);
 
