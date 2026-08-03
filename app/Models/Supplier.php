@@ -53,6 +53,10 @@ class Supplier extends Model
         // Legal info
         'tax_id',
         'national_id',
+        'business_license',
+        'economic_code',
+        'national_card_file',
+        'business_license_file',
 
         // Status flags (legacy)
         'is_verified',
@@ -127,6 +131,11 @@ class Supplier extends Model
     public function isRetailer(): bool
     {
         return $this->type === 'retailer';
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->type === 'admin';
     }
 
     public function isPending(): bool

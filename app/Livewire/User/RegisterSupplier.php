@@ -114,15 +114,32 @@ class RegisterSupplier extends Component
         // بارگذاری لیست استان‌ها
         $this->provinces = Province::all();
 
+        // بارگذاری شبکه‌های اجتماعی فعال
+        $this->availableSocialNetworks = SocialNetwork::where('is_active', true)->get();
+
+        // بررسی و ایجاد رکورد supplier برای ادمین
+        if ($user->hasRole(['admin', 'super_admin']) && !$user->supplier) {
+            $this->supplier = Supplier::create([
+                'user_id' => $user->id,
+                'type' => 'admin',
+                'verification_status' => 'approved',
+                'is_active' => true,
+                'is_verified' => true,
+                'verified_at' => now(),
+                'verified_by' => $user->id,
+                'company_name' => 'پنل مدیریت',
+                'mobile' => $user->mobile,
+                'email' => $user->email,
+            ]);
+            $this->editMode = true;
+            $this->loadSupplierData();
+        }
         // بارگذاری supplier موجود (در صورت وجود)
-        if ($user->supplier) {
+        elseif ($user->supplier) {
             $this->editMode = true;
             $this->supplier = $user->supplier;
             $this->loadSupplierData();
         }
-
-        // بارگذاری شبکه‌های اجتماعی فعال
-        $this->availableSocialNetworks = SocialNetwork::where('is_active', true)->get();
 
         // پر کردن mobile و email از user
         $this->mobile = $this->mobile ?? $user->mobile;
@@ -147,7 +164,7 @@ class RegisterSupplier extends Component
         $this->brand_name = $this->supplier->brand_name;
         $this->slug = $this->supplier->slug;
         $this->description = $this->supplier->description;
-        $this->existingLogo = $this->supplier->logo;
+        $this->existingLogo = $this->supplier->logo_path;
         $this->phone = $this->supplier->phone;
         $this->mobile = $this->supplier->mobile;
         $this->email = $this->supplier->email;
@@ -205,7 +222,7 @@ class RegisterSupplier extends Component
                 if ($this->existingLogo) {
                     Storage::disk('public')->delete($this->existingLogo);
                 }
-                $data['logo'] = $this->logo->store('suppliers/logos', 'public');
+                $data['logo_path'] = $this->logo->store('suppliers/logos', 'public');
             }
 
             // ذخیره مدارک احراز هویت
@@ -235,11 +252,16 @@ class RegisterSupplier extends Component
                     unset($data[$lockedField]);
                 }
 
-                // حالت ویرایش: تغییر وضعیت به "در حال بررسی"
-                $data['verification_status'] = 'under_review';
-                $this->supplier->update($data);
+                // برای ادمین، وضعیت تایید تغییر نکند
+                if ($this->supplier->type !== 'admin') {
+                    // حالت ویرایش: تغییر وضعیت به "در حال بررسی"
+                    $data['verification_status'] = 'under_review';
+                    session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد و در انتظار تایید مدیر است.');
+                } else {
+                    session()->flash('message', 'اطلاعات فروشگاه با موفقیت به‌روزرسانی شد.');
+                }
 
-                session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد و در انتظار تایید مدیر است.');
+                $this->supplier->update($data);
             } else {
                 // حالت ثبت‌نام جدید
                 $data['user_id'] = Auth::id();
@@ -253,6 +275,11 @@ class RegisterSupplier extends Component
                 Auth::user()->syncRoles('regular_supplier');
 
                 session()->flash('message', 'ثبت‌نام شما با موفقیت انجام شد. پس از تایید مدیر، می‌توانید از سیستم استفاده کنید.');
+            }
+
+            // ریدایرکت بر اساس نوع
+            if ($this->supplier->type === 'admin') {
+                return redirect()->route('admin.dashboard');
             }
 
             return redirect()->route('account.pending');
