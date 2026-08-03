@@ -16,22 +16,43 @@ class SupplierPagesTest extends TestCase
 
     protected User $supplier;
     protected User $regularSupplier;
+    protected \App\Models\Supplier $supplierModel;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         // ایجاد یک supplier برای تست‌ها
-        $this->supplier = User::factory()->create([
-            'approval_status' => 'approved'
-        ]);
+        $this->supplier = User::factory()->create();
         $this->supplier->assignRole(UserRole::SUPPLIER);
+        $this->supplierModel = \App\Models\Supplier::factory()->create([
+            'user_id' => $this->supplier->id,
+            'is_active' => true,
+        ]);
 
         // ایجاد یک regular supplier برای تست‌ها
-        $this->regularSupplier = User::factory()->create([
-            'approval_status' => 'approved'
-        ]);
+        $this->regularSupplier = User::factory()->create();
         $this->regularSupplier->assignRole(UserRole::REGULAR_SUPPLIER);
+        \App\Models\Supplier::factory()->create([
+            'user_id' => $this->regularSupplier->id,
+            'is_active' => true,
+        ]);
+    }
+
+    /**
+     * Helper method برای ایجاد محصول با وابستگی‌ها
+     */
+    protected function createProductForSupplier($userId = null): Product
+    {
+        $category = \App\Models\Category::factory()->create();
+        $supplier = $userId 
+            ? \App\Models\Supplier::where('user_id', $userId)->first()
+            : $this->supplierModel;
+        
+        return Product::factory()->create([
+            'supplier_id' => $supplier->id,
+            'category_id' => $category->id,
+        ]);
     }
 
     /**
@@ -92,8 +113,12 @@ class SupplierPagesTest extends TestCase
      */
     public function test_supplier_products_edit_is_accessible(): void
     {
+        $category = \App\Models\Category::factory()->create();
+        $supplier = \App\Models\Supplier::where('user_id', $this->supplier->id)->first();
+        
         $product = Product::factory()->create([
-            'supplier_id' => $this->supplier->id
+            'supplier_id' => $supplier->id,
+            'category_id' => $category->id,
         ]);
 
         $response = $this->actingAs($this->supplier)
@@ -107,9 +132,7 @@ class SupplierPagesTest extends TestCase
      */
     public function test_supplier_products_edit_price_is_accessible(): void
     {
-        $product = Product::factory()->create([
-            'supplier_id' => $this->supplier->id
-        ]);
+        $product = $this->createProductForSupplier();
 
         $response = $this->actingAs($this->supplier)
             ->get(route('supplier.products.edit-price', $product->id));

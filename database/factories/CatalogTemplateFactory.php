@@ -15,12 +15,12 @@ class CatalogTemplateFactory extends Factory
         return [
             'supplier_id' => Supplier::factory(),
             'name' => fake()->words(2, true),
-            'slug' => fake()->unique()->slug(),
-            'template_data' => [
-                'pages' => fake()->numberBetween(1, 10),
+            'selected_categories' => [1, 2],
+            'selected_price_types' => ['cash', 'check_1_month'],
+            'settings' => [
+                'show_prices' => true,
                 'layout' => 'grid',
             ],
-            'is_active' => true,
         ];
     }
 }
