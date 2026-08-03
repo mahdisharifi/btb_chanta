@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Attribute extends Model
 {
+    use \Illuminate\Database\Eloquent\Factories\HasFactory;
     // فیلد unit هم به fillable اضافه شده است
     protected $fillable = [
         'name',

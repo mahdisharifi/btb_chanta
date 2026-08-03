@@ -14,16 +14,13 @@ class SupplierFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
-            'type' => 'supplier',
-            'name' => fake()->company(),
-            'slug' => fake()->unique()->slug(),
+            'company_name' => fake()->company(),
+            'company_name_en' => fake()->company(),
+            'brand_name' => fake()->company(),
             'description' => fake()->sentence(),
             'phone' => fake()->phoneNumber(),
             'mobile' => '09' . fake()->numberBetween(100000000, 999999999),
             'email' => fake()->companyEmail(),
-            'company_name' => fake()->company(),
-            'brand_name' => fake()->company(),
-            'verification_status' => 'approved',
             'is_verified' => true,
             'is_active' => true,
         ];
