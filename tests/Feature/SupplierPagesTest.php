@@ -22,6 +22,9 @@ class SupplierPagesTest extends TestCase
     {
         parent::setUp();
 
+        // اجرای RoleSeeder برای ایجاد نقش‌ها
+        $this->artisan('db:seed', ['--class' => 'RoleSeeder']);
+
         // ایجاد یک supplier برای تست‌ها
         $this->supplier = User::factory()->create();
         $this->supplier->assignRole(UserRole::SUPPLIER);

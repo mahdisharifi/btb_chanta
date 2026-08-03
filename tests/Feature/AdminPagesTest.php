@@ -22,6 +22,9 @@ class AdminPagesTest extends TestCase
     {
         parent::setUp();
 
+        // اجرای RoleSeeder برای ایجاد نقش‌ها
+        $this->artisan('db:seed', ['--class' => 'RoleSeeder']);
+
         // ایجاد یک admin برای تست‌ها
         $this->admin = User::factory()->create();
         $this->admin->assignRole(UserRole::SUPER_ADMIN);

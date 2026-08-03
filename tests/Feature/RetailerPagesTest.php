@@ -19,16 +19,17 @@ class RetailerPagesTest extends TestCase
     {
         parent::setUp();
 
+        // اجرای RoleSeeder برای ایجاد نقش‌ها
+        $this->artisan('db:seed', ['--class' => 'RoleSeeder']);
+
         // ایجاد یک premium retailer برای تست‌ها
         $this->premiumRetailer = User::factory()->create([
-            'approval_status' => 'approved',
             'subscription_expires_at' => now()->addMonth()
         ]);
         $this->premiumRetailer->assignRole(UserRole::RETAILER_PREMIUM);
 
         // ایجاد یک basic retailer برای تست‌ها
         $this->basicRetailer = User::factory()->create([
-            'approval_status' => 'approved',
             'subscription_expires_at' => now()->addMonth()
         ]);
         $this->basicRetailer->assignRole(UserRole::RETAILER_BASIC);
