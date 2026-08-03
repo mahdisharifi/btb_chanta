@@ -37,18 +37,34 @@ class Preview extends Component
         if ($this->isAdmin) {
             $this->template = CatalogTemplate::findOrFail($catalog);
 
+            // اولویت اول: supplier_id از template
             if ($this->template->supplier_id) {
                 $this->supplier = \App\Models\Supplier::find($this->template->supplier_id);
             }
 
-            if (!$this->supplier) {
-                $this->supplier = \App\Models\Supplier::where('slug', 'admin-catalog')->first();
+            // اولویت دوم: supplier کاربر ادمین
+            if (!$this->supplier && $user->supplier) {
+                $this->supplier = $user->supplier;
             }
 
+            // اولویت سوم: جستجوی supplier با type=admin
             if (!$this->supplier) {
-                $this->supplier = new \App\Models\Supplier([
-                    'title' => 'کاتالوگ مرکزی',
-                    'slug' => 'admin-catalog'
+                $this->supplier = \App\Models\Supplier::where('type', 'admin')->first();
+            }
+
+            // اگر هنوز supplier نیست، یک رکورد جدید ایجاد کن
+            if (!$this->supplier) {
+                $this->supplier = \App\Models\Supplier::create([
+                    'user_id' => $user->id,
+                    'type' => 'admin',
+                    'verification_status' => 'approved',
+                    'is_active' => true,
+                    'is_verified' => true,
+                    'verified_at' => now(),
+                    'verified_by' => $user->id,
+                    'company_name' => 'پنل مدیریت',
+                    'mobile' => $user->mobile,
+                    'email' => $user->email,
                 ]);
             }
         } else {
@@ -60,7 +76,10 @@ class Preview extends Component
                 ->firstOrFail();
         }
 
-        $this->supplierName = $this->supplier->title ?? 'مدیریت مرکزی';
+        $this->supplierName = $this->supplier->company_name 
+            ?? $this->supplier->brand_name 
+            ?? $this->supplier->title 
+            ?? 'مدیریت مرکزی';
         $this->supplierLogoUrl = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
             ? asset('storage/' . $this->supplier->logo_path)
             : null;

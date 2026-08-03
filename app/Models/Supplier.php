@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Supplier extends Model
 {
-    use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes;
+    use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes, HasLockableFields;
 
     protected $fillable = [
         // User relation
@@ -53,8 +53,6 @@ class Supplier extends Model
         // Legal info
         'tax_id',
         'national_id',
-        'business_license',
-        'economic_code',
         'national_card_file',
         'business_license_file',
 

@@ -44,9 +44,7 @@ class RegisterSupplier extends Component
     public $citiesList = [];
 
     // اطلاعات قانونی
-    public $business_license;
     public $national_id;
-    public $economic_code;
     public $tax_id;
 
     // مدارک احراز هویت
@@ -70,7 +68,6 @@ class RegisterSupplier extends Component
             'address' => 'required|string',
             'province_id' => 'required|exists:provinces,id',
             'city_id' => 'required|exists:cities,id',
-            'business_license' => 'nullable|string|max:50',
             'email' => 'nullable|email|max:255',
             'postal_code' => 'nullable|string|max:10',
             'company_name_en' => 'nullable|string|max:255',
@@ -81,7 +78,6 @@ class RegisterSupplier extends Component
             'phone' => 'nullable|string|max:20',
             'website' => 'nullable|url|max:255',
             'national_id' => 'nullable|string|max:10',
-            'economic_code' => 'nullable|string|max:50',
             'tax_id' => 'nullable|string|max:50',
             'national_card_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'business_license_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
@@ -180,9 +176,7 @@ class RegisterSupplier extends Component
             $this->citiesList = City::where('province_id', $this->province_id)->get();
         }
 
-        $this->business_license = $this->supplier->business_license;
         $this->national_id = $this->supplier->national_id;
-        $this->economic_code = $this->supplier->economic_code;
         $this->tax_id = $this->supplier->tax_id;
         $this->existingNationalCard = $this->supplier->national_card_file;
         $this->existingBusinessLicense = $this->supplier->business_license_file;
@@ -210,10 +204,7 @@ class RegisterSupplier extends Component
                 'postal_code' => $this->postal_code,
                 'province_id' => $this->province_id,
                 'city_id' => $this->city_id,
-                // ذخیره اطلاعات متنی برای حفظ سازگاری تا زمان حذف کامل فیلدهای قدیمی
-                'business_license' => $this->business_license,
                 'national_id' => $this->national_id,
-                'economic_code' => $this->economic_code,
                 'tax_id' => $this->tax_id,
             ];
 
