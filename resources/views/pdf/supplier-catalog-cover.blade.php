@@ -1,13 +1,13 @@
 <div class="cover-wrapper">
-    <div class="logo-area" >
-        @if(!empty($supplierLogo) && file_exists($supplierLogo))
-        <!-- استفاده از مسیر فیزیکی برای mPDF -->
-        <img src="{{ $supplierLogo }}" alt="{{ $supplierName ?? 'لوگو' }}" style="max-width: 150px; max-height: 150px; object-fit: contain;">
-        @elseif(!empty($supplierLogoUrl))
+    <div class="logo-area">
+        @if(!empty($supplierLogoUrl))
         <!-- استفاده از لینک وب برای پیش‌نمایش در مرورگر -->
         <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="max-width: 150px; max-height: 150px; object-fit: contain;">
+        @elseif(!empty($supplierLogo) && file_exists($supplierLogo))
+        <!-- استفاده از مسیر فیزیکی برای mPDF -->
+        <img src="{{ $supplierLogo }}" alt="{{ $supplierName ?? 'لوگو' }}" style="max-width: 150px; max-height: 150px; object-fit: contain;">
         @else
-        <!-- در صورت نداشتن لوگو، نمایش یک آیکن یا نام تامین‌کننده -->
+        <!-- در صورت نداشتن لوگو، نمایش نام تامین‌کننده -->
         <div style="font-size: 24px; font-weight: bold; color: #4b5563;">
             {{ $supplierName ?? 'بدون لوگو' }}
         </div>

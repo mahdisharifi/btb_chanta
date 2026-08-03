@@ -75,9 +75,11 @@
         {{-- اضافه کردن در ابتدای فایل بعد از <body> --}}
         @if($showCoverPage)
         @include('pdf.supplier-catalog-cover', [
-        'supplierName ' => $supplierName ,
-        'supplierLogoUrl' => $supplierLogoUrl  ?? null,
-        'catalogTitle' => $template->title ?? null
+        'supplierName' => $supplierName,
+        'supplierLogo' => $supplierLogoUrl ?? null,
+        'supplierLogoUrl' => $supplierLogoUrl ?? null,
+        'catalogTitle' => $template->title ?? null,
+        'supplier' => $supplier,
         ])
         @endif
         <div class="bg-white print:bg-transparent">
