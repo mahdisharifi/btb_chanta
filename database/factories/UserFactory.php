@@ -26,6 +26,8 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
+            'mobile' => '09' . fake()->numberBetween(100000000, 999999999),
+            'mobile_verified_at' => now(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
@@ -40,5 +42,63 @@ class UserFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
         ]);
+    }
+
+    /**
+     * Indicate that the user's mobile is unverified.
+     */
+    public function unverifiedMobile(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'mobile_verified_at' => null,
+        ]);
+    }
+
+    /**
+     * Create a super admin user.
+     */
+    public function superAdmin(): static
+    {
+        return $this->afterCreating(function (\App\Models\User $user) {
+            $user->assignRole(\App\Enums\UserRole::SUPER_ADMIN);
+        });
+    }
+
+    /**
+     * Create a supplier user.
+     */
+    public function supplier(): static
+    {
+        return $this->afterCreating(function (\App\Models\User $user) {
+            $user->assignRole(\App\Enums\UserRole::SUPPLIER);
+            \App\Models\Supplier::factory()->create([
+                'user_id' => $user->id,
+                'verification_status' => 'approved',
+            ]);
+        });
+    }
+
+    /**
+     * Create a retailer premium user.
+     */
+    public function retailerPremium(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'subscription_expires_at' => now()->addYear(),
+        ])->afterCreating(function (\App\Models\User $user) {
+            $user->assignRole(\App\Enums\UserRole::RETAILER_PREMIUM);
+        });
+    }
+
+    /**
+     * Create a retailer basic user.
+     */
+    public function retailerBasic(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'subscription_expires_at' => now()->addYear(),
+        ])->afterCreating(function (\App\Models\User $user) {
+            $user->assignRole(\App\Enums\UserRole::RETAILER_BASIC);
+        });
     }
 }
