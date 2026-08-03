@@ -208,13 +208,12 @@ class AdminPagesTest extends TestCase
      */
     public function test_admin_suppliers_edit_is_accessible(): void
     {
-        $this->markTestSkipped('Route admin.suppliers.edit not found (404)');
-        
-        $supplier = User::factory()->create();
-        $supplier->assignRole(UserRole::SUPPLIER);
+        $user = User::factory()->create();
+        $user->assignRole(UserRole::SUPPLIER);
+        $supplier = \App\Models\Supplier::factory()->create(['user_id' => $user->id]);
 
         $response = $this->actingAs($this->admin)
-            ->get(route('admin.suppliers.edit', $supplier->id));
+            ->get(route('admin.suppliers.edit', $supplier));
 
         $response->assertStatus(200);
     }
