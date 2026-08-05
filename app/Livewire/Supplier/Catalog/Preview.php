@@ -47,25 +47,16 @@ class Preview extends Component
                 $this->supplier = $user->supplier;
             }
 
-            // اولویت سوم: جستجوی supplier با type=admin
+            // اولویت سوم: جستجوی supplier با user_id یا type=admin
             if (!$this->supplier) {
-                $this->supplier = \App\Models\Supplier::where('type', 'admin')->first();
+                $this->supplier = \App\Models\Supplier::where('user_id', $user->id)
+                    ->orWhere('type', 'admin')
+                    ->first();
             }
 
-            // اگر هنوز supplier نیست، یک رکورد جدید ایجاد کن
+            // اگر هنوز supplier نیست، خطا برگردان
             if (!$this->supplier) {
-                $this->supplier = \App\Models\Supplier::create([
-                    'user_id' => $user->id,
-                    'type' => 'admin',
-                    'verification_status' => 'approved',
-                    'is_active' => true,
-                    'is_verified' => true,
-                    'verified_at' => now(),
-                    'verified_by' => $user->id,
-                    'company_name' => 'پنل مدیریت',
-                    'mobile' => $user->mobile,
-                    'email' => $user->email,
-                ]);
+                abort(403, 'شما پروفایل تامین‌کننده ندارید. لطفاً ابتدا اطلاعات فروشگاه را تکمیل کنید.');
             }
         } else {
             $this->supplier = $user->supplier;
@@ -78,7 +69,6 @@ class Preview extends Component
 
         $this->supplierName = $this->supplier->company_name 
             ?? $this->supplier->brand_name 
-            ?? $this->supplier->title 
             ?? 'مدیریت مرکزی';
         $this->supplierLogoUrl = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
             ? asset('storage/' . $this->supplier->logo_path)
@@ -275,12 +265,10 @@ class Preview extends Component
             'category_order' => 'category_order',
             'sku'            => 'sku',
             'brand'          => 'brand',
-            'name'           => 'title',            // کلید فرم ادمین
+            'name'           => 'title',
             'created_at'     => 'created_at',
             'price_updated_at' => 'price_updated_at',
         ];
-
-
 
         $key = $map[$sortKey] ?? $sortKey;
         return $item[$key] ?? '';
@@ -312,13 +300,12 @@ class Preview extends Component
             'supplierLogoUrl'    => $this->supplierLogoUrl,
             'supplier'           => $this->supplier,
         ];
-
         $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
             'format'        => 'A4',
-            'margin_left'   => 6,   // قبلاً 10
-            'margin_right'  => 6,   // قبلاً 10
-            'margin_top'    => 6,   // قبلاً 10
-            'margin_bottom' => 6,   // قبلاً 10
+            'margin_left'   => 6,
+            'margin_right'  => 6,
+            'margin_top'    => 6,
+            'margin_bottom' => 6,
             'mode'          => 'utf-8',
         ]);
 
