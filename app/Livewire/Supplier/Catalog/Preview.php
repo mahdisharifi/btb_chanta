@@ -291,14 +291,22 @@ class Preview extends Component
         // تبدیل URL به مسیر فیزیکی برای mPDF
         $supplierLogo = null;
         if ($this->supplierLogoUrl) {
-            // استخراج مسیر نسبی از URL
             $relativePath = str_replace(asset('storage/'), '', $this->supplierLogoUrl);
             $supplierLogo = storage_path('app/public/' . $relativePath);
-            
-            // بررسی وجود فایل
             if (!file_exists($supplierLogo)) {
                 $supplierLogo = null;
             }
+        }
+
+        // بررسی تعداد محصولات
+        $totalProducts = 0;
+        foreach ($this->groupedProducts as $products) {
+            $totalProducts += count($products);
+        }
+        
+        // اگر تعداد محصولات زیاد است، محدود کن
+        if ($totalProducts > 100) {
+            return back()->with('error', "تعداد محصولات بسیار زیاد است ({$totalProducts}). لطفاً فیلتر بیشتری اعمال کنید.");
         }
 
         $data = [
@@ -315,6 +323,10 @@ class Preview extends Component
             'supplier'           => $this->supplier,
         ];
         
+        // افزایش حافظه و زمان اجرا
+        ini_set('memory_limit', '512M');
+        set_time_limit(300);
+        
         try {
             $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
                 'format'        => 'A4',
@@ -326,8 +338,13 @@ class Preview extends Component
             ]);
 
             return $pdf->download($fileName);
+
         } catch (\Exception $e) {
-            \Log::error('PDF Generation Error: ' . $e->getMessage());
+            \Log::error('PDF Generation Error: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return back()->with('error', 'خطا در تولید PDF: ' . $e->getMessage());
         }
     }
