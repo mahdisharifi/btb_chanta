@@ -288,6 +288,19 @@ class Preview extends Component
     {
         $fileName = $prefix . jdate(now())->format('Y-m-d') . '.pdf';
 
+        // تبدیل URL به مسیر فیزیکی برای mPDF
+        $supplierLogo = null;
+        if ($this->supplierLogoUrl) {
+            // استخراج مسیر نسبی از URL
+            $relativePath = str_replace(asset('storage/'), '', $this->supplierLogoUrl);
+            $supplierLogo = storage_path('app/public/' . $relativePath);
+            
+            // بررسی وجود فایل
+            if (!file_exists($supplierLogo)) {
+                $supplierLogo = null;
+            }
+        }
+
         $data = [
             'supplierName'       => $this->supplierName,
             'groupedProducts'    => $this->groupedProducts,
@@ -298,20 +311,25 @@ class Preview extends Component
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
             'supplierLogoUrl'    => $this->supplierLogoUrl,
+            'supplierLogo'       => $supplierLogo,
             'supplier'           => $this->supplier,
         ];
-        $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
-            'format'        => 'A4',
-            'margin_left'   => 6,
-            'margin_right'  => 6,
-            'margin_top'    => 6,
-            'margin_bottom' => 6,
-            'mode'          => 'utf-8',
-        ]);
+        
+        try {
+            $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
+                'format'        => 'A4',
+                'margin_left'   => 6,
+                'margin_right'  => 6,
+                'margin_top'    => 6,
+                'margin_bottom' => 6,
+                'mode'          => 'utf-8',
+            ]);
 
-        return response()->streamDownload(function () use ($pdf) {
-            echo $pdf->output();
-        }, $fileName);
+            return $pdf->download($fileName);
+        } catch (\Exception $e) {
+            \Log::error('PDF Generation Error: ' . $e->getMessage());
+            return back()->with('error', 'خطا در تولید PDF: ' . $e->getMessage());
+        }
     }
 
     public function render()
