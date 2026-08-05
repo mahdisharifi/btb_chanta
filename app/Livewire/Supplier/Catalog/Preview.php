@@ -29,6 +29,8 @@ class Preview extends Component
 
     public function mount($catalog)
     {
+
+
         $user = Auth::user();
         $this->isAdmin = $user->hasRole('admin')
             || $user->hasRole('super_admin')
@@ -56,6 +58,10 @@ class Preview extends Component
             // بررسی مالکیت
             abort_if($this->template->supplier_id !== $this->supplier->id, 403, 'این کاتالوگ متعلق به شما نیست.');
         }
+
+        $this->supplierLogoPath = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
+    ? storage_path('app/public/' . $this->supplier->logo_path)
+    : null;
 
         $this->supplierName = $this->supplier->company_name ?? 'مدیریت مرکزی';
         $this->supplierLogoUrl = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
@@ -294,8 +300,9 @@ class Preview extends Component
             'template'           => $this->template,
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
-            'supplierLogoUrl'    => $this->supplierLogoUrl,
-            'supplier'           => $this->supplier,
+    'supplierLogoUrl'  => $this->supplierLogoUrl,   // برای سازگاری نگه داشته شود
+    'supplierLogoPath' => $this->supplierLogoPath,  // مسیر فیزیکی
+    'forPdf'           => true,            'supplier'           => $this->supplier,
         ];
         $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
             'format'        => 'A4',
