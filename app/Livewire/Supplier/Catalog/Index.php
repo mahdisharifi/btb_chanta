@@ -8,6 +8,7 @@ use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use App\Models\Category;
 use App\Models\CatalogTemplate;
+use App\Models\Supplier;
 use App\Enums\PriceType;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,13 @@ use Illuminate\Support\Facades\DB;
 class Index extends Component
 {
     use WithPagination;
+    
+    // پراپرتی برای تشخیص ادمین
+    public bool $isAdmin = false;
+    
+    // پراپرتی انتخاب چند supplier (فقط برای ادمین)
+    public array $selectedSuppliers = [];
+    
     public $show_cover_page = true;
 
     public $editingTemplateId = null;
@@ -34,30 +42,78 @@ class Index extends Component
     // متغیر جدید برای نمایش پیام موفقیت
     public $showSuccessMessage = false;
     public $successMessage = '';
+    
+    // متغیر برای بررسی وجود supplier ادمین
+    public $adminHasSupplier = false;
 
     public function mount()
     {
+        // تشخیص ادمین
+        $this->isAdmin = Auth::user()->hasRole('super_admin');
+        
+        if ($this->isAdmin) {
+            // بررسی وجود supplier برای ادمین
+            $adminSupplier = Supplier::where('user_id', Auth::id())
+                ->where('type', 'admin')
+                ->first();
+            
+            $this->adminHasSupplier = $adminSupplier !== null;
+            
+            // اگر supplier ندارد، متوقف می‌شویم
+            if (!$this->adminHasSupplier) {
+                return;
+            }
+        }
+        
         $this->resetForm();
     }
 
     #[Computed]
     public function availableCategories()
     {
-        $supplierId = Auth::user()->supplier->id;
-
-        $query = Category::whereHas('products.suppliers', function ($q) use ($supplierId) {
-            $q->where('supplier_id', $supplierId);
-        });
+        // تعیین supplier_id بر اساس نقش کاربر
+        if ($this->isAdmin) {
+            // اگر ادمین است و supplier انتخاب کرده
+            if (!empty($this->selectedSuppliers)) {
+                $supplierIds = $this->selectedSuppliers;
+            } else {
+                // اگر هیچ supplier انتخاب نشده، از همه suppliers استفاده کن
+                $supplierIds = Supplier::where('verification_status', 'approved')
+                    ->pluck('id')
+                    ->toArray();
+            }
+            
+            $query = Category::whereHas('products.suppliers', function ($q) use ($supplierIds) {
+                $q->whereIn('supplier_id', $supplierIds);
+            });
+        } else {
+            $supplierId = Auth::user()->supplier->id;
+            
+            $query = Category::whereHas('products.suppliers', function ($q) use ($supplierId) {
+                $q->where('supplier_id', $supplierId);
+            });
+        }
 
         if (!$this->selectAllCategories) {
-            $query->whereHas('products.suppliers', function ($q) use ($supplierId) {
-                $q->where('product_supplier.supplier_id', $supplierId)
-                    ->whereExists(function ($subQuery) {
-                        $subQuery->select(DB::raw(1))
-                            ->from('product_prices')
-                            ->whereColumn('product_prices.product_supplier_id', 'product_supplier.id');
-                    });
-            });
+            if ($this->isAdmin) {
+                $query->whereHas('products.suppliers', function ($q) use ($supplierIds) {
+                    $q->whereIn('product_supplier.supplier_id', $supplierIds)
+                        ->whereExists(function ($subQuery) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('product_prices')
+                                ->whereColumn('product_prices.product_supplier_id', 'product_supplier.id');
+                        });
+                });
+            } else {
+                $query->whereHas('products.suppliers', function ($q) use ($supplierId) {
+                    $q->where('product_supplier.supplier_id', $supplierId)
+                        ->whereExists(function ($subQuery) {
+                            $subQuery->select(DB::raw(1))
+                                ->from('product_prices')
+                                ->whereColumn('product_prices.product_supplier_id', 'product_supplier.id');
+                        });
+                });
+            }
         }
 
         if (!empty($this->categorySearch)) {
@@ -163,12 +219,20 @@ class Index extends Component
 
     public function editTemplate($id)
     {
+        // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
+        $supplierId = Auth::user()->supplier->id;
+        
         $template = CatalogTemplate::where('id', $id)
-            ->where('supplier_id', Auth::user()->supplier->id)
+            ->where('supplier_id', $supplierId)
             ->firstOrFail();
 
         $this->editingTemplateId = $template->id;
         $this->name = $template->name;
+        
+        // اگر ادمین است و supplier_ids در config وجود دارد
+        if ($this->isAdmin && isset($template->config['supplier_ids'])) {
+            $this->selectedSuppliers = $template->config['supplier_ids'];
+        }
 
         $settings = $template->settings ?? [];
         $this->description = $settings['description'] ?? '';
@@ -220,6 +284,7 @@ class Index extends Component
             'sortLevel2Dir' => 'required|in:asc,desc',
             'separateCategories' => 'boolean',
             'show_cover_page' => 'boolean',
+            'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
         ]);
 
         $settings = [
@@ -232,25 +297,37 @@ class Index extends Component
             'sort_level2_dir' => $this->sortLevel2Dir,
             'separate_categories' => $this->separateCategories,
             'show_cover_page' => $this->show_cover_page,
-
         ];
+        
+        // تعیین supplier_id (همیشه supplier صاحب کاتالوگ است)
+        $supplierId = $this->isAdmin 
+            ? Auth::user()->supplier->id  // ادمین از supplier خودش استفاده می‌کند
+            : Auth::user()->supplier->id;
+        
+        // اگر ادمین است، supplier_ids را در config ذخیره کن
+        $config = [];
+        if ($this->isAdmin && !empty($this->selectedSuppliers)) {
+            $config['supplier_ids'] = $this->selectedSuppliers;
+        }
 
         if ($this->editingTemplateId) {
             $template = CatalogTemplate::where('id', $this->editingTemplateId)
-                ->where('supplier_id', Auth::user()->supplier->id)
+                ->where('supplier_id', $supplierId)
                 ->firstOrFail();
 
             $template->update([
                 'name' => $this->name,
                 'settings' => $settings,
+                'config' => $config,
             ]);
 
             $this->successMessage = 'کاتالوگ با موفقیت بروزرسانی شد.';
         } else {
             CatalogTemplate::create([
-                'supplier_id' => Auth::user()->supplier->id,
+                'supplier_id' => $supplierId,
                 'name' => $this->name,
                 'settings' => $settings,
+                'config' => $config,
             ]);
 
             $this->successMessage = 'کاتالوگ جدید با موفقیت ایجاد شد.';
@@ -265,7 +342,10 @@ class Index extends Component
 
     public function deleteTemplate(CatalogTemplate $template)
     {
-        if ($template->supplier_id === Auth::user()->supplier->id) {
+        // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
+        $supplierId = Auth::user()->supplier->id;
+        
+        if ($template->supplier_id === $supplierId) {
             $template->delete();
             $this->successMessage = 'کاتالوگ با موفقیت حذف شد.';
             $this->showSuccessMessage = true;
@@ -321,12 +401,40 @@ class Index extends Component
     #[Layout('components.layouts.supplier')]
     public function render()
     {
-        $templates = CatalogTemplate::where('supplier_id', Auth::user()->supplier->id)
-            ->latest()
-            ->paginate(10);
+        // تعیین Layout بر اساس نقش
+        $layout = $this->isAdmin ? 'components.layouts.admin' : 'components.layouts.supplier';
+        
+        // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
+        $supplierId = Auth::user()->supplier->id ?? null;
+        
+        // لیست تمام suppliers تایید شده (برای ادمین)
+        if ($this->isAdmin) {
+            $suppliers = Supplier::where('verification_status', 'approved')
+                ->orderBy('company_name')
+                ->get();
+        } else {
+            $suppliers = collect();
+        }
+        
+        // اگر supplier_id وجود دارد، کاتالوگ‌ها را بارگذاری کن
+        if ($supplierId) {
+            $templates = CatalogTemplate::where('supplier_id', $supplierId)
+                ->latest()
+                ->paginate(10);
+        } else {
+            // اگر supplier_id نیست، یک LengthAwarePaginator خالی برگردان
+            $templates = new \Illuminate\Pagination\LengthAwarePaginator(
+                [],
+                0,
+                10,
+                1,
+                ['path' => request()->url()]
+            );
+        }
 
         return view('livewire.supplier.catalog.index', [
-            'templates' => $templates
-        ]);
+            'templates' => $templates,
+            'suppliers' => $suppliers,
+        ])->layout($layout);
     }
 }

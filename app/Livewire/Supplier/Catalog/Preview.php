@@ -34,42 +34,30 @@ class Preview extends Component
             || $user->hasRole('super_admin')
             || $user->hasRole('super-admin');
 
+        $this->template = CatalogTemplate::findOrFail($catalog);
+
         if ($this->isAdmin) {
-            $this->template = CatalogTemplate::findOrFail($catalog);
+            // ادمین: supplier صاحب کاتالوگ را بگیر (برای صفحه اول)
+            $this->supplier = \App\Models\Supplier::find($this->template->supplier_id);
 
-            // اولویت اول: supplier_id از template
-            if ($this->template->supplier_id) {
-                $this->supplier = \App\Models\Supplier::find($this->template->supplier_id);
-            }
-
-            // اولویت دوم: supplier کاربر ادمین
-            if (!$this->supplier && $user->supplier) {
-                $this->supplier = $user->supplier;
-            }
-
-            // اولویت سوم: جستجوی supplier با user_id یا type=admin
             if (!$this->supplier) {
+                // اگر کاتالوگ supplier نداشت، supplier خود ادمین را بگیر
                 $this->supplier = \App\Models\Supplier::where('user_id', $user->id)
-                    ->orWhere('type', 'admin')
+                    ->where('type', 'admin')
                     ->first();
             }
 
-            // اگر هنوز supplier نیست، خطا برگردان
-            if (!$this->supplier) {
-                abort(403, 'شما پروفایل تامین‌کننده ندارید. لطفاً ابتدا اطلاعات فروشگاه را تکمیل کنید.');
-            }
+            abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
         } else {
+            // تامین‌کننده: فقط کاتالوگ خودش
             $this->supplier = $user->supplier;
             abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
 
-            $this->template = CatalogTemplate::where('id', $catalog)
-                ->where('supplier_id', $this->supplier->id)
-                ->firstOrFail();
+            // بررسی مالکیت
+            abort_if($this->template->supplier_id !== $this->supplier->id, 403, 'این کاتالوگ متعلق به شما نیست.');
         }
 
-        $this->supplierName = $this->supplier->company_name 
-            ?? $this->supplier->brand_name 
-            ?? 'مدیریت مرکزی';
+        $this->supplierName = $this->supplier->company_name ?? 'مدیریت مرکزی';
         $this->supplierLogoUrl = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
             ? asset('storage/' . $this->supplier->logo_path)
             : null;
@@ -105,9 +93,16 @@ class Preview extends Component
             ?? $this->template->selected_categories
             ?? 'all';
 
-        $selectedSupplierIds = $this->settings['suppliers']
-            ?? ($this->template->config['supplier_ids'] ?? [])
-            ?? ($supplierId ? [$supplierId] : []);
+        // اگر ادمین است و supplier_ids در config وجود دارد، از آن استفاده کن
+        if ($this->isAdmin && isset($this->template->config['supplier_ids'])) {
+            $selectedSupplierIds = $this->template->config['supplier_ids'];
+        } else if ($supplierId) {
+            // اگر supplier_id مشخص است (تامین‌کننده)
+            $selectedSupplierIds = [$supplierId];
+        } else {
+            // اگر هیچکدام، از همه suppliers استفاده کن
+            $selectedSupplierIds = [];
+        }
 
         $query = Product::query()
             ->where('status', ProductStatus::ACTIVE->value);
@@ -265,10 +260,12 @@ class Preview extends Component
             'category_order' => 'category_order',
             'sku'            => 'sku',
             'brand'          => 'brand',
-            'name'           => 'title',
+            'name'           => 'title',            // کلید فرم ادمین
             'created_at'     => 'created_at',
             'price_updated_at' => 'price_updated_at',
         ];
+
+
 
         $key = $map[$sortKey] ?? $sortKey;
         return $item[$key] ?? '';
@@ -288,27 +285,6 @@ class Preview extends Component
     {
         $fileName = $prefix . jdate(now())->format('Y-m-d') . '.pdf';
 
-        // تبدیل URL به مسیر فیزیکی برای mPDF
-        $supplierLogo = null;
-        if ($this->supplierLogoUrl) {
-            $relativePath = str_replace(asset('storage/'), '', $this->supplierLogoUrl);
-            $supplierLogo = storage_path('app/public/' . $relativePath);
-            if (!file_exists($supplierLogo)) {
-                $supplierLogo = null;
-            }
-        }
-
-        // بررسی تعداد محصولات
-        $totalProducts = 0;
-        foreach ($this->groupedProducts as $products) {
-            $totalProducts += count($products);
-        }
-        
-        // اگر تعداد محصولات زیاد است، محدود کن
-        if ($totalProducts > 100) {
-            return back()->with('error', "تعداد محصولات بسیار زیاد است ({$totalProducts}). لطفاً فیلتر بیشتری اعمال کنید.");
-        }
-
         $data = [
             'supplierName'       => $this->supplierName,
             'groupedProducts'    => $this->groupedProducts,
@@ -319,34 +295,20 @@ class Preview extends Component
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
             'supplierLogoUrl'    => $this->supplierLogoUrl,
-            'supplierLogo'       => $supplierLogo,
             'supplier'           => $this->supplier,
         ];
+        $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
+            'format'        => 'A4',
+            'margin_left'   => 6,   // قبلاً 10
+            'margin_right'  => 6,   // قبلاً 10
+            'margin_top'    => 6,   // قبلاً 10
+            'margin_bottom' => 6,   // قبلاً 10
+            'mode'          => 'utf-8',
+        ]);
         
-        // افزایش حافظه و زمان اجرا
-        ini_set('memory_limit', '512M');
-        set_time_limit(300);
-        
-        try {
-            $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
-                'format'        => 'A4',
-                'margin_left'   => 6,
-                'margin_right'  => 6,
-                'margin_top'    => 6,
-                'margin_bottom' => 6,
-                'mode'          => 'utf-8',
-            ]);
-
-            return $pdf->download($fileName);
-
-        } catch (\Exception $e) {
-            \Log::error('PDF Generation Error: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return back()->with('error', 'خطا در تولید PDF: ' . $e->getMessage());
-        }
+        return response()->streamDownload(function () use ($pdf) {
+            echo $pdf->output();
+        }, $fileName);
     }
 
     public function render()

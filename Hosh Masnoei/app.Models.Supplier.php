@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Supplier extends Model
 {
-    use SoftDeletes;
+    use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes, HasLockableFields;
 
     protected $fillable = [
         // User relation
@@ -53,6 +53,8 @@ class Supplier extends Model
         // Legal info
         'tax_id',
         'national_id',
+        'national_card_file',
+        'business_license_file',
 
         // Status flags (legacy)
         'is_verified',
@@ -127,6 +129,11 @@ class Supplier extends Model
     public function isRetailer(): bool
     {
         return $this->type === 'retailer';
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->type === 'admin';
     }
 
     public function isPending(): bool

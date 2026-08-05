@@ -9,7 +9,33 @@
 
     <div class="py-6 space-y-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            @if($isAdmin && !$adminHasSupplier)
+                <!-- پیام برای ادمین بدون supplier -->
+                <div class="bg-yellow-50 border-r-4 border-yellow-400 p-6 rounded-lg shadow-md">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <x-heroicon-s-exclamation-triangle class="h-6 w-6 text-yellow-400" />
+                        </div>
+                        <div class="mr-3 flex-1">
+                            <h3 class="text-lg font-bold text-yellow-800">
+                                مشخصات تامین‌کننده ثبت نشده است
+                            </h3>
+                            <p class="mt-2 text-sm text-yellow-700">
+                                برای استفاده از سیستم کاتالوگ، ابتدا باید مشخصات تامین‌کننده خود را ثبت کنید.
+                            </p>
+                            <div class="mt-4">
+                                <a href="{{ route('supplier.profile.edit') }}" 
+                                   class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-bold rounded-lg transition-colors">
+                                    <x-heroicon-s-pencil class="w-4 h-4 ml-2" />
+                                    ثبت مشخصات تامین‌کننده
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @else
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
 
                 <!-- لیست کاتالوگ‌های قبلی -->
                 <div class="xl:col-span-5 2xl:col-span-4">
@@ -152,6 +178,52 @@
                         </div>
 
                         <form wire:submit.prevent="saveTemplate" class="space-y-6">
+                            
+                            <!-- انتخاب تامین‌کنندگان (فقط برای ادمین) -->
+                            @if($isAdmin && $suppliers->count() > 0)
+                            <div class="bg-purple-50/50 p-4 rounded-xl border border-purple-200">
+                                <h4 class="font-bold text-gray-800 flex items-center gap-2 mb-3">
+                                    <x-heroicon-o-building-storefront class="w-5 h-5 text-purple-500" />
+                                    انتخاب تامین‌کنندگان
+                                </h4>
+                                
+                                <div x-data="{ open: false }" class="relative w-full">
+                                    <button @click="open = !open" type="button" class="w-full bg-white border border-gray-300 rounded-lg shadow-sm pl-3 pr-4 py-2.5 text-right cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 sm:text-sm transition-shadow hover:shadow">
+                                        <span class="block truncate font-medium text-gray-700">
+                                            @if(empty($selectedSuppliers))
+                                                همه تامین‌کنندگان (پیش‌فرض)
+                                            @else
+                                                <span class="text-purple-600 font-bold">{{ count($selectedSuppliers) }}</span> تامین‌کننده انتخاب شده
+                                            @endif
+                                        </span>
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                            <x-heroicon-m-chevron-up-down class="h-5 w-5 text-gray-400" />
+                                        </span>
+                                    </button>
+
+                                    <div x-show="open" @click.away="open = false" x-transition class="absolute z-20 mt-1 w-full bg-white shadow-xl max-h-60 rounded-xl py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm custom-scrollbar" style="display: none;">
+                                        <div class="p-2 space-y-1">
+                                            @foreach($suppliers as $supplier)
+                                            <label class="flex items-center p-2.5 hover:bg-purple-50 rounded-lg cursor-pointer transition-colors group">
+                                                <input type="checkbox" wire:model.live="selectedSuppliers" value="{{ $supplier->id }}" class="rounded border-gray-300 text-purple-600 shadow-sm focus:ring-purple-500 mr-2 w-4 h-4">
+                                                <span class="mr-3 text-sm text-gray-700 group-hover:text-purple-700">
+                                                    {{ $supplier->company_name }}
+                                                    @if($supplier->brand_name)
+                                                        <span class="text-xs text-gray-500">({{ $supplier->brand_name }})</span>
+                                                    @endif
+                                                </span>
+                                            </label>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                </div>
+                                <x-input-error :messages="$errors->get('selectedSuppliers')" class="mt-2" />
+                                <p class="text-xs text-gray-500 mt-2">
+                                    <x-heroicon-s-information-circle class="w-4 h-4 inline ml-1" />
+                                    محصولات تامین‌کنندگان انتخاب شده در کاتالوگ نمایش داده می‌شوند. اگر هیچ تامین‌کننده‌ای انتخاب نشود، محصولات همه تامین‌کنندگان نمایش داده می‌شود.
+                                </p>
+                            </div>
+                            @endif
 
                             <!-- نام و توضیحات -->
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -384,6 +456,7 @@
 
             </div>
         </div>
+            @endif
     </div>
 
     <style>

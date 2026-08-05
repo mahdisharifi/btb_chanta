@@ -30,7 +30,10 @@ use App\Livewire\Admin\Catalogs\Form as CatalogForm;
 use App\Livewire\Supplier\Catalog\Preview as CatalogPreview;
 
 Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')->group(function () {
-    // ... سایر روت ها
+    // استفاده از همان کامپوننت تامین‌کننده برای ادمین
+    Route::get('/catalogs/manage', \App\Livewire\Supplier\Catalog\Index::class)
+        ->name('catalogs.manage');
+    
     Route::get('/catalogs/{catalog}/preview', CatalogPreview::class)
         ->name('catalogs.preview');
 });

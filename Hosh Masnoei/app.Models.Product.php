@@ -17,7 +17,7 @@ use Illuminate\Support\Collection;
 
 class Product extends Model
 {
-    use SoftDeletes;
+    use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes;
 
     protected $fillable = [
         'supplier_id',

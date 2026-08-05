@@ -44,9 +44,7 @@ class RegisterSupplier extends Component
     public $citiesList = [];
 
     // اطلاعات قانونی
-    public $business_license;
     public $national_id;
-    public $economic_code;
     public $tax_id;
 
     // مدارک احراز هویت
@@ -70,7 +68,6 @@ class RegisterSupplier extends Component
             'address' => 'required|string',
             'province_id' => 'required|exists:provinces,id',
             'city_id' => 'required|exists:cities,id',
-            'business_license' => 'nullable|string|max:50',
             'email' => 'nullable|email|max:255',
             'postal_code' => 'nullable|string|max:10',
             'company_name_en' => 'nullable|string|max:255',
@@ -81,7 +78,6 @@ class RegisterSupplier extends Component
             'phone' => 'nullable|string|max:20',
             'website' => 'nullable|url|max:255',
             'national_id' => 'nullable|string|max:10',
-            'economic_code' => 'nullable|string|max:50',
             'tax_id' => 'nullable|string|max:50',
             'national_card_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'business_license_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
@@ -114,15 +110,32 @@ class RegisterSupplier extends Component
         // بارگذاری لیست استان‌ها
         $this->provinces = Province::all();
 
+        // بارگذاری شبکه‌های اجتماعی فعال
+        $this->availableSocialNetworks = SocialNetwork::where('is_active', true)->get();
+
+        // بررسی و ایجاد رکورد supplier برای ادمین
+        if ($user->hasRole(['admin', 'super_admin']) && !$user->supplier) {
+            $this->supplier = Supplier::create([
+                'user_id' => $user->id,
+                'type' => 'admin',
+                'verification_status' => 'approved',
+                'is_active' => true,
+                'is_verified' => true,
+                'verified_at' => now(),
+                'verified_by' => $user->id,
+                'company_name' => 'پنل مدیریت',
+                'mobile' => $user->mobile,
+                'email' => $user->email,
+            ]);
+            $this->editMode = true;
+            $this->loadSupplierData();
+        }
         // بارگذاری supplier موجود (در صورت وجود)
-        if ($user->supplier) {
+        elseif ($user->supplier) {
             $this->editMode = true;
             $this->supplier = $user->supplier;
             $this->loadSupplierData();
         }
-
-        // بارگذاری شبکه‌های اجتماعی فعال
-        $this->availableSocialNetworks = SocialNetwork::where('is_active', true)->get();
 
         // پر کردن mobile و email از user
         $this->mobile = $this->mobile ?? $user->mobile;
@@ -147,7 +160,7 @@ class RegisterSupplier extends Component
         $this->brand_name = $this->supplier->brand_name;
         $this->slug = $this->supplier->slug;
         $this->description = $this->supplier->description;
-        $this->existingLogo = $this->supplier->logo;
+        $this->existingLogo = $this->supplier->logo_path;
         $this->phone = $this->supplier->phone;
         $this->mobile = $this->supplier->mobile;
         $this->email = $this->supplier->email;
@@ -163,9 +176,7 @@ class RegisterSupplier extends Component
             $this->citiesList = City::where('province_id', $this->province_id)->get();
         }
 
-        $this->business_license = $this->supplier->business_license;
         $this->national_id = $this->supplier->national_id;
-        $this->economic_code = $this->supplier->economic_code;
         $this->tax_id = $this->supplier->tax_id;
         $this->existingNationalCard = $this->supplier->national_card_file;
         $this->existingBusinessLicense = $this->supplier->business_license_file;
@@ -193,10 +204,7 @@ class RegisterSupplier extends Component
                 'postal_code' => $this->postal_code,
                 'province_id' => $this->province_id,
                 'city_id' => $this->city_id,
-                // ذخیره اطلاعات متنی برای حفظ سازگاری تا زمان حذف کامل فیلدهای قدیمی
-                'business_license' => $this->business_license,
                 'national_id' => $this->national_id,
-                'economic_code' => $this->economic_code,
                 'tax_id' => $this->tax_id,
             ];
 
@@ -205,7 +213,7 @@ class RegisterSupplier extends Component
                 if ($this->existingLogo) {
                     Storage::disk('public')->delete($this->existingLogo);
                 }
-                $data['logo'] = $this->logo->store('suppliers/logos', 'public');
+                $data['logo_path'] = $this->logo->store('suppliers/logos', 'public');
             }
 
             // ذخیره مدارک احراز هویت
@@ -235,11 +243,16 @@ class RegisterSupplier extends Component
                     unset($data[$lockedField]);
                 }
 
-                // حالت ویرایش: تغییر وضعیت به "در حال بررسی"
-                $data['verification_status'] = 'under_review';
-                $this->supplier->update($data);
+                // برای ادمین، وضعیت تایید تغییر نکند
+                if ($this->supplier->type !== 'admin') {
+                    // حالت ویرایش: تغییر وضعیت به "در حال بررسی"
+                    $data['verification_status'] = 'under_review';
+                    session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد و در انتظار تایید مدیر است.');
+                } else {
+                    session()->flash('message', 'اطلاعات فروشگاه با موفقیت به‌روزرسانی شد.');
+                }
 
-                session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد و در انتظار تایید مدیر است.');
+                $this->supplier->update($data);
             } else {
                 // حالت ثبت‌نام جدید
                 $data['user_id'] = Auth::id();
@@ -253,6 +266,11 @@ class RegisterSupplier extends Component
                 Auth::user()->syncRoles('regular_supplier');
 
                 session()->flash('message', 'ثبت‌نام شما با موفقیت انجام شد. پس از تایید مدیر، می‌توانید از سیستم استفاده کنید.');
+            }
+
+            // ریدایرکت بر اساس نوع
+            if ($this->supplier->type === 'admin') {
+                return redirect()->route('admin.dashboard');
             }
 
             return redirect()->route('account.pending');

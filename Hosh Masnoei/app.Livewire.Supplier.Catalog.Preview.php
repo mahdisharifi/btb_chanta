@@ -34,33 +34,30 @@ class Preview extends Component
             || $user->hasRole('super_admin')
             || $user->hasRole('super-admin');
 
+        $this->template = CatalogTemplate::findOrFail($catalog);
+
         if ($this->isAdmin) {
-            $this->template = CatalogTemplate::findOrFail($catalog);
-
-            if ($this->template->supplier_id) {
-                $this->supplier = \App\Models\Supplier::find($this->template->supplier_id);
-            }
+            // ادمین: supplier صاحب کاتالوگ را بگیر (برای صفحه اول)
+            $this->supplier = \App\Models\Supplier::find($this->template->supplier_id);
 
             if (!$this->supplier) {
-                $this->supplier = \App\Models\Supplier::where('slug', 'admin-catalog')->first();
+                // اگر کاتالوگ supplier نداشت، supplier خود ادمین را بگیر
+                $this->supplier = \App\Models\Supplier::where('user_id', $user->id)
+                    ->where('type', 'admin')
+                    ->first();
             }
 
-            if (!$this->supplier) {
-                $this->supplier = new \App\Models\Supplier([
-                    'title' => 'کاتالوگ مرکزی',
-                    'slug' => 'admin-catalog'
-                ]);
-            }
+            abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
         } else {
+            // تامین‌کننده: فقط کاتالوگ خودش
             $this->supplier = $user->supplier;
             abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
 
-            $this->template = CatalogTemplate::where('id', $catalog)
-                ->where('supplier_id', $this->supplier->id)
-                ->firstOrFail();
+            // بررسی مالکیت
+            abort_if($this->template->supplier_id !== $this->supplier->id, 403, 'این کاتالوگ متعلق به شما نیست.');
         }
 
-        $this->supplierName = $this->supplier->title ?? 'مدیریت مرکزی';
+        $this->supplierName = $this->supplier->company_name ?? 'مدیریت مرکزی';
         $this->supplierLogoUrl = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
             ? asset('storage/' . $this->supplier->logo_path)
             : null;
@@ -96,9 +93,16 @@ class Preview extends Component
             ?? $this->template->selected_categories
             ?? 'all';
 
-        $selectedSupplierIds = $this->settings['suppliers']
-            ?? ($this->template->config['supplier_ids'] ?? [])
-            ?? ($supplierId ? [$supplierId] : []);
+        // اگر ادمین است و supplier_ids در config وجود دارد، از آن استفاده کن
+        if ($this->isAdmin && isset($this->template->config['supplier_ids'])) {
+            $selectedSupplierIds = $this->template->config['supplier_ids'];
+        } else if ($supplierId) {
+            // اگر supplier_id مشخص است (تامین‌کننده)
+            $selectedSupplierIds = [$supplierId];
+        } else {
+            // اگر هیچکدام، از همه suppliers استفاده کن
+            $selectedSupplierIds = [];
+        }
 
         $query = Product::query()
             ->where('status', ProductStatus::ACTIVE->value);
@@ -293,7 +297,6 @@ class Preview extends Component
             'supplierLogoUrl'    => $this->supplierLogoUrl,
             'supplier'           => $this->supplier,
         ];
-
         $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
             'format'        => 'A4',
             'margin_left'   => 6,   // قبلاً 10
@@ -302,7 +305,7 @@ class Preview extends Component
             'margin_bottom' => 6,   // قبلاً 10
             'mode'          => 'utf-8',
         ]);
-
+        
         return response()->streamDownload(function () use ($pdf) {
             echo $pdf->output();
         }, $fileName);
