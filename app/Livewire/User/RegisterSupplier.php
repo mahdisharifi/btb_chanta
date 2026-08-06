@@ -153,7 +153,7 @@ class RegisterSupplier extends Component
         }
     }
 
-    private function loadSupplierData()
+    protected function loadSupplierData()
     {
         $this->company_name = $this->supplier->company_name;
         $this->company_name_en = $this->supplier->company_name_en;

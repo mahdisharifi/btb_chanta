@@ -76,7 +76,11 @@ Route::middleware(['auth', 'role:super_admin'])
         // تامین‌کنندگان
         Route::get('/suppliers', SupplierIndex::class)->name('suppliers.index');
         Route::get('/suppliers/create', SupplierCreate::class)->name('suppliers.create');
-        Route::get('/suppliers/{supplier:id}/edit', SupplierEdit::class)->name('suppliers.edit');
+        
+        // ویرایش تامین‌کننده (ادمین + تامین‌کننده خودش)
+        Route::middleware(['auth', 'role:super_admin|supplier|regular_supplier'])
+            ->get('/suppliers/{supplier:id}/edit', SupplierEdit::class)
+            ->name('suppliers.edit');
 //        Route::get('/suppliers/pending', \App\Livewire\Admin\Suppliers\Pending::class)
 //            ->name('suppliers.pending');
 //        Route::get('/suppliers/pending', \App\Livewire\Admin\Suppliers\Pending::class)

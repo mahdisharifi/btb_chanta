@@ -14,6 +14,16 @@ class Edit extends RegisterSupplier
         // دریافت supplier از route parameter
         $supplierId = request()->route('supplier');
         $this->supplier = Supplier::findOrFail($supplierId);
+        
+        // بررسی دسترسی: فقط ادمین یا خود تامین‌کننده
+        $user = auth()->user();
+        if (!$user->hasRole(['super_admin', 'admin'])) {
+            // اگر تامین‌کننده است، فقط می‌تونه پروفایل خودش رو ویرایش کنه
+            if (!$user->supplier || $user->supplier->id !== $this->supplier->id) {
+                abort(403, 'شما اجازه دسترسی به این صفحه را ندارید.');
+            }
+        }
+        
         $this->editMode = true;
 
         // فراخوانی mount والد برای بارگذاری استان‌ها و شبکه‌های اجتماعی
