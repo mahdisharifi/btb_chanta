@@ -138,11 +138,15 @@
 
 {{-- فراخوانی کاور در صورت فعال بودن تنظیمات --}}
 @if($showCoverPage)
+
+
 @include('pdf.supplier-catalog-cover', [
-'supplierName' => $supplierName,
-'supplierLogo' => $supplierLogo ?? null,
-'catalogTitle' => $template->title ?? null,
-'supplier'     => $supplier ?? null
+    'supplierName'     => $supplierName,
+    'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+    'supplierLogoPath' => $supplierLogoPath ?? null,
+    'forPdf'           => $forPdf ?? true,
+    'catalogTitle'     => $template->title ?? null,
+    'supplier'         => $supplier ?? null,
 ])
 <pagebreak />
 @endif
