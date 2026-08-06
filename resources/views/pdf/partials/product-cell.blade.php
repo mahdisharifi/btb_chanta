@@ -23,19 +23,30 @@
     {{-- عنوان محصول --}}
     <div class="title">
         {{ $product['title'] }}
-        @if(!empty($product['attribute_value']))
-            <span style="font-size: 10px; color: #6b7280; display: block; margin-top: 2px;">
-                ({{ $product['attribute_value'] }})
-            </span>
-        @endif
     </div>
+    
+    {{-- مشخصات محصول (در خط جداگانه) --}}
+    @if(!empty($product['attribute_value']))
+        <div style="font-size: 10px; color: #6b7280; margin-top: 4px; text-align: center; direction: ltr !important; unicode-bidi: bidi-override;">
+            {!! $product['attribute_value'] !!}
+        </div>
+    @endif
 
     {{-- لیست قیمت‌ها --}}
     <table class="price-table">
         @foreach($selectedPriceTypes as $priceType)
-        @php $priceValue = $product['prices'][$priceType] ?? null; @endphp
+        @php 
+            $priceData = $product['prices'][$priceType] ?? null;
+            $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
+            $warrantyMonths = is_array($priceData) ? ($priceData['warranty_months'] ?? null) : null;
+        @endphp
         <tr>
-            <td class="price-label">{{ $priceLabels[$priceType] ?? $priceType }}</td>
+            <td class="price-label">
+                {{ $priceLabels[$priceType] ?? $priceType }}
+                @if($priceType === 'warranty' && $warrantyMonths)
+                    <span style="font-size: 9px; color: #6b7280;">({{ $warrantyMonths }} ماه)</span>
+                @endif
+            </td>
             <td class="price-value">
                 @if($priceValue)
                 {{ number_format($priceValue) }}

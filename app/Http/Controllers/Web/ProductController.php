@@ -150,7 +150,7 @@ class ProductController extends Controller
             'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text'])
                 ->orderByDesc('is_primary')
                 ->orderBy('sort_order'),
-            'prices' => fn($q) => $q->select(['id', 'product_id', 'price', 'price_type', 'min_quantity', 'is_active', 'valid_from', 'valid_until'])
+            'prices' => fn($q) => $q->select(['id', 'product_id', 'price', 'price_type', 'min_quantity', 'warranty_months', 'check_months', 'is_active', 'valid_from', 'valid_until'])
                 ->where('is_active', true)
                 ->where(function ($sub) {
                     $sub->whereNull('valid_until')
@@ -173,7 +173,7 @@ class ProductController extends Controller
             ->select(['id', 'product_id', 'supplier_id', 'is_primary', 'sort_order'])
             ->with([
                 'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
-                'activePrices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type', 'min_quantity', 'is_active', 'valid_from', 'valid_until'])
+                'activePrices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type', 'min_quantity', 'warranty_months', 'check_months', 'is_active', 'valid_from', 'valid_until'])
                     ->where('is_active', true)
                     ->where(function ($sub) {
                         $sub->whereNull('valid_until')

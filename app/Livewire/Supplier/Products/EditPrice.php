@@ -63,6 +63,7 @@ class EditPrice extends Component
             $this->prices[$typeValue] = [
                 'price' => $existingPrices->get($typeValue)->price ?? '',
                 'min_quantity' => $existingPrices->get($typeValue)->min_quantity ?? 1,
+                'warranty_months' => $existingPrices->get($typeValue)->warranty_months ?? null,
             ];
         }
     }
@@ -76,6 +77,7 @@ class EditPrice extends Component
             // Validate each item in the prices array
             'prices.*.price' => ['nullable', 'numeric', 'min:0'],
             'prices.*.min_quantity' => ['required_with:prices.*.price', 'nullable', 'integer', 'min:1'],
+            'prices.*.warranty_months' => ['nullable', 'integer', 'min:1', 'max:120'],
 
             // Validate general supplier product info
             'sku' => ['nullable', 'string', 'max:255'],
@@ -126,6 +128,7 @@ class EditPrice extends Component
                         'product_id' => $this->product->id, // این خط اضافه شود
                         'price' => $data['price'],
                         'min_quantity' => $data['min_quantity'] ?? 1,
+                        'warranty_months' => $data['warranty_months'] ?? null,
                         'is_active' => $this->is_active,
 
 

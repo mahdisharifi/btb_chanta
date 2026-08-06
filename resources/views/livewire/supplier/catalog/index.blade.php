@@ -511,6 +511,17 @@
                                     </p>
                                 </div>
                                 
+                                <!-- نمایش عنوان مشخصات -->
+                                <div class="mt-3">
+                                    <label for="showAttributeLabels" class="flex items-center cursor-pointer">
+                                        <x-checkbox wire:model="showAttributeLabels" id="showAttributeLabels" />
+                                        <span class="ms-3 text-sm text-gray-600">نمایش عنوان مشخصات</span>
+                                    </label>
+                                    <p class="text-xs text-gray-500 mt-1 ml-7">
+                                        اگر فعال باشد: <span class="font-mono text-xs">(رنگ: قرمز)</span> | اگر غیرفعال باشد: <span class="font-mono text-xs">(قرمز)</span>
+                                    </p>
+                                </div>
+                                
                                 <!-- مشخصات اختصاصی دسته‌بندی‌ها -->
                                 @if(!empty($this->categoriesToConfigureAttributes))
                                 <div class="mt-4 pt-4 border-t border-amber-200">

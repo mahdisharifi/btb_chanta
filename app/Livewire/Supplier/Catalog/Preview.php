@@ -164,30 +164,37 @@ class Preview extends Component
                 foreach ($product->productSuppliers as $ps) {
                     foreach ($ps->prices as $p) {
                         $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                        if (!isset($prices[$key]) || $p->price < $prices[$key]) {
-                            $prices[$key] = $p->price;
+                        if (!isset($prices[$key]) || $p->price < $prices[$key]['price']) {
+                            $prices[$key] = [
+                                'price' => $p->price,
+                                'warranty_months' => $p->warranty_months,
+                            ];
+                        }
+                    }
+                }
+            } elseif ($this->isAdmin) {
+                // ادمین: بدون انتخاب supplier خاص
+                foreach ($product->productSuppliers as $ps) {
+                    foreach ($ps->prices as $p) {
+                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                        if (!isset($prices[$key]) || $p->price < $prices[$key]['price']) {
+                            $prices[$key] = [
+                                'price' => $p->price,
+                                'warranty_months' => $p->warranty_months,
+                            ];
                         }
                     }
                 }
             } else {
                 // تامین‌کننده: فقط تامین‌کننده جاری
-                $prices = [];
-                if ($this->isAdmin) {
-                    foreach ($product->productSuppliers as $ps) {
-                        foreach ($ps->prices as $p) {
-                            $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                            if (!isset($prices[$key]) || $p->price < $prices[$key]) {
-                                $prices[$key] = $p->price;
-                            }
-                        }
-                    }
-                } else {
-                    $productSupplier = $product->productSuppliers->first();
-                    if ($productSupplier && $productSupplier->prices) {
-                        foreach ($productSupplier->prices as $p) {
-                            $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                            $prices[$key] = $p->price;
-                        }
+                $productSupplier = $product->productSuppliers->first();
+                if ($productSupplier && $productSupplier->prices) {
+                    foreach ($productSupplier->prices as $p) {
+                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                        $prices[$key] = [
+                            'price' => $p->price,
+                            'warranty_months' => $p->warranty_months,
+                        ];
                     }
                 }
             }
@@ -196,14 +203,37 @@ class Preview extends Component
                 continue;
             }
             
-            // دریافت مقدار attribute عمومی یا اختصاصی
-            $attributeValue = null;
+            // دریافت مقدار attribute عمومی و اختصاصی
+            $attributeValues = [];
             $categoryId = $product->category_id;
+            $showLabels = $this->settings['show_attribute_labels'] ?? true;
             
-            // بررسی مشخصات اختصاصی دسته‌بندی
+            // Helper function برای fix کردن جهت متن در PDF
+            $fixTextDirection = function($text) {
+                // اضافه کردن Left-to-Right Mark برای کنترل جهت پرانتزها
+                return "\u{200E}" . $text . "\u{200E}";
+            };
+            
+            // ابتدا مشخصه عمومی
+            if (!empty($this->settings['global_attribute'])) {
+                $attrId = $this->settings['global_attribute'];
+                $attrValue = $product->attributeValues()
+                    ->where('attribute_id', $attrId)
+                    ->first();
+                if ($attrValue) {
+                    // دریافت نام attribute
+                    $attrName = \App\Models\Attribute::find($attrId)->name ?? '';
+                    if ($showLabels) {
+                        $attributeValues[] = $fixTextDirection('(' . $attrName . ': ' . $attrValue->value . ')');
+                    } else {
+                        $attributeValues[] = $fixTextDirection('(' . $attrValue->value . ')');
+                    }
+                }
+            }
+            
+            // سپس مشخصات اختصاصی دسته‌بندی
             if (!empty($this->settings['category_attributes'][$categoryId])) {
                 $categoryAttrs = $this->settings['category_attributes'][$categoryId];
-                $attrValues = [];
                 
                 foreach ($categoryAttrs as $attrId) {
                     $attrValue = $product->attributeValues()
@@ -212,22 +242,16 @@ class Preview extends Component
                     if ($attrValue) {
                         // دریافت نام attribute
                         $attrName = \App\Models\Attribute::find($attrId)->name ?? '';
-                        $attrValues[] = $attrName . ': ' . $attrValue->value;
+                        if ($showLabels) {
+                            $attributeValues[] = $fixTextDirection('(' . $attrName . ': ' . $attrValue->value . ')');
+                        } else {
+                            $attributeValues[] = $fixTextDirection('(' . $attrValue->value . ')');
+                        }
                     }
                 }
-                
-                $attributeValue = !empty($attrValues) ? implode(', ', $attrValues) : null;
             }
-            // اگر مشخصات اختصاصی نداشت، از مشخصه عمومی استفاده کن
-            elseif (!empty($this->settings['global_attribute'])) {
-                $attrId = $this->settings['global_attribute'];
-                $attrValue = $product->attributeValues()
-                    ->where('attribute_id', $attrId)
-                    ->first();
-                if ($attrValue) {
-                    $attributeValue = $attrValue->value;
-                }
-            }
+            
+            $attributeValue = !empty($attributeValues) ? implode(' ', $attributeValues) : null;
 
             $allItems[] = [
                 'id'               => $product->id,

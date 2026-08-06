@@ -61,6 +61,7 @@ class Pricing extends Component
             $this->prices[$typeValue] = [
                 'price' => $existingPrices->has($typeValue) ? $existingPrices->get($typeValue)->price : '',
                 'min_quantity' => $existingPrices->has($typeValue) ? $existingPrices->get($typeValue)->min_quantity : 1,
+                'warranty_months' => $existingPrices->has($typeValue) ? $existingPrices->get($typeValue)->warranty_months : null,
             ];
         }
     }
@@ -70,6 +71,7 @@ class Pricing extends Component
         return [
             'prices.*.price' => 'nullable|numeric|min:0',
             'prices.*.min_quantity' => 'required_with:prices.*.price|nullable|integer|min:1',
+            'prices.*.warranty_months' => 'nullable|integer|min:1|max:120',
             'sku' => 'nullable|string|max:255',
             'stock_quantity' => 'nullable|integer|min:0',
             'is_active' => 'boolean',
@@ -99,6 +101,7 @@ class Pricing extends Component
                             'product_id' => $this->product->id,
                             'price' => $priceData['price'],
                             'min_quantity' => $priceData['min_quantity'] ?? 1,
+                            'warranty_months' => $priceData['warranty_months'] ?? null,
                         ]
                     );
                 } else {

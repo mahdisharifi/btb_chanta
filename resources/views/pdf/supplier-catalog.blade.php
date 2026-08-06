@@ -100,17 +100,26 @@
             @endif
         </td>
         <td class="product-name">
-            {{ $product['title'] }}
+            <div>{{ $product['title'] }}</div>
             @if(!empty($product['attribute_value']))
-                <span style="font-size: 11px; color: #6b7280; display: block;">
-                    ({{ $product['attribute_value'] }})
-                </span>
+                <div style="font-size: 10px; color: #6b7280; margin-top: 4px; direction: ltr !important; unicode-bidi: bidi-override;">
+                    {!! $product['attribute_value'] !!}
+                </div>
             @endif
         </td>
         @foreach($selectedPriceTypes as $type)
         <td>
-            @if(isset($product['prices'][$type]) && $product['prices'][$type] > 0)
-            {{ number_format($product['prices'][$type]) }} تومان
+            @php
+                $priceData = $product['prices'][$type] ?? null;
+                $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
+                $warrantyMonths = is_array($priceData) ? ($priceData['warranty_months'] ?? null) : null;
+            @endphp
+            
+            @if($priceValue && $priceValue > 0)
+                {{ number_format($priceValue) }} تومان
+                @if($type === 'warranty' && $warrantyMonths)
+                    <span style="display: block; font-size: 10px; color: #6b7280;">({{ $warrantyMonths }} ماه)</span>
+                @endif
             @else
             <span style="color: #9ca3af;">-</span>
             @endif

@@ -499,11 +499,11 @@ use App\Helpers\PriceHelper;
                                         <div>
                                             <div class="font-semibold text-gray-700 text-sm flex items-center gap-2 flex-wrap">
                                                 {{ method_exists($price->price_type, 'label') ? $price->price_type->label() : $ptVal }}
-                                                @if($price->warranty_months)
-                                                <span class="text-[11px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">{{ $price->warranty_months }} ماه گارانتی</span>
+                                                @if($ptVal === 'warranty' && !empty($price->warranty_months))
+                                                <span class="text-[11px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{{ $price->warranty_months }} ماه</span>
                                                 @endif
-                                                @if($price->check_months)
-                                                <span class="text-[11px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">چک {{ $price->check_months }} ماهه</span>
+                                                @if(!empty($price->check_months))
+                                                <span class="text-[11px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{{ $price->check_months }} ماهه</span>
                                                 @endif
                                                 @if($isLowest)
                                                 <span class="text-[10px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full font-bold animate-pulse">✓ بهترین قیمت</span>

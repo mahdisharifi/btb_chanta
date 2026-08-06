@@ -67,11 +67,11 @@
                             {{-- Check if PriceType Enum exists to prevent errors --}}
                             @if(class_exists(\App\Enums\PriceType::class))
                             @foreach (\App\Enums\PriceType::cases() as $priceType)
-                            <div>
+                            <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
                                 <x-input-label for="price-{{ $priceType->value }}">
                                     {{ $priceType->label() }}
                                 </x-input-label>
-                                <div class="relative mt-1">
+                                <div class="relative mt-2">
                                     <x-text-input
                                         wire:model.live.debounce.500ms="prices.{{ $priceType->value }}.price"
                                         id="price-{{ $priceType->value }}"
@@ -84,6 +84,22 @@
                                     </div>
                                 </div>
                                 <x-input-error :messages="$errors->get('prices.' . $priceType->value . '.price')" class="mt-2" />
+                                
+                                {{-- فیلد تعداد ماه گارانتی (فقط برای قیمت WARRANTY) --}}
+                                @if($priceType->value === 'warranty')
+                                <div class="mt-3">
+                                    <x-input-label for="warranty-months-{{ $priceType->value }}" value="تعداد ماه گارانتی" class="text-xs" />
+                                    <x-text-input
+                                        wire:model="prices.{{ $priceType->value }}.warranty_months"
+                                        id="warranty-months-{{ $priceType->value }}"
+                                        type="number"
+                                        class="block w-full mt-1"
+                                        placeholder="مثلا: 12, 18, 24"
+                                    />
+                                    <x-input-error :messages="$errors->get('prices.' . $priceType->value . '.warranty_months')" class="mt-1" />
+                                    <p class="text-xs text-gray-500 mt-1">این عدد در کاتالوگ نمایش داده می‌شود</p>
+                                </div>
+                                @endif
                             </div>
                             @endforeach
                             @else

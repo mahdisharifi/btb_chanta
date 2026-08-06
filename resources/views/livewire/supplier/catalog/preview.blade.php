@@ -119,15 +119,15 @@
                         </div>
 
                         <!-- عنوان محصول -->
-                        <div class="text-center w-full print:m-1 px-2 h-[36px] print:h-[30px] flex items-center justify-center shrink-0">
+                        <div class="text-center w-full print:m-1 px-2 min-h-[40px] print:min-h-[34px] flex flex-col items-center justify-center shrink-0">
                             <h3 class="text-[13px] print:text-[12px] font-bold text-gray-800 leading-tight print:text-black line-clamp-2" title="{{ $product['title'] }}">
                                 {{ $product['title'] }}
-                                @if(!empty($product['attribute_value']))
-                                    <span class="block text-[10px] text-gray-500 font-normal mt-0.5">
-                                        ({{ $product['attribute_value'] }})
-                                    </span>
-                                @endif
                             </h3>
+                            @if(!empty($product['attribute_value']))
+                                <div class="text-[10px] text-gray-500 mt-1 line-clamp-1">
+                                    {{ $product['attribute_value'] }}
+                                </div>
+                            @endif
                         </div>
 
                         <!-- قیمت‌ها -->
@@ -135,11 +135,18 @@
                             {{-- منطق پیچیده حذف شد، مستقیما روی آرایه اصلی کلاس حلقه میزنیم --}}
                             @foreach($selectedPriceTypes as $priceType)
                             @php
-                            $priceValue = $product['prices'][$priceType] ?? null;
+                                $priceData = $product['prices'][$priceType] ?? null;
+                                $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
+                                $warrantyMonths = is_array($priceData) ? ($priceData['warranty_months'] ?? null) : null;
+                                
+                                $label = $priceLabels[$priceType] ?? $priceType;
+                                if($priceType === 'warranty' && $warrantyMonths) {
+                                    $label .= " ({$warrantyMonths} ماه)";
+                                }
                             @endphp
                             <div class="flex justify-between print:m-1 items-center px-3 py-[2px] overflow-hidden">
-                                    <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $priceLabels[$priceType] ?? $priceType }}">
-                                        {{ $priceLabels[$priceType] ?? $priceType }}
+                                    <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $label }}">
+                                        {{ $label }}
                                     </span>
                                 <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $priceValue ? number_format($priceValue) : '-' }}">
                                         @if($priceValue)

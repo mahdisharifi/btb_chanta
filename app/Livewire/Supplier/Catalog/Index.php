@@ -53,6 +53,7 @@ class Index extends Component
     public $globalAttribute = '';
     public $categoryAttributes = [];  // ['category_id' => ['attr1', 'attr2']]
     public $categoryAttributesUI = [];  // برای UI (نمایش در فرم)
+    public $showAttributeLabels = true;  // نمایش عنوان مشخصات (مثل "رنگ:", "سایز:")
     
     // شماره‌های تماس سفارشی
     public $contactPhones = [
@@ -365,6 +366,7 @@ class Index extends Component
         
         // بارگذاری مشخصات محصول
         $this->globalAttribute = $settings['global_attribute'] ?? '';
+        $this->showAttributeLabels = $settings['show_attribute_labels'] ?? true;
         
         // بارگذاری مشخصات اختصاصی دسته‌بندی‌ها
         if (isset($settings['category_attributes']) && is_array($settings['category_attributes'])) {
@@ -419,6 +421,7 @@ class Index extends Component
             'show_cover_page' => 'boolean',
             'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
             'globalAttribute' => 'nullable|string',
+            'showAttributeLabels' => 'boolean',
             'categoryAttributes' => 'nullable|array',
             'contactPhones' => 'nullable|array|max:3',
             'contactPhones.*.label' => 'nullable|string|max:50',
@@ -453,6 +456,7 @@ class Index extends Component
             'show_cover_page' => $this->show_cover_page,
             'global_attribute' => $this->globalAttribute,
             'category_attributes' => $filteredCategoryAttributes,
+            'show_attribute_labels' => $this->showAttributeLabels,
             'contact_phones' => array_values($filteredPhones),
         ];
         
