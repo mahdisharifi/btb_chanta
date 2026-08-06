@@ -46,6 +46,9 @@ class Index extends Component
     // متغیر برای بررسی وجود supplier ادمین
     public $adminHasSupplier = false;
     
+    // متغیر برای نمایش/مخفی کردن فرم
+    public $showForm = false;
+    
     // مشخصات محصول در نام دسته‌بندی
     public $globalAttribute = '';
     public $categoryAttributes = [];
@@ -253,6 +256,25 @@ class Index extends Component
             $this->contactPhones = array_values($this->contactPhones);
         }
     }
+    
+    /**
+     * نمایش فرم ایجاد کاتالوگ جدید
+     */
+    public function createNew()
+    {
+        $this->resetForm();
+        $this->showForm = true;
+        $this->dispatch('scroll-to-form');
+    }
+    
+    /**
+     * مخفی کردن فرم
+     */
+    public function hideForm()
+    {
+        $this->showForm = false;
+        $this->resetForm();
+    }
 
     public function editTemplate($id)
     {
@@ -310,6 +332,9 @@ class Index extends Component
         }
 
         $this->ensureValidSortFields();
+        
+        // نمایش فرم
+        $this->showForm = true;
 
         // اسکرول به فرم
         $this->dispatch('scroll-to-form');
@@ -392,6 +417,9 @@ class Index extends Component
 
         $this->showSuccessMessage = true;
         $this->resetForm();
+        
+        // مخفی کردن فرم
+        $this->showForm = false;
 
         // پنهان کردن پیام موفقیت بعد از 3 ثانیه
         $this->dispatch('hide-success-message');
@@ -425,7 +453,7 @@ class Index extends Component
         if ($hasUnsavedChanges) {
             $this->dispatch('confirm-cancel');
         } else {
-            $this->resetForm();
+            $this->hideForm();
         }
     }
 
@@ -453,6 +481,11 @@ class Index extends Component
         $this->sortLevel2Dir = 'asc';
 
         $this->separateCategories = false;
+        
+        // Reset مشخصات و شماره‌های تماس
+        $this->globalAttribute = '';
+        $this->categoryAttributes = [];
+        $this->contactPhones = [['label' => '', 'number' => '']];
     }
 
     #[Layout('components.layouts.supplier')]

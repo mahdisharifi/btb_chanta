@@ -45,9 +45,18 @@
                                 <x-heroicon-o-book-open class="w-6 h-6 text-blue-600" />
                                 کاتالوگ‌های من
                             </h3>
-                            <span class="bg-gray-100 text-gray-600 text-xs font-bold px-2.5 py-1 rounded-full">
-                                {{ $templates->total() }} مورد
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-gray-100 text-gray-600 text-xs font-bold px-2.5 py-1 rounded-full">
+                                    {{ $templates->total() }} مورد
+                                </span>
+                                @if(!$showForm)
+                                <button wire:click="createNew" 
+                                        class="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors">
+                                    <x-heroicon-s-plus class="w-4 h-4" />
+                                    جدید
+                                </button>
+                                @endif
+                            </div>
                         </div>
 
                         <div class="p-5 flex-1 bg-gray-50/30">
@@ -132,7 +141,10 @@
                 </div>
 
                 <!-- فرم ایجاد/ویرایش کاتالوگ (ستون راست/بزرگتر) -->
-                <div class="xl:col-span-7 2xl:col-span-8">
+                @if($showForm)
+                <div class="xl:col-span-7 2xl:col-span-8" 
+                     x-data 
+                     x-init="$nextTick(() => $el.scrollIntoView({ behavior: 'smooth', block: 'start' }))">
                     <div class="bg-white overflow-hidden shadow-sm sm:rounded-xl p-6 border border-gray-100 sticky top-6">
                         <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
                             <div class="flex items-center gap-2">
@@ -506,11 +518,11 @@
                             
                             <!-- دکمه‌های عملیات بهبود یافته -->
                             <div class="flex items-center justify-end space-x-3 space-x-reverse pt-6 border-t border-gray-100">
-                                <!-- دکمه انصراف -->
+                                <!-- دکمه لغو/بستن -->
                                 <button type="button" wire:click="confirmCancel"
                                         class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 flex items-center shadow-sm hover:shadow">
-                                    <x-heroicon-s-arrow-left class="w-4 h-4 ml-2" />
-                                    بازگشت به لیست
+                                    <x-heroicon-s-x-mark class="w-4 h-4 ml-2" />
+                                    {{ $editingTemplateId ? 'لغو' : 'بستن' }}
                                 </button>
 
                                 <!-- دکمه ذخیره -->
@@ -534,6 +546,29 @@
 
                     </div>
                 </div>
+                @endif
+                
+                <!-- پیام خالی بودن لیست (زمانی که فرم باز نیست) -->
+                @if(!$showForm && $templates->count() === 0)
+                <div class="xl:col-span-7 2xl:col-span-8">
+                    <div class="bg-white overflow-hidden shadow-sm sm:rounded-xl p-12 border border-gray-100 text-center">
+                        <div class="flex flex-col items-center justify-center">
+                            <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+                                <x-heroicon-o-document-plus class="h-10 w-10 text-blue-500" />
+                            </div>
+                            <h3 class="text-lg font-bold text-gray-900 mb-2">هنوز کاتالوگی ایجاد نکرده‌اید</h3>
+                            <p class="text-sm text-gray-500 mb-6 max-w-md">
+                                با کلیک بر روی دکمه "جدید" اولین کاتالوگ خود را ایجاد کنید و محصولات خود را به صورت حرفه‌ای نمایش دهید.
+                            </p>
+                            <button wire:click="createNew" 
+                                    class="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors shadow-sm hover:shadow">
+                                <x-heroicon-s-plus-circle class="w-5 h-5" />
+                                ایجاد اولین کاتالوگ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                @endif
 
             </div>
         </div>
@@ -560,26 +595,28 @@
     <script>
         document.addEventListener('livewire:initialized', () => {
             // تأیید لغو ویرایش
-        @this.on('confirm-cancel', () => {
-            if (confirm('آیا از انصراف از ویرایش اطمینان دارید؟ تغییرات ذخیره نشده از بین خواهند رفت.')) {
-            @this.call('resetForm');
-            }
-        });
+            @this.on('confirm-cancel', () => {
+                if (confirm('آیا از انصراف از ویرایش اطمینان دارید؟ تغییرات ذخیره نشده از بین خواهند رفت.')) {
+                    @this.call('hideForm');
+                }
+            });
 
             // پنهان کردن پیام موفقیت
-        @this.on('hide-success-message', () => {
-            setTimeout(() => {
-            @this.set('showSuccessMessage', false);
-            }, 3000);
-        });
+            @this.on('hide-success-message', () => {
+                setTimeout(() => {
+                    @this.set('showSuccessMessage', false);
+                }, 3000);
+            });
 
             // اسکرول به فرم هنگام ویرایش
-        @this.on('scroll-to-form', () => {
-            const formElement = document.querySelector('[wire\\:submit\\.prevent="saveTemplate"]');
-            if (formElement) {
-                formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        });
+            @this.on('scroll-to-form', () => {
+                setTimeout(() => {
+                    const formElement = document.querySelector('[wire\\:submit\\.prevent="saveTemplate"]');
+                    if (formElement) {
+                        formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 100);
+            });
         });
     </script>
 </div>
