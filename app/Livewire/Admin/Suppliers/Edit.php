@@ -9,10 +9,11 @@ use Livewire\Attributes\Layout;
 #[Layout('components.layouts.admin')]
 class Edit extends RegisterSupplier
 {
-    public function mount(Supplier $supplier)
+    public function mount()
     {
-        // تنظیم supplier و editMode
-        $this->supplier = $supplier;
+        // دریافت supplier از route parameter
+        $supplierId = request()->route('supplier');
+        $this->supplier = Supplier::findOrFail($supplierId);
         $this->editMode = true;
 
         // فراخوانی mount والد برای بارگذاری استان‌ها و شبکه‌های اجتماعی
