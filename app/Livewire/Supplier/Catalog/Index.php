@@ -152,6 +152,25 @@ class Index extends Component
         // دریافت تمام attributes از دیتابیس
         return \App\Models\Attribute::orderBy('name')->pluck('name', 'id')->toArray();
     }
+    
+    #[Computed]
+    public function categoriesToConfigureAttributes()
+    {
+        // اگر "همه دسته‌بندی‌ها" انتخاب شده، لیست تمام دسته‌بندی‌های موجود
+        if ($this->selectAllCategories) {
+            return $this->availableCategories;
+        }
+        
+        // در غیر این صورت، فقط دسته‌بندی‌های انتخاب شده
+        $availableCategories = $this->availableCategories;
+        $filtered = [];
+        foreach ($this->selectedCategories as $catId) {
+            if (isset($availableCategories[$catId])) {
+                $filtered[$catId] = $availableCategories[$catId];
+            }
+        }
+        return $filtered;
+    }
 
     #[Computed]
     public function availableSortFields()

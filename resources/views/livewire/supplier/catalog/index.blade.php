@@ -512,17 +512,16 @@
                                 </div>
                                 
                                 <!-- مشخصات اختصاصی دسته‌بندی‌ها -->
-                                @if(!$selectAllCategories && !empty($selectedCategories))
+                                @if(!empty($this->categoriesToConfigureAttributes))
                                 <div class="mt-4 pt-4 border-t border-amber-200">
                                     <h5 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
                                         <x-heroicon-o-squares-plus class="w-4 h-4" />
                                         مشخصات اختصاصی هر دسته‌بندی (حداکثر 2 مشخصه)
                                     </h5>
                                     
-                                    <div class="space-y-3">
-                                        @foreach($selectedCategories as $categoryId)
+                                    <div class="space-y-3 max-h-96 overflow-y-auto">
+                                        @foreach($this->categoriesToConfigureAttributes as $categoryId => $categoryName)
                                             @php
-                                                $categoryName = $this->availableCategories[$categoryId] ?? "دسته {$categoryId}";
                                                 $categoryAttrs = $this->categoryAttributes[$categoryId] ?? [];
                                             @endphp
                                             
@@ -574,6 +573,13 @@
                                             </div>
                                         @endforeach
                                     </div>
+                                    
+                                    @if($selectAllCategories)
+                                    <p class="text-xs text-blue-600 bg-blue-50 p-2 rounded mt-2">
+                                        <x-heroicon-s-information-circle class="w-4 h-4 inline ml-1" />
+                                        همه دسته‌بندی‌های موجود در محصولات شما نمایش داده شده‌اند.
+                                    </p>
+                                    @endif
                                 </div>
                                 @endif
                                 
