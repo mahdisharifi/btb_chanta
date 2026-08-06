@@ -51,7 +51,8 @@ class Index extends Component
     
     // مشخصات محصول در نام دسته‌بندی
     public $globalAttribute = '';
-    public $categoryAttributes = [];
+    public $categoryAttributes = [];  // ['category_id' => ['attr1', 'attr2']]
+    public $categoryAttributesUI = [];  // برای UI (نمایش در فرم)
     
     // شماره‌های تماس سفارشی
     public $contactPhones = [
@@ -275,6 +276,44 @@ class Index extends Component
         $this->showForm = false;
         $this->resetForm();
     }
+    
+    /**
+     * اضافه کردن مشخصه برای یک دسته‌بندی
+     */
+    public function addCategoryAttribute($categoryId)
+    {
+        if (!isset($this->categoryAttributes[$categoryId])) {
+            $this->categoryAttributes[$categoryId] = [];
+        }
+        
+        if (count($this->categoryAttributes[$categoryId]) < 2) {
+            $this->categoryAttributes[$categoryId][] = '';
+        }
+    }
+    
+    /**
+     * حذف مشخصه از یک دسته‌بندی
+     */
+    public function removeCategoryAttribute($categoryId, $index)
+    {
+        if (isset($this->categoryAttributes[$categoryId][$index])) {
+            unset($this->categoryAttributes[$categoryId][$index]);
+            $this->categoryAttributes[$categoryId] = array_values($this->categoryAttributes[$categoryId]);
+            
+            // اگر خالی شد، حذف کن
+            if (empty($this->categoryAttributes[$categoryId])) {
+                unset($this->categoryAttributes[$categoryId]);
+            }
+        }
+    }
+    
+    /**
+     * حذف تمام مشخصات یک دسته‌بندی
+     */
+    public function removeCategoryAttributes($categoryId)
+    {
+        unset($this->categoryAttributes[$categoryId]);
+    }
 
     public function editTemplate($id)
     {
@@ -307,7 +346,13 @@ class Index extends Component
         
         // بارگذاری مشخصات محصول
         $this->globalAttribute = $settings['global_attribute'] ?? '';
-        $this->categoryAttributes = $settings['category_attributes'] ?? [];
+        
+        // بارگذاری مشخصات اختصاصی دسته‌بندی‌ها
+        if (isset($settings['category_attributes']) && is_array($settings['category_attributes'])) {
+            $this->categoryAttributes = $settings['category_attributes'];
+        } else {
+            $this->categoryAttributes = [];
+        }
         
         // بارگذاری شماره‌های تماس
         $this->contactPhones = $settings['contact_phones'] ?? [['label' => '', 'number' => '']];
@@ -365,6 +410,17 @@ class Index extends Component
         $filteredPhones = array_filter($this->contactPhones, function($phone) {
             return !empty($phone['number']);
         });
+        
+        // فیلتر کردن مشخصات دسته‌بندی‌ها (حذف خالی‌ها)
+        $filteredCategoryAttributes = [];
+        foreach ($this->categoryAttributes as $catId => $attrs) {
+            $filtered = array_filter($attrs, function($attr) {
+                return !empty($attr);
+            });
+            if (!empty($filtered)) {
+                $filteredCategoryAttributes[$catId] = array_values($filtered);
+            }
+        }
 
         $settings = [
             'description' => $this->description,
@@ -377,7 +433,7 @@ class Index extends Component
             'separate_categories' => $this->separateCategories,
             'show_cover_page' => $this->show_cover_page,
             'global_attribute' => $this->globalAttribute,
-            'category_attributes' => $this->categoryAttributes,
+            'category_attributes' => $filteredCategoryAttributes,
             'contact_phones' => array_values($filteredPhones),
         ];
         

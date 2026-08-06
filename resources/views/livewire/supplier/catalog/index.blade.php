@@ -493,12 +493,13 @@
                             <div class="space-y-3 bg-amber-50/30 p-4 rounded-xl border border-amber-100">
                                 <h4 class="font-bold text-gray-800 flex items-center gap-2">
                                     <x-heroicon-o-tag class="w-5 h-5 text-amber-500" />
-                                    نمایش مشخصات در نام دسته‌بندی
+                                    نمایش مشخصات در نام محصول
                                 </h4>
                                 
+                                <!-- مشخصه عمومی -->
                                 <div>
-                                    <x-input-label for="globalAttribute" value="مشخصه عمومی (برای همه دسته‌بندی‌ها)" class="font-semibold" />
-                                    <select wire:model="globalAttribute" id="globalAttribute" 
+                                    <x-input-label for="globalAttribute" value="مشخصه عمومی (برای همه محصولات)" class="font-semibold" />
+                                    <select wire:model.live="globalAttribute" id="globalAttribute" 
                                             class="mt-1 block w-full md:w-2/3 border-gray-300 focus:border-amber-500 focus:ring-amber-500 rounded-lg shadow-sm text-sm">
                                         <option value="">-- انتخاب نکنید --</option>
                                         @foreach($this->availableAttributes as $id => $name)
@@ -506,13 +507,79 @@
                                         @endforeach
                                     </select>
                                     <p class="text-xs text-gray-500 mt-1">
-                                        این مشخصه برای همه محصولات در تمام دسته‌بندی‌ها نمایش داده می‌شود.
+                                        این مشخصه برای همه محصولات نمایش داده می‌شود (به جز دسته‌بندی‌هایی که مشخصات اختصاصی دارند).
                                     </p>
                                 </div>
                                 
+                                <!-- مشخصات اختصاصی دسته‌بندی‌ها -->
+                                @if(!$selectAllCategories && !empty($selectedCategories))
+                                <div class="mt-4 pt-4 border-t border-amber-200">
+                                    <h5 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                        <x-heroicon-o-squares-plus class="w-4 h-4" />
+                                        مشخصات اختصاصی هر دسته‌بندی (حداکثر 2 مشخصه)
+                                    </h5>
+                                    
+                                    <div class="space-y-3">
+                                        @foreach($selectedCategories as $categoryId)
+                                            @php
+                                                $categoryName = $this->availableCategories[$categoryId] ?? "دسته {$categoryId}";
+                                                $categoryAttrs = $this->categoryAttributes[$categoryId] ?? [];
+                                            @endphp
+                                            
+                                            <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                                <div class="flex items-center justify-between mb-2">
+                                                    <span class="text-sm font-medium text-gray-700">{{ $categoryName }}</span>
+                                                    @if(empty($categoryAttrs))
+                                                        <button type="button" 
+                                                                wire:click="addCategoryAttribute({{ $categoryId }})"
+                                                                class="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1">
+                                                            <x-heroicon-s-plus-circle class="w-3.5 h-3.5" />
+                                                            افزودن مشخصه
+                                                        </button>
+                                                    @endif
+                                                </div>
+                                                
+                                                @if(!empty($categoryAttrs))
+                                                <div class="space-y-2">
+                                                    @foreach($categoryAttrs as $index => $attrId)
+                                                    <div class="flex items-center gap-2">
+                                                        <select wire:model="categoryAttributes.{{ $categoryId }}.{{ $index }}" 
+                                                                class="flex-1 text-xs border-gray-300 focus:border-amber-500 focus:ring-amber-500 rounded-lg">
+                                                            <option value="">-- انتخاب مشخصه --</option>
+                                                            @foreach($this->availableAttributes as $id => $name)
+                                                                @if($id != $globalAttribute)
+                                                                    <option value="{{ $id }}">{{ $name }}</option>
+                                                                @endif
+                                                            @endforeach
+                                                        </select>
+                                                        
+                                                        <button type="button" 
+                                                                wire:click="removeCategoryAttribute({{ $categoryId }}, {{ $index }})"
+                                                                class="p-1.5 text-red-500 hover:bg-red-50 rounded transition">
+                                                            <x-heroicon-s-trash class="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                    @endforeach
+                                                    
+                                                    @if(count($categoryAttrs) < 2)
+                                                    <button type="button" 
+                                                            wire:click="addCategoryAttribute({{ $categoryId }})"
+                                                            class="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 mt-1">
+                                                        <x-heroicon-s-plus-circle class="w-3.5 h-3.5" />
+                                                        افزودن مشخصه دوم
+                                                    </button>
+                                                    @endif
+                                                </div>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                                @endif
+                                
                                 <p class="text-xs text-amber-700 bg-amber-50 p-2 rounded">
                                     <x-heroicon-s-light-bulb class="w-4 h-4 inline ml-1" />
-                                    مثال: لوازم جانبی (رنگ: قرمز) - مشخصه در پرانتز بعد از نام دسته‌بندی نمایش داده می‌شود.
+                                    مثال: لوازم جانبی (رنگ: قرمز، سایز: L) - مشخصات در پرانتز نمایش داده می‌شوند.
                                 </p>
                             </div>
                             

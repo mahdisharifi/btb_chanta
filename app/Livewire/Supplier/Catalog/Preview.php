@@ -196,14 +196,37 @@ class Preview extends Component
                 continue;
             }
             
-            // دریافت مقدار attribute عمومی
+            // دریافت مقدار attribute عمومی یا اختصاصی
             $attributeValue = null;
-            if (!empty($this->settings['global_attribute'])) {
+            $categoryId = $product->category_id;
+            
+            // بررسی مشخصات اختصاصی دسته‌بندی
+            if (!empty($this->settings['category_attributes'][$categoryId])) {
+                $categoryAttrs = $this->settings['category_attributes'][$categoryId];
+                $attrValues = [];
+                
+                foreach ($categoryAttrs as $attrId) {
+                    $attrValue = $product->attributeValues()
+                        ->where('attribute_id', $attrId)
+                        ->first();
+                    if ($attrValue) {
+                        // دریافت نام attribute
+                        $attrName = \App\Models\Attribute::find($attrId)->name ?? '';
+                        $attrValues[] = $attrName . ': ' . $attrValue->value;
+                    }
+                }
+                
+                $attributeValue = !empty($attrValues) ? implode(', ', $attrValues) : null;
+            }
+            // اگر مشخصات اختصاصی نداشت، از مشخصه عمومی استفاده کن
+            elseif (!empty($this->settings['global_attribute'])) {
                 $attrId = $this->settings['global_attribute'];
-                $attributeValue = $product->attributeValues()
+                $attrValue = $product->attributeValues()
                     ->where('attribute_id', $attrId)
                     ->first();
-                $attributeValue = $attributeValue ? $attributeValue->value : null;
+                if ($attrValue) {
+                    $attributeValue = $attrValue->value;
+                }
             }
 
             $allItems[] = [
