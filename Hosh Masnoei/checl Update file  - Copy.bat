@@ -2,7 +2,7 @@
 chcp 65001 >nul
 SETLOCAL ENABLEDELAYEDEXPANSION
                    
-:: تنظیم پوشه مقصد
+:: تنظیم پوشه مقصد 
 SET "DESTINATION_FOLDER=E:\sharifi\projects\b2b-marketplace-new\Hosh Masnoei"
   
 :: متنی که باید از کل مسیر حذف شود

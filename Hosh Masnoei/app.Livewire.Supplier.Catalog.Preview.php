@@ -294,8 +294,9 @@ class Preview extends Component
             'template'           => $this->template,
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
-            'supplierLogoUrl'    => $this->supplierLogoUrl,
-            'supplier'           => $this->supplier,
+    'supplierLogoUrl'  => $this->supplierLogoUrl,   // برای سازگاری نگه داشته شود
+    'supplierLogoPath' => $this->supplierLogoPath,  // مسیر فیزیکی
+    'forPdf'           => true,            'supplier'           => $this->supplier,
         ];
         $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
             'format'        => 'A4',
