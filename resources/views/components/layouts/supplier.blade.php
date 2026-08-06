@@ -38,6 +38,15 @@
                 داشبورد
             </a>
 
+            <!-- اطلاعات فروشگاه -->
+            @if(auth()->user()?->supplier)
+            <a href="{{ route('admin.suppliers.edit', auth()->user()->supplier->id) }}"
+               class="{{ request()->routeIs('admin.suppliers.edit') ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400 hover:bg-green-50 dark:hover:bg-green-800/50 hover:text-green-700 dark:hover:text-green-300' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
+                <x-heroicon-o-building-storefront class="{{ request()->routeIs('admin.suppliers.edit') ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-green-500 dark:group-hover:text-green-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
+                اطلاعات فروشگاه
+            </a>
+            @endif
+
             <!-- انتخاب محصول (قیمت گذاری محصول) -->
             <a href="{{ route('supplier.product-selection') }}"
                class="{{ request()->routeIs('supplier.product-selection') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">

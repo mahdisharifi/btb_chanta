@@ -64,6 +64,17 @@
         ['route' => 'admin.subscription-plans.index', 'label' => 'پنل های فروش', 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'],
         ['route' => 'admin.system.terminal', 'label' => 'دستورات سیستمی', 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'],
         ];
+
+        // لینک اطلاعات فروشگاه (برای ادمین که supplier هم هست)
+        $supplierEditLink = null;
+        if (auth()->user()?->supplier) {
+            $supplierEditLink = [
+                'route' => 'admin.suppliers.edit',
+                'params' => auth()->user()->supplier->id,
+                'label' => 'اطلاعات فروشگاه',
+                'icon' => 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+            ];
+        }
         @endphp
 
         @foreach ($navLinks as $link)
@@ -75,6 +86,17 @@
             {{ $link['label'] }}
         </a>
         @endforeach
+
+        {{-- لینک اطلاعات فروشگاه برای ادمین --}}
+        @if($supplierEditLink)
+        <a href="{{ route($supplierEditLink['route'], $supplierEditLink['params']) }}"
+           class="flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200 group {{ request()->routeIs($supplierEditLink['route'].'*') ? 'bg-green-50 text-green-600 font-semibold' : 'text-gray-600 hover:bg-green-50 hover:text-green-700' }}">
+            <svg class="w-5 h-5 ml-3 {{ request()->routeIs($supplierEditLink['route'].'*') ? 'text-green-600' : 'text-gray-400 group-hover:text-green-500' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $supplierEditLink['icon'] }}"></path>
+            </svg>
+            {{ $supplierEditLink['label'] }}
+        </a>
+        @endif
 
         {- ابزار حساس: ورود بدون پسورد — فقط برای مدیر ارشد --}}
         @can('super_admin')
