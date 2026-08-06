@@ -304,7 +304,7 @@ class Preview extends Component
     'supplierLogoPath' => $this->supplierLogoPath,  // مسیر فیزیکی
     'forPdf'           => true,            'supplier'           => $this->supplier,
         ];
-        $pdf = PDF::loadView('pdf.supplier-catalog2', $data, [], [
+        $pdf = PDF::loadView($view, $data, [$prefix], [
             'format'        => 'A4',
             'margin_left'   => 6,   // قبلاً 10
             'margin_right'  => 6,   // قبلاً 10
