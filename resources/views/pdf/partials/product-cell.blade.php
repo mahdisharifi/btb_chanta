@@ -21,7 +21,14 @@
     </div>
 
     {{-- عنوان محصول --}}
-    <div class="title">{{ $product['title'] }}</div>
+    <div class="title">
+        {{ $product['title'] }}
+        @if(!empty($product['attribute_value']))
+            <span style="font-size: 10px; color: #6b7280; display: block; margin-top: 2px;">
+                ({{ $product['attribute_value'] }})
+            </span>
+        @endif
+    </div>
 
     {{-- لیست قیمت‌ها --}}
     <table class="price-table">

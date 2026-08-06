@@ -423,6 +423,87 @@
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- شماره‌های تماس سفارشی (برای کاور) -->
+                            <div class="space-y-3 bg-green-50/30 p-4 rounded-xl border border-green-100">
+                                <h4 class="font-bold text-gray-800 flex items-center gap-2">
+                                    <x-heroicon-o-phone class="w-5 h-5 text-green-500" />
+                                    شماره‌های تماس در کاور (حداکثر 3 شماره)
+                                </h4>
+                                
+                                @foreach($contactPhones as $index => $phone)
+                                <div class="flex items-center gap-3">
+                                    <div class="flex-1 grid grid-cols-2 gap-3">
+                                        <div>
+                                            <x-input-label :for="'phone_label_'.$index" value="عنوان" class="text-xs" />
+                                            <x-text-input 
+                                                wire:model="contactPhones.{{ $index }}.label" 
+                                                :id="'phone_label_'.$index" 
+                                                type="text" 
+                                                class="mt-1 block w-full text-sm" 
+                                                placeholder="مثلاً: فروش، پشتیبانی" />
+                                        </div>
+                                        <div>
+                                            <x-input-label :for="'phone_number_'.$index" value="شماره تماس" class="text-xs" />
+                                            <x-text-input 
+                                                wire:model="contactPhones.{{ $index }}.number" 
+                                                :id="'phone_number_'.$index" 
+                                                type="text" 
+                                                class="mt-1 block w-full text-sm" 
+                                                placeholder="021-12345678" />
+                                        </div>
+                                    </div>
+                                    
+                                    @if($index > 0)
+                                    <button type="button" wire:click="removeContactPhone({{ $index }})" 
+                                            class="mt-5 p-2 text-red-500 hover:bg-red-50 rounded-lg transition">
+                                        <x-heroicon-s-trash class="w-4 h-4" />
+                                    </button>
+                                    @endif
+                                </div>
+                                @endforeach
+                                
+                                @if(count($contactPhones) < 3)
+                                <button type="button" wire:click="addContactPhone" 
+                                        class="text-sm text-green-600 hover:text-green-700 font-medium flex items-center gap-1">
+                                    <x-heroicon-s-plus-circle class="w-4 h-4" />
+                                    افزودن شماره تماس
+                                </button>
+                                @endif
+                                
+                                <p class="text-xs text-gray-500 mt-2">
+                                    <x-heroicon-s-information-circle class="w-4 h-4 inline ml-1" />
+                                    این شماره‌ها در صفحه اول (کاور) کاتالوگ نمایش داده می‌شوند.
+                                </p>
+                            </div>
+                            
+                            <!-- مشخصات محصول در نام دسته‌بندی -->
+                            <div class="space-y-3 bg-amber-50/30 p-4 rounded-xl border border-amber-100">
+                                <h4 class="font-bold text-gray-800 flex items-center gap-2">
+                                    <x-heroicon-o-tag class="w-5 h-5 text-amber-500" />
+                                    نمایش مشخصات در نام دسته‌بندی
+                                </h4>
+                                
+                                <div>
+                                    <x-input-label for="globalAttribute" value="مشخصه عمومی (برای همه دسته‌بندی‌ها)" class="font-semibold" />
+                                    <select wire:model="globalAttribute" id="globalAttribute" 
+                                            class="mt-1 block w-full md:w-2/3 border-gray-300 focus:border-amber-500 focus:ring-amber-500 rounded-lg shadow-sm text-sm">
+                                        <option value="">-- انتخاب نکنید --</option>
+                                        @foreach($this->availableAttributes as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        این مشخصه برای همه محصولات در تمام دسته‌بندی‌ها نمایش داده می‌شود.
+                                    </p>
+                                </div>
+                                
+                                <p class="text-xs text-amber-700 bg-amber-50 p-2 rounded">
+                                    <x-heroicon-s-light-bulb class="w-4 h-4 inline ml-1" />
+                                    مثال: لوازم جانبی (رنگ: قرمز) - مشخصه در پرانتز بعد از نام دسته‌بندی نمایش داده می‌شود.
+                                </p>
+                            </div>
+                            
                             <!-- دکمه‌های عملیات بهبود یافته -->
                             <div class="flex items-center justify-end space-x-3 space-x-reverse pt-6 border-t border-gray-100">
                                 <!-- دکمه انصراف -->

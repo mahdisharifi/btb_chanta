@@ -42,18 +42,31 @@
     <br />
 
     <div class="info-grid">
-        @if(!empty($supplier->phone))
-        <div class="info-item">
-            <span class="info-label">تلفن تماس:</span>
-            <span class="info-value">{{ $supplier->phone }}</span>
-        </div>
-        @endif
+        @if(!empty($contactPhones) && count($contactPhones) > 0)
+            {{-- نمایش شماره‌های تماس سفارشی --}}
+            @foreach($contactPhones as $phone)
+                @if(!empty($phone['number']))
+                <div class="info-item">
+                    <span class="info-label">{{ $phone['label'] ?? 'تماس' }}:</span>
+                    <span class="info-value">{{ $phone['number'] }}</span>
+                </div>
+                @endif
+            @endforeach
+        @else
+            {{-- نمایش شماره‌های پیش‌فرض از supplier --}}
+            @if(!empty($supplier->phone))
+            <div class="info-item">
+                <span class="info-label">تلفن تماس:</span>
+                <span class="info-value">{{ $supplier->phone }}</span>
+            </div>
+            @endif
 
-        @if(!empty($supplier->mobile))
-        <div class="info-item">
-            <span class="info-label">موبایل:</span>
-            <span class="info-value">{{ $supplier->mobile }}</span>
-        </div>
+            @if(!empty($supplier->mobile))
+            <div class="info-item">
+                <span class="info-label">موبایل:</span>
+                <span class="info-value">{{ $supplier->mobile }}</span>
+            </div>
+            @endif
         @endif
 
         @if(!empty($supplier->email))

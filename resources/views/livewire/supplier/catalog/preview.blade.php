@@ -122,6 +122,11 @@
                         <div class="text-center w-full print:m-1 px-2 h-[36px] print:h-[30px] flex items-center justify-center shrink-0">
                             <h3 class="text-[13px] print:text-[12px] font-bold text-gray-800 leading-tight print:text-black line-clamp-2" title="{{ $product['title'] }}">
                                 {{ $product['title'] }}
+                                @if(!empty($product['attribute_value']))
+                                    <span class="block text-[10px] text-gray-500 font-normal mt-0.5">
+                                        ({{ $product['attribute_value'] }})
+                                    </span>
+                                @endif
                             </h3>
                         </div>
 

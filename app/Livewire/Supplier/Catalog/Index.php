@@ -45,6 +45,15 @@ class Index extends Component
     
     // متغیر برای بررسی وجود supplier ادمین
     public $adminHasSupplier = false;
+    
+    // مشخصات محصول در نام دسته‌بندی
+    public $globalAttribute = '';
+    public $categoryAttributes = [];
+    
+    // شماره‌های تماس سفارشی
+    public $contactPhones = [
+        ['label' => '', 'number' => ''],
+    ];
 
     public function mount()
     {
@@ -132,6 +141,13 @@ class Index extends Component
         }
         return $types;
     }
+    
+    #[Computed]
+    public function availableAttributes()
+    {
+        // دریافت تمام attributes از دیتابیس
+        return \App\Models\Attribute::orderBy('name')->pluck('name', 'id')->toArray();
+    }
 
     #[Computed]
     public function availableSortFields()
@@ -216,6 +232,27 @@ class Index extends Component
             }
         }
     }
+    
+    /**
+     * افزودن شماره تماس جدید
+     */
+    public function addContactPhone()
+    {
+        if (count($this->contactPhones) < 3) {
+            $this->contactPhones[] = ['label' => '', 'number' => ''];
+        }
+    }
+    
+    /**
+     * حذف شماره تماس
+     */
+    public function removeContactPhone($index)
+    {
+        if (count($this->contactPhones) > 1) {
+            unset($this->contactPhones[$index]);
+            $this->contactPhones = array_values($this->contactPhones);
+        }
+    }
 
     public function editTemplate($id)
     {
@@ -245,6 +282,13 @@ class Index extends Component
 
         $this->separateCategories = $settings['separate_categories'] ?? false;
         $this->show_cover_page = $settings['show_cover_page'] ?? true;
+        
+        // بارگذاری مشخصات محصول
+        $this->globalAttribute = $settings['global_attribute'] ?? '';
+        $this->categoryAttributes = $settings['category_attributes'] ?? [];
+        
+        // بارگذاری شماره‌های تماس
+        $this->contactPhones = $settings['contact_phones'] ?? [['label' => '', 'number' => '']];
 
         // تنظیم قیمت‌ها
         if (($settings['prices'] ?? 'all') === 'all') {
@@ -285,7 +329,17 @@ class Index extends Component
             'separateCategories' => 'boolean',
             'show_cover_page' => 'boolean',
             'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
+            'globalAttribute' => 'nullable|string',
+            'categoryAttributes' => 'nullable|array',
+            'contactPhones' => 'nullable|array|max:3',
+            'contactPhones.*.label' => 'nullable|string|max:50',
+            'contactPhones.*.number' => 'nullable|string|max:20',
         ]);
+        
+        // فیلتر کردن شماره‌های تماس خالی
+        $filteredPhones = array_filter($this->contactPhones, function($phone) {
+            return !empty($phone['number']);
+        });
 
         $settings = [
             'description' => $this->description,
@@ -297,6 +351,9 @@ class Index extends Component
             'sort_level2_dir' => $this->sortLevel2Dir,
             'separate_categories' => $this->separateCategories,
             'show_cover_page' => $this->show_cover_page,
+            'global_attribute' => $this->globalAttribute,
+            'category_attributes' => $this->categoryAttributes,
+            'contact_phones' => array_values($filteredPhones),
         ];
         
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ است)

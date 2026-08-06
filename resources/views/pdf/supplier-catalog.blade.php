@@ -101,6 +101,11 @@
         </td>
         <td class="product-name">
             {{ $product['title'] }}
+            @if(!empty($product['attribute_value']))
+                <span style="font-size: 11px; color: #6b7280; display: block;">
+                    ({{ $product['attribute_value'] }})
+                </span>
+            @endif
         </td>
         @foreach($selectedPriceTypes as $type)
         <td>

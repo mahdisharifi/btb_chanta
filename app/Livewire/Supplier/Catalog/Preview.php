@@ -138,6 +138,7 @@ class Preview extends Component
         $products = $query->with([
             'category',
             'primaryImage',
+            'attributeValues.attribute',
             'productSuppliers' => function ($q) use ($selectedSupplierIds, $supplierId) {
                 if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
                     $q->whereIn('supplier_id', $selectedSupplierIds);
@@ -194,6 +195,16 @@ class Preview extends Component
             if (empty($prices)) {
                 continue;
             }
+            
+            // دریافت مقدار attribute عمومی
+            $attributeValue = null;
+            if (!empty($this->settings['global_attribute'])) {
+                $attrId = $this->settings['global_attribute'];
+                $attributeValue = $product->attributeValues()
+                    ->where('attribute_id', $attrId)
+                    ->first();
+                $attributeValue = $attributeValue ? $attributeValue->value : null;
+            }
 
             $allItems[] = [
                 'id'               => $product->id,
@@ -206,6 +217,7 @@ class Preview extends Component
                 'prices'           => $prices,
                 'created_at'       => $product->created_at?->timestamp ?? 0,
                 'price_updated_at' => $product->productSuppliers->max('price_updated_at')?->timestamp ?? 0,
+                'attribute_value'  => $attributeValue,
             ];
 
         }
@@ -300,16 +312,20 @@ class Preview extends Component
             'template'           => $this->template,
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
-    'supplierLogoUrl'  => $this->supplierLogoUrl,   // برای سازگاری نگه داشته شود
-    'supplierLogoPath' => $this->supplierLogoPath,  // مسیر فیزیکی
-    'forPdf'           => true,            'supplier'           => $this->supplier,
+            'supplierLogoUrl'    => $this->supplierLogoUrl,
+            'supplierLogoPath'   => $this->supplierLogoPath,
+            'forPdf'             => true,
+            'supplier'           => $this->supplier,
+            'contactPhones'      => $this->settings['contact_phones'] ?? [],
+            'globalAttribute'    => $this->settings['global_attribute'] ?? null,
         ];
-        $pdf = PDF::loadView($view, $data, [$prefix], [
+        
+        $pdf = PDF::loadView($view, $data, [], [
             'format'        => 'A4',
-            'margin_left'   => 6,   // قبلاً 10
-            'margin_right'  => 6,   // قبلاً 10
-            'margin_top'    => 6,   // قبلاً 10
-            'margin_bottom' => 6,   // قبلاً 10
+            'margin_left'   => 6,
+            'margin_right'  => 6,
+            'margin_top'    => 6,
+            'margin_bottom' => 6,
             'mode'          => 'utf-8',
         ]);
         
@@ -322,5 +338,22 @@ class Preview extends Component
     {
         return view('livewire.supplier.catalog.preview')
             ->layout('components.layouts.blank');
+    }
+    
+    /**
+     * دریافت مقدار attribute برای یک محصول
+     */
+    private function getProductAttributeValue($product, $attributeId)
+    {
+        if (!$attributeId) {
+            return null;
+        }
+        
+        // دریافت attribute از محصول
+        $attributeValue = $product->attributeValues()
+            ->where('attribute_id', $attributeId)
+            ->first();
+            
+        return $attributeValue ? $attributeValue->value : null;
     }
 }
