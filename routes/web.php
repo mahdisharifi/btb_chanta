@@ -258,3 +258,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Volt::route('/test-volt', 'test-page')->name('test.volt');
 Route::any('/payment/verify', [PaymentController::class, 'verify'])->name('payment.verify');
 Route::get('/payment/callback', [PaymentCallbackController::class, 'verify'])->name('payment.callback');
+
+// Catalog Progress Tracking (استفاده از Cache به جای Session)
+Route::middleware(['auth'])->get('/catalog/progress/{key}', function ($key) {
+    $progress = \Illuminate\Support\Facades\Cache::get($key, ['percent' => 0, 'message' => 'آماده‌سازی...']);
+    return response()->json($progress);
+})->name('catalog.progress');

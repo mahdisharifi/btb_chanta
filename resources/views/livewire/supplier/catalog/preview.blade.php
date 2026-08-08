@@ -1,10 +1,171 @@
 <div class="min-h-screen bg-gray-50 text-gray-800 font-sans" dir="rtl">
 
+    <!-- Progress Modal -->
+    <div id="progressModal" class="fixed inset-0 z-[9999] items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4 transform transition-all">
+            
+            <!-- Header -->
+            <div class="text-center mb-6">
+                <div class="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mb-4">
+                    <svg id="progressIcon" class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900">در حال تولید کاتالوگ</h3>
+                <p id="progressMessage" class="text-sm text-gray-500 mt-2">آماده‌سازی...</p>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="relative">
+                <!-- Background -->
+                <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
+                    <!-- Progress Fill -->
+                    <div id="progressBar" class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 ease-out" style="width: 0%">
+                    </div>
+                </div>
+                
+                <!-- Percentage Text -->
+                <div class="mt-3 flex items-center justify-between">
+                    <span id="progressPercent" class="text-2xl font-bold text-gray-900">0%</span>
+                    <span class="text-sm text-gray-500">لطفاً صبر کنید...</span>
+                </div>
+            </div>
+
+            <!-- Success Message -->
+            <div id="successMessage" class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg items-center gap-2 hidden">
+                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span class="text-sm text-green-800 font-medium">کاتالوگ با موفقیت آماده شد!</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Progress Tracker با Vanilla JavaScript
+        const ProgressTracker = {
+            isDownloading: false,
+            progress: 0,
+            message: 'آماده‌سازی...',
+            intervalId: null,
+            progressKey: '{{ $progressKey }}',
+
+            elements: {
+                modal: null,
+                progressBar: null,
+                progressPercent: null,
+                progressMessage: null,
+                progressIcon: null,
+                successMessage: null
+            },
+
+            init() {
+                this.elements.modal = document.getElementById('progressModal');
+                this.elements.progressBar = document.getElementById('progressBar');
+                this.elements.progressPercent = document.getElementById('progressPercent');
+                this.elements.progressMessage = document.getElementById('progressMessage');
+                this.elements.progressIcon = document.getElementById('progressIcon');
+                this.elements.successMessage = document.getElementById('successMessage');
+            },
+
+            startTracking() {
+                console.log('🚀 Progress tracking started with key:', this.progressKey);
+                if (!this.elements.modal) this.init();
+                
+                this.isDownloading = true;
+                this.progress = 0;
+                this.message = 'آماده‌سازی...';
+                
+                // نمایش modal
+                this.elements.modal.classList.remove('hidden');
+                this.elements.modal.classList.add('flex');
+                this.elements.successMessage.classList.add('hidden');
+                this.elements.progressIcon.classList.add('animate-spin');
+                
+                // شروع polling هر 500ms
+                this.intervalId = setInterval(() => {
+                    this.fetchProgress();
+                }, 500);
+            },
+
+            async fetchProgress() {
+                try {
+                    const response = await fetch(`/catalog/progress/${this.progressKey}`);
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('📈 Progress:', data.percent + '% -', data.message);
+                        
+                        this.progress = data.percent || 0;
+                        this.message = data.message || 'در حال پردازش...';
+                        
+                        // بروزرسانی UI
+                        this.updateUI();
+                        
+                        // اگر به 100% رسید، بعد از 1.5 ثانیه بسته شود
+                        if (this.progress >= 100) {
+                            console.log('✅ Progress completed!');
+                            this.elements.progressIcon.classList.remove('animate-spin');
+                            this.elements.successMessage.classList.remove('hidden');
+                            this.elements.successMessage.classList.add('flex');
+                            
+                            clearInterval(this.intervalId);
+                            setTimeout(() => {
+                                this.stopTracking();
+                            }, 1500);
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ Error fetching progress:', error);
+                    // در صورت خطا، بعد از 3 ثانیه modal را ببند
+                    setTimeout(() => {
+                        this.stopTracking();
+                    }, 3000);
+                }
+            },
+
+            updateUI() {
+                if (this.elements.progressBar) {
+                    this.elements.progressBar.style.width = this.progress + '%';
+                }
+                if (this.elements.progressPercent) {
+                    this.elements.progressPercent.textContent = this.progress + '%';
+                }
+                if (this.elements.progressMessage) {
+                    this.elements.progressMessage.textContent = this.message;
+                }
+            },
+
+            stopTracking() {
+                console.log('🛑 Progress tracking stopped');
+                if (this.intervalId) {
+                    clearInterval(this.intervalId);
+                }
+                this.isDownloading = false;
+                this.progress = 0;
+                
+                // مخفی کردن modal
+                if (this.elements.modal) {
+                    this.elements.modal.classList.remove('flex');
+                    this.elements.modal.classList.add('hidden');
+                }
+            }
+        };
+
+        // تابع global برای شروع tracking
+        window.startProgressTracking = function() {
+            ProgressTracker.startTracking();
+        };
+
+        // Initialize وقتی صفحه لود شد
+        document.addEventListener('DOMContentLoaded', () => {
+            ProgressTracker.init();
+            console.log('✅ Progress Tracker initialized');
+        });
+    </script>
+
     <!-- تنظیمات اختصاصی چاپ -->
     <style>
-
-
-
         @media print {
             @page {
                 size: A4 portrait;
@@ -53,11 +214,17 @@
                 </div>
 
                 <div class="flex items-center gap-3">
-                    <button wire:click="downloadPdf2" class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    <button 
+                        onclick="window.startProgressTracking()"
+                        wire:click="downloadPdf2" 
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                         @svg('heroicon-o-document-arrow-down', 'w-5 h-5 text-gray-500')
                         PDF(کاتالوگ)
                     </button>
-                    <button wire:click="downloadPdf" class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    <button 
+                        onclick="window.startProgressTracking()"
+                        wire:click="downloadPdf" 
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                         @svg('heroicon-o-document-arrow-down', 'w-5 h-5 text-gray-500')
                         PDF(لیست)
                     </button>

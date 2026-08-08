@@ -8,6 +8,8 @@ use App\Models\CatalogTemplate;
 use App\Models\Product;
 use App\Enums\PriceType;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Cache;
 use PDF;
 
 class Preview extends Component
@@ -26,11 +28,13 @@ class Preview extends Component
     public $separateCategories = false;
     public $showCoverPage = true;
     public $priceLabels = [];
+    public $progressKey = null;
 
     public function mount($catalog)
     {
-
-
+        // تولید کلید یونیک برای tracking progress در ابتدا
+        $this->progressKey = 'catalog_progress_' . session()->getId() . '_' . time();
+        
         $user = Auth::user();
         $this->isAdmin = $user->hasRole('admin')
             || $user->hasRole('super_admin')
@@ -90,11 +94,14 @@ class Preview extends Component
             $this->selectedPriceTypes = PriceType::values();
         }
 
+        // بارگذاری داده‌ها برای preview
         $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
     }
 
     private function loadCatalogData($supplierId = null)
     {
+        $this->updateProgress(5, 'در حال بارگذاری محصولات...');
+        
         $categoryIds = $this->settings['categories']
             ?? $this->template->selected_categories
             ?? 'all';
@@ -109,6 +116,8 @@ class Preview extends Component
             // اگر هیچکدام، از همه suppliers استفاده کن
             $selectedSupplierIds = [];
         }
+
+        $this->updateProgress(10, 'در حال فیلتر کردن محصولات...');
 
         // ساخت کوئری اصلی برای دریافت محصولات یونیک
         $query = Product::query()
@@ -138,6 +147,8 @@ class Preview extends Component
             $query->whereIn('category_id', $categoryIds);
         }
 
+        $this->updateProgress(15, 'در حال دریافت اطلاعات محصولات...');
+
         // دریافت همه محصولات یونیک با روابط مورد نیاز
         $products = $query->with([
             'category',
@@ -157,10 +168,22 @@ class Preview extends Component
             }
         ])->get();
 
+        $this->updateProgress(18, 'در حال پردازش محصولات...');
+
         // ساخت آرایه محصولات با محاسبه کمترین قیمت از همه تامین‌کنندگان
         $allItems = [];
+        $totalProducts = $products->count();
+        $processedProducts = 0;
 
         foreach ($products as $product) {
+            $processedProducts++;
+            
+            // هر 10 محصول progress را بروز کن
+            if ($processedProducts % 10 === 0) {
+                $percent = 18 + (($processedProducts / $totalProducts) * 7); // 18% تا 25%
+                $this->updateProgress($percent, "پردازش محصول {$processedProducts} از {$totalProducts}...");
+            }
+
             $catName = $product->category?->name ?? 'بدون دسته‌بندی';
 
             // محاسبه کمترین قیمت برای هر نوع قیمت از بین همه تامین‌کنندگان
@@ -307,6 +330,8 @@ class Preview extends Component
         }
 
         $this->groupedProducts = $grouped;
+        
+        $this->updateProgress(30, 'داده‌ها آماده شدند، در حال تولید PDF...');
     }
 
     private function compareItems($a, $b, $sortKey, $dir)
@@ -357,17 +382,66 @@ class Preview extends Component
 
     public function downloadPdf()
     {
+        // استفاده از progressKey که در mount ساخته شده
         return $this->generatePdfResponse('pdf.supplier-catalog', 'list-');
     }
 
     public function downloadPdf2()
     {
+        // استفاده از progressKey که در mount ساخته شده
         return $this->generatePdfResponse('pdf.supplier-catalog2', 'catalog-');
+    }
+
+    /**
+     * بروزرسانی درصد پیشرفت در Cache
+     */
+    private function updateProgress($percent, $message = '')
+    {
+        // اگر progressKey وجود نداشت (مثلاً در mount)، progress tracking نکن
+        if (empty($this->progressKey)) {
+            return;
+        }
+        
+        $data = [
+            'percent' => $percent,
+            'message' => $message,
+            'timestamp' => time()
+        ];
+        
+        // استفاده از Cache به جای Session برای جلوگیری از lock
+        Cache::put($this->progressKey, $data, now()->addMinutes(5));
+        
+        // خواب کوتاه تا progress قابل مشاهده باشد
+        usleep(50000); // 0.05 ثانیه
+    }
+
+    /**
+     * پاک کردن اطلاعات progress
+     */
+    private function clearProgress()
+    {
+        if (!empty($this->progressKey)) {
+            Cache::forget($this->progressKey);
+        }
     }
 
     private function generatePdfResponse($view, $prefix)
     {
+        // شروع progress
+        $this->updateProgress(0, 'آماده‌سازی...');
+
         $fileName = $prefix . jdate(now())->format('Y-m-d') . '.pdf';
+
+        $this->updateProgress(3, 'در حال بارگذاری داده‌های کاتالوگ...');
+        
+        \Log::info('=== Before loadCatalogData ===');
+        
+        // بارگذاری مجدد داده‌های محصولات با progress tracking
+        $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
+
+        \Log::info('=== After loadCatalogData ===');
+
+        $this->updateProgress(35, 'در حال آماده‌سازی اطلاعات کاتالوگ...');
 
         $data = [
             'supplierName'       => $this->supplierName,
@@ -386,6 +460,11 @@ class Preview extends Component
             'globalAttribute'    => $this->settings['global_attribute'] ?? null,
         ];
         
+        $this->updateProgress(60, 'در حال رندر کردن صفحات PDF...');
+        
+        // آزاد کردن session برای جلوگیری از timeout
+        session()->save();
+        
         $pdf = PDF::loadView($view, $data, [], [
             'format'        => 'A4',
             'margin_left'   => 6,
@@ -395,8 +474,19 @@ class Preview extends Component
             'mode'          => 'utf-8',
         ]);
         
-        return response()->streamDownload(function () use ($pdf) {
-            echo $pdf->output();
+        $this->updateProgress(90, 'در حال تولید فایل PDF...');
+        
+        // تولید خروجی PDF
+        $pdfOutput = $pdf->output();
+        
+        $this->updateProgress(100, 'کاتالوگ آماده است!');
+        
+        // پاک کردن progress بعد از 2 ثانیه
+        sleep(1);
+        $this->clearProgress();
+        
+        return response()->streamDownload(function () use ($pdfOutput) {
+            echo $pdfOutput;
         }, $fileName);
     }
 
