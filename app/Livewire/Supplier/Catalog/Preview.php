@@ -236,11 +236,26 @@ class Preview extends Component
             
             $attributeValue = !empty($attributeValues) ? implode(' ', $attributeValues) : null;
 
+            // دریافت کیفیت تصویر از تنظیمات
+            $imageQuality = $this->settings['image_quality'] ?? 'sm';
+            $imagePath = null;
+            
+            if ($product->primaryImage) {
+                // اگر کیفیت original انتخاب شده باشد
+                if ($imageQuality === 'original') {
+                    $imagePath = $product->primaryImage->file_path;
+                } else {
+                    // استفاده از version مورد نظر
+                    $imagePath = $product->primaryImage->getVersionPath($imageQuality) 
+                                ?? $product->primaryImage->file_path;
+                }
+            }
+
             $allItems[] = [
                 'id'               => $product->id,
                 'title'            => $product->title,
                 'sku'              => $product->sku,
-                'image'            => $product->primaryImage?->getVersionPath('sm') ?? $product->primaryImage?->file_path,
+                'image'            => $imagePath,
                 'brand'            => $product->brand,
                 'category_name'    => $catName,
                 'category_order'   => $product->category?->sort_order ?? 0,

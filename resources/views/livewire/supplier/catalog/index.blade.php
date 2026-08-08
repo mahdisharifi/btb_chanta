@@ -382,6 +382,32 @@
                                     </div>
                                 </div>
 
+                                <!-- کیفیت تصاویر -->
+                                <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                    <div class="flex items-start gap-3 mb-3">
+                                        <x-heroicon-o-photo class="w-5 h-5 text-blue-500 mt-0.5" />
+                                        <div class="flex-1">
+                                            <label class="text-sm text-gray-900 font-bold">کیفیت تصاویر در کاتالوگ</label>
+                                            <p class="text-xs text-gray-500 mt-1">انتخاب کیفیت تصاویر تأثیر مستقیم بر حجم و سرعت تولید PDF دارد.</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="space-y-2 mr-8">
+                                        @foreach([
+                                            'sm' => 'کوچک (Small) - سریع‌تر، حجم کمتر',
+                                            'md' => 'متوسط (Medium) - متعادل',
+                                            'lg' => 'بزرگ (Large) - کیفیت بهتر',
+                                            'original' => 'اصلی (Original) - بهترین کیفیت، حجم بیشتر'
+                                        ] as $value => $label)
+                                        <label class="flex items-center p-2 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors group">
+                                            <input type="radio" wire:model="imageQuality" value="{{ $value }}" class="text-blue-600 focus:ring-blue-500 border-gray-300">
+                                            <span class="mr-3 text-sm text-gray-700 group-hover:text-blue-700">{{ $label }}</span>
+                                        </label>
+                                        @endforeach
+                                    </div>
+                                    <x-input-error :messages="$errors->get('imageQuality')" class="mt-2" />
+                                </div>
+
                             </div>
 
                             <!-- تنظیمات مرتب‌سازی جدید و پیشرفته -->

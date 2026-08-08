@@ -176,6 +176,43 @@
                 <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
                 @enderror
             </div>
+
+            {{-- کیفیت تصاویر --}}
+            <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <div class="mb-4">
+                    <h3 class="text-base font-semibold text-gray-900">کیفیت تصاویر</h3>
+                    <p class="mt-1 text-sm text-gray-500">
+                        انتخاب کیفیت بالاتر باعث افزایش حجم و زمان تولید PDF می‌شود.
+                    </p>
+                </div>
+
+                <div class="space-y-3">
+                    @foreach($imageQualities as $value => $label)
+                    <label class="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 cursor-pointer
+                        {{ $imageQuality === $value ? 'border-amber-500 bg-amber-50' : '' }}">
+                        <input
+                            type="radio"
+                            wire:model.live="imageQuality"
+                            value="{{ $value }}"
+                            class="text-amber-600 focus:ring-amber-500"
+                        >
+                        <div class="flex-1">
+                            <span class="block text-sm font-medium text-gray-900">{{ $label }}</span>
+                            @if($value === 'sm')
+                                <span class="text-xs text-gray-500">توصیه می‌شود برای کاتالوگ‌های بزرگ</span>
+                            @elseif($value === 'original')
+                                <span class="text-xs text-orange-600">⚠️ ممکن است زمان بیشتری طول بکشد</span>
+                            @endif
+                        </div>
+                    </label>
+                    @endforeach
+                </div>
+
+                @error('imageQuality')
+                <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
             <div class="flex items-center justify-between gap-3">
                 <a href="{{ route('admin.catalogs.index') }}"
                    class="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">

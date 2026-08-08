@@ -24,6 +24,8 @@ class Index extends Component
     public array $selectedSuppliers = [];
     
     public $show_cover_page = true;
+    
+    public $imageQuality = 'sm'; // sm, md, lg, original
 
     public $editingTemplateId = null;
     public $name = '';
@@ -363,6 +365,7 @@ class Index extends Component
 
         $this->separateCategories = $settings['separate_categories'] ?? false;
         $this->show_cover_page = $settings['show_cover_page'] ?? true;
+        $this->imageQuality = $settings['image_quality'] ?? 'sm';
         
         // بارگذاری مشخصات محصول
         $this->globalAttribute = $settings['global_attribute'] ?? '';
@@ -419,6 +422,7 @@ class Index extends Component
             'sortLevel2Dir' => 'required|in:asc,desc',
             'separateCategories' => 'boolean',
             'show_cover_page' => 'boolean',
+            'imageQuality' => 'required|string|in:sm,md,lg,original',
             'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
             'globalAttribute' => 'nullable|string',
             'showAttributeLabels' => 'boolean',
@@ -454,6 +458,7 @@ class Index extends Component
             'sort_level2_dir' => $this->sortLevel2Dir,
             'separate_categories' => $this->separateCategories,
             'show_cover_page' => $this->show_cover_page,
+            'image_quality' => $this->imageQuality,
             'global_attribute' => $this->globalAttribute,
             'category_attributes' => $filteredCategoryAttributes,
             'show_attribute_labels' => $this->showAttributeLabels,
@@ -561,6 +566,9 @@ class Index extends Component
 
         $this->separateCategories = false;
         
+        // Reset کیفیت تصویر
+        $this->imageQuality = 'sm';
+        
         // Reset مشخصات و شماره‌های تماس
         $this->globalAttribute = '';
         $this->categoryAttributes = [];
@@ -604,6 +612,12 @@ class Index extends Component
         return view('livewire.supplier.catalog.index', [
             'templates' => $templates,
             'suppliers' => $suppliers,
+            'imageQualities' => [
+                'sm' => 'کوچک (Small) - سریع‌تر، حجم کمتر',
+                'md' => 'متوسط (Medium) - متعادل',
+                'lg' => 'بزرگ (Large) - کیفیت بهتر',
+                'original' => 'اصلی (Original) - بهترین کیفیت، حجم بیشتر',
+            ],
         ])->layout($layout);
     }
 }

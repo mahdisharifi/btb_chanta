@@ -24,6 +24,8 @@ class Form extends Component
     public array $selectedPriceTypes = [];
 
     public bool $showCoverPage = true;
+    
+    public string $imageQuality = 'sm'; // sm, md, lg, original
 
     public string $sortField1 = '';
     public string $sortDir1 = 'desc';
@@ -60,6 +62,7 @@ class Form extends Component
         $this->selectedPriceTypes = $settings['price_types'] ?? [];
 
         $this->showCoverPage = (bool) ($settings['show_cover'] ?? true);
+        $this->imageQuality = $settings['image_quality'] ?? 'sm';
 
         $sorts = $settings['sort'] ?? [];
 
@@ -102,6 +105,8 @@ class Form extends Component
             'selectedPriceTypes.*' => ['string', Rule::in($priceTypeValues)],
 
             'showCoverPage' => ['boolean'],
+            
+            'imageQuality' => ['required', 'string', Rule::in(['sm', 'md', 'lg', 'original'])],
 
             'sortField1' => ['nullable', 'string', Rule::in($sortFieldKeys)],
             'sortDir1' => ['required_with:sortField1', Rule::in(['asc', 'desc'])],
@@ -180,6 +185,7 @@ class Form extends Component
         // بازسازی ساختار settings
         $settings = $this->catalogTemplate ? ($this->catalogTemplate->settings ?? []) : [];
         $settings['show_cover'] = $this->showCoverPage;
+        $settings['image_quality'] = $this->imageQuality;
         $settings['sort'] = $sorts;
         $settings['categories'] = $selectedCategories;
         $settings['price_types'] = $selectedPriceTypes;
@@ -207,6 +213,12 @@ class Form extends Component
             'categories' => Category::query()->where('is_active', true)->orderBy('name')->get(),
             'priceTypes' => PriceType::cases(),
             'sortFields' => $this->sortFields,
+            'imageQualities' => [
+                'sm' => 'کوچک (Small) - سریع‌تر، حجم کمتر',
+                'md' => 'متوسط (Medium) - متعادل',
+                'lg' => 'بزرگ (Large) - کیفیت بهتر',
+                'original' => 'اصلی (Original) - بهترین کیفیت، حجم بیشتر',
+            ],
         ]);
     }
 }
