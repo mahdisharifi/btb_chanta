@@ -425,10 +425,15 @@
 
             {{-- Submit --}}
             <div class="flex items-center justify-between pt-2">
+                {{-- دکمه بازگشت فقط در حالت ثبت‌نام (نه ویرایش) --}}
+                @if(!$editMode)
                 <a href="{{ route('user.role-selection') }}" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition">
                     <x-heroicon-o-arrow-right class="w-4 h-4" />
                     بازگشت به انتخاب نقش
                 </a>
+                @else
+                <div></div>
+                @endif
 
                 <button
                     type="submit"
@@ -445,7 +450,7 @@
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 6.477 0 12h4z"/>
                         </svg>
                     </span>
-                    ثبت‌نام به عنوان تامین‌کننده
+                    {{ $editMode ? 'ذخیره تغییرات' : 'ثبت‌نام به عنوان تامین‌کننده' }}
                 </button>
             </div>
 
