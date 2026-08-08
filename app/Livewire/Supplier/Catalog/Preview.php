@@ -110,9 +110,11 @@ class Preview extends Component
             $selectedSupplierIds = [];
         }
 
+        // ساخت کوئری اصلی برای دریافت محصولات یونیک
         $query = Product::query()
             ->where('status', ProductStatus::ACTIVE->value);
 
+        // فیلتر بر اساس تامین‌کنندگان
         if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
             $query->whereHas('productSuppliers', function ($q) use ($selectedSupplierIds) {
                 $q->whereIn('supplier_id', $selectedSupplierIds)
@@ -131,10 +133,12 @@ class Preview extends Component
             });
         }
 
+        // فیلتر بر اساس دسته‌بندی
         if ($categoryIds !== 'all' && is_array($categoryIds) && count($categoryIds) > 0) {
             $query->whereIn('category_id', $categoryIds);
         }
 
+        // دریافت همه محصولات یونیک با روابط مورد نیاز
         $products = $query->with([
             'category',
             'primaryImage',
@@ -153,52 +157,31 @@ class Preview extends Component
             }
         ])->get();
 
+        // ساخت آرایه محصولات با محاسبه کمترین قیمت از همه تامین‌کنندگان
         $allItems = [];
 
         foreach ($products as $product) {
             $catName = $product->category?->name ?? 'بدون دسته‌بندی';
 
+            // محاسبه کمترین قیمت برای هر نوع قیمت از بین همه تامین‌کنندگان
             $prices = [];
-            if ($this->isAdmin && !empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
-                // ادمین: کمترین قیمت هر نوع از بین همه تامین‌کنندگان انتخابی
-                foreach ($product->productSuppliers as $ps) {
-                    foreach ($ps->prices as $p) {
-                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                        if (!isset($prices[$key]) || $p->price < $prices[$key]['price']) {
-                            $prices[$key] = [
-                                'price' => $p->price,
-                                'warranty_months' => $p->warranty_months,
-                            ];
-                        }
-                    }
-                }
-            } elseif ($this->isAdmin) {
-                // ادمین: بدون انتخاب supplier خاص
-                foreach ($product->productSuppliers as $ps) {
-                    foreach ($ps->prices as $p) {
-                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                        if (!isset($prices[$key]) || $p->price < $prices[$key]['price']) {
-                            $prices[$key] = [
-                                'price' => $p->price,
-                                'warranty_months' => $p->warranty_months,
-                            ];
-                        }
-                    }
-                }
-            } else {
-                // تامین‌کننده: فقط تامین‌کننده جاری
-                $productSupplier = $product->productSuppliers->first();
-                if ($productSupplier && $productSupplier->prices) {
-                    foreach ($productSupplier->prices as $p) {
-                        $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+            
+            foreach ($product->productSuppliers as $ps) {
+                foreach ($ps->prices as $p) {
+                    $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
+                    $priceValue = is_array($p->price) ? ($p->price['price'] ?? $p->price) : $p->price;
+                    
+                    // انتخاب کمترین قیمت
+                    if (!isset($prices[$key]) || $priceValue < ($prices[$key]['price'] ?? PHP_INT_MAX)) {
                         $prices[$key] = [
-                            'price' => $p->price,
+                            'price' => $priceValue,
                             'warranty_months' => $p->warranty_months,
                         ];
                     }
                 }
             }
 
+            // اگر هیچ قیمتی نداشت، این محصول رو نادیده بگیر
             if (empty($prices)) {
                 continue;
             }
@@ -269,7 +252,22 @@ class Preview extends Component
 
         }
 
+        // پردازش تنظیمات سورت - پشتیبانی از هر دو فرمت قدیم و جدید
         $sorts = $this->settings['sort'] ?? [];
+        
+        // اگر فرمت جدید خالی بود، از فرمت قدیمی استفاده کن
+        if (empty($sorts)) {
+            $sorts = [];
+            for ($i = 1; $i <= 3; $i++) {
+                $field = $this->settings["sort_level{$i}"] ?? '';
+                $dir = $this->settings["sort_level{$i}_dir"] ?? 'asc';
+                
+                if ($field !== '' && $field !== null) {
+                    $sorts[] = ['field' => $field, 'dir' => $dir];
+                }
+            }
+        }
+        
         if (!empty($sorts)) {
             usort($allItems, function ($a, $b) use ($sorts) {
                 foreach ($sorts as $sort) {
@@ -316,7 +314,13 @@ class Preview extends Component
     {
         if (str_starts_with($sortKey, 'price_')) {
             $type = str_replace('price_', '', $sortKey);
-            return $item['prices'][$type] ?? 0;
+            $priceData = $item['prices'][$type] ?? null;
+            
+            if (is_array($priceData)) {
+                return $priceData['price'] ?? 0;
+            }
+            
+            return $priceData ?? 0;
         }
 
         $map = [

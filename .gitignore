@@ -58,3 +58,5 @@ Thumbs.db
 *.swo
 *.bak
 *.tmp
+# AI & Backup Directories
+/Hosh Masnoei

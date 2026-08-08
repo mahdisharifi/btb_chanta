@@ -62,8 +62,15 @@ class RegisterSupplier extends Component
 
     protected function rules()
     {
+        $supplierId = $this->supplier->id ?? null;
+        
         return [
-            'company_name' => 'required|string|max:255',
+            'company_name' => [
+                'required',
+                'string',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('suppliers', 'company_name')->ignore($supplierId)
+            ],
             'mobile' => 'required|string|max:20',
             'address' => 'required|string',
             'province_id' => 'required|exists:provinces,id',
@@ -72,7 +79,13 @@ class RegisterSupplier extends Component
             'postal_code' => 'nullable|string|max:10',
             'company_name_en' => 'nullable|string|max:255',
             'brand_name' => 'nullable|string|max:255',
-            'slug' => 'nullable|string|max:255|unique:suppliers,slug,' . ($this->supplier->id ?? 'NULL'),
+            'slug' => [
+                'nullable',
+                'string',
+                'max:255',
+                'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/',
+                \Illuminate\Validation\Rule::unique('suppliers', 'slug')->ignore($supplierId)
+            ],
             'description' => 'nullable|string',
             'logo' => 'nullable|image|max:2048',
             'phone' => 'nullable|string|max:20',
@@ -89,6 +102,7 @@ class RegisterSupplier extends Component
     {
         return [
             'company_name.required' => 'نام شرکت الزامی است.',
+            'company_name.unique'   => 'این نام شرکت قبلاً ثبت شده است.',
             'mobile.required'       => 'شماره موبایل الزامی است.',
             'email.email'           => 'ایمیل معتبر نیست.',
             'address.required'      => 'آدرس الزامی است.',
@@ -100,6 +114,8 @@ class RegisterSupplier extends Component
             'national_id.regex'     => 'کد ملی باید ۱۰ یا ۱۱ رقم باشد.',
             'logo.image'            => 'فایل باید تصویر باشد.',
             'logo.max'              => 'حجم تصویر نباید بیشتر از ۲ مگابایت باشد.',
+            'slug.unique'           => 'این اسلاگ قبلاً استفاده شده است. لطفاً اسلاگ دیگری انتخاب کنید.',
+            'slug.regex'            => 'اسلاگ فقط می‌تواند شامل حروف کوچک انگلیسی، اعداد و خط تیره باشد.',
         ];
     }
 
@@ -194,7 +210,6 @@ class RegisterSupplier extends Component
                 'company_name' => $this->company_name,
                 'company_name_en' => $this->company_name_en,
                 'brand_name' => $this->brand_name,
-                'slug' => $this->slug ?: Str::slug($this->company_name),
                 'description' => $this->description,
                 'phone' => $this->phone,
                 'mobile' => $this->mobile,
@@ -207,6 +222,18 @@ class RegisterSupplier extends Component
                 'national_id' => $this->national_id,
                 'tax_id' => $this->tax_id,
             ];
+
+            // مدیریت slug
+            if ($this->editMode) {
+                // حالت ویرایش: فقط اگر کاربر slug جدیدی وارد کرده باشد
+                if ($this->slug && $this->slug !== $this->supplier->slug) {
+                    $data['slug'] = Str::slug($this->slug);
+                }
+                // در غیر این صورت slug تغییر نمی‌کند
+            } else {
+                // حالت ثبت‌نام جدید: از company_name یا slug دستی
+                $data['slug'] = $this->slug ? Str::slug($this->slug) : Str::slug($this->company_name);
+            }
 
             // ذخیره لوگو
             if ($this->logo) {
