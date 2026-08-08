@@ -29,6 +29,7 @@ class Preview extends Component
     public $showCoverPage = true;
     public $priceLabels = [];
     public $progressKey = null;
+    private $enableProgress = false;
 
     public function mount($catalog)
     {
@@ -94,14 +95,12 @@ class Preview extends Component
             $this->selectedPriceTypes = PriceType::values();
         }
 
-        // بارگذاری داده‌ها برای preview
+        // بارگذاری داده‌ها برای preview (بدون progress)
         $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
     }
 
     private function loadCatalogData($supplierId = null)
     {
-        $this->updateProgress(5, 'در حال بارگذاری محصولات...');
-        
         $categoryIds = $this->settings['categories']
             ?? $this->template->selected_categories
             ?? 'all';
@@ -397,8 +396,8 @@ class Preview extends Component
      */
     private function updateProgress($percent, $message = '')
     {
-        // اگر progressKey وجود نداشت (مثلاً در mount)، progress tracking نکن
-        if (empty($this->progressKey)) {
+        // اگر progress غیرفعال است یا progressKey وجود ندارد، کاری نکن
+        if (!$this->enableProgress || empty($this->progressKey)) {
             return;
         }
         
@@ -412,7 +411,9 @@ class Preview extends Component
         Cache::put($this->progressKey, $data, now()->addMinutes(5));
         
         // خواب کوتاه تا progress قابل مشاهده باشد
-        usleep(50000); // 0.05 ثانیه
+        usleep(100000); // 0.1 ثانیه - برای نمایش بهتر
+        
+        \Log::info("📈 Progress: {$percent}% - {$message}");
     }
 
     /**
@@ -427,6 +428,11 @@ class Preview extends Component
 
     private function generatePdfResponse($view, $prefix)
     {
+        // فعال کردن progress برای PDF generation
+        $this->enableProgress = true;
+        
+        \Log::info("🚀 Progress enabled for PDF generation");
+        
         // شروع progress
         $this->updateProgress(0, 'آماده‌سازی...');
 
@@ -441,7 +447,7 @@ class Preview extends Component
 
         \Log::info('=== After loadCatalogData ===');
 
-        $this->updateProgress(35, 'در حال آماده‌سازی اطلاعات کاتالوگ...');
+        $this->updateProgress(40, 'در حال آماده‌سازی اطلاعات کاتالوگ...');
 
         $data = [
             'supplierName'       => $this->supplierName,
@@ -460,10 +466,12 @@ class Preview extends Component
             'globalAttribute'    => $this->settings['global_attribute'] ?? null,
         ];
         
-        $this->updateProgress(60, 'در حال رندر کردن صفحات PDF...');
+        $this->updateProgress(45, 'در حال آماده‌سازی قالب PDF...');
         
         // آزاد کردن session برای جلوگیری از timeout
         session()->save();
+        
+        $this->updateProgress(50, 'در حال رندر کردن صفحات PDF...');
         
         $pdf = PDF::loadView($view, $data, [], [
             'format'        => 'A4',
@@ -474,15 +482,17 @@ class Preview extends Component
             'mode'          => 'utf-8',
         ]);
         
-        $this->updateProgress(90, 'در حال تولید فایل PDF...');
+        $this->updateProgress(75, 'در حال پردازش فایل PDF...');
         
         // تولید خروجی PDF
         $pdfOutput = $pdf->output();
         
+        $this->updateProgress(90, 'در حال نهایی‌سازی کاتالوگ...');
+        
         $this->updateProgress(100, 'کاتالوگ آماده است!');
         
         // پاک کردن progress بعد از 2 ثانیه
-        sleep(1);
+        sleep(2);
         $this->clearProgress();
         
         return response()->streamDownload(function () use ($pdfOutput) {
