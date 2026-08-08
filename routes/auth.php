@@ -327,16 +327,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/register/role-selection', \App\Livewire\User\RoleSelection::class)
         ->name('user.role-selection')
-        ->middleware(function ($request, $next) {
-            $user = auth()->user();
-            
-            // اگر کاربر supplier یا retailer تایید شده است، نباید به role-selection دسترسی داشته باشد
-            if ($user->hasRole(['supplier', 'regular_supplier', 'retailer_premium', 'retailer_basic', 'super_admin', 'admin'])) {
-                return redirectByRole($user);
-            }
-            
-            return $next($request);
-        });
+        ->middleware('check.role.selection.access');
 
     // 🔥 تکمیل اطلاعات تامین‌کننده
     Route::get('/register/supplier/complete', \App\Livewire\User\RegisterSupplier::class)

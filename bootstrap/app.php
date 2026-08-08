@@ -36,7 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.subscription' => \App\Http\Middleware\CheckSubscriptionExpiry::class,
             'verified.mobile' => \App\Http\Middleware\EnsureMobileIsVerified::class,
             'check.approval' => \App\Http\Middleware\CheckAccountApproval::class,
-
+            'check.role.selection.access' => \App\Http\Middleware\CheckRoleSelectionAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
