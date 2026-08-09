@@ -241,13 +241,47 @@
     <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 print:p-0 print:m-0 print:max-w-full print:w-full">
         {{-- اضافه کردن در ابتدای فایل بعد از <body> --}}
         @if($showCoverPage)
-        @include('pdf.supplier-catalog-cover', [
-        'supplierName' => $supplierName,
-        'supplierLogo' => $supplierLogoUrl ?? null,
-        'supplierLogoUrl' => $supplierLogoUrl ?? null,
-        'catalogTitle' => $template->title ?? null,
-        'supplier' => $supplier,
-        ])
+            @switch($settings['cover_theme'] ?? 'default')
+                @case('modern')
+                    @include('pdf.supplier-catalog-cover-modern', [
+                        'supplierName' => $supplierName,
+                        'supplierLogoUrl' => $supplierLogoUrl ?? null,
+                        'catalogTitle' => $template->title ?? null,
+                        'supplier' => $supplier,
+                        'contactPhones' => $settings['contact_phones'] ?? [],
+                    ])
+                    @break
+                
+                @case('creative')
+                    @include('pdf.supplier-catalog-cover-creative', [
+                        'supplierName' => $supplierName,
+                        'supplierLogoUrl' => $supplierLogoUrl ?? null,
+                        'catalogTitle' => $template->title ?? null,
+                        'supplier' => $supplier,
+                        'contactPhones' => $settings['contact_phones'] ?? [],
+                    ])
+                    @break
+                
+                @case('corporate')
+                    @include('pdf.supplier-catalog-cover-corporate', [
+                        'supplierName' => $supplierName,
+                        'supplierLogoUrl' => $supplierLogoUrl ?? null,
+                        'catalogTitle' => $template->title ?? null,
+                        'supplier' => $supplier,
+                        'contactPhones' => $settings['contact_phones'] ?? [],
+                    ])
+                    @break
+                
+                @default
+                    @include('pdf.supplier-catalog-cover', [
+                        'supplierName' => $supplierName,
+                        'supplierLogo' => $supplierLogoUrl ?? null,
+                        'supplierLogoUrl' => $supplierLogoUrl ?? null,
+                        'catalogTitle' => $template->title ?? null,
+                        'supplier' => $supplier,
+                        'contactPhones' => $settings['contact_phones'] ?? [],
+                    ])
+            @endswitch
         @endif
         <div class="bg-white print:bg-transparent">
 

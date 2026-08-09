@@ -405,6 +405,28 @@
                                         </label>
                                         @endforeach
                                     </div>
+                                <!-- طرح کاور -->
+                                <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                    <div class="flex items-start gap-3 mb-3">
+                                        <x-heroicon-o-sparkles class="w-5 h-5 text-purple-500 mt-0.5" />
+                                        <div class="flex-1">
+                                            <label class="text-sm text-gray-900 font-bold">طرح صفحه اول (کاور)</label>
+                                            <p class="text-xs text-gray-500 mt-1">طرح ظاهری صفحه اول کاتالوگ را انتخاب کنید.</p>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3 mr-8">
+                                        @php $coverThemes = ['default' => ['name' => 'پیش‌فرض', 'desc' => 'طرح ساده و کلاسیک', 'preview' => 'bg-gray-100 border-2 border-gray-300'], 'modern' => ['name' => 'مدرن', 'desc' => 'گرادینت بنفش و آبی', 'preview' => 'bg-gradient-to-br from-purple-500 to-blue-600'], 'creative' => ['name' => 'خلاقانه', 'desc' => 'طرح تیره با اشکال', 'preview' => 'bg-slate-900'], 'corporate' => ['name' => 'رسمی', 'desc' => 'طرح سازمانی آبی', 'preview' => 'bg-white border-4 border-blue-900']]; @endphp
+                                        @foreach($coverThemes as $value => $theme)
+                                        <label class="relative flex flex-col rounded-lg border-2 overflow-hidden cursor-pointer transition-all {{ $coverTheme === $value ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300' }}">
+                                            <div class="h-16 {{ $theme['preview'] }} flex items-center justify-center"><span class="text-white font-bold text-xs drop-shadow-md">{{ $theme['name'] }}</span></div>
+                                            <div class="p-2"><div class="flex items-center gap-2"><input type="radio" wire:model="coverTheme" value="{{ $value }}" class="text-blue-600 focus:ring-blue-500"><span class="text-xs font-medium text-gray-900">{{ $theme['name'] }}</span></div><p class="mt-0.5 text-[10px] text-gray-500">{{ $theme['desc'] }}</p></div>
+                                            @if($coverTheme === $value)<div class="absolute top-1 right-1"><svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg></div>@endif
+                                        </label>
+                                        @endforeach
+                                    </div>
+                                    <x-input-error :messages="$errors->get('coverTheme')" class="mt-2" />
+                                </div>
+
                                     <x-input-error :messages="$errors->get('imageQuality')" class="mt-2" />
                                 </div>
 

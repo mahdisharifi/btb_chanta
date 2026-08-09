@@ -464,6 +464,7 @@ class Preview extends Component
             'supplier'           => $this->supplier,
             'contactPhones'      => $this->settings['contact_phones'] ?? [],
             'globalAttribute'    => $this->settings['global_attribute'] ?? null,
+            'coverTheme'         => $this->settings['cover_theme'] ?? 'default',
         ];
         
         $this->updateProgress(45, 'در حال آماده‌سازی قالب PDF...');

@@ -26,6 +26,8 @@ class Form extends Component
     public bool $showCoverPage = true;
     
     public string $imageQuality = 'sm'; // sm, md, lg, original
+    
+    public string $coverTheme = 'default'; // default, modern, creative, corporate
 
     public string $sortField1 = '';
     public string $sortDir1 = 'desc';
@@ -63,6 +65,7 @@ class Form extends Component
 
         $this->showCoverPage = (bool) ($settings['show_cover'] ?? true);
         $this->imageQuality = $settings['image_quality'] ?? 'sm';
+        $this->coverTheme = $settings['cover_theme'] ?? 'default';
 
         $sorts = $settings['sort'] ?? [];
 
@@ -107,6 +110,8 @@ class Form extends Component
             'showCoverPage' => ['boolean'],
             
             'imageQuality' => ['required', 'string', Rule::in(['sm', 'md', 'lg', 'original'])],
+            
+            'coverTheme' => ['required', 'string', Rule::in(['default', 'modern', 'creative', 'corporate'])],
 
             'sortField1' => ['nullable', 'string', Rule::in($sortFieldKeys)],
             'sortDir1' => ['required_with:sortField1', Rule::in(['asc', 'desc'])],
@@ -186,6 +191,7 @@ class Form extends Component
         $settings = $this->catalogTemplate ? ($this->catalogTemplate->settings ?? []) : [];
         $settings['show_cover'] = $this->showCoverPage;
         $settings['image_quality'] = $this->imageQuality;
+        $settings['cover_theme'] = $this->coverTheme;
         $settings['sort'] = $sorts;
         $settings['categories'] = $selectedCategories;
         $settings['price_types'] = $selectedPriceTypes;

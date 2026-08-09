@@ -94,4 +94,8 @@
         @endif
     </div>
 
+    <div class="catalog-year" style="text-align: center; margin-top: 40px; font-size: 20px; font-weight: bold; color: #6b7280;">
+        {{ jdate(now())->format('Y/m/d') }}
+    </div>
+
 </div>

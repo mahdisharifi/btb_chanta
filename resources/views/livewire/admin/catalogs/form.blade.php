@@ -213,6 +213,75 @@
                 @enderror
             </div>
 
+            {{-- طرح کاور --}}
+            <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <div class="mb-4">
+                    <h3 class="text-base font-semibold text-gray-900">طرح صفحه اول (کاور)</h3>
+                    <p class="mt-1 text-sm text-gray-500">
+                        طرح ظاهری صفحه اول کاتالوگ را انتخاب کنید.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    @php
+                        $coverThemes = [
+                            'default' => [
+                                'name' => 'پیش‌فرض',
+                                'desc' => 'طرح ساده و کلاسیک',
+                                'preview' => 'bg-gray-100 border-2 border-gray-300',
+                            ],
+                            'modern' => [
+                                'name' => 'مدرن',
+                                'desc' => 'گرادینت بنفش و آبی',
+                                'preview' => 'bg-gradient-to-br from-purple-500 to-blue-600',
+                            ],
+                            'creative' => [
+                                'name' => 'خلاقانه',
+                                'desc' => 'طرح تیره با اشکال',
+                                'preview' => 'bg-slate-900',
+                            ],
+                            'corporate' => [
+                                'name' => 'رسمی',
+                                'desc' => 'طرح سازمانی آبی',
+                                'preview' => 'bg-white border-4 border-blue-900',
+                            ],
+                        ];
+                    @endphp
+
+                    @foreach($coverThemes as $value => $theme)
+                    <label class="relative flex flex-col rounded-xl border-2 overflow-hidden cursor-pointer transition-all
+                        {{ $coverTheme === $value ? 'border-amber-500 ring-2 ring-amber-200' : 'border-gray-200 hover:border-gray-300' }}">
+                        <div class="h-24 {{ $theme['preview'] }} flex items-center justify-center">
+                            <span class="text-white font-bold text-sm drop-shadow-md">{{ $theme['name'] }}</span>
+                        </div>
+                        <div class="p-3">
+                            <div class="flex items-center gap-2">
+                                <input
+                                    type="radio"
+                                    wire:model.live="coverTheme"
+                                    value="{{ $value }}"
+                                    class="text-amber-600 focus:ring-amber-500"
+                                >
+                                <span class="text-sm font-medium text-gray-900">{{ $theme['name'] }}</span>
+                            </div>
+                            <p class="mt-1 text-xs text-gray-500">{{ $theme['desc'] }}</p>
+                        </div>
+                        @if($coverTheme === $value)
+                        <div class="absolute top-2 right-2">
+                            <svg class="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        @endif
+                    </label>
+                    @endforeach
+                </div>
+
+                @error('coverTheme')
+                <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
             <div class="flex items-center justify-between gap-3">
                 <a href="{{ route('admin.catalogs.index') }}"
                    class="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">

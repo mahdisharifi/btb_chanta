@@ -48,15 +48,51 @@
 
 {{-- فراخوانی کاور در صورت فعال بودن تنظیمات --}}
 @if($showCoverPage)
-
-@include('pdf.supplier-catalog-cover', [
-    'supplierName'     => $supplierName,
-    'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-    'supplierLogoPath' => $supplierLogoPath ?? null,
-    'forPdf'           => $forPdf ?? true,
-    'catalogTitle'     => $template->title ?? null,
-    'supplier'         => $supplier ?? null,
-])
+    @switch($coverTheme ?? 'default')
+        @case('modern')
+            @include('pdf.supplier-catalog-cover-modern', [
+                'supplierName'     => $supplierName,
+                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                'supplierLogoPath' => $supplierLogoPath ?? null,
+                'forPdf'           => $forPdf ?? true,
+                'catalogTitle'     => $template->title ?? null,
+                'supplier'         => $supplier ?? null,
+                'contactPhones'    => $contactPhones ?? [],
+            ])
+            @break
+        @case('creative')
+            @include('pdf.supplier-catalog-cover-creative', [
+                'supplierName'     => $supplierName,
+                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                'supplierLogoPath' => $supplierLogoPath ?? null,
+                'forPdf'           => $forPdf ?? true,
+                'catalogTitle'     => $template->title ?? null,
+                'supplier'         => $supplier ?? null,
+                'contactPhones'    => $contactPhones ?? [],
+            ])
+            @break
+        @case('corporate')
+            @include('pdf.supplier-catalog-cover-corporate', [
+                'supplierName'     => $supplierName,
+                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                'supplierLogoPath' => $supplierLogoPath ?? null,
+                'forPdf'           => $forPdf ?? true,
+                'catalogTitle'     => $template->title ?? null,
+                'supplier'         => $supplier ?? null,
+                'contactPhones'    => $contactPhones ?? [],
+            ])
+            @break
+        @default
+            @include('pdf.supplier-catalog-cover', [
+                'supplierName'     => $supplierName,
+                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                'supplierLogoPath' => $supplierLogoPath ?? null,
+                'forPdf'           => $forPdf ?? true,
+                'catalogTitle'     => $template->title ?? null,
+                'supplier'         => $supplier ?? null,
+                'contactPhones'    => $contactPhones ?? [],
+            ])
+    @endswitch
 {{-- جداکننده استاندارد صفحه در mPDF --}}
 <div style="page-break-after: always; break-after: page;"></div>
 

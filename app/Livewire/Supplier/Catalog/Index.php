@@ -26,6 +26,8 @@ class Index extends Component
     public $show_cover_page = true;
     
     public $imageQuality = 'sm'; // sm, md, lg, original
+    
+    public $coverTheme = 'default'; // default, modern, creative, corporate
 
     public $editingTemplateId = null;
     public $name = '';
@@ -366,6 +368,7 @@ class Index extends Component
         $this->separateCategories = $settings['separate_categories'] ?? false;
         $this->show_cover_page = $settings['show_cover_page'] ?? true;
         $this->imageQuality = $settings['image_quality'] ?? 'sm';
+        $this->coverTheme = $settings['cover_theme'] ?? 'default';
         
         // بارگذاری مشخصات محصول
         $this->globalAttribute = $settings['global_attribute'] ?? '';
@@ -423,6 +426,7 @@ class Index extends Component
             'separateCategories' => 'boolean',
             'show_cover_page' => 'boolean',
             'imageQuality' => 'required|string|in:sm,md,lg,original',
+            'coverTheme' => 'required|string|in:default,modern,creative,corporate',
             'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
             'globalAttribute' => 'nullable|string',
             'showAttributeLabels' => 'boolean',
@@ -459,6 +463,7 @@ class Index extends Component
             'separate_categories' => $this->separateCategories,
             'show_cover_page' => $this->show_cover_page,
             'image_quality' => $this->imageQuality,
+            'cover_theme' => $this->coverTheme,
             'global_attribute' => $this->globalAttribute,
             'category_attributes' => $filteredCategoryAttributes,
             'show_attribute_labels' => $this->showAttributeLabels,
