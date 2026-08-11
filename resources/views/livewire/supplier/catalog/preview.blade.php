@@ -272,6 +272,31 @@
                     ])
                     @break
                 
+                @case('custom')
+                    {{-- بررسی کدام سیستم استفاده شده --}}
+                    @if(isset($settings['custom_cover_table']))
+                        @include('pdf.supplier-catalog-cover-table', [
+                            'supplierName' => $supplierName,
+                            'supplierLogoUrl' => $supplierLogoUrl ?? null,
+                            'supplierLogoPath' => $supplierLogoPath ?? null,
+                            'catalogTitle' => $template->title ?? null,
+                            'supplier' => $supplier,
+                            'contactPhones' => $settings['contact_phones'] ?? [],
+                            'settings' => $settings,
+                            'forPdf' => false,
+                        ])
+                    @else
+                        @include('pdf.supplier-catalog-cover-custom', [
+                            'supplierName' => $supplierName,
+                            'supplierLogoUrl' => $supplierLogoUrl ?? null,
+                            'catalogTitle' => $template->title ?? null,
+                            'supplier' => $supplier,
+                            'contactPhones' => $settings['contact_phones'] ?? [],
+                            'settings' => $settings,
+                        ])
+                    @endif
+                    @break
+                
                 @default
                     @include('pdf.supplier-catalog-cover', [
                         'supplierName' => $supplierName,

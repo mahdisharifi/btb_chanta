@@ -112,8 +112,15 @@
                                         @endif
                                     </div>
 
-                                    <div class="flex items-center justify-end mt-4 pt-4 border-t border-gray-100">
-                                        <a href="{{ route('supplier.catalog.preview', $template->id) }}" target="_blank" class="inline-flex items-center justify-center w-full px-4 py-2 bg-gray-50 text-sm font-bold text-gray-700 rounded-lg hover:bg-blue-600 hover:text-white transition-colors gap-2">
+                                    <div class="flex items-center justify-end mt-4 pt-4 border-t border-gray-100 gap-2">
+                                        @if(($template->settings['cover_theme'] ?? 'default') === 'custom')
+                                        <a href="{{ route('supplier.catalog.custom-cover', $template->id) }}" class="inline-flex items-center justify-center px-4 py-2 bg-amber-50 text-sm font-bold text-amber-700 rounded-lg hover:bg-amber-600 hover:text-white transition-colors gap-2">
+                                            <x-heroicon-m-paint-brush class="w-4 h-4" />
+                                            تنظیمات کاور
+                                        </a>
+                                        @endif
+                                        
+                                        <a href="{{ route('supplier.catalog.preview', $template->id) }}" target="_blank" class="inline-flex items-center justify-center flex-1 px-4 py-2 bg-gray-50 text-sm font-bold text-gray-700 rounded-lg hover:bg-blue-600 hover:text-white transition-colors gap-2">
                                             <x-heroicon-m-eye class="w-4 h-4" />
                                             مشاهده و دریافت کاتالوگ
                                         </a>
@@ -415,7 +422,7 @@
                                         </div>
                                     </div>
                                     <div class="grid grid-cols-2 gap-3 mr-8">
-                                        @php $coverThemes = ['default' => ['name' => 'پیش‌فرض', 'desc' => 'طرح ساده و کلاسیک', 'preview' => 'bg-gray-100 border-2 border-gray-300'], 'modern' => ['name' => 'مدرن', 'desc' => 'گرادینت بنفش و آبی', 'preview' => 'bg-gradient-to-br from-purple-500 to-blue-600'], 'creative' => ['name' => 'خلاقانه', 'desc' => 'طرح تیره با اشکال', 'preview' => 'bg-slate-900'], 'corporate' => ['name' => 'رسمی', 'desc' => 'طرح سازمانی آبی', 'preview' => 'bg-white border-4 border-blue-900']]; @endphp
+                                        @php $coverThemes = ['default' => ['name' => 'پیش‌فرض', 'desc' => 'طرح ساده و کلاسیک', 'preview' => 'bg-gray-100 border-2 border-gray-300'], 'modern' => ['name' => 'مدرن', 'desc' => 'گرادینت بنفش و آبی', 'preview' => 'bg-gradient-to-br from-purple-500 to-blue-600'], 'creative' => ['name' => 'خلاقانه', 'desc' => 'طرح تیره با اشکال', 'preview' => 'bg-slate-900'], 'corporate' => ['name' => 'رسمی', 'desc' => 'طرح سازمانی آبی', 'preview' => 'bg-white border-4 border-blue-900'], 'custom' => ['name' => 'سفارشی', 'desc' => 'طراحی کاملاً قابل تنظیم', 'preview' => 'bg-gradient-to-br from-amber-400 to-orange-500']]; @endphp
                                         @foreach($coverThemes as $value => $theme)
                                         <label class="relative flex flex-col rounded-lg border-2 overflow-hidden cursor-pointer transition-all {{ $coverTheme === $value ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300' }}">
                                             <div class="h-16 {{ $theme['preview'] }} flex items-center justify-center"><span class="text-white font-bold text-xs drop-shadow-md">{{ $theme['name'] }}</span></div>

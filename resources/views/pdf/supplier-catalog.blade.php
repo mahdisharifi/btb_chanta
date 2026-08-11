@@ -1,3 +1,18 @@
+@php
+    // Resolve settings: اگر source_catalog_id دارد، از تنظیمات کاتالوگ source استفاده کن
+    $resolvedSettings = $settings ?? [];
+    if (isset($settings['custom_cover']['source_catalog_id']) && $settings['custom_cover']['source_catalog_id']) {
+        $sourceCatalogId = $settings['custom_cover']['source_catalog_id'];
+        $sourceCatalog = \App\Models\CatalogTemplate::find($sourceCatalogId);
+        
+        if ($sourceCatalog && isset($sourceCatalog->settings['custom_cover'])) {
+            // استفاده از تنظیمات کاتالوگ source
+            $resolvedSettings['custom_cover'] = $sourceCatalog->settings['custom_cover'];
+        }
+    }
+    $settings = $resolvedSettings;
+@endphp
+
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -82,6 +97,32 @@
                 'contactPhones'    => $contactPhones ?? [],
             ])
             @break
+        @case('custom')
+            {{-- بررسی کدام سیستم استفاده شده --}}
+            @if(isset($settings['custom_cover_table']))
+                @include('pdf.supplier-catalog-cover-table', [
+                    'supplierName'     => $supplierName,
+                    'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                    'supplierLogoPath' => $supplierLogoPath ?? null,
+                    'forPdf'           => $forPdf ?? true,
+                    'catalogTitle'     => $template->title ?? null,
+                    'supplier'         => $supplier ?? null,
+                    'contactPhones'    => $contactPhones ?? [],
+                    'settings'         => $settings ?? [],
+                ])
+            @else
+                @include('pdf.supplier-catalog-cover-custom', [
+                    'supplierName'     => $supplierName,
+                    'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                    'supplierLogoPath' => $supplierLogoPath ?? null,
+                    'forPdf'           => $forPdf ?? true,
+                    'catalogTitle'     => $template->title ?? null,
+                    'supplier'         => $supplier ?? null,
+                    'contactPhones'    => $contactPhones ?? [],
+                    'settings'         => $settings ?? [],
+                ])
+            @endif
+            @break
         @default
             @include('pdf.supplier-catalog-cover', [
                 'supplierName'     => $supplierName,
@@ -93,8 +134,28 @@
                 'contactPhones'    => $contactPhones ?? [],
             ])
     @endswitch
-{{-- جداکننده استاندارد صفحه در mPDF --}}
-<div style="page-break-after: always; break-after: page;"></div>
+    
+    {{-- page break فقط اگر در تنظیمات کاور فعال باشد و صفحه کاور جداگانه باشد --}}
+    @php
+        $coverPageBreak = true; // پیش‌فرض
+        
+        // اگر صفحه جداگانه غیرفعال است، کاور و محصولات در یک صفحه باشند
+        if(isset($separateCategories) && !$separateCategories) {
+            $coverPageBreak = false;
+        }
+        // بررسی در تنظیمات table builder
+        elseif(isset($settings['custom_cover_table']['settings']['page_break'])) {
+            $coverPageBreak = $settings['custom_cover_table']['settings']['page_break'];
+        }
+        // بررسی در تنظیمات کاور قدیمی
+        elseif(isset($settings['custom_cover']['page_break'])) {
+            $coverPageBreak = $settings['custom_cover']['page_break'];
+        }
+    @endphp
+    
+    @if($coverPageBreak)
+        <div style="page-break-after: always; break-after: page;"></div>
+    @endif
 
 @endif
 

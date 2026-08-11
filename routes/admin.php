@@ -25,8 +25,6 @@ use App\Livewire\Admin\Seo\Index as SeoIndex;
 use App\Livewire\Admin\Geography\Manager as GeographyManager;
 use App\Livewire\Admin\Categories\Create;
 
-use App\Livewire\Admin\Catalogs\Index as CatalogIndex;
-use App\Livewire\Admin\Catalogs\Form as CatalogForm;
 use App\Livewire\Supplier\Catalog\Preview as CatalogPreview;
 
 Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')->group(function () {
@@ -46,11 +44,6 @@ Route::middleware(['auth', 'role:super_admin'])
         // داشبورد
         Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
-        Route::prefix('catalogs')->name('catalogs.')->group(function () {
-            Route::get('/', CatalogIndex::class)->name('index');
-            Route::get('/create', CatalogForm::class)->name('create');
-            Route::get('/{catalogTemplate}/edit', CatalogForm::class)->name('edit');
-        });
         // کاربران
         Route::get('/users', UsersIndex::class)->name('users.index');
         Route::get('/users/create', UsersCreate::class)->name('users.create');

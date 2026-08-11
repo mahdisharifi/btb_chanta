@@ -27,7 +27,7 @@ class Index extends Component
     
     public $imageQuality = 'sm'; // sm, md, lg, original
     
-    public $coverTheme = 'default'; // default, modern, creative, corporate
+    public $coverTheme = 'default'; // default, modern, creative, corporate, custom
 
     public $editingTemplateId = null;
     public $name = '';
@@ -283,6 +283,31 @@ class Index extends Component
     }
     
     /**
+     * پیدا کردن کاتالوگ پیش‌فرض
+     */
+    protected function findDefaultTemplateCatalog()
+    {
+        $supplierId = Auth::user()->supplier->id ?? null;
+        if (!$supplierId) {
+            return null;
+        }
+        
+        // پیدا کردن کاتالوگی که is_default_template = true دارد
+        $templates = CatalogTemplate::where('supplier_id', $supplierId)->get();
+        
+        foreach ($templates as $template) {
+            $settings = $template->settings ?? [];
+            $isDefault = $settings['custom_cover']['is_default_template'] ?? false;
+            
+            if ($isDefault) {
+                return $template;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
      * نمایش فرم ایجاد کاتالوگ جدید
      */
     public function createNew()
@@ -426,7 +451,7 @@ class Index extends Component
             'separateCategories' => 'boolean',
             'show_cover_page' => 'boolean',
             'imageQuality' => 'required|string|in:sm,md,lg,original',
-            'coverTheme' => 'required|string|in:default,modern,creative,corporate',
+            'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom',
             'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
             'globalAttribute' => 'nullable|string',
             'showAttributeLabels' => 'boolean',
@@ -494,6 +519,24 @@ class Index extends Component
 
             $this->successMessage = 'کاتالوگ با موفقیت بروزرسانی شد.';
         } else {
+            // کاتالوگ جدید - بررسی کپی از پیش‌فرض
+            if ($this->coverTheme === 'custom') {
+                $defaultTemplate = $this->findDefaultTemplateCatalog();
+                
+                if ($defaultTemplate) {
+                    // کپی تنظیمات کاور از پیش‌فرض
+                    $defaultSettings = $defaultTemplate->settings ?? [];
+                    $defaultCustomCover = $defaultSettings['custom_cover'] ?? null;
+                    
+                    if ($defaultCustomCover) {
+                        $settings['custom_cover'] = $defaultCustomCover;
+                        // تنظیم source_catalog_id برای وابستگی
+                        $settings['custom_cover']['source_catalog_id'] = $defaultTemplate->id;
+                        $settings['custom_cover']['is_default_template'] = false;
+                    }
+                }
+            }
+            
             CatalogTemplate::create([
                 'supplier_id' => $supplierId,
                 'name' => $this->name,

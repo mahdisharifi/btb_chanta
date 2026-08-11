@@ -74,6 +74,9 @@ class Preview extends Component
             : null;
 
         $this->settings = $this->template->settings ?? [];
+        
+        // Resolve settings: اگر source_catalog_id دارد، از تنظیمات کاتالوگ source استفاده کن
+        $this->resolveSettings();
 
         $this->separateCategories = filter_var($this->settings['separate_categories'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $this->showCoverPage = filter_var(
@@ -99,6 +102,22 @@ class Preview extends Component
         $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
     }
 
+    /**
+     * Resolve settings: اگر source_catalog_id دارد، از تنظیمات کاتالوگ source استفاده کن
+     */
+    private function resolveSettings()
+    {
+        if (isset($this->settings['custom_cover']['source_catalog_id']) && $this->settings['custom_cover']['source_catalog_id']) {
+            $sourceCatalogId = $this->settings['custom_cover']['source_catalog_id'];
+            $sourceCatalog = CatalogTemplate::find($sourceCatalogId);
+            
+            if ($sourceCatalog && isset($sourceCatalog->settings['custom_cover'])) {
+                // استفاده از تنظیمات کاتالوگ source
+                $this->settings['custom_cover'] = $sourceCatalog->settings['custom_cover'];
+            }
+        }
+    }
+    
     private function loadCatalogData($supplierId = null)
     {
         $categoryIds = $this->settings['categories']
