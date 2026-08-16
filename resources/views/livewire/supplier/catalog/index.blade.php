@@ -388,6 +388,22 @@
                                         <x-heroicon-o-document class="w-8 h-8 text-gray-300" />
                                     </div>
                                 </div>
+                                
+                                <!-- صفحه جداگانه برای کاور -->
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:border-blue-300 transition-colors cursor-pointer" onclick="document.getElementById('cover_page_break').click()">
+                                    <div class="flex items-start gap-3">
+                                        <div class="pt-0.5">
+                                            <input type="checkbox" wire:model="cover_page_break" id="cover_page_break" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 w-4 h-4 cursor-pointer" onclick="event.stopPropagation()">
+                                        </div>
+                                        <div>
+                                            <label for="cover_page_break" class="text-sm text-gray-900 font-bold cursor-pointer">صفحه جداگانه برای کاور</label>
+                                            <p class="text-xs text-gray-500 mt-1">با انتخاب این گزینه، صفحه کاور در یک صفحه جداگانه نمایش داده می‌شود و محصولات از صفحه بعدی شروع می‌شوند.</p>
+                                        </div>
+                                    </div>
+                                    <div class="hidden sm:block">
+                                        <x-heroicon-o-document-plus class="w-8 h-8 text-gray-300" />
+                                    </div>
+                                </div>
 
                                 <!-- کیفیت تصاویر -->
                                 <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">

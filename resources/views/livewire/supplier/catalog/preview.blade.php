@@ -307,6 +307,24 @@
                         'contactPhones' => $settings['contact_phones'] ?? [],
                     ])
             @endswitch
+            
+            {{-- page break برای کاور در preview/print --}}
+            @php
+                $coverPageBreak = true; // پیش‌فرض
+                
+                // بررسی در تنظیمات کاتالوگ
+                if(isset($settings['cover_page_break'])) {
+                    $coverPageBreak = $settings['cover_page_break'];
+                }
+                // بررسی در تنظیمات کاور قدیمی
+                elseif(isset($settings['custom_cover']['page_break'])) {
+                    $coverPageBreak = $settings['custom_cover']['page_break'];
+                }
+            @endphp
+            
+            @if($coverPageBreak)
+                <div class="break-after-page"></div>
+            @endif
         @endif
         <div class="bg-white print:bg-transparent">
 

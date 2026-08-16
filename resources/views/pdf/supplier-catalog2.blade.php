@@ -233,13 +233,9 @@
 @php
     $coverPageBreak = true; // پیش‌فرض
     
-    // اگر صفحه جداگانه غیرفعال است، کاور و محصولات در یک صفحه باشند
-    if(isset($separateCategories) && !$separateCategories) {
-        $coverPageBreak = false;
-    }
-    // بررسی در تنظیمات table builder
-    elseif(isset($settings['custom_cover_table']['settings']['page_break'])) {
-        $coverPageBreak = $settings['custom_cover_table']['settings']['page_break'];
+    // بررسی در تنظیمات کاتالوگ (اولویت اول)
+    if(isset($settings['cover_page_break'])) {
+        $coverPageBreak = $settings['cover_page_break'];
     }
     // بررسی در تنظیمات کاور قدیمی
     elseif(isset($settings['custom_cover']['page_break'])) {
@@ -250,6 +246,7 @@
 @if($coverPageBreak)
 <pagebreak />
 @endif
+
 @endif
 
 @forelse($groupedProducts as $categoryName => $products)

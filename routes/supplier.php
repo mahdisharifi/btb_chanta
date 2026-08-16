@@ -54,7 +54,6 @@ Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_ad
         Route::get('/catalog/preview/{catalog}', \App\Livewire\Supplier\Catalog\Preview::class)->name('catalog.preview');
         
         Route::get('/catalog/{catalog}/custom-cover', \App\Livewire\Supplier\Catalog\CustomCoverSettings::class)->name('catalog.custom-cover');
-// این خط را در انتهای گروه Route های تامین کننده اضافه کنید
 
         Route::get('/features/{featureId}/buy', BuyFeature::class)->name('features.buy');
         Route::get('/feature/{feature}/buy', BuyFeature::class)->name('feature.buy');

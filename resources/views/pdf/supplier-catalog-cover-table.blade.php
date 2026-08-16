@@ -6,6 +6,8 @@
     $globalSettings = $coverData['settings'] ?? [];
     $rows = $coverData['rows'] ?? [];
     
+
+    
     // تنظیمات کلی
     $pageBreak = $globalSettings['page_break'] ?? true;
     $bgColor = $globalSettings['background_color'] ?? '#667eea';

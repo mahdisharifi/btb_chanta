@@ -17,7 +17,6 @@ class CustomCoverSettings extends Component
     
     // تنظیمات کلی کاور
     public $coverSettings = [
-        'page_break' => true,
         'background_color' => '#667eea',
         'padding' => 20,
         'default_font_size' => 16,
@@ -63,7 +62,6 @@ class CustomCoverSettings extends Component
     ];
     
     protected $rules = [
-        'coverSettings.page_break' => 'boolean',
         'coverSettings.background_color' => 'required|regex:/^#[0-9A-Fa-f]{6}$/',
         'coverSettings.padding' => 'integer|min:0|max:50',
         'rowForm.height' => 'required|integer|min:20|max:500',
@@ -96,8 +94,11 @@ class CustomCoverSettings extends Component
         $this->sourceCatalogId = $coverData['source_catalog_id'] ?? null;
         $this->isDefaultTemplate = $coverData['is_default_template'] ?? false;
         
-        // تنظیمات کلی
-        $this->coverSettings = array_merge($this->coverSettings, $coverData['settings'] ?? []);
+        // تنظیمات کلی - فقط در صورت عدم وجود تنظیمات از پیش‌فرض استفاده کن
+        if (!empty($coverData['settings'])) {
+            $this->coverSettings = $coverData['settings'];
+        }
+        // وگرنه مقادیر پیش‌فرض باقی می‌مانند
         
         // ردیف‌ها
         $this->rows = $coverData['rows'] ?? [];
@@ -132,6 +133,9 @@ class CustomCoverSettings extends Component
                         'border_radius' => 15,
                         'colspan' => 1,
                         'width' => '',
+                        'logo_width' => 100,
+                        'logo_height' => 100,
+                        'use_default_font' => true,
                     ]
                 ]
             ],
@@ -155,6 +159,9 @@ class CustomCoverSettings extends Component
                         'border_radius' => 0,
                         'colspan' => 1,
                         'width' => '',
+                        'logo_width' => 100,
+                        'logo_height' => 100,
+                        'use_default_font' => true,
                     ]
                 ]
             ],
@@ -178,6 +185,9 @@ class CustomCoverSettings extends Component
                         'border_radius' => 30,
                         'colspan' => 1,
                         'width' => '',
+                        'logo_width' => 100,
+                        'logo_height' => 100,
+                        'use_default_font' => true,
                     ]
                 ]
             ],
@@ -201,6 +211,9 @@ class CustomCoverSettings extends Component
                         'border_radius' => 15,
                         'colspan' => 1,
                         'width' => '',
+                        'logo_width' => 100,
+                        'logo_height' => 100,
+                        'use_default_font' => true,
                     ]
                 ]
             ],
@@ -354,9 +367,11 @@ class CustomCoverSettings extends Component
             $this->updateDependentCatalogs($coverData);
         }
         
-        session()->flash('success', 'تنظیمات کاور با موفقیت ذخیره شد.');
-        
-        return redirect()->route('supplier.catalog.index');
+        // نمایش پیام موفقیت بدون ریدایرکت
+        $this->dispatch('notify', [
+            'type' => 'success',
+            'message' => 'تنظیمات کاور با موفقیت ذخیره شد.'
+        ]);
     }
     
     protected function updateDependentCatalogs($coverData)
@@ -364,19 +379,30 @@ class CustomCoverSettings extends Component
         $user = Auth::user();
         $supplierId = $user->supplier->id ?? null;
         
+        // فقط کاتالوگ‌هایی که وابسته هستند (source_catalog_id دارند)
         $dependentCatalogs = CatalogTemplate::where('supplier_id', $supplierId)
             ->where('id', '!=', $this->catalogTemplate->id)
             ->get()
             ->filter(function ($catalog) {
                 $settings = $catalog->settings ?? [];
+                // فقط اگر source_catalog_id دارد و برابر با کاتالوگ فعلی است
                 return ($settings['custom_cover_table']['source_catalog_id'] ?? null) == $this->catalogTemplate->id;
             });
         
         foreach ($dependentCatalogs as $catalog) {
             $settings = $catalog->settings ?? [];
-            $settings['custom_cover_table'] = $coverData;
-            $settings['custom_cover_table']['source_catalog_id'] = $this->catalogTemplate->id;
-            $settings['custom_cover_table']['is_default_template'] = false;
+            
+            // فقط تنظیمات کاور را به‌روز کن، نه کل settings را
+            // از array_merge برای حفظ تنظیمات دیگر استفاده کن
+            $existingCoverTable = $settings['custom_cover_table'] ?? [];
+            
+            $settings['custom_cover_table'] = [
+                'source_catalog_id' => $this->catalogTemplate->id,
+                'is_default_template' => false,
+                'settings' => $coverData['settings'],
+                'rows' => $coverData['rows'],
+            ];
+            
             $catalog->update(['settings' => $settings]);
         }
     }

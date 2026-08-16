@@ -25,6 +25,8 @@ class Index extends Component
     
     public $show_cover_page = true;
     
+    public $cover_page_break = true; // صفحه جداگانه برای کاور
+    
     public $imageQuality = 'sm'; // sm, md, lg, original
     
     public $coverTheme = 'default'; // default, modern, creative, corporate, custom
@@ -392,6 +394,7 @@ class Index extends Component
 
         $this->separateCategories = $settings['separate_categories'] ?? false;
         $this->show_cover_page = $settings['show_cover_page'] ?? true;
+        $this->cover_page_break = $settings['cover_page_break'] ?? true;
         $this->imageQuality = $settings['image_quality'] ?? 'sm';
         $this->coverTheme = $settings['cover_theme'] ?? 'default';
         
@@ -450,6 +453,7 @@ class Index extends Component
             'sortLevel2Dir' => 'required|in:asc,desc',
             'separateCategories' => 'boolean',
             'show_cover_page' => 'boolean',
+            'cover_page_break' => 'boolean',
             'imageQuality' => 'required|string|in:sm,md,lg,original',
             'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom',
             'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
@@ -487,6 +491,7 @@ class Index extends Component
             'sort_level2_dir' => $this->sortLevel2Dir,
             'separate_categories' => $this->separateCategories,
             'show_cover_page' => $this->show_cover_page,
+            'cover_page_break' => $this->cover_page_break,
             'image_quality' => $this->imageQuality,
             'cover_theme' => $this->coverTheme,
             'global_attribute' => $this->globalAttribute,
@@ -511,6 +516,15 @@ class Index extends Component
                 ->where('supplier_id', $supplierId)
                 ->firstOrFail();
 
+            // حفظ تنظیمات کاور کاستم قبلی
+            $existingSettings = $template->settings ?? [];
+            if (isset($existingSettings['custom_cover_table'])) {
+                $settings['custom_cover_table'] = $existingSettings['custom_cover_table'];
+            }
+            if (isset($existingSettings['custom_cover'])) {
+                $settings['custom_cover'] = $existingSettings['custom_cover'];
+            }
+
             $template->update([
                 'name' => $this->name,
                 'settings' => $settings,
@@ -526,13 +540,13 @@ class Index extends Component
                 if ($defaultTemplate) {
                     // کپی تنظیمات کاور از پیش‌فرض
                     $defaultSettings = $defaultTemplate->settings ?? [];
-                    $defaultCustomCover = $defaultSettings['custom_cover'] ?? null;
+                    $defaultCustomCoverTable = $defaultSettings['custom_cover_table'] ?? null;
                     
-                    if ($defaultCustomCover) {
-                        $settings['custom_cover'] = $defaultCustomCover;
+                    if ($defaultCustomCoverTable) {
+                        $settings['custom_cover_table'] = $defaultCustomCoverTable;
                         // تنظیم source_catalog_id برای وابستگی
-                        $settings['custom_cover']['source_catalog_id'] = $defaultTemplate->id;
-                        $settings['custom_cover']['is_default_template'] = false;
+                        $settings['custom_cover_table']['source_catalog_id'] = $defaultTemplate->id;
+                        $settings['custom_cover_table']['is_default_template'] = false;
                     }
                 }
             }
@@ -613,9 +627,12 @@ class Index extends Component
         $this->sortLevel2Dir = 'asc';
 
         $this->separateCategories = false;
+        $this->show_cover_page = true;
+        $this->cover_page_break = true;
         
         // Reset کیفیت تصویر
         $this->imageQuality = 'sm';
+        $this->coverTheme = 'default';
         
         // Reset مشخصات و شماره‌های تماس
         $this->globalAttribute = '';

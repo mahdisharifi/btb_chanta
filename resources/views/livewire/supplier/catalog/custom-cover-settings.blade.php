@@ -9,20 +9,40 @@
                     <p class="mt-1 text-sm text-gray-500">کاتالوگ: {{ $catalogTemplate->name }}</p>
                 </div>
                 <div class="flex gap-3">
-                    <a href="{{ route('supplier.catalog.index') }}" class="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition">
-                        <x-heroicon-o-arrow-right class="w-5 h-5 ml-2" />
-                        بازگشت
-                    </a>
+                    <button type="button" 
+                            onclick="if(confirm('آیا مطمئن هستید؟ تغییرات ذخیره نشده از بین خواهد رفت.')) { window.location.href='{{ route('supplier.catalog.index') }}'; }"
+                            class="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition">
+                        <x-heroicon-o-x-mark class="w-5 h-5 ml-2" />
+                        لغو
+                    </button>
                 </div>
             </div>
         </div>
 
-        {{-- پیام‌ها --}}
-        @if (session('success'))
-            <div class="mb-6 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
-                {{ session('success') }}
-            </div>
-        @endif
+        {{-- پیام موفقیت --}}
+        <div id="success-message" style="display: none;" class="mb-6 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center justify-between">
+            <span id="success-text"></span>
+            <button onclick="document.getElementById('success-message').style.display='none'" class="text-green-600 hover:text-green-800">
+                <x-heroicon-o-x-mark class="w-5 h-5" />
+            </button>
+        </div>
+        
+        <script>
+            document.addEventListener('livewire:init', () => {
+                Livewire.on('notify', (event) => {
+                    const messageDiv = document.getElementById('success-message');
+                    const textSpan = document.getElementById('success-text');
+                    
+                    textSpan.textContent = event.message || event[0].message;
+                    messageDiv.style.display = 'flex';
+                    
+                    // پنهان کردن خودکار بعد از 5 ثانیه
+                    setTimeout(() => {
+                        messageDiv.style.display = 'none';
+                    }, 5000);
+                });
+            });
+        </script>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -89,12 +109,6 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">فاصله از لبه (px)</label>
                             <input type="number" wire:model.live="coverSettings.padding" min="0" max="50" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        </div>
-                        <div class="col-span-2">
-                            <label class="flex items-center gap-2">
-                                <input type="checkbox" wire:model.live="coverSettings.page_break" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                <span class="text-sm font-medium text-gray-700">صفحه جداگانه برای کاور</span>
-                            </label>
                         </div>
                     </div>
                     
@@ -202,10 +216,20 @@
                     @endif
                 </div>
                 
-                {{-- دکمه ذخیره --}}
-                <div class="flex justify-end">
-                    <button type="button" wire:click="save" class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium">
-                        ذخیره تنظیمات
+                {{-- دکمه‌های عملیات --}}
+                <div class="flex gap-3 justify-end">
+                    <button type="button" 
+                            wire:click="save" 
+                            wire:loading.attr="disabled"
+                            class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                        <span wire:loading.remove wire:target="save">ذخیره تنظیمات</span>
+                        <span wire:loading wire:target="save" class="flex items-center gap-2">
+                            <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            در حال ذخیره...
+                        </span>
                     </button>
                 </div>
             </div>
@@ -214,64 +238,77 @@
             <div class="lg:col-span-1">
                 <div class="sticky top-6">
                     <div class="bg-white rounded-lg shadow p-4">
-                        <h3 class="text-sm font-semibold text-gray-900 mb-3">پیش‌نمایش زنده</h3>
-                        <div class="aspect-[210/297] border-2 border-gray-200 rounded-lg overflow-hidden" style="background-color: {{ $coverSettings['background_color'] }}; padding: {{ $coverSettings['padding'] }}px;">
-                            <div class="h-full flex flex-col" style="font-family: 'IRANSans', Tahoma, Arial, sans-serif;">
-                                @forelse($rows as $row)
-                                    <div style="height: {{ $row['height_unit'] === 'auto' ? 'auto' : $row['height'] . $row['height_unit'] }}; min-height: 20px; background-color: {{ $row['background_color'] ?: 'transparent' }}; vertical-align: {{ $row['vertical_align'] }}; display: flex; flex-direction: column; justify-content: {{ $row['vertical_align'] === 'top' ? 'flex-start' : ($row['vertical_align'] === 'bottom' ? 'flex-end' : 'center') }};">
-                                        <div class="h-full grid gap-1" style="grid-template-columns: repeat({{ $row['columns'] }}, 1fr);">
-                                            @foreach($row['cells'] as $cell)
-                                                <div style="background-color: {{ $cell['background_color'] ?: 'transparent' }}; padding: {{ $cell['padding'] }}px; border-radius: {{ $cell['border_radius'] }}px; text-align: {{ $cell['text_align'] }}; color: {{ $cell['font_color'] }}; font-size: {{ $cell['font_size'] }}px; font-weight: {{ $cell['font_weight'] }}; display: flex; align-items: center; justify-content: {{ $cell['text_align'] === 'left' ? 'flex-start' : ($cell['text_align'] === 'right' ? 'flex-end' : 'center') }};">
-                                                    @php
-                                                        $previewUser = auth()->user();
-                                                        $previewSupplier = $previewUser ? $previewUser->supplier : null;
-                                                    @endphp
-                                                    @if($cell['content_type'] === 'logo')
-                                                        @php
-                                                            $logoWidth = $cell['logo_width'] ?? 100;
-                                                            $logoHeight = $cell['logo_height'] ?? 100;
-                                                            $logoUrl = $previewSupplier && $previewSupplier->logo ? asset('storage/' . $previewSupplier->logo) : null;
-                                                        @endphp
-                                                        @if($logoUrl)
-                                                            <img src="{{ $logoUrl }}" alt="لوگو" style="width: {{ $logoWidth }}px; height: {{ $logoHeight }}px; object-fit: contain; border-radius: {{ $cell['border_radius'] ?? 0 }}px;">
-                                                        @else
-                                                            <div style="width: {{ $logoWidth }}px; height: {{ $logoHeight }}px; background: white; border-radius: {{ $cell['border_radius'] ?? 0 }}px; display: flex; align-items: center; justify-content: center;">
-                                                                <span style="font-size: {{ min($logoWidth, $logoHeight) * 0.5 }}px; font-weight: bold; color: {{ $coverSettings['background_color'] }};">{{ mb_substr($previewSupplier->company_name ?? 'L', 0, 1) }}</span>
-                                                            </div>
-                                                        @endif
-                                                    @elseif($cell['content_type'] === 'company_name')
-                                                        <span>{{ $previewSupplier->company_name ?? 'نام شرکت' }}</span>
-                                                    @elseif($cell['content_type'] === 'brand_name')
-                                                        <span>{{ $previewSupplier->brand_name ?? '' }}</span>
-                                                    @elseif($cell['content_type'] === 'catalog_title')
-                                                        <span style="background: {{ $cell['background_color'] ?: '#fff' }}; padding: {{ $cell['padding'] }}px {{ $cell['padding'] * 2 }}px; border-radius: {{ $cell['border_radius'] }}px;">{{ $catalogTemplate->title ?? 'کاتالوگ محصولات' }}</span>
-                                                    @elseif($cell['content_type'] === 'contact')
-                                                        <div style="font-size: {{ $cell['font_size'] * 0.8 }}px;">
-                                                            @foreach($catalogTemplate->contact_phones ?? [] as $phone)
-                                                                @if(!empty($phone['number']))
-                                                                    <div>{{ $phone['label'] ?? '' }}: {{ $phone['number'] }}</div>
-                                                                @endif
-                                                            @endforeach
-                                                        </div>
-                                                    @elseif($cell['content_type'] === 'date')
-                                                        <span>{{ jdate(now())->format('Y/m/d') }}</span>
-                                                    @elseif($cell['content_type'] === 'text')
-                                                        <span>{{ $cell['content_value'] }}</span>
-                                                    @elseif($cell['content_type'] === 'spacer')
-                                                        <div style="height: {{ $cell['font_size'] }}px;"></div>
-                                                    @endif
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                @empty
-                                    <div class="flex items-center justify-center h-full text-gray-400 text-xs">
-                                        هنوز ردیفی اضافه نشده
-                                    </div>
-                                @endforelse
-                            </div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-900">پیش‌نمایش</h3>
                         </div>
-                        <p class="text-xs text-gray-500 text-center mt-2">پیش‌نمایش واقعی</p>
+                        
+                        {{-- Mini Preview --}}
+                        <div wire:key="preview-{{ $coverSettings['background_color'] ?? '#667eea' }}-{{ count($rows) }}" class="aspect-[210/297] border-2 border-gray-200 rounded-lg overflow-hidden relative mb-3" style="background-color: {{ $coverSettings['background_color'] ?? '#667eea' }};">
+                            @if(!empty($rows) && count($rows) > 0)
+                                <div class="w-full h-full p-2 overflow-hidden" style="transform: scale(0.25); transform-origin: top left; width: 400%; height: 400%;">
+                                    <table style="width: 100%; border-collapse: collapse; font-family: 'IRANSans', Tahoma, Arial, sans-serif;">
+                                        @foreach($rows as $rowIndex => $row)
+                                            @php
+                                                $rowHeight = $row['height'] ?? 100;
+                                                $rowBg = $row['background_color'] ?? '';
+                                                $cells = $row['cells'] ?? [];
+                                                $defaultFontSize = $coverSettings['default_font_size'] ?? 16;
+                                                $defaultFontColor = $coverSettings['default_font_color'] ?? '#ffffff';
+                                            @endphp
+                                            <tr style="height: {{ $rowHeight }}px; {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }}">
+                                                @foreach($cells as $cell)
+                                                    @php
+                                                        $contentType = $cell['content_type'] ?? 'text';
+                                                        $useDefaultFont = $cell['use_default_font'] ?? true;
+                                                        $fontSize = $useDefaultFont ? $defaultFontSize : ($cell['font_size'] ?? $defaultFontSize);
+                                                        $fontColor = $useDefaultFont ? $defaultFontColor : ($cell['font_color'] ?? $defaultFontColor);
+                                                    @endphp
+                                                    <td style="text-align: {{ $cell['text_align'] ?? 'center' }}; color: {{ $fontColor }}; font-size: {{ $fontSize }}px;">
+                                                        @if($contentType === 'logo')
+                                                            <span style="display: inline-block; width: 40px; height: 40px; background: white; border-radius: 50%; line-height: 40px;">لوگو</span>
+                                                        @elseif($contentType === 'company_name')
+                                                            <strong>{{ Str::limit(auth()->user()->supplier->company_name ?? 'شرکت', 15) }}</strong>
+                                                        @elseif($contentType === 'catalog_title')
+                                                            <span style="background: white; padding: 5px 10px; border-radius: 20px; color: {{ $coverSettings['background_color'] ?? '#667eea' }};">کاتالوگ</span>
+                                                        @elseif($contentType === 'text')
+                                                            <span>{{ Str::limit($cell['content_value'] ?? '', 10) }}</span>
+                                                        @elseif($contentType === 'contact')
+                                                            <span style="font-size: 10px;">تماس</span>
+                                                        @elseif($contentType === 'date')
+                                                            <span>{{ jdate(now())->format('Y/m/d') }}</span>
+                                                        @else
+                                                            <span>-</span>
+                                                        @endif
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        @endforeach
+                                    </table>
+                                </div>
+                            @else
+                                <div class="flex items-center justify-center h-full text-white/50 text-xs p-4">
+                                    <div class="text-center">
+                                        <x-heroicon-o-table-cells class="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                        <p>ردیفی وجود ندارد</p>
+                                        <p class="text-[10px] opacity-70 mt-1">ردیف‌ها را از سمت چپ اضافه کنید</p>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                        
+                        {{-- دکمه پیش‌نمایش کاتالوگ --}}
+                        <div class="space-y-2">
+                            <a href="{{ route('supplier.catalog.preview', $catalogTemplate->id) }}" 
+                               target="_blank"
+                               class="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium flex items-center justify-center gap-2">
+                                <x-heroicon-o-document class="w-5 h-5" />
+                                پیش‌نمایش کامل کاتالوگ
+                            </a>
+                        </div>
+                        
+                        <p class="text-xs text-gray-500 text-center mt-3">
+                            برای مشاهده تغییرات، ابتدا ذخیره کنید
+                        </p>
                     </div>
                 </div>
             </div>
@@ -395,7 +432,14 @@
                                         </div>
                                     @endif
                                     
-                                    @if($coverSettings['use_custom_font_per_cell'])
+                                    <div class="col-span-3">
+                                        <label class="flex items-center gap-2">
+                                            <input type="checkbox" wire:model.live="rowForm.cells.{{ $cellIndex }}.use_default_font" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-xs font-medium text-gray-700">استفاده از فونت پیش‌فرض</span>
+                                        </label>
+                                    </div>
+                                    
+                                    @if(!$cell['use_default_font'])
                                         <div>
                                             <label class="block text-xs font-medium text-gray-700 mb-1">اندازه فونت</label>
                                             <input type="number" wire:model.live="rowForm.cells.{{ $cellIndex }}.font_size" min="8" max="72" class="w-full rounded-md border-gray-300 shadow-sm text-sm">

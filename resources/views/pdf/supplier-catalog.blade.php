@@ -135,17 +135,13 @@
             ])
     @endswitch
     
-    {{-- page break فقط اگر در تنظیمات کاور فعال باشد و صفحه کاور جداگانه باشد --}}
+    {{-- page break برای صفحه کاور --}}
     @php
         $coverPageBreak = true; // پیش‌فرض
         
-        // اگر صفحه جداگانه غیرفعال است، کاور و محصولات در یک صفحه باشند
-        if(isset($separateCategories) && !$separateCategories) {
-            $coverPageBreak = false;
-        }
-        // بررسی در تنظیمات table builder
-        elseif(isset($settings['custom_cover_table']['settings']['page_break'])) {
-            $coverPageBreak = $settings['custom_cover_table']['settings']['page_break'];
+        // بررسی در تنظیمات کاتالوگ
+        if(isset($settings['cover_page_break'])) {
+            $coverPageBreak = $settings['cover_page_break'];
         }
         // بررسی در تنظیمات کاور قدیمی
         elseif(isset($settings['custom_cover']['page_break'])) {
