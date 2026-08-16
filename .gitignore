@@ -60,3 +60,6 @@ Thumbs.db
 *.tmp
 # AI & Backup Directories
 /Hosh Masnoei
+
+# Kiro IDE
+/.kiro/reports/
