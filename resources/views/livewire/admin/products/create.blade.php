@@ -177,19 +177,16 @@
                             <div class="flex flex-wrap gap-2">
                                 @foreach($attribute->values as $value)
                                 @php
+                                    $selectedArr = $selectedAttributeValues[$attribute->id] ?? [];
                                     $isSelected = $attribute->is_multiple 
-                                        ? in_array($value->id, $selectedAttributeValues[$attribute->id] ?? [])
-                                        : ($selectedAttributeValues[$attribute->id] ?? null) == $value->id;
+                                        ? in_array((string)$value->id, array_map('strval', (array)$selectedArr))
+                                        : (string)($selectedAttributeValues[$attribute->id] ?? '') === (string)$value->id;
                                 @endphp
                                 @if($isSelected)
                                 <span class="inline-flex items-center gap-1.5 bg-[#d4af37] text-white px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm">
                                     {{ $value->value }}
                                     <button type="button" 
-                                            @if($attribute->is_multiple)
-                                            wire:click="$toggle('selectedAttributeValues.{{ $attribute->id }}', '{{ $value->id }}')"
-                                            @else
-                                            wire:click="$set('selectedAttributeValues.{{ $attribute->id }}', null)"
-                                            @endif
+                                            wire:click="removeAttributeValue({{ $attribute->id }}, {{ $value->id }})"
                                             class="hover:bg-white/20 rounded-full p-0.5 transition-colors">
                                         <x-heroicon-s-x-mark class="w-3.5 h-3.5" />
                                     </button>
@@ -200,65 +197,65 @@
                         </div>
                         @endif
 
-                        <!-- جستجو -->
-                        <div class="mb-3 relative">
-                            <div class="relative">
+                        <!-- جستجو و افزودن مقدار جدید -->
+                        <div class="mb-3 flex gap-2" 
+                             x-on:attribute-value-added.window="if ($event.detail.attributeId === {{ $attribute->id }}) { search = ''; }">
+                            <div class="relative flex-1">
                                 <x-heroicon-o-magnifying-glass class="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input type="text"
                                        x-model="search"
-                                       placeholder="جستجو در مقادیر..."
+                                       x-on:input="$wire.set('newAttributeValues.{{ $attribute->id }}', search)"
+                                       placeholder="جستجو یا مقدار جدید..."
                                        class="w-full pr-10 pl-3 py-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm focus:ring-[#d4af37] focus:border-[#d4af37]">
                             </div>
-                        </div>
-
-                        <!-- لیست مقادیر -->
-                        <div class="max-h-40 overflow-y-auto pr-1 space-y-2">
-                            @foreach($attribute->values as $value)
-                            @php
-                                $normalizedValue = str_replace(['ي', 'ك'], ['ی', 'ک'], $value->value);
-                                $isSelected = $attribute->is_multiple 
-                                    ? in_array($value->id, $selectedAttributeValues[$attribute->id] ?? [])
-                                    : ($selectedAttributeValues[$attribute->id] ?? null) == $value->id;
-                            @endphp
-                            <label x-show="!search || '{{ $normalizedValue }}'.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\u200C/g, ' ').includes(search.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\u200C/g, ' '))"
-                                   class="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
-                                   :class="{ 'opacity-50': {{ $isSelected ? 'true' : 'false' }} }">
-                                @if($attribute->is_multiple)
-                                <input type="checkbox"
-                                       wire:model.live="selectedAttributeValues.{{ $attribute->id }}"
-                                       value="{{ $value->id }}"
-                                       class="text-[#d4af37] focus:ring-[#d4af37] border-gray-300 dark:border-gray-600 rounded">
-                                @else
-                                <input type="radio"
-                                       wire:model.live="selectedAttributeValues.{{ $attribute->id }}"
-                                       value="{{ $value->id }}"
-                                       name="attr_{{ $attribute->id }}"
-                                       @if($selectedCount > 0 && !$isSelected)
-                                       @change="showWarning = true; warningMessage = 'انتخاب قبلی حذف شد'; setTimeout(() => showWarning = false, 3000)"
-                                       @else
-                                       @change="showWarning = false"
-                                       @endif
-                                       class="text-[#d4af37] focus:ring-[#d4af37] border-gray-300 dark:border-gray-600">
-                                @endif
-                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ $value->value }}</span>
-                            </label>
-                            @endforeach
-                        </div>
-
-                        <!-- افزودن مقدار جدید -->
-                        <div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                            <input type="text"
-                                   wire:model="newAttributeValues.{{ $attribute->id }}"
-                                   wire:keydown.enter.prevent="saveNewAttributeValue({{ $attribute->id }})"
-                                   placeholder="مقدار جدید..."
-                                   class="border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm flex-1 focus:ring-[#d4af37] focus:border-[#d4af37]">
                             <button type="button"
+                                    x-show="search.length > 0"
+                                    x-transition
                                     wire:click="saveNewAttributeValue({{ $attribute->id }})"
-                                    class="px-4 py-2 bg-[#d4af37] text-black rounded-lg text-sm font-medium hover:bg-[#c49d2f] transition-colors flex items-center gap-1">
+                                    x-on:click="setTimeout(() => { search = ''; }, 100)"
+                                    class="px-4 py-2 bg-[#d4af37] text-black rounded-lg text-sm font-medium hover:bg-[#c49d2f] transition-colors flex items-center gap-1 whitespace-nowrap">
                                 <x-heroicon-o-plus class="w-4 h-4" />
                                 افزودن
                             </button>
                         </div>
+
+                        <!-- لیست مقادیر (فقط موارد انتخاب نشده) -->
+                        <div class="max-h-40 overflow-y-auto pr-1 space-y-2">
+                            @foreach($attribute->values as $value)
+                            @php
+                                $normalizedValue = str_replace(['ي', 'ك'], ['ی', 'ک'], $value->value);
+                                $selectedArr = $selectedAttributeValues[$attribute->id] ?? [];
+                                $isSelected = $attribute->is_multiple 
+                                    ? in_array((string)$value->id, array_map('strval', (array)$selectedArr))
+                                    : (string)($selectedAttributeValues[$attribute->id] ?? '') === (string)$value->id;
+                            @endphp
+                            <!-- فقط مقادیر انتخاب نشده را نمایش بده -->
+                            @if(!$isSelected)
+                            <div x-show="!search || '{{ $normalizedValue }}'.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\u200C/g, ' ').includes(search.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\u200C/g, ' '))"
+                                 class="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors">
+                                @if($attribute->is_multiple)
+                                <input type="checkbox"
+                                       {{ in_array((string)$value->id, array_map('strval', (array)($selectedAttributeValues[$attribute->id] ?? []))) ? 'checked' : '' }}
+                                       wire:click="toggleAttributeValue({{ $attribute->id }}, {{ $value->id }})"
+                                       class="text-[#d4af37] focus:ring-[#d4af37] border-gray-300 dark:border-gray-600 rounded">
+                                @else
+                                <input type="radio"
+                                       {{ (string)($selectedAttributeValues[$attribute->id] ?? '') === (string)$value->id ? 'checked' : '' }}
+                                       wire:click="toggleAttributeValue({{ $attribute->id }}, {{ $value->id }})"
+                                       name="attr_{{ $attribute->id }}"
+                                       @if($selectedCount > 0)
+                                       onchange="showWarning = true; warningMessage = 'انتخاب قبلی حذف شد'; setTimeout(() => showWarning = false, 3000)"
+                                       @else
+                                       onchange="showWarning = false"
+                                       @endif
+                                       class="text-[#d4af37] focus:ring-[#d4af37] border-gray-300 dark:border-gray-600">
+                                @endif
+                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ $value->value }}</span>
+                            </div>
+                            @endif
+                            @endforeach
+                        </div>
+
                         @error('newAttributeValues.' . $attribute->id)
                         <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span>
                         @enderror

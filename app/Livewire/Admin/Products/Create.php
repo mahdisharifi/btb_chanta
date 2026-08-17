@@ -296,25 +296,107 @@ class Create extends Component
     {
         $value = trim($this->newAttributeValues[$attributeId] ?? '');
 
-        if (empty($value)) return;
+        if (empty($value)) {
+            $this->dispatch('notify', [
+                'message' => 'لطفاً مقداری وارد کنید',
+                'type' => 'error'
+            ]);
+            return;
+        }
 
         $existing = AttributeValue::where('attribute_id', $attributeId)
             ->where('value', $value)
             ->first();
 
         if ($existing) {
-            $this->attributeValues[$attributeId] = $existing->id;
+            $newValueId = $existing->id;
+            $isNew = false;
         } else {
             $newValue = AttributeValue::create([
                 'attribute_id' => $attributeId,
                 'value' => $value
             ]);
-            $this->attributeValues[$attributeId] = $newValue->id;
+            $newValueId = $newValue->id;
+            $isNew = true;
+        }
+
+        // بروزرسانی لیست مقادیر
+        $this->loadCategoryAttributes();
+        
+        // اضافه کردن مقدار جدید به لیست انتخاب‌شده
+        $attribute = $this->categoryAttributes->firstWhere('id', $attributeId);
+        if ($attribute) {
+            if ($attribute->is_multiple) {
+                // چند انتخابی: اضافه کردن به آرایه
+                if (!in_array($newValueId, $this->selectedAttributeValues[$attributeId] ?? [])) {
+                    $this->selectedAttributeValues[$attributeId][] = (string)$newValueId;
+                }
+            } else {
+                // تک انتخابی: جایگزینی
+                $this->selectedAttributeValues[$attributeId] = (string)$newValueId;
+            }
         }
 
         $this->newAttributeValues[$attributeId] = '';
-        // به‌روزرسانی لیست مقادیر بدون پاک‌شدن انتخاب‌های فعلی
-        $this->loadCategoryAttributes();
+        
+        $message = $isNew 
+            ? "مقدار «{$value}» با موفقیت اضافه و انتخاب شد"
+            : "مقدار «{$value}» از قبل وجود داشت و انتخاب شد";
+        
+        $this->dispatch('notify', [
+            'message' => $message,
+            'type' => 'success'
+        ]);
+    }
+    
+    /**
+     * حذف یک مقدار از لیست انتخاب‌شده
+     */
+    public function removeAttributeValue($attributeId, $valueId)
+    {
+        $attribute = collect($this->categoryAttributes)->firstWhere('id', $attributeId);
+        
+        if (!$attribute) return;
+        
+        if ($attribute->is_multiple) {
+            // چند انتخابی: حذف از آرایه
+            $values = $this->selectedAttributeValues[$attributeId] ?? [];
+            $this->selectedAttributeValues[$attributeId] = array_values(
+                array_filter($values, fn($v) => (string)$v !== (string)$valueId)
+            );
+        } else {
+            // تک انتخابی: null کردن
+            $this->selectedAttributeValues[$attributeId] = null;
+        }
+    }
+    
+    /**
+     * اضافه/حذف یک مقدار به/از لیست انتخاب‌شده (toggle)
+     */
+    public function toggleAttributeValue($attributeId, $valueId)
+    {
+        $attribute = collect($this->categoryAttributes)->firstWhere('id', $attributeId);
+        
+        if (!$attribute) return;
+        
+        if ($attribute->is_multiple) {
+            // چند انتخابی
+            $values = $this->selectedAttributeValues[$attributeId] ?? [];
+            $valueIdStr = (string)$valueId;
+            
+            if (in_array($valueIdStr, array_map('strval', $values))) {
+                // حذف
+                $this->selectedAttributeValues[$attributeId] = array_values(
+                    array_filter($values, fn($v) => (string)$v !== $valueIdStr)
+                );
+            } else {
+                // اضافه
+                $this->selectedAttributeValues[$attributeId][] = $valueIdStr;
+            }
+        } else {
+            // تک انتخابی: جایگزینی
+            $this->selectedAttributeValues[$attributeId] = (string)$valueId;
+        }
     }
 
     // علامت‌گذاری یک رسانه موجود برای حذف (حذف واقعی هنگام ذخیره انجام می‌شود)
