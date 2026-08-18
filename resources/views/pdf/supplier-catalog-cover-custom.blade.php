@@ -87,11 +87,11 @@
             @if($logoEnabled && in_array($logoPosition, ['top-left', 'top-center', 'top-right']))
                 <div style="text-align: {{ $logoAlign }}; margin-bottom: 20px;">
                     @if(!empty($forPdf) && !empty($supplierLogoPath) && file_exists($supplierLogoPath))
-                        {{-- خروجی PDF --}}
-                        <img src="{{ $supplierLogoPath }}" alt="{{ $supplierName ?? 'لوگو' }}" width="{{ $logoSize }}" height="{{ $logoSize }}">
+                        {{-- خروجی PDF - فقط ارتفاع لحاظ میشه، عرض خودکار --}}
+                        <img src="{{ $supplierLogoPath }}" alt="{{ $supplierName ?? 'لوگو' }}" height="{{ $logoSize }}" style="width: auto;">
                     @elseif(empty($forPdf) && !empty($supplierLogoUrl))
-                        {{-- خروجی Preview --}}
-                        <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="width: {{ $logoSize }}px; height: {{ $logoSize }}px; object-fit: contain; border-radius: {{ $logoBorderRadius }}px; display: inline-block;">
+                        {{-- خروجی Preview - فقط ارتفاع لحاظ میشه، عرض خودکار --}}
+                        <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="height: {{ $logoSize }}px; width: auto; max-width: 100%; border-radius: {{ $logoBorderRadius }}px; display: inline-block;">
                     @else
                         <div style="width: {{ $logoSize }}px; height: {{ $logoSize }}px; background: white; display: inline-block; text-align: center; line-height: {{ $logoSize }}px;{{ $logoAlign !== 'center' ? 'margin-' . ($logoAlign === 'left' ? 'right' : 'left') . ': auto;' : '' }}">
                             <span style="font-size: {{ $logoSize/2 }}px; font-weight: bold; color: {{ $bgColor }};">{{ mb_substr($supplierName ?? 'L', 0, 1) }}</span>
@@ -149,11 +149,11 @@
             @if($logoEnabled && $logoPosition === 'center')
                 <div style="margin-bottom: 20px;">
                     @if(!empty($forPdf) && !empty($supplierLogoPath) && file_exists($supplierLogoPath))
-                        {{-- خروجی PDF --}}
-                        <img src="{{ $supplierLogoPath }}" alt="{{ $supplierName ?? 'لوگو' }}" width="{{ $logoSize }}" height="{{ $logoSize }}">
+                        {{-- خروجی PDF - فقط ارتفاع لحاظ میشه، عرض خودکار --}}
+                        <img src="{{ $supplierLogoPath }}" alt="{{ $supplierName ?? 'لوگو' }}" height="{{ $logoSize }}" style="width: auto;">
                     @elseif(empty($forPdf) && !empty($supplierLogoUrl))
-                        {{-- خروجی Preview --}}
-                        <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="width: {{ $logoSize }}px; height: {{ $logoSize }}px; object-fit: contain; border-radius: {{ $logoBorderRadius }}px;">
+                        {{-- خروجی Preview - فقط ارتفاع لحاظ میشه، عرض خودکار --}}
+                        <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="height: {{ $logoSize }}px; width: auto; max-width: 100%; border-radius: {{ $logoBorderRadius }}px;">
                     @else
                         <div style="width: {{ $logoSize }}px; height: {{ $logoSize }}px; background: white; display: inline-block; text-align: center; line-height: {{ $logoSize }}px;">
                             <span style="font-size: {{ $logoSize/2 }}px; font-weight: bold; color: {{ $bgColor }};">{{ mb_substr($supplierName ?? 'L', 0, 1) }}</span>
@@ -209,11 +209,11 @@
             @if($logoEnabled && in_array($logoPosition, ['bottom-left', 'bottom-center', 'bottom-right']))
                 <div style="text-align: {{ $logoAlign }}; margin-bottom: 20px;">
                     @if(!empty($forPdf) && !empty($supplierLogoPath) && file_exists($supplierLogoPath))
-                        {{-- خروجی PDF --}}
-                        <img src="{{ $supplierLogoPath }}" alt="{{ $supplierName ?? 'لوگو' }}" width="{{ $logoSize }}" height="{{ $logoSize }}">
+                        {{-- خروجی PDF - فقط ارتفاع لحاظ میشه، عرض خودکار --}}
+                        <img src="{{ $supplierLogoPath }}" alt="{{ $supplierName ?? 'لوگو' }}" height="{{ $logoSize }}" style="width: auto;">
                     @elseif(empty($forPdf) && !empty($supplierLogoUrl))
-                        {{-- خروجی Preview --}}
-                        <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="width: {{ $logoSize }}px; height: {{ $logoSize }}px; object-fit: contain; border-radius: {{ $logoBorderRadius }}px; display: inline-block;">
+                        {{-- خروجی Preview - فقط ارتفاع لحاظ میشه، عرض خودکار --}}
+                        <img src="{{ $supplierLogoUrl }}" alt="{{ $supplierName ?? 'لوگو' }}" style="height: {{ $logoSize }}px; width: auto; max-width: 100%; border-radius: {{ $logoBorderRadius }}px; display: inline-block;">
                     @else
                         <div style="width: {{ $logoSize }}px; height: {{ $logoSize }}px; background: white; display: inline-block; text-align: center; line-height: {{ $logoSize }}px;">
                             <span style="font-size: {{ $logoSize/2 }}px; font-weight: bold; color: {{ $bgColor }};">{{ mb_substr($supplierName ?? 'L', 0, 1) }}</span>
