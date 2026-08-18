@@ -12,7 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('price_update_items', function (Blueprint $table) {
-            //
+            $table->integer('old_min_order_quantity')->nullable()->after('new_stock');
+            $table->integer('new_min_order_quantity')->nullable()->after('old_min_order_quantity');
         });
     }
 
@@ -22,7 +23,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('price_update_items', function (Blueprint $table) {
-            //
+            $table->dropColumn(['old_min_order_quantity', 'new_min_order_quantity']);
         });
     }
 };
