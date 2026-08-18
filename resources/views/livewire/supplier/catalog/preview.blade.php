@@ -390,13 +390,21 @@
                             @endphp
                             <div class="flex justify-between print:m-1 items-center px-3 py-[2px] overflow-hidden">
                                     <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $label }}">
-                                        {{ $label }}
+                                        @if($priceValue)
+                                            {{ $label }}                                        
+                                        @else
+                                            <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
+                                        @endif
+
+
+
+                                        
                                     </span>
                                 <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $priceValue ? number_format($priceValue) : '-' }}">
                                         @if($priceValue)
                                             {{ number_format($priceValue) }}
                                         @else
-                                            <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">-</span>
+                                            <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
                                         @endif
                                     </span>
                             </div>

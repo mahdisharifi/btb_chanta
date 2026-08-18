@@ -42,16 +42,22 @@
         @endphp
         <tr>
             <td class="price-label">
+
+              @if($priceValue)
                 {{ $priceLabels[$priceType] ?? $priceType }}
-                @if($priceType === 'warranty' && $warrantyMonths)
+                 @if($priceType === 'warranty' && $warrantyMonths)
                     <span style="font-size: 9px; color: #6b7280;">({{ $warrantyMonths }} ماه)</span>
                 @endif
+                @else
+                <span class="price-empty">---</span>
+                @endif
+               
             </td>
             <td class="price-value">
                 @if($priceValue)
                 {{ number_format($priceValue) }}
                 @else
-                <span class="price-empty">-</span>
+                <span class="price-empty">---</span>
                 @endif
             </td>
         </tr>

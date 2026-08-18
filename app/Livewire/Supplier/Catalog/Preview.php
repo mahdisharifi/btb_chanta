@@ -120,6 +120,21 @@ class Preview extends Component
     
     private function loadCatalogData($supplierId = null)
     {
+        // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات
+        $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
+            'supplier_id' => $supplierId,
+            'settings' => $this->settings,
+            'selected_prices' => $this->selectedPriceTypes,
+        ]));
+        
+        // تلاش برای دریافت از کش
+        $cached = Cache::get($cacheKey);
+        if ($cached && isset($cached['grouped_products'])) {
+            $this->groupedProducts = $cached['grouped_products'];
+            $this->updateProgress(30, 'داده‌ها از کش بازیابی شدند');
+            return;
+        }
+        
         $categoryIds = $this->settings['categories']
             ?? $this->template->selected_categories
             ?? 'all';
@@ -168,10 +183,11 @@ class Preview extends Component
         $this->updateProgress(15, 'در حال دریافت اطلاعات محصولات...');
 
         // دریافت همه محصولات یونیک با روابط مورد نیاز
+        // بهینه‌سازی: اضافه کردن attributeValues.attribute برای جلوگیری از N+1
         $products = $query->with([
             'category',
             'primaryImage',
-            'attributeValues.attribute',
+            'attributeValues.attribute', // eager load برای جلوگیری از N+1
             'productSuppliers' => function ($q) use ($selectedSupplierIds, $supplierId) {
                 if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
                     $q->whereIn('supplier_id', $selectedSupplierIds);
@@ -228,6 +244,7 @@ class Preview extends Component
             }
             
             // دریافت مقدار attribute عمومی و اختصاصی
+            // بهینه‌سازی: استفاده از eager loaded data برای جلوگیری از N+1
             $attributeValues = [];
             $categoryId = $product->category_id;
             $showLabels = $this->settings['show_attribute_labels'] ?? true;
@@ -238,15 +255,14 @@ class Preview extends Component
                 return "\u{200E}" . $text . "\u{200E}";
             };
             
-            // ابتدا مشخصه عمومی
+            // ابتدا مشخصه عمومی - استفاده از collection به جای کوئری
             if (!empty($this->settings['global_attribute'])) {
                 $attrId = $this->settings['global_attribute'];
-                $attrValue = $product->attributeValues()
-                    ->where('attribute_id', $attrId)
-                    ->first();
+                // استفاده از eager loaded attributeValues
+                $attrValue = $product->attributeValues->firstWhere('attribute_id', $attrId);
                 if ($attrValue) {
-                    // دریافت نام attribute
-                    $attrName = \App\Models\Attribute::find($attrId)->name ?? '';
+                    // استفاده از eager loaded attribute relation
+                    $attrName = $attrValue->attribute?->name ?? '';
                     if ($showLabels) {
                         $attributeValues[] = $fixTextDirection('(' . $attrName . ': ' . $attrValue->value . ')');
                     } else {
@@ -255,17 +271,16 @@ class Preview extends Component
                 }
             }
             
-            // سپس مشخصات اختصاصی دسته‌بندی
+            // سپس مشخصات اختصاصی دسته‌بندی - استفاده از collection به جای کوئری
             if (!empty($this->settings['category_attributes'][$categoryId])) {
                 $categoryAttrs = $this->settings['category_attributes'][$categoryId];
                 
                 foreach ($categoryAttrs as $attrId) {
-                    $attrValue = $product->attributeValues()
-                        ->where('attribute_id', $attrId)
-                        ->first();
+                    // استفاده از eager loaded attributeValues
+                    $attrValue = $product->attributeValues->firstWhere('attribute_id', $attrId);
                     if ($attrValue) {
-                        // دریافت نام attribute
-                        $attrName = \App\Models\Attribute::find($attrId)->name ?? '';
+                        // استفاده از eager loaded attribute relation
+                        $attrName = $attrValue->attribute?->name ?? '';
                         if ($showLabels) {
                             $attributeValues[] = $fixTextDirection('(' . $attrName . ': ' . $attrValue->value . ')');
                         } else {
@@ -349,6 +364,12 @@ class Preview extends Component
 
         $this->groupedProducts = $grouped;
         
+        // ذخیره در کش برای استفاده‌های بعدی (2 ساعت)
+        Cache::put($cacheKey, [
+            'grouped_products' => $this->groupedProducts,
+            'generated_at' => now()->toDateTimeString(),
+        ], now()->addHours(2));
+        
         $this->updateProgress(30, 'داده‌ها آماده شدند، در حال تولید PDF...');
     }
 
@@ -429,8 +450,8 @@ class Preview extends Component
         // استفاده از Cache به جای Session برای جلوگیری از lock
         Cache::put($this->progressKey, $data, now()->addMinutes(5));
         
-        // خواب کوتاه تا progress قابل مشاهده باشد
-        usleep(100000); // 0.1 ثانیه - برای نمایش بهتر
+        // حذف تاخیر مصنوعی برای کاهش فشار CPU
+        // usleep(100000); // حذف شد - در production نیازی به تاخیر نیست
         
         \Log::info("📈 Progress: {$percent}% - {$message}");
     }
