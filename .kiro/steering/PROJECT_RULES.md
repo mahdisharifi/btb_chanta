@@ -43,6 +43,39 @@
 - ❌ commit نکن اگر کد خطا دارد
 - ❌ commit نکن اگر feature ناتمام است
 
+### تنظیم پروکسی برای Git
+Git به صورت پیش‌فرض از پروکسی ویندوز استفاده نمی‌کند. برای اطمینان از اتصال:
+
+**تنظیم پروکسی از تنظیمات ویندوز:**
+```powershell
+# دریافت پروکسی فعال ویندوز
+$proxy = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').ProxyServer
+
+# اعمال روی Git
+git config --global http.proxy "http://$proxy"
+git config --global https.proxy "http://$proxy"
+```
+
+**یا تنظیم دستی:**
+```powershell
+git config --global http.proxy "http://22.123.141.225:8080"
+git config --global https.proxy "http://22.123.141.225:8080"
+```
+
+**بررسی پروکسی فعلی:**
+```powershell
+git config --global --get http.proxy
+git config --global --get https.proxy
+```
+
+**حذف پروکسی (اگر مشکلی پیش آمد):**
+```powershell
+git config --global --unset http.proxy
+git config --global --unset https.proxy
+```
+
+**نکته:** اگر پروکسی سیستم تغییر کرد، باید Git را هم آپدیت کنید.
+
 ### نمونه Workflow
 ```bash
 # ❌ اشتباه:
