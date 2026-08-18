@@ -14,6 +14,8 @@ class PriceUpdateItem extends Model
         'new_prices',
         'old_stock',
         'new_stock',
+        'old_min_order_quantity',
+        'new_min_order_quantity',
         'old_is_active',
         'new_is_active',
         'status',

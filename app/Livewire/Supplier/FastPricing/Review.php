@@ -95,7 +95,12 @@ class Review extends Component
                     $productSupplier->stock_quantity = (int) $item->new_stock;
                 }
 
-                // ۳. بروزرسانی وضعیت صریح
+                // ۳. بروزرسانی حداقل تعداد سفارش (فقط در صورت داشتن مقدار)
+                if ($item->new_min_order_quantity !== null && $item->new_min_order_quantity !== '') {
+                    $productSupplier->min_order_quantity = (int) $item->new_min_order_quantity;
+                }
+
+                // ۴. بروزرسانی وضعیت صریح
                 if ($item->new_is_active !== null && $item->new_is_active !== '') {
                     $productSupplier->is_active = (bool) $item->new_is_active;
                 }

@@ -134,8 +134,7 @@ class Import extends Component
                 } elseif (str_contains($header, 'موجودی')) {
                     $headerMap['stock_quantity'] = $index;
                 } elseif (str_contains($header, 'تعداد')) {
-                    // ستون تعداد - نادیده گرفته می‌شود (فقط برای اطلاع‌رسانی)
-                    Log::info("Found 'تعداد' column at index $index - skipping");
+                    $headerMap['min_order_quantity'] = $index;
                 } else {
                     // حذف پیشوند "قیمت " و پسوند " (تومان)" برای تطبیق بهتر
                     $cleanHeader = preg_replace('/^قیمت\s*/u', '', $header);
@@ -274,6 +273,20 @@ class Import extends Component
                     }
                 }
 
+                // خواندن ستون تعداد (min_order_quantity)
+                $newMinOrderQuantity = null;
+                if (isset($headerMap['min_order_quantity'])) {
+                    $quantityVal = $row[$headerMap['min_order_quantity']] ?? null;
+                    if ($quantityVal !== null && trim((string)$quantityVal) !== '') {
+                        $cleanedQuantity = preg_replace('/[^\d]/', '', (string)$quantityVal);
+                        if (is_numeric($cleanedQuantity)) {
+                            $newMinOrderQuantity = (int)$cleanedQuantity;
+                        } else {
+                            $rowErrors[] = "فرمت تعداد نامعتبر است.";
+                        }
+                    }
+                }
+
                 // خواندن ستون وضعیت (1 = فعال، 0 = غیرفعال)
                 $newIsActive = null;
                 if (isset($headerMap['status'])) {
@@ -288,8 +301,8 @@ class Import extends Component
                     }
                 }
 
-                if (empty($newPrices) && $newStock === null && $newIsActive === null) {
-                    $rowErrors[] = "هیچ قیمت، موجودی یا وضعیتی برای بروزرسانی وارد نشده است.";
+                if (empty($newPrices) && $newStock === null && $newMinOrderQuantity === null && $newIsActive === null) {
+                    $rowErrors[] = "هیچ قیمت، موجودی، تعداد یا وضعیتی برای بروزرسانی وارد نشده است.";
                 }
 
                 if (!empty($rowErrors)) {
@@ -308,8 +321,10 @@ class Import extends Component
                     'new_prices' => $newPrices,
                     'old_stock' => $oldStock,
                     'new_stock' => $newStock,
-                    'old_is_active'         => $productSupplier->is_active,  // <-- اصلاح شد: تغییر $ps به $productSupplier
-                    'new_is_active'         => $newIsActive,    // ثبت وضعیت جدید از فایل
+                    'old_min_order_quantity' => $productSupplier->min_order_quantity,
+                    'new_min_order_quantity' => $newMinOrderQuantity,
+                    'old_is_active' => $productSupplier->is_active,
+                    'new_is_active' => $newIsActive,
                     'status' => 'valid',
                     'error_message' => null,
                 ]);
@@ -364,6 +379,7 @@ class Import extends Component
         $headers = [
             'SKU اختصاصی (اختیاری)',
             'نام کالا',
+            'تعداد',
             'وضعیت (1=فعال، 0=غیرفعال)',
             'موجودی',
         ];
@@ -398,15 +414,18 @@ class Import extends Component
             $sheet->setCellValue('A' . $rowIndex, $ps->sku ?? '');
             $sheet->setCellValue('B' . $rowIndex, $ps->product->title ?? 'بدون نام');
 
+            // تعداد (min_order_quantity)
+            $sheet->setCellValue('C' . $rowIndex, $ps->min_order_quantity ?? 1);
+
             // وضعیت به صورت 0 و 1
-            $sheet->setCellValue('C' . $rowIndex, $ps->is_active ? 1 : 0);
+            $sheet->setCellValue('D' . $rowIndex, $ps->is_active ? 1 : 0);
 
             // موجودی با فرمت عددی بدون اعشار
-            $sheet->setCellValue('D' . $rowIndex, $ps->stock_quantity ?? 0);
-            $sheet->getStyle('D' . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->setCellValue('E' . $rowIndex, $ps->stock_quantity ?? 0);
+            $sheet->getStyle('E' . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
 
             // قیمت‌ها با فرمت عددی بدون اعشار
-            $currentCol = 5; // شروع از ستون E
+            $currentCol = 6; // شروع از ستون F
             foreach ($priceTypes as $type) {
                 $colLetter = Coordinate::stringFromColumnIndex($currentCol);
                 $priceValue = $prices[$type->value] ?? '';
