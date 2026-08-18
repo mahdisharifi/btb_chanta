@@ -9,6 +9,7 @@ use App\Models\ProductSupplier;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -31,12 +32,12 @@ class Import extends Component
     public $importErrors = [];
 
     protected $rules = [
-        'file' => 'required|mimes:xlsx|max:5120', // حداکثر 5 مگابایت
+        'file' => 'required|mimes:xlsx,csv,txt|max:5120', // حداکثر 5 مگابایت - پشتیبانی از CSV هم اضافه شد
     ];
 
     protected $messages = [
         'file.required' => 'لطفاً یک فایل انتخاب کنید.',
-        'file.mimes' => 'فقط فرمت اکسل (xlsx) مجاز است.',
+        'file.mimes' => 'فقط فرمت اکسل (xlsx) و CSV مجاز است.',
         'file.max' => 'حجم فایل نباید بیشتر از 5 مگابایت باشد.',
     ];
 
@@ -73,12 +74,33 @@ class Import extends Component
             ]);
 
             // راه‌اندازی PhpSpreadsheet Reader
-            $reader = new XlsxReader();
-            $reader->setReadDataOnly(true);
-            $spreadsheet = $reader->load($this->file->getRealPath());
-            $sheet = $spreadsheet->getActiveSheet();
-
-            $rows = $sheet->toArray();
+            $extension = strtolower($this->file->getClientOriginalExtension());
+            
+            if ($extension === 'csv' || $extension === 'txt') {
+                // خواندن فایل CSV با جداکننده Tab یا کاما
+                $content = file_get_contents($this->file->getRealPath());
+                $lines = explode("\n", $content);
+                $rows = [];
+                
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '') continue;
+                    
+                    // تشخیص جداکننده (Tab یا کاما)
+                    if (str_contains($line, "\t")) {
+                        $rows[] = explode("\t", $line);
+                    } else {
+                        $rows[] = str_getcsv($line, ',');
+                    }
+                }
+            } else {
+                // خواندن فایل Excel
+                $reader = new XlsxReader();
+                $reader->setReadDataOnly(true);
+                $spreadsheet = $reader->load($this->file->getRealPath());
+                $sheet = $spreadsheet->getActiveSheet();
+                $rows = $sheet->toArray();
+            }
 
             if (count($rows) <= 1) {
                 throw new \Exception("فایل خالی است یا فقط هدر دارد.");
@@ -93,9 +115,13 @@ class Import extends Component
             $priceColumns = [];
 
             // شناسایی ستون‌ها
+            Log::info('Fast Pricing - Headers detected:', ['headers' => $headers]);
+            
             foreach ($headers as $index => $header) {
                 if ($header === null) continue;
                 $header = trim($header);
+
+                Log::info("Processing header [$index]: $header");
 
                 if (str_contains($header, 'شناسه کالا')) {
                     $headerMap['product_id'] = $index;
@@ -107,15 +133,52 @@ class Import extends Component
                     $headerMap['status'] = $index;
                 } elseif (str_contains($header, 'موجودی')) {
                     $headerMap['stock_quantity'] = $index;
+                } elseif (str_contains($header, 'تعداد')) {
+                    // ستون تعداد - نادیده گرفته می‌شود (فقط برای اطلاع‌رسانی)
+                    Log::info("Found 'تعداد' column at index $index - skipping");
                 } else {
-                    foreach (PriceType::cases() as $priceType) {
-                        if (str_contains($header, $priceType->label()) || str_contains($header, $priceType->value)) {
+                    // حذف پیشوند "قیمت " و پسوند " (تومان)" برای تطبیق بهتر
+                    $cleanHeader = preg_replace('/^قیمت\s*/u', '', $header);
+                    $cleanHeader = preg_replace('/\s*\(تومان\)/u', '', $cleanHeader);
+                    $cleanHeader = trim($cleanHeader);
+
+                    Log::info("Clean header: $cleanHeader");
+
+                    // مرتب‌سازی PriceType ها بر اساس طول label (از بلند به کوتاه)
+                    // تا "زیر کارتن" قبل از "کارتن" بررسی شود
+                    $priceTypes = PriceType::cases();
+                    usort($priceTypes, function ($a, $b) {
+                        return mb_strlen($b->label()) - mb_strlen($a->label());
+                    });
+
+                    foreach ($priceTypes as $priceType) {
+                        Log::info("Checking against PriceType: {$priceType->value} (label: {$priceType->label()})");
+                        
+                        // تطبیق دقیق
+                        if ($cleanHeader === $priceType->label()) {
                             $priceColumns[$priceType->value] = $index;
+                            Log::info("EXACT MATCH: {$priceType->value} at index $index");
+                            break;
+                        }
+                        
+                        // تطبیق با value
+                        if (str_contains($header, $priceType->value)) {
+                            $priceColumns[$priceType->value] = $index;
+                            Log::info("VALUE MATCH: {$priceType->value} at index $index");
+                            break;
+                        }
+                        
+                        // تطبیق جزئی (فقط اگر هدر کامل شامل label باشد)
+                        if (str_contains($header, $priceType->label())) {
+                            $priceColumns[$priceType->value] = $index;
+                            Log::info("PARTIAL MATCH: {$priceType->value} at index $index");
                             break;
                         }
                     }
                 }
             }
+
+            Log::info('Fast Pricing - Header Map:', ['headerMap' => $headerMap, 'priceColumns' => $priceColumns]);
 
             if (!isset($headerMap['product_id'])) {
                 throw new \Exception("ستون 'شناسه کالا' یافت نشد. لطفاً از قالب استاندارد سیستم استفاده کنید.");
@@ -271,6 +334,10 @@ class Import extends Component
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Fast Pricing Import Error: ' . $e->getMessage(), [
+                'file' => $this->file ? $this->file->getClientOriginalName() : 'no file',
+                'trace' => $e->getTraceAsString()
+            ]);
             $this->addError('file', 'خطا در پردازش فایل: ' . $e->getMessage());
             $this->isProcessing = false;
         }
