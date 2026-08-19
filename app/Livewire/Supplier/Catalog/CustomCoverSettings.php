@@ -23,6 +23,7 @@ class CustomCoverSettings extends Component
         'default_font_color' => '#ffffff',
         'default_font_weight' => 'normal',
         'use_custom_font_per_cell' => false,
+        'catalog_font' => 'vazir', // فونت پیش‌فرض کاتالوگ
     ];
     
     // ردیف‌های جدول
@@ -59,6 +60,13 @@ class CustomCoverSettings extends Component
         'logo_width' => 100, // عرض لوگو
         'logo_height' => 100, // ارتفاع لوگو
         'use_default_font' => true, // استفاده از فونت پیش‌فرض
+    ];
+    
+    // لیست فونت‌های قابل انتخاب
+    public $availableFonts = [
+        'vazir' => 'وزیر (Vazir)',
+        'shabnam' => 'شبنم (Shabnam)',
+        'sahel' => 'ساحل (Sahel)',
     ];
     
     protected $rules = [

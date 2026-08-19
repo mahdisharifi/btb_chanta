@@ -11,6 +11,9 @@
         }
     }
     $settings = $resolvedSettings;
+    
+    // دریافت فونت کاتالوگ
+    $catalogFont = $settings['catalog_font'] ?? $settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir';
 @endphp
 
 <!DOCTYPE html>
@@ -20,7 +23,7 @@
     <title>{{ $template->name ?? 'کاتالوگ محصولات' }}</title>
     <style>
         body {
-            font-family: 'vazir', sans-serif;
+            font-family: '{{ $catalogFont }}', sans-serif;
             background-color: #ffffff;
             color: #1f2937;
             margin: 0;

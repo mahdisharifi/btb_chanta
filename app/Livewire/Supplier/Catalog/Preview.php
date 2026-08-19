@@ -505,6 +505,7 @@ class Preview extends Component
             'contactPhones'      => $this->settings['contact_phones'] ?? [],
             'globalAttribute'    => $this->settings['global_attribute'] ?? null,
             'coverTheme'         => $this->settings['cover_theme'] ?? 'default',
+            'catalogFont'        => $this->settings['catalog_font'] ?? $this->settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir',
         ];
         
         $this->updateProgress(45, 'در حال آماده‌سازی قالب PDF...');
@@ -514,6 +515,9 @@ class Preview extends Component
         
         $this->updateProgress(50, 'در حال رندر کردن صفحات PDF...');
         
+        // دریافت فونت کاتالوگ
+        $catalogFont = $this->settings['catalog_font'] ?? $this->settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir';
+        
         $pdf = PDF::loadView($view, $data, [], [
             'format'        => 'A4',
             'margin_left'   => 6,
@@ -521,6 +525,7 @@ class Preview extends Component
             'margin_top'    => 6,
             'margin_bottom' => 6,
             'mode'          => 'utf-8',
+            'default_font'  => $catalogFont, // اعمال فونت انتخابی
         ]);
         
         $this->updateProgress(75, 'در حال پردازش فایل PDF...');

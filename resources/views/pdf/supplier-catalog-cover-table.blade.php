@@ -12,6 +12,9 @@
     $bgColor = $globalSettings['background_color'] ?? '#667eea';
     $padding = $globalSettings['padding'] ?? 20;
     
+    // فونت کاتالوگ
+    $catalogFont = $globalSettings['catalog_font'] ?? $settings['catalog_font'] ?? 'vazir';
+    
     // supplier data
     $supplierName = $supplier->company_name ?? $supplierName ?? 'تأمین‌کننده';
     $supplierLogo = $forPdf ? $supplierLogoPath : $supplierLogoUrl;
@@ -19,11 +22,13 @@
 
 @if($forPdf)
     {{-- ===================== خروجی PDF ===================== --}}
-    <div style="width: 100%; background-color: {{ $bgColor }}; page-break-after: {{ $pageBreak ? 'always' : 'auto' }};">
+    {{-- استفاده از pagebreak به جای page-break-after برای جلوگیری از صفحه سفید --}}
+    <div style="width: 100%; background-color: {{ $bgColor }};">
         
         @foreach($rows as $rowIndex => $row)
             @php
-                $rowHeight = $row['height_unit'] === 'auto' ? 'auto' : $row['height'] . $row['height_unit'];
+                $rowHeight = $row['height_unit'] === 'auto' ? null : (int)$row['height'];
+                $rowHeightUnit = $row['height_unit'] ?? 'px';
                 $rowBg = $row['background_color'] ?? '';
                 $verticalAlign = $row['vertical_align'] ?? 'middle';
                 $cells = $row['cells'] ?? [];
@@ -31,10 +36,13 @@
                 $defaultFontSize = $globalSettings['default_font_size'] ?? 16;
                 $defaultFontColor = $globalSettings['default_font_color'] ?? '#ffffff';
                 $defaultFontWeight = $globalSettings['default_font_weight'] ?? 'normal';
+                
+                // تبدیل px به mm برای mPDF (1px ≈ 0.264583mm)
+                $rowHeightMm = $rowHeight ? ($rowHeightUnit === 'px' ? $rowHeight * 0.264583 : $rowHeight) : null;
             @endphp
             
-            <table style="width: 100%; {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} border-collapse: collapse; font-family: 'IRANSans', Tahoma, Arial, sans-serif;">
-                <tr style="{{ $rowHeight !== 'auto' ? 'height: ' . $rowHeight . ';' : '' }} vertical-align: {{ $verticalAlign }};">
+            <table style="width: 100%; border-collapse: collapse; font-family: '{{ $catalogFont }}', Tahoma, Arial, sans-serif; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }}">
+                <tr style="{{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} vertical-align: {{ $verticalAlign }};">
                     @foreach($cells as $cellIndex => $cell)
                         @php
                             $contentType = $cell['content_type'] ?? 'text';
@@ -55,7 +63,7 @@
                             $logoHeight = isset($cell['logo_height']) ? (int)$cell['logo_height'] : (int)$fontSize;
                         @endphp
                         
-                        <td style="{{ $width ? 'width: ' . $width . ';' : '' }} padding: {{ $cellPadding }}px; text-align: {{ $textAlign }}; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }}" {!! $colspan > 1 ? 'colspan="' . $colspan . '"' : '' !!}>
+                        <td style="{{ $width ? 'width: ' . $width . ';' : '' }} padding: {{ $cellPadding }}px; text-align: {{ $textAlign }}; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }}" {!! $colspan > 1 ? 'colspan="' . $colspan . '"' : '' !!}>
                             
                             @if($contentType === 'logo')
                                 @if($supplierLogo && !empty($supplierLogoPath) && file_exists($supplierLogoPath))
@@ -74,22 +82,24 @@
                                     <div style="font-size: {{ $fontSize }}px; font-weight: {{ $fontWeight }}; color: {{ $fontColor }};">{{ $supplier->brand_name }}</div>
                                 @endif
                             @elseif($contentType === 'catalog_title')
-                                <div style="display: inline-block; {{ $cellBg ? '' : 'background: white;' }} padding: {{ $cellPadding }}px {{ $cellPadding * 2 }}px; border-radius: {{ $borderRadius }}px;">
+                                {{-- استفاده از div با border-radius برای mPDF --}}
+                                <div style="display: inline-block; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : 'background: white;' }} padding: {{ $cellPadding }}px {{ $cellPadding * 2 }}px; {{ $borderRadius > 0 ? 'border-radius: ' . $borderRadius . 'px;' : '' }}">
                                     <span style="font-size: {{ $fontSize }}px; font-weight: {{ $fontWeight }}; color: {{ $fontColor }};">{{ $contentValue ?: ($catalogTitle ?? 'کاتالوگ محصولات') }}</span>
                                 </div>
                             @elseif($contentType === 'contact')
-                                <table style="width: 100%; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : 'background: white;' }} border-radius: {{ $borderRadius }}px; border-collapse: collapse;">
+                                {{-- استفاده از div با border-radius برای mPDF --}}
+                                <div style="{{ $cellBg ? 'background-color: ' . $cellBg . ';' : 'background: white;' }} {{ $borderRadius > 0 ? 'border-radius: ' . $borderRadius . 'px;' : '' }} padding: {{ $cellPadding }}px;">
                                     @if(!empty($contactPhones))
                                         @foreach($contactPhones as $phone)
                                             @if(!empty($phone['number']))
-                                                <tr><td style="padding: 8px 12px; font-size: {{ $fontSize }}px; color: {{ $fontColor }};">@if(!empty($phone['label']))<strong>{{ $phone['label'] }}:</strong>@endif {{ $phone['number'] }}</td></tr>
+                                                <div style="padding: 4px 0; font-size: {{ $fontSize }}px; color: {{ $fontColor }};">@if(!empty($phone['label']))<strong>{{ $phone['label'] }}:</strong>@endif {{ $phone['number'] }}</div>
                                             @endif
                                         @endforeach
                                     @endif
                                     @if(!empty($supplier->address))
-                                        <tr><td style="padding: 8px 12px; font-size: {{ $fontSize * 0.9 }}px; color: {{ $fontColor }};"><strong>آدرس:</strong> @if(!empty($supplier->city)){{ $supplier->city }} - @endif{{ $supplier->address }}</td></tr>
+                                        <div style="padding: 4px 0; font-size: {{ $fontSize * 0.9 }}px; color: {{ $fontColor }};"><strong>آدرس:</strong> @if(!empty($supplier->city)){{ $supplier->city }} - @endif{{ $supplier->address }}</div>
                                     @endif
-                                </table>
+                                </div>
                             @elseif($contentType === 'date')
                                 <div style="font-size: {{ $fontSize }}px; font-weight: {{ $fontWeight }}; color: {{ $fontColor }};">{{ jdate(now())->format('Y/m/d') }}</div>
                             @elseif($contentType === 'text')

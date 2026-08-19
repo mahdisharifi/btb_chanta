@@ -115,6 +115,18 @@
                     {{-- تنظیمات فونت پیش‌فرض --}}
                     <div class="mt-6 border-t pt-4">
                         <h4 class="text-sm font-semibold text-gray-900 mb-3">فونت پیش‌فرض</h4>
+                        
+                        {{-- انتخاب فونت کاتالوگ --}}
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">فونت کاتالوگ</label>
+                            <select wire:model.live="coverSettings.catalog_font" class="w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                @foreach($availableFonts as $fontKey => $fontName)
+                                    <option value="{{ $fontKey }}">{{ $fontName }}</option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">این فونت در کل کاتالوگ (کاور و محصولات) اعمال می‌شود.</p>
+                        </div>
+                        
                         <div class="grid grid-cols-3 gap-3">
                             <div>
                                 <label class="block text-xs font-medium text-gray-700 mb-1">اندازه فونت</label>
