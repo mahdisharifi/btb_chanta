@@ -76,7 +76,8 @@
 @endphp
 
 {{-- استفاده از table برای full-page background (mPDF compatible) --}}
-<table style="width: 100%; height: 297mm; background-color: {{ $bgColor }}; border-collapse: collapse; font-family: 'IRANSans', Tahoma, Arial, sans-serif; page-break-after: {{ $pageBreak ? 'always' : 'auto' }};">
+{{-- page break در فایل اصلی (supplier-catalog2.blade.php) مدیریت می‌شود --}}
+<table style="width: 100%; height: 297mm; background-color: {{ $bgColor }}; border-collapse: collapse; font-family: 'IRANSans', Tahoma, Arial, sans-serif;">
     
     {{-- TOP Section --}}
     @if($companyPosition === 'top' || $brandPosition === 'top' || $sloganPosition === 'top' || $catalogTitlePosition === 'top' || $contactPosition === 'top' || in_array($logoPosition, ['top-left', 'top-center', 'top-right']))

@@ -42,7 +42,7 @@
             @endphp
             
             <table style="width: 100%; border-collapse: collapse; font-family: '{{ $catalogFont }}', Tahoma, Arial, sans-serif; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }}">
-                <tr style="{{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} vertical-align: {{ $verticalAlign }};">
+                <tr>
                     @foreach($cells as $cellIndex => $cell)
                         @php
                             $contentType = $cell['content_type'] ?? 'text';
@@ -63,7 +63,7 @@
                             $logoHeight = isset($cell['logo_height']) ? (int)$cell['logo_height'] : (int)$fontSize;
                         @endphp
                         
-                        <td style="{{ $width ? 'width: ' . $width . ';' : '' }} padding: {{ $cellPadding }}px; text-align: {{ $textAlign }}; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }}" {!! $colspan > 1 ? 'colspan="' . $colspan . '"' : '' !!}>
+                        <td style="{{ $width ? 'width: ' . $width . ';' : '' }} padding: {{ $cellPadding }}px; text-align: {{ $textAlign }}; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} vertical-align: {{ $verticalAlign }};" {!! $colspan > 1 ? 'colspan="' . $colspan . '"' : '' !!}>
                             
                             @if($contentType === 'logo')
                                 @if($supplierLogo && !empty($supplierLogoPath) && file_exists($supplierLogoPath))

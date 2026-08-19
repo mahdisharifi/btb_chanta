@@ -120,20 +120,32 @@ class Preview extends Component
     
     private function loadCatalogData($supplierId = null)
     {
+        // تعیین supplier_ids برای فیلتر (قبل از ساخت کلید کش)
+        $selectedSupplierIds = [];
+        
+        // اگر ادمین است و supplier_ids در config وجود دارد و خالی نیست
+        if ($this->isAdmin && !empty($this->template->config['supplier_ids']) && is_array($this->template->config['supplier_ids'])) {
+            $selectedSupplierIds = $this->template->config['supplier_ids'];
+        } elseif ($supplierId) {
+            // اگر supplier_id مشخص است (تامین‌کننده)
+            $selectedSupplierIds = [$supplierId];
+        }
+        
         // دریافت timestamp آخرین تغییرات برای تشخیص نیاز به رفرش کش
         // این timestampها باعث می‌شوند وقتی داده‌ها تغییر کنند، کش خودکار رفرش شود
         $productsUpdatedAt = \App\Models\Product::max('updated_at');
         $pricesUpdatedAt = \App\Models\ProductPrice::max('updated_at');
-        $supplierUpdatedAt = \App\Models\Supplier::where('id', $supplierId)->value('updated_at');
+        $supplierUpdatedAt = \App\Models\Supplier::whereIn('id', $selectedSupplierIds)->max('updated_at');
         
         // اضافه کردن timestamp برای داده‌های مرتبط دیگر
         $categoriesUpdatedAt = \App\Models\Category::max('updated_at');
         $attributesUpdatedAt = \App\Models\AttributeValue::max('updated_at');
-        $imagesUpdatedAt = \App\Models\ProductImage::max('updated_at');
+        $imagesUpdatedAt = \App\Models\ProductGallery::max('updated_at');
         
         // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات + timestamp تغییرات
+        // نکته: selected_supplier_ids هم اضافه می‌شود تا با تغییر تامین‌کننده‌ها کش رفرش شود
         $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
-            'supplier_id' => $supplierId,
+            'supplier_ids' => $selectedSupplierIds, // تغییر مهم: استفاده از supplier_ids به جای supplier_id
             'settings' => $this->settings,
             'selected_prices' => $this->selectedPriceTypes,
             'products_updated' => $productsUpdatedAt,
@@ -155,17 +167,6 @@ class Preview extends Component
         $categoryIds = $this->settings['categories']
             ?? $this->template->selected_categories
             ?? 'all';
-
-        // اگر ادمین است و supplier_ids در config وجود دارد، از آن استفاده کن
-        if ($this->isAdmin && isset($this->template->config['supplier_ids'])) {
-            $selectedSupplierIds = $this->template->config['supplier_ids'];
-        } else if ($supplierId) {
-            // اگر supplier_id مشخص است (تامین‌کننده)
-            $selectedSupplierIds = [$supplierId];
-        } else {
-            // اگر هیچکدام، از همه suppliers استفاده کن
-            $selectedSupplierIds = [];
-        }
 
         $this->updateProgress(10, 'در حال فیلتر کردن محصولات...');
 
