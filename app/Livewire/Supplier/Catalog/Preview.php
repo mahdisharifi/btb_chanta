@@ -121,9 +121,15 @@ class Preview extends Component
     private function loadCatalogData($supplierId = null)
     {
         // دریافت timestamp آخرین تغییرات برای تشخیص نیاز به رفرش کش
+        // این timestampها باعث می‌شوند وقتی داده‌ها تغییر کنند، کش خودکار رفرش شود
         $productsUpdatedAt = \App\Models\Product::max('updated_at');
         $pricesUpdatedAt = \App\Models\ProductPrice::max('updated_at');
         $supplierUpdatedAt = \App\Models\Supplier::where('id', $supplierId)->value('updated_at');
+        
+        // اضافه کردن timestamp برای داده‌های مرتبط دیگر
+        $categoriesUpdatedAt = \App\Models\Category::max('updated_at');
+        $attributesUpdatedAt = \App\Models\AttributeValue::max('updated_at');
+        $imagesUpdatedAt = \App\Models\ProductImage::max('updated_at');
         
         // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات + timestamp تغییرات
         $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
@@ -133,6 +139,9 @@ class Preview extends Component
             'products_updated' => $productsUpdatedAt,
             'prices_updated' => $pricesUpdatedAt,
             'supplier_updated' => $supplierUpdatedAt,
+            'categories_updated' => $categoriesUpdatedAt,
+            'attributes_updated' => $attributesUpdatedAt,
+            'images_updated' => $imagesUpdatedAt,
         ]));
         
         // تلاش برای دریافت از کش
@@ -567,20 +576,18 @@ class Preview extends Component
     {
         $supplierId = $this->isAdmin ? null : $this->supplier->id;
         
-        // پاک کردن همه کش‌های مربوط به این کاتالوگ
-        // استفاده از pattern برای حذف همه ورژن‌های کش
-        $keys = Cache::getStore()->getPrefix() . 'catalog_' . $this->template->id . '_*';
+        // پاک کردن کش با استفاده از версینینگ
+        // یک کلید نسخه جدید می‌سازیم که کلید کش را تغییر دهد
+        $versionKey = 'catalog_version_' . $this->template->id;
+        $newVersion = now()->timestamp;
+        Cache::put($versionKey, $newVersion, now()->addDays(30));
         
-        // پاکسازی با تکنیک tags یا prefix
-        // روش ساده‌تر: ذخیره یک version جدید
-        Cache::forget('catalog_version_' . $this->template->id);
-        
-        // رفرش داده‌ها
+        // رفرش داده‌ها - چون کلید کش تغییر کرده، داده‌های جدید بارگذاری می‌شوند
         $this->loadCatalogData($supplierId);
         
         $this->dispatch('notify', [
             'type' => 'success',
-            'message' => 'کش کاتالوگ با موفقیت پاکسازی شد.'
+            'message' => 'داده‌های کاتالوگ با موفقیت بروزرسانی شد.'
         ]);
     }
     
