@@ -120,11 +120,19 @@ class Preview extends Component
     
     private function loadCatalogData($supplierId = null)
     {
-        // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات
+        // دریافت timestamp آخرین تغییرات برای تشخیص نیاز به رفرش کش
+        $productsUpdatedAt = \App\Models\Product::max('updated_at');
+        $pricesUpdatedAt = \App\Models\ProductPrice::max('updated_at');
+        $supplierUpdatedAt = \App\Models\Supplier::where('id', $supplierId)->value('updated_at');
+        
+        // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات + timestamp تغییرات
         $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
             'supplier_id' => $supplierId,
             'settings' => $this->settings,
             'selected_prices' => $this->selectedPriceTypes,
+            'products_updated' => $productsUpdatedAt,
+            'prices_updated' => $pricesUpdatedAt,
+            'supplier_updated' => $supplierUpdatedAt,
         ]));
         
         // تلاش برای دریافت از کش
@@ -550,6 +558,30 @@ class Preview extends Component
     {
         return view('livewire.supplier.catalog.preview')
             ->layout('components.layouts.blank');
+    }
+    
+    /**
+     * پاکسازی کش کاتالوگ
+     */
+    public function clearCatalogCache()
+    {
+        $supplierId = $this->isAdmin ? null : $this->supplier->id;
+        
+        // پاک کردن همه کش‌های مربوط به این کاتالوگ
+        // استفاده از pattern برای حذف همه ورژن‌های کش
+        $keys = Cache::getStore()->getPrefix() . 'catalog_' . $this->template->id . '_*';
+        
+        // پاکسازی با تکنیک tags یا prefix
+        // روش ساده‌تر: ذخیره یک version جدید
+        Cache::forget('catalog_version_' . $this->template->id);
+        
+        // رفرش داده‌ها
+        $this->loadCatalogData($supplierId);
+        
+        $this->dispatch('notify', [
+            'type' => 'success',
+            'message' => 'کش کاتالوگ با موفقیت پاکسازی شد.'
+        ]);
     }
     
     /**

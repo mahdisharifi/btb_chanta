@@ -1,5 +1,57 @@
 <div class="min-h-screen bg-gray-50 text-gray-800 font-sans" dir="rtl">
 
+    <!-- Notification Toast -->
+    <div id="notification-toast" class="fixed top-4 right-4 z-[10000] hidden">
+        <div class="bg-white rounded-lg shadow-lg border p-4 max-w-sm">
+            <div class="flex items-center gap-3">
+                <div id="notification-icon" class="flex-shrink-0"></div>
+                <div>
+                    <p id="notification-message" class="text-sm font-medium text-gray-900"></p>
+                </div>
+                <button onclick="document.getElementById('notification-toast').classList.add('hidden')" class="mr-auto text-gray-400 hover:text-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('livewire:init', () => {
+            Livewire.on('notify', (event) => {
+                const toast = document.getElementById('notification-toast');
+                const message = document.getElementById('notification-message');
+                const icon = document.getElementById('notification-icon');
+                
+                const data = event[0] || event;
+                message.textContent = data.message || 'عملیات با موفقیت انجام شد.';
+                
+                // تنظیم آیکون بر اساس نوع
+                if (data.type === 'success') {
+                    icon.innerHTML = '<svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+                    toast.querySelector('.border').classList.remove('border-red-200', 'border-yellow-200');
+                    toast.querySelector('.border').classList.add('border-green-200');
+                } else if (data.type === 'error') {
+                    icon.innerHTML = '<svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+                    toast.querySelector('.border').classList.remove('border-green-200', 'border-yellow-200');
+                    toast.querySelector('.border').classList.add('border-red-200');
+                } else {
+                    icon.innerHTML = '<svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+                    toast.querySelector('.border').classList.remove('border-green-200', 'border-red-200');
+                    toast.querySelector('.border').classList.add('border-yellow-200');
+                }
+                
+                toast.classList.remove('hidden');
+                
+                // پنهان کردن خودکار بعد از 5 ثانیه
+                setTimeout(() => {
+                    toast.classList.add('hidden');
+                }, 5000);
+            });
+        });
+    </script>
+
     <!-- Progress Modal -->
     <div id="progressModal" class="fixed inset-0 z-[9999] items-center justify-center bg-black/50 backdrop-blur-sm hidden">
         <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4 transform transition-all">
@@ -214,6 +266,21 @@
                 </div>
 
                 <div class="flex items-center gap-3">
+                    <button 
+                        wire:click="clearCatalogCache"
+                        wire:loading.attr="disabled"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-sm font-medium text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-50"
+                        title="اگر اطلاعات کاتالوگ به‌روز نیست، این دکمه را بزنید">
+                        @svg('heroicon-o-arrow-path', 'w-5 h-5 text-orange-500')
+                        <span wire:loading.remove wire:target="clearCatalogCache">بروزرسانی داده‌ها</span>
+                        <span wire:loading wire:target="clearCatalogCache" class="flex items-center gap-2">
+                            <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            در حال بروزرسانی...
+                        </span>
+                    </button>
                     <button 
                         onclick="window.startProgressTracking()"
                         wire:click="downloadPdf2" 
