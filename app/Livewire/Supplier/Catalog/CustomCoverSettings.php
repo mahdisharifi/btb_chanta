@@ -41,6 +41,7 @@ class CustomCoverSettings extends Component
         'vertical_align' => 'middle', // top, middle, bottom
         'background_color' => '',
         'border' => '',
+        'border_radius' => 0, // گردی گوشه‌های ردیف
         'cells' => [],
     ];
     

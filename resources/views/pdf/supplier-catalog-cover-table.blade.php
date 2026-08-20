@@ -31,6 +31,7 @@
                 $rowHeightUnit = $row['height_unit'] ?? 'px';
                 $rowBg = $row['background_color'] ?? '';
                 $verticalAlign = $row['vertical_align'] ?? 'middle';
+                $rowBorderRadius = $row['border_radius'] ?? 0;
                 $cells = $row['cells'] ?? [];
                 
                 $defaultFontSize = $globalSettings['default_font_size'] ?? 16;
@@ -41,7 +42,7 @@
                 $rowHeightMm = $rowHeight ? ($rowHeightUnit === 'px' ? $rowHeight * 0.264583 : $rowHeight) : null;
             @endphp
             
-            <table style="width: 100%; border-collapse: collapse; font-family: '{{ $catalogFont }}', Tahoma, Arial, sans-serif; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }}">
+            <table style="width: 100%; border-collapse: collapse; font-family: '{{ $catalogFont }}', Tahoma, Arial, sans-serif; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $rowBorderRadius > 0 ? 'border-radius: ' . $rowBorderRadius . 'px; overflow: hidden;' : '' }}">
                 <tr>
                     @foreach($cells as $cellIndex => $cell)
                         @php
@@ -69,7 +70,7 @@
                             $logoHeight = isset($cell['logo_height']) ? (int)$cell['logo_height'] : (int)$fontSize;
                         @endphp
                         
-                        <td style="{{ $width ? 'width: ' . $width . ';' : '' }} padding: {{ $cellPadding }}px; text-align: {{ $textAlign }}; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} vertical-align: {{ $verticalAlign }};" {!! $colspan > 1 ? 'colspan="' . $colspan . '"' : '' !!}>
+                        <td style="{{ $width ? 'width: ' . $width . ';' : '' }} padding: {{ $cellPadding }}px; text-align: {{ $textAlign }}; {{ $rowHeightMm ? 'height: ' . $rowHeightMm . 'mm;' : '' }} {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} {{ $borderRadius > 0 ? 'border-radius: ' . $borderRadius . 'px;' : '' }} vertical-align: {{ $verticalAlign }};" {!! $colspan > 1 ? 'colspan="' . $colspan . '"' : '' !!}>
                             
                             @if($contentType === 'logo')
                                 @if($supplierLogo && !empty($supplierLogoPath) && file_exists($supplierLogoPath))
@@ -128,6 +129,7 @@
                 $rowHeight = $row['height_unit'] === 'auto' ? 'auto' : $row['height'] . $row['height_unit'];
                 $rowBg = $row['background_color'] ?? '';
                 $verticalAlign = $row['vertical_align'] ?? 'middle';
+                $rowBorderRadius = $row['border_radius'] ?? 0;
                 $cells = $row['cells'] ?? [];
                 
                 $defaultFontSize = $globalSettings['default_font_size'] ?? 16;
@@ -135,7 +137,7 @@
                 $defaultFontWeight = $globalSettings['default_font_weight'] ?? 'normal';
             @endphp
             
-            <div class="w-full flex" style="{{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} {{ $rowHeight !== 'auto' ? 'min-height: ' . $rowHeight . ';' : '' }} align-items: {{ $verticalAlign }};">
+            <div class="w-full flex" style="display: flex; {{ $rowBg ? 'background-color: ' . $rowBg . ';' : '' }} {{ $rowHeight !== 'auto' ? 'min-height: ' . $rowHeight . ';' : '' }} {{ $rowBorderRadius > 0 ? 'border-radius: ' . $rowBorderRadius . 'px;' : '' }} align-items: {{ $verticalAlign === 'top' ? 'flex-start' : ($verticalAlign === 'bottom' ? 'flex-end' : 'center') }};">
                 @foreach($cells as $cellIndex => $cell)
                     @php
                         $contentType = $cell['content_type'] ?? 'text';
@@ -162,7 +164,7 @@
                         $logoHeight = isset($cell['logo_height']) ? (int)$cell['logo_height'] : (int)$fontSize;
                     @endphp
                     
-                    <div class="flex-1 p-4" style="width: {{ $width }}; text-align: {{ $textAlign }}; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} flex: {{ $colspan }};">
+                    <div class="flex-1 p-4" style="width: {{ $width }}; text-align: {{ $textAlign }}; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} {{ $borderRadius > 0 ? 'border-radius: ' . $borderRadius . 'px;' : '' }} flex: {{ $colspan }};">
                         
                         @if($contentType === 'logo')
                             <div class="flex justify-{{ $textAlign === 'center' ? 'center' : ($textAlign === 'left' ? 'start' : 'end') }}">

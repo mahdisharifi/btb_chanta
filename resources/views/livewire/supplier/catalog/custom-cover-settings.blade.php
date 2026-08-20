@@ -357,7 +357,7 @@
                 
                 <div class="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
                     {{-- تنظیمات ردیف --}}
-                    <div class="grid grid-cols-4 gap-4">
+                    <div class="grid grid-cols-5 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">ارتفاع</label>
                             <input type="number" wire:model.live="rowForm.height" min="20" max="500" class="w-full rounded-md border-gray-300 shadow-sm">
@@ -381,6 +381,10 @@
                                 <option value="middle">وسط</option>
                                 <option value="bottom">پایین</option>
                             </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">گردی گوشه‌ها</label>
+                            <input type="number" wire:model.live="rowForm.border_radius" min="0" max="50" class="w-full rounded-md border-gray-300 shadow-sm">
                         </div>
                     </div>
                     
