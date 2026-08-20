@@ -58,7 +58,13 @@
                             $cellPadding = $cell['padding'] ?? 10;
                             $borderRadius = $cell['border_radius'] ?? 0;
                             $colspan = $cell['colspan'] ?? 1;
+                            
+                            // محاسبه خودکار عرض پیش‌فرض بر اساس تعداد سلول‌ها
                             $width = $cell['width'] ?? '';
+                            if (empty($width)) {
+                                $cellCount = count($cells);
+                                $width = $cellCount > 0 ? round(100 / $cellCount) . '%' : '100%';
+                            }
                             
                             $logoHeight = isset($cell['logo_height']) ? (int)$cell['logo_height'] : (int)$fontSize;
                         @endphp
@@ -145,12 +151,18 @@
                         $cellPadding = $cell['padding'] ?? 10;
                         $borderRadius = $cell['border_radius'] ?? 0;
                         $colspan = $cell['colspan'] ?? 1;
+                        
+                        // محاسبه خودکار عرض پیش‌فرض بر اساس تعداد سلول‌ها
                         $width = $cell['width'] ?? '';
+                        if (empty($width)) {
+                            $cellCount = count($cells);
+                            $width = $cellCount > 0 ? round(100 / $cellCount) . '%' : '100%';
+                        }
                         
                         $logoHeight = isset($cell['logo_height']) ? (int)$cell['logo_height'] : (int)$fontSize;
                     @endphp
                     
-                    <div class="flex-1 p-4" style="{{ $width ? 'width: ' . $width . ';' : '' }} text-align: {{ $textAlign }}; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} flex: {{ $colspan }};">
+                    <div class="flex-1 p-4" style="width: {{ $width }}; text-align: {{ $textAlign }}; {{ $cellBg ? 'background-color: ' . $cellBg . ';' : '' }} flex: {{ $colspan }};">
                         
                         @if($contentType === 'logo')
                             <div class="flex justify-{{ $textAlign === 'center' ? 'center' : ($textAlign === 'left' ? 'start' : 'end') }}">

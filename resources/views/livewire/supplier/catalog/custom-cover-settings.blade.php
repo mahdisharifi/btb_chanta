@@ -112,6 +112,16 @@
                         </div>
                     </div>
                     
+                    <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div class="flex items-start gap-2">
+                            <x-heroicon-o-information-circle class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                            <p class="text-xs text-blue-800">
+                                <strong>نکته:</strong> عرض سلول‌ها به صورت پیش‌فرض به طور مساوی تقسیم می‌شود (مثلاً 2 سلول = هر کدام 50%).
+                                برای تنظیم دستی، در ویرایش هر سلول، فیلد "عرض" را تغییر دهید.
+                            </p>
+                        </div>
+                    </div>
+                    
                     {{-- تنظیمات فونت پیش‌فرض --}}
                     <div class="mt-6 border-t pt-4">
                         <h4 class="text-sm font-semibold text-gray-900 mb-3">فونت پیش‌فرض</h4>
@@ -481,6 +491,12 @@
                                             <option value="center">وسط</option>
                                             <option value="right">راست</option>
                                         </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">عرض (%)</label>
+                                        <input type="text" wire:model.live="rowForm.cells.{{ $cellIndex }}.width" placeholder="خودکار" class="w-full rounded-md border-gray-300 shadow-sm text-sm">
+                                        <p class="text-[10px] text-gray-500 mt-1">مثال: 50% یا 30% یا خالی (خودکار)</p>
                                     </div>
                                     
                                     <div>

@@ -338,6 +338,18 @@ class CustomCoverSettings extends Component
             'rowForm.columns' => 'required|integer|min:1|max:4',
         ]);
         
+        // محاسبه خودکار عرض پیش‌فرض برای سلول‌هایی که عرض ندارند
+        $cellCount = count($this->rowForm['cells']);
+        $defaultWidth = $cellCount > 0 ? round(100 / $cellCount) . '%' : '100%';
+        
+        foreach ($this->rowForm['cells'] as $index => &$cell) {
+            // اگر عرض تنظیم نشده یا خالی است، پیش‌فرض محاسبه شود
+            if (empty($cell['width'])) {
+                $cell['width'] = $defaultWidth;
+            }
+        }
+        unset($cell); // رفرنس را پاک کن
+        
         if ($this->editingRowIndex !== null) {
             $this->rows[$this->editingRowIndex] = $this->rowForm;
         } else {
