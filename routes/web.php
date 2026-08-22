@@ -87,7 +87,7 @@ if (app()->environment('local')) {
             $users = \App\Models\User::with('roles')->orderBy('id', 'desc')->get();
             return view('dev.force-login-select', compact('users'));
         })->name('dev.force-login.select');
-
+Route::get('/search', [SearchController::class, 'index'])->name('search');
 // مرحله 4: اجرای لاگین
         Route::post('/dev/force-login/execute/{id}', function ($id) {
             if (!session('dev_authenticated')) {
@@ -128,6 +128,8 @@ Route::get('/', [HomeController::class, 'index'])->name('home');
 // Products
 Route::prefix('products')->name('products.')->group(function () {
     Route::get('/', [ProductController::class, 'index'])->name('index');
+    Route::get('/filters/category-counts', [ProductController::class, 'getCategoryCounts'])->name('category-counts');
+    Route::get('/filters/suppliers', [ProductController::class, 'getFilteredSuppliers'])->name('filtered-suppliers');
     Route::get('/{product:slug}', [ProductController::class, 'show'])->name('show');
 });
 
@@ -137,8 +139,14 @@ Route::prefix('categories')->name('categories.')->group(function () {
     Route::get('/{category:slug}', [CategoryController::class, 'show'])->name('show');
 });
 
-// Search
-Route::get('/search', [SearchController::class, 'index'])->name('search');
+// Suppliers (Public)
+Route::prefix('suppliers')->name('suppliers.')->group(function () {
+    Route::get('/', [SupplierPublicController::class, 'index'])->name('index');
+    Route::get('/profile/{supplier}', [SupplierPublicController::class, 'showById'])->name('show.legacy');
+    Route::get('/{slug}', [SupplierPublicController::class, 'show'])->name('show');
+});
+
+
 
 // Static Pages
 Route::view('/about', 'pages.about')->name('about');
@@ -171,11 +179,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         };
 
     })->name('dashboard');
-
-    // Supplier Public Profile (Premium Retailers Only)
-    Route::get('/suppliers/profile/{supplier:id}', [\App\Http\Controllers\Web\SupplierPublicController::class, 'show'])
-        ->middleware('can:view_supplier_info')
-        ->name('suppliers.show');
 });
 
 // ⚠️ مسیرهای /admin و /admin/seo به routes/admin.php منتقل شده‌اند.

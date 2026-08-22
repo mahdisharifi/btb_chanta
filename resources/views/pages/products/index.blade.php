@@ -4,22 +4,11 @@
 @section('title', $seo['title'] ?? 'محصولات')
 @section('description', $seo['description'] ?? '')
 
-@php
-    // ─── تشخیص نقش کاربر برای محافظت اطلاعات ───
-    $user = auth()->user();
-    $userRole = 'guest';
-    if ($user) {
-        if ($user->hasRole('super_admin')) $userRole = 'super_admin';
-        elseif ($user->hasRole('supplier')) $userRole = 'supplier';
-        elseif ($user->hasRole('retailer_premium')) $userRole = 'retailer_premium';
-        elseif ($user->hasRole('retailer_basic')) $userRole = 'retailer_basic';
-        else $userRole = 'end_user';
-    }
-    $canSeeSupplierFilter = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium']);
-@endphp
-
 @section('content')
-<div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6" x-data="productFilters()">
+<div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6"
+     x-data="productFilters()"
+     @supplier-changed.window="refreshCategoryCounts($event.detail)"
+     @category-changed.window="refreshSupplierList($event.detail.categorySlug)">
 
     {{-- ══════════ Breadcrumb ══════════ --}}
     <nav class="mb-4 text-sm text-gray-500 flex items-center gap-1 flex-wrap">
@@ -138,6 +127,7 @@
                         <h3 class="font-bold text-gray-800 text-sm flex items-center gap-2">
                             <svg class="w-4.5 h-4.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
                             دسته‌بندی
+                            <span x-show="categoryCountsLoading" class="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></span>
                         </h3>
                         <svg class="w-4 h-4 text-gray-400 transition-transform" :class="{ 'rotate-180': open }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                     </button>
@@ -145,6 +135,7 @@
                     <div x-show="open" x-collapse class="mt-1 space-y-0.5">
                         {{-- All Products --}}
                         <a href="{{ route('products.index', request()->except(['category', 'page'])) }}"
+                           @click="$dispatch('category-changed', { categorySlug: null })"
                            class="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all
                                   {{ !request('category') ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span>همه محصولات</span>
@@ -155,10 +146,10 @@
 
                         @if(isset($categories) && $categories->count())
                             @foreach($categories as $rootCategory)
-                                @php $rootTotalCount = $rootCategory->total_products_count ?? 0; @endphp
-                                @if($rootTotalCount > 0)
-                                <div x-data="{ expanded: {{ \App\Helpers\CategoryHelper::isActiveOrHasActiveChild($rootCategory, request('category')) ? 'true' : 'false' }} }">
-
+                                <div
+                                    x-show="catCount({{ $rootCategory->id }}) > 0"
+                                    x-data="{ expanded: {{ \App\Helpers\CategoryHelper::isActiveOrHasActiveChild($rootCategory, request('category')) ? 'true' : 'false' }} }"
+                                >
                                     <div class="flex items-center">
                                         @if($rootCategory->children->count())
                                             <button @click="expanded = !expanded" class="p-1 hover:bg-gray-100 rounded transition ml-0.5 shrink-0">
@@ -168,6 +159,7 @@
                                             <span class="w-5 shrink-0"></span>
                                         @endif
                                         <a href="{{ route('products.index', array_merge(request()->except(['category', 'page']), ['category' => $rootCategory->slug])) }}"
+                                           @click="$dispatch('category-changed', { categorySlug: '{{ $rootCategory->slug }}' })"
                                            class="flex-1 flex items-center justify-between px-2 py-2 rounded-lg text-sm font-semibold transition-all
                                                   {{ request('category') === $rootCategory->slug ? 'bg-blue-50 text-blue-700' : 'text-gray-800 hover:bg-gray-50' }}">
                                             <span class="flex items-center gap-1.5">
@@ -176,18 +168,20 @@
                                                 @endif
                                                 {{ $rootCategory->name }}
                                             </span>
-                                            <span class="text-[11px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full min-w-[22px] text-center {{ request('category') === $rootCategory->slug ? 'bg-blue-100 text-blue-600' : '' }}">
-                                                {{ $rootTotalCount }}
-                                            </span>
+                                            <span
+                                                class="text-[11px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full min-w-[22px] text-center {{ request('category') === $rootCategory->slug ? 'bg-blue-100 text-blue-600' : '' }}"
+                                                x-text="catCount({{ $rootCategory->id }})"
+                                            ></span>
                                         </a>
                                     </div>
 
                                     @if($rootCategory->children->count())
                                         <div x-show="expanded" x-collapse class="mr-5 mt-0.5 space-y-0.5 border-r-2 border-gray-100 pr-2">
                                             @foreach($rootCategory->children as $child)
-                                                @php $childTotalCount = $child->total_products_count ?? 0; @endphp
-                                                @if($childTotalCount > 0)
-                                                <div x-data="{ subExpanded: {{ request('category') === $child->slug || ($child->children->count() && $child->children->pluck('slug')->contains(request('category'))) ? 'true' : 'false' }} }">
+                                                <div
+                                                    x-show="catCount({{ $child->id }}) > 0"
+                                                    x-data="{ subExpanded: {{ request('category') === $child->slug || ($child->children->count() && $child->children->pluck('slug')->contains(request('category'))) ? 'true' : 'false' }} }"
+                                                >
                                                     <div class="flex items-center">
                                                         @if($child->children->count())
                                                             <button @click="subExpanded = !subExpanded" class="p-0.5 hover:bg-gray-100 rounded transition ml-0.5 shrink-0">
@@ -197,35 +191,40 @@
                                                             <span class="w-4 shrink-0"></span>
                                                         @endif
                                                         <a href="{{ route('products.index', array_merge(request()->except(['category', 'page']), ['category' => $child->slug])) }}"
+                                                           @click="$dispatch('category-changed', { categorySlug: '{{ $child->slug }}' })"
                                                            class="flex-1 flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-all
                                                                   {{ request('category') === $child->slug ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-600 hover:bg-gray-50' }}">
                                                             <span>{{ $child->name }}</span>
-                                                            <span class="text-[10px] text-gray-400">{{ $childTotalCount }}</span>
+                                                            <span
+                                                                class="text-[10px] text-gray-400"
+                                                                x-text="catCount({{ $child->id }})"
+                                                            ></span>
                                                         </a>
                                                     </div>
 
                                                     @if($child->children->count())
                                                         <div x-show="subExpanded" x-collapse class="mr-4 mt-0.5 space-y-0.5">
                                                             @foreach($child->children as $grandChild)
-                                                                @php $gcCount = $grandChild->active_products_count ?? $grandChild->products_count ?? 0; @endphp
-                                                                @if($gcCount > 0)
-                                                                <a href="{{ route('products.index', array_merge(request()->except(['category', 'page']), ['category' => $grandChild->slug])) }}"
-                                                                   class="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-all
-                                                                          {{ request('category') === $grandChild->slug ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-500 hover:bg-gray-50' }}">
+                                                                <a
+                                                                    x-show="catCount({{ $grandChild->id }}) > 0"
+                                                                    href="{{ route('products.index', array_merge(request()->except(['category', 'page']), ['category' => $grandChild->slug])) }}"
+                                                                    @click="$dispatch('category-changed', { categorySlug: '{{ $grandChild->slug }}' })"
+                                                                    class="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-all
+                                                                           {{ request('category') === $grandChild->slug ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-500 hover:bg-gray-50' }}">
                                                                     <span>{{ $grandChild->name }}</span>
-                                                                    <span class="text-[10px] text-gray-400">{{ $gcCount }}</span>
+                                                                    <span
+                                                                        class="text-[10px] text-gray-400"
+                                                                        x-text="catCount({{ $grandChild->id }})"
+                                                                    ></span>
                                                                 </a>
-                                                                @endif
                                                             @endforeach
                                                         </div>
                                                     @endif
                                                 </div>
-                                                @endif
                                             @endforeach
                                         </div>
                                     @endif
                                 </div>
-                                @endif
                             @endforeach
                         @endif
                     </div>
@@ -372,8 +371,8 @@
 
                 <hr class="border-gray-100">
 
-                {{-- ─── Price Range Filter ─── --}}
-                @if(isset($priceRange))
+                {{-- ─── Price Range Filter (🔒 فقط برای کاربران با دسترسی قیمت) ─── --}}
+                @if(isset($priceRange) && !empty($canSeePriceFilter))
                 <div x-data="{
                     open: {{ (request('min_price') || request('max_price')) ? 'true' : 'false' }},
                     minPrice: '{{ request('min_price', '') }}',
@@ -472,64 +471,142 @@
                 @endif
 
                 {{-- ─── Supplier / Brand Filter (🔒 فقط برای کاربران مجاز) ─── --}}
-                @if($canSeeSupplierFilter && isset($suppliers) && $suppliers->count())
+                @if(!empty($canSeeSupplierFilter))
+                @php
+                    $initialSupplierIds = collect(request()->input('supplier_id', []))
+                        ->map(fn($v) => (int)$v)->filter(fn($v) => $v > 0)->values()->toArray();
+                @endphp
                 <div x-data="{
-                    open: {{ request('supplier') ? 'true' : 'false' }},
+                    open: {{ !empty($initialSupplierIds) ? 'true' : 'false' }},
                     searchTerm: '',
                     showAll: false,
                     maxVisible: 8,
+                    selectedSuppliers: {{ json_encode($initialSupplierIds) }},
+
+                    get filteredList() {
+                        return this.$root.__x.$data.supplierList.filter(s =>
+                            s.count > 0 &&
+                            (!this.searchTerm || s.name.toLowerCase().includes(this.searchTerm.toLowerCase()))
+                        );
+                    },
+
+                    isSelected(id) {
+                        return this.selectedSuppliers.includes(id);
+                    },
+
+                    toggle(id) {
+                        if (this.isSelected(id)) {
+                            this.selectedSuppliers = this.selectedSuppliers.filter(s => s !== id);
+                        } else {
+                            this.selectedSuppliers.push(id);
+                        }
+                        this.$root.dispatchEvent(new CustomEvent('supplier-changed', {
+                            bubbles: true,
+                            detail: { supplier_id: [...this.selectedSuppliers] }
+                        }));
+                    },
+
+                    buildUrl() {
+                        const base = '{{ route('products.index') }}';
+                        const params = new URLSearchParams();
+                        @foreach(request()->except(['supplier_id', 'page']) as $key => $value)
+                            @if(is_array($value))
+                                @foreach($value as $subKey => $subValue)
+                                    @if(is_array($subValue))
+                                        @foreach($subValue as $nestedValue)
+                                            params.append('{{ $key }}[{{ $subKey }}][]', '{{ $nestedValue }}');
+                                        @endforeach
+                                    @else
+                                        params.append('{{ $key }}[{{ $subKey }}]', '{{ $subValue }}');
+                                    @endif
+                                @endforeach
+                            @else
+                                params.append('{{ $key }}', '{{ $value }}');
+                            @endif
+                        @endforeach
+                        this.selectedSuppliers.forEach(id => params.append('supplier_id[]', id));
+                        const qs = params.toString();
+                        return qs ? base + '?' + qs : base;
+                    },
+
+                    apply() {
+                        window.location.href = this.buildUrl();
+                    },
                 }">
                     <button @click="open = !open" class="w-full flex items-center justify-between py-2">
                         <h3 class="font-bold text-gray-800 text-sm flex items-center gap-2">
                             <svg class="w-4.5 h-4.5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
                             برند / تأمین‌کننده
+                            <span x-show="supplierListLoading" class="inline-block w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></span>
+                            <span x-show="selectedSuppliers.length > 0"
+                                  class="bg-purple-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center"
+                                  x-text="selectedSuppliers.length"></span>
                         </h3>
                         <svg class="w-4 h-4 text-gray-400 transition-transform" :class="{ 'rotate-180': open }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                     </button>
 
                     <div x-show="open" x-collapse class="mt-2 space-y-2">
-                        {{-- Search within brands --}}
-                        @if($suppliers->count() > 8)
-                            <input type="text" x-model="searchTerm"
-                                   placeholder="جستجوی برند..."
-                                   class="w-full text-xs border-gray-200 rounded-lg py-2 px-3 focus:ring-purple-500 focus:border-purple-500 bg-gray-50 placeholder:text-gray-400">
-                        @endif
+                        {{-- جستجو درون لیست --}}
+                        <input type="text" x-model="searchTerm" x-show="supplierList.length > 8"
+                               placeholder="جستجوی برند..."
+                               class="w-full text-xs border-gray-200 rounded-lg py-2 px-3 focus:ring-purple-500 focus:border-purple-500 bg-gray-50 placeholder:text-gray-400">
 
+                        {{-- لیست کاملاً reactive از supplierList --}}
                         <div class="space-y-0.5 max-h-[300px] overflow-y-auto custom-scrollbar">
-                            @foreach($suppliers as $index => $supplierItem)
-                                @php
-                                    $displayName =  $supplierItem->company_name ?: $supplierItem->brand_name ;
-                                    $isActiveSupplier = (request('supplier') === $supplierItem->company_name || request('supplier') === $supplierItem->brand_name);
-                                    $supplierFilterValue = $supplierItem->brand_name ?: $supplierItem->company_name;
-                                @endphp
-                                <a href="{{ $isActiveSupplier
-                                    ? route('products.index', request()->except(['supplier', 'page']))
-                                    : route('products.index', array_merge(request()->except(['supplier', 'page']), ['supplier' => $supplierFilterValue]))
-                                }}"
-                                   x-show="(showAll || {{ $index }} < maxVisible) && (!searchTerm || '{{ $displayName }}'.toLowerCase().includes(searchTerm.toLowerCase()))"
-                                   class="flex items-center justify-between px-2.5 py-2 rounded-lg text-sm transition-all
-                                          {{ $isActiveSupplier ? 'bg-purple-50 text-purple-700 font-semibold border border-purple-200' : 'text-gray-600 hover:bg-gray-50' }}">
+                            <template x-for="(s, index) in supplierList.filter(s => s.count > 0)" :key="s.id">
+                                <button
+                                    type="button"
+                                    @click="toggle(s.id)"
+                                    x-show="(showAll || index < maxVisible) && (!searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase()))"
+                                    :class="isSelected(s.id)
+                                        ? 'bg-purple-50 text-purple-700 font-semibold border border-purple-200'
+                                        : 'text-gray-600 hover:bg-gray-50'"
+                                    class="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-sm transition-all text-right">
                                     <span class="flex items-center gap-2">
-                                        @if($isActiveSupplier)
-                                            <svg class="w-4 h-4 text-purple-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                                        @else
-                                            <span class="w-4 h-4 border-2 border-gray-300 rounded shrink-0"></span>
-                                        @endif
-                                        <span class="truncate">{{ $displayName }}</span>
+                                        <span class="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors"
+                                              :class="isSelected(s.id) ? 'bg-purple-500 border-purple-500' : 'border-gray-300'">
+                                            <svg x-show="isSelected(s.id)" class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                                            </svg>
+                                        </span>
+                                        <span class="truncate" x-text="s.name"></span>
+                                        <svg x-show="s.verified" class="w-3 h-3 text-green-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                        </svg>
                                     </span>
-                                    <span class="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full {{ $isActiveSupplier ? 'bg-purple-100 text-purple-600' : '' }}">
-                                        {{ $supplierItem->products_count }}
-                                    </span>
-                                </a>
-                            @endforeach
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full transition-colors"
+                                          :class="isSelected(s.id) ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'"
+                                          x-text="s.count"></span>
+                                </button>
+                            </template>
+
+                            {{-- empty state --}}
+                            <p x-show="supplierList.filter(s => s.count > 0).length === 0 && !supplierListLoading"
+                               class="text-xs text-gray-400 text-center py-4">
+                                تأمین‌کننده‌ای یافت نشد
+                            </p>
                         </div>
 
-                        @if($suppliers->count() > 8)
-                            <button @click="showAll = !showAll"
-                                    class="w-full text-xs text-purple-500 hover:text-purple-700 py-1 font-medium transition">
-                                <span x-text="showAll ? '▲ نمایش کمتر' : '▼ نمایش بیشتر ({{ $suppliers->count() - 8 }} مورد دیگر)'"></span>
+                        <button
+                            x-show="supplierList.filter(s => s.count > 0).length > maxVisible"
+                            @click="showAll = !showAll"
+                            class="w-full text-xs text-purple-500 hover:text-purple-700 py-1 font-medium transition">
+                            <span x-text="showAll ? '▲ نمایش کمتر' : '▼ نمایش بیشتر'"></span>
+                        </button>
+
+                        {{-- دکمه اعمال — فقط وقتی selection تغییر کرده --}}
+                        <div x-show="JSON.stringify(selectedSuppliers.slice().sort()) !== JSON.stringify({{ json_encode(collect($initialSupplierIds)->sort()->values()->toArray()) }}.slice().sort())"
+                             class="pt-2 border-t border-gray-100 flex gap-2">
+                            <button @click="apply()"
+                                    class="flex-1 text-xs font-medium bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 transition">
+                                اعمال (<span x-text="selectedSuppliers.length"></span> تأمین‌کننده)
                             </button>
-                        @endif
+                            <button x-show="selectedSuppliers.length > 0"
+                                    @click="selectedSuppliers = []; apply()"
+                                    class="text-xs text-red-500 hover:text-red-700 px-3 py-2 rounded-lg border border-red-100 hover:border-red-300 transition">
+                                حذف
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -745,6 +822,45 @@ function productFilters() {
     return {
         showMobileFilter: false,
         viewMode: localStorage.getItem('products_view_mode') || 'grid',
+
+        // ─── Dependent Filters ───
+        // تعداد محصولات هر دسته‌بندی — مقداردهی اولیه از server
+        categoryCounts: @php
+            $initialCounts = [];
+            if (isset($categories)) {
+                foreach ($categories as $root) {
+                    $initialCounts[$root->id] = $root->total_products_count ?? 0;
+                    foreach ($root->children ?? collect() as $child) {
+                        $initialCounts[$child->id] = $child->total_products_count ?? 0;
+                        foreach ($child->children ?? collect() as $gc) {
+                            $initialCounts[$gc->id] = $gc->active_products_count ?? $gc->total_products_count ?? 0;
+                        }
+                    }
+                }
+            }
+            echo json_encode($initialCounts);
+        @endphp,
+
+        categoryCountsLoading: false,
+
+        // ─── Supplier state (برای وابستگی supplier list به category) ───
+        supplierList: @php
+            // مقداردهی اولیه لیست supplierها از server
+            if (isset($suppliers) && $suppliers->count()) {
+                $initialSuppliers = $suppliers->map(fn($s) => [
+                    'id'       => $s->id,
+                    'name'     => $s->brand_name ?: $s->company_name,
+                    'verified' => (bool) $s->is_verified,
+                    'count'    => (int) ($s->products_count ?? 0),
+                ])->values()->toArray();
+            } else {
+                $initialSuppliers = [];
+            }
+            echo json_encode($initialSuppliers);
+        @endphp,
+        supplierListLoading: false,
+        canSeeSupplierFilter: {{ !empty($canSeeSupplierFilter) ? 'true' : 'false' }},
+
         init() {
             this.$watch('viewMode', (val) => {
                 localStorage.setItem('products_view_mode', val);
@@ -752,6 +868,65 @@ function productFilters() {
             this.$watch('showMobileFilter', (val) => {
                 document.body.style.overflow = val ? 'hidden' : '';
             });
+        },
+
+        // ─── بروزرسانی تعداد categories بر اساس supplier انتخابی ───
+        async refreshCategoryCounts(params) {
+            this.categoryCountsLoading = true;
+            try {
+                const url = new URL('{{ route("products.category-counts") }}', window.location.origin);
+                const currentParams = new URLSearchParams(window.location.search);
+                currentParams.delete('supplier_id[]');
+                currentParams.delete('supplier_id');
+                currentParams.delete('page');
+                currentParams.forEach((v, k) => url.searchParams.append(k, v));
+                if (params.supplier_id && params.supplier_id.length > 0) {
+                    params.supplier_id.forEach(id => url.searchParams.append('supplier_id[]', id));
+                }
+                const resp = await fetch(url.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await resp.json();
+                this.categoryCounts = data.counts || {};
+            } catch (e) {
+                console.error('refreshCategoryCounts failed', e);
+            } finally {
+                this.categoryCountsLoading = false;
+            }
+        },
+
+        // ─── بروزرسانی لیست suppliers بر اساس category انتخابی ───
+        async refreshSupplierList(categorySlug) {
+            if (!this.canSeeSupplierFilter) return;
+            this.supplierListLoading = true;
+            try {
+                const url = new URL('{{ route("products.filtered-suppliers") }}', window.location.origin);
+                if (categorySlug) url.searchParams.set('category', categorySlug);
+                // حفظ supplier_id های فعال در URL
+                const currentParams = new URLSearchParams(window.location.search);
+                currentParams.getAll('supplier_id[]').forEach(id => url.searchParams.append('supplier_id[]', id));
+                const resp = await fetch(url.toString(), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await resp.json();
+                if (data.suppliers && data.suppliers.length > 0) {
+                    this.supplierList = data.suppliers;
+                }
+                // اگر لیست خالی بود، لیست فعلی را نگه می‌داریم
+            } catch (e) {
+                console.error('refreshSupplierList failed', e);
+            } finally {
+                this.supplierListLoading = false;
+            }
+        },
+
+        catCount(id) {
+            return this.categoryCounts[id] ?? 0;
+        },
+
+        supplierCount(id) {
+            const s = this.supplierList.find(s => s.id === id);
+            return s ? s.count : 0;
         },
     }
 }
