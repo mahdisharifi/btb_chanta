@@ -238,21 +238,21 @@
                     <td class="p-2.5 sticky left-0 z-10 bg-white group-hover:bg-slate-50 dark:bg-slate-900 dark:group-hover:bg-slate-800/40 shadow-[-8px_0_8px_-6px_rgba(0,0,0,0.08)] transition-colors">
                         <div class="flex items-center justify-center gap-0.5">
                             <!-- تایید -->
-                            @if($supplier->verification_status === 'pending' || $supplier->verification_status === 'rejected')
+                            @if(in_array($supplier->verification_status, ['pending', 'under_review', 'rejected']))
                             <button wire:click="approveSupplier({{ $supplier->id }})" class="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-md transition-all" title="تایید">
                                 <x-heroicon-o-check-circle class="w-4 h-4"/>
                             </button>
                             @endif
 
                             <!-- رد -->
-                            @if($supplier->verification_status === 'pending' || $supplier->verification_status === 'approved')
+                            @if(in_array($supplier->verification_status, ['pending', 'under_review', 'approved']))
                             <button wire:click="openRejectModal({{ $supplier->id }})" class="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition-all" title="رد">
                                 <x-heroicon-o-x-circle class="w-4 h-4"/>
                             </button>
                             @endif
 
                             <!-- برگشت به انتظار -->
-                            @if($supplier->verification_status === 'approved' || $supplier->verification_status === 'rejected')
+                            @if(in_array($supplier->verification_status, ['approved', 'rejected']))
                             <button wire:click="setPending({{ $supplier->id }})" class="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-md transition-all" title="برگشت به انتظار">
                                 <x-heroicon-o-arrow-path class="w-4 h-4"/>
                             </button>

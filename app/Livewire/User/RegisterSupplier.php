@@ -272,9 +272,12 @@ class RegisterSupplier extends Component
 
                 // برای ادمین، وضعیت تایید تغییر نکند
                 if ($this->supplier->type !== 'admin') {
-                    // حالت ویرایش: تغییر وضعیت به "در حال بررسی"
-                    $data['verification_status'] = 'under_review';
-                    session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد و در انتظار تایید مدیر است.');
+                    // فقط اگر قبلاً approved نیست، وضعیت را به under_review تغییر بده
+                    // تأمین‌کنندگان تأیید شده می‌توانند اطلاعات را ویرایش کنند بدون نیاز به بررسی مجدد
+                    if ($this->supplier->verification_status !== 'approved') {
+                        $data['verification_status'] = 'under_review';
+                    }
+                    session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد.');
                 } else {
                     session()->flash('message', 'اطلاعات فروشگاه با موفقیت به‌روزرسانی شد.');
                 }
@@ -295,9 +298,14 @@ class RegisterSupplier extends Component
                 session()->flash('message', 'ثبت‌نام شما با موفقیت انجام شد. پس از تایید مدیر، می‌توانید از سیستم استفاده کنید.');
             }
 
-            // ریدایرکت بر اساس نوع
+            // ریدایرکت بر اساس نوع و وضعیت تایید
             if ($this->supplier->type === 'admin') {
                 return redirect()->route('admin.dashboard');
+            }
+
+            // اگر تأمین‌کننده approved است، به داشبورد برود
+            if ($this->supplier->verification_status === 'approved') {
+                return redirect()->route('supplier.dashboard');
             }
 
             return redirect()->route('account.pending');

@@ -186,15 +186,23 @@ class RegisterRetailer extends Component
             }
 
             if ($this->editMode) {
-                // حالت ویرایش: ارسال مجدد برای بررسی
-                $data['verification_status'] = 'under_review';
+                // فقط اگر قبلاً approved نیست، وضعیت را به under_review تغییر بده
+                // خرده‌فروشان تأیید شده می‌توانند اطلاعات را ویرایش کنند بدون نیاز به بررسی مجدد
+                if ($this->supplier->verification_status !== 'approved') {
+                    $data['verification_status'] = 'under_review';
+                }
                 $this->supplier->update($data);
 
                 DB::commit();
 
-                session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد و در انتظار تایید مدیر است.');
+                session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد.');
 
-                return redirect()->route('retailer.dashboard');
+                // اگر خرده‌فروش approved است، به داشبورد برود
+                if ($this->supplier->verification_status === 'approved') {
+                    return redirect()->route('retailer.dashboard');
+                }
+                
+                return redirect()->route('account.pending');
             }
 
             // حالت ثبت‌نام جدید
