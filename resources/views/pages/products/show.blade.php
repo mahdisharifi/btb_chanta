@@ -471,6 +471,29 @@ use App\Helpers\PriceHelper;
             {{-- ══════════════════════════════════════════
             PRICE MATRIX COMPARISON — ماتریس بهترین قیمت‌ها
             ══════════════════════════════════════════ --}}
+            
+            {{-- 🔍 DEBUG: چک کردن شرایط --}}
+            @if(!$hasMatrixPricing)
+                <div class="mb-6 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4">
+                    <div class="font-bold text-yellow-800 mb-2">🔍 DEBUG: چرا ماتریس نمایش داده نمی‌شود؟</div>
+                    <div class="text-sm text-yellow-700 space-y-1">
+                        <div><strong>hasMatrixPricing:</strong> {{ $hasMatrixPricing ? 'true' : 'false' }}</div>
+                        <div><strong>hasMultipleSuppliers:</strong> {{ $hasMultipleSuppliers ? 'true' : 'false' }}</div>
+                        <div><strong>productSuppliers count:</strong> {{ $productSuppliers->count() }}</div>
+                        <div><strong>Total prices:</strong> {{ $productSuppliers->flatMap(fn($ps) => $ps->prices)->count() }}</div>
+                        @foreach($productSuppliers as $ps)
+                            <div class="mt-2 border-t border-yellow-300 pt-2">
+                                <div><strong>Supplier {{ $loop->iteration }}:</strong> {{ $ps->supplier->company_name ?? 'Unknown' }}</div>
+                                <div class="mr-4">Prices count: {{ $ps->prices->count() }}</div>
+                                @if($ps->prices->isEmpty())
+                                    <div class="mr-4 text-red-600">⚠️ این تأمین‌کننده هیچ قیمتی ندارد!</div>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+            
             @if($hasMatrixPricing)
             <div class="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-6 shadow-lg">
                 <div class="flex items-center gap-3 mb-4">
@@ -496,8 +519,28 @@ use App\Helpers\PriceHelper;
                                     $tierNames = $product->quantity_tiers ?? [];
                                 @endphp
                                 @foreach($allTiers as $tier)
-                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                        {{ $tierNames[$tier]['name'] ?? "تیراژ {$tier}" }}
+                                    @php
+                                        $tierData = $tierNames[$tier] ?? null;
+                                        $tierName = $tierData['name'] ?? "تیراژ {$tier}";
+                                        $minQty = $tierData['min_quantity'] ?? null;
+                                        $maxQty = $tierData['max_quantity'] ?? null;
+                                        
+                                        // ساخت متن محدوده
+                                        if ($minQty && $maxQty) {
+                                            $rangeText = "{$minQty}–{$maxQty}";
+                                        } elseif ($minQty) {
+                                            $rangeText = "{$minQty}+";
+                                        } else {
+                                            $rangeText = null;
+                                        }
+                                    @endphp
+                                    <th class="px-4 py-4 text-center border-r border-gray-200">
+                                        {{-- محدوده تعداد: بزرگتر و بلدتر --}}
+                                        @if($rangeText)
+                                            <div class="text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }}</div>
+                                        @endif
+                                        {{-- نام تیراژ: کوچکتر --}}
+                                        <div class="text-xs font-medium text-gray-500 uppercase">{{ $tierName }}</div>
                                     </th>
                                 @endforeach
                             </tr>
@@ -557,9 +600,9 @@ use App\Helpers\PriceHelper;
                                                     $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
                                                 @endphp
                                                 <a href="#{{ $anchorId }}" 
-                                                   class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-2 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer"
+                                                   class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer"
                                                    onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
-                                                    <div class="text-base font-bold">{{ number_format($bestPrice['amount']) }}</div>
+                                                    <div class="text-lg font-extrabold tabular-nums">{{ number_format($bestPrice['amount']) }}</div>
                                                     @if($showSupplierInfo)
                                                         <div class="text-xs text-green-700 mt-1 font-medium">
                                                             {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
@@ -567,7 +610,7 @@ use App\Helpers\PriceHelper;
                                                     @endif
                                                 </a>
                                             @else
-                                                <span class="text-gray-300">—</span>
+                                                <span class="text-gray-300 text-lg">—</span>
                                             @endif
                                         </td>
                                     @endforeach
@@ -592,11 +635,7 @@ use App\Helpers\PriceHelper;
                 </div>
             </div>
             @else
-            <div class="mb-6 bg-yellow-100 border-2 border-yellow-400 rounded p-4">
-                <strong>⚠️ شرط false است:</strong><br>
-                hasMatrixPricing: {{ $hasMatrixPricing ? 'true' : 'false' }}<br>
-                hasMultipleSuppliers: {{ $hasMultipleSuppliers ? 'true' : 'false' }}
-            </div>
+            {{-- بخش زرد قبلی حذف شد چون حالا DEBUG جدید داریم --}}
             @endif
 
             {{-- ══════════════════════════════════════════

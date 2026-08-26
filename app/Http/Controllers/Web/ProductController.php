@@ -1672,18 +1672,51 @@ private function getCategoryChain(Category $category): array
             ? asset('storage/' . $primaryImage->file_path)
             : asset('images/default-product.jpg');
 
+        // ✅ جمع‌آوری قیمت‌ها برای SEO
+        $allPrices = collect();
+        if ($product->relationLoaded('productSuppliers')) {
+            foreach ($product->productSuppliers as $ps) {
+                if ($ps->relationLoaded('prices')) {
+                    $allPrices = $allPrices->merge(
+                        $ps->prices->where('is_active', true)->pluck('price')
+                    );
+                }
+            }
+        }
+        
+        // ساخت متن قیمت برای description
+        $priceText = '';
+        if ($allPrices->isNotEmpty()) {
+            $lowestPrice = $allPrices->min();
+            $highestPrice = $allPrices->max();
+            
+            if ($lowestPrice == $highestPrice) {
+                $priceText = ' | قیمت: ' . number_format($lowestPrice) . ' تومان';
+            } else {
+                $priceText = ' | قیمت: ' . number_format($lowestPrice) . ' تا ' . number_format($highestPrice) . ' تومان';
+            }
+        } else {
+            // fallback: قیمت خرده‌فروشی
+            $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+            if ($retailPrice) {
+                $priceText = ' | قیمت: ' . number_format($retailPrice->retail_price) . ' تومان';
+            }
+        }
+
+        // توضیحات SEO با قیمت
+        $seoDescription = $product->seo_description
+            ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 140) . $priceText;
+
         return [
             'title'             => $product->seo_title
                 ?? $product->title . ' | ' . $categoryName . ' | ' . $siteName,
-            'description'       => $product->seo_description
-                ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 160),
+            'description'       => mb_substr($seoDescription, 0, 160),
             'keywords'          => $product->seo_keywords
-                ?? $product->title . ',' . $categoryName,
+                ?? $product->title . ',' . $categoryName . ',خرید عمده,قیمت عمده',
             'canonical_url'     => $product->seo_canonical_url
                 ?? url('/products/' . $product->slug),
             'og_title'          => $product->seo_title ?? $product->title ?? '',
-            'og_description'    => $product->seo_description
-                ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 160),
+            'og_description'    => mb_substr($seoDescription, 0, 200),
             'og_image'          => $imageUrl,
             'og_type'           => 'product',
             'og_url'            => url('/products/' . $product->slug),
@@ -1722,16 +1755,58 @@ private function getCategoryChain(Category $category): array
             ];
         }
 
-        $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
-        if ($retailPrice) {
-            $schema['offers'] = [
-                '@type'         => 'Offer',
-                'priceCurrency' => 'IRR',
-                'price'         => $retailPrice->retail_price ?? 0,
-                'availability'  => 'https://schema.org/InStock',
-                'url'           => url('/products/' . $product->slug),
-            ];
+        // ✅ بهبود SEO: اضافه کردن قیمت‌های عمده (AggregateOffer)
+        $allPrices = collect();
+        
+        // جمع‌آوری قیمت‌های عمده از productSuppliers
+        if ($product->relationLoaded('productSuppliers')) {
+            foreach ($product->productSuppliers as $ps) {
+                if ($ps->relationLoaded('prices')) {
+                    $allPrices = $allPrices->merge(
+                        $ps->prices->where('is_active', true)->pluck('price')
+                    );
+                }
+            }
         }
+        
+        // اگر قیمت عمده داریم
+        if ($allPrices->isNotEmpty()) {
+            $lowestPrice = $allPrices->min();
+            $highestPrice = $allPrices->max();
+            
+            $schema['offers'] = [
+                '@type'         => 'AggregateOffer',
+                'priceCurrency' => 'IRR',
+                'lowPrice'      => $lowestPrice,
+                'highPrice'     => $highestPrice,
+                'offerCount'    => $allPrices->count(),
+                'availability'  => $product->status === \App\Enums\ProductStatus::ACTIVE 
+                    ? 'https://schema.org/InStock' 
+                    : 'https://schema.org/OutOfStock',
+                'url'           => url('/products/' . $product->slug),
+                'priceValidUntil' => now()->addMonths(1)->format('Y-m-d'),
+            ];
+        } else {
+            // fallback: قیمت خرده‌فروشی
+            $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+            if ($retailPrice) {
+                $schema['offers'] = [
+                    '@type'         => 'Offer',
+                    'priceCurrency' => 'IRR',
+                    'price'         => $retailPrice->retail_price ?? 0,
+                    'availability'  => 'https://schema.org/InStock',
+                    'url'           => url('/products/' . $product->slug),
+                    'priceValidUntil' => now()->addMonths(1)->format('Y-m-d'),
+                ];
+            }
+        }
+
+        // ✅ اضافه کردن review rating (اگر در آینده پیاده شود)
+        // $schema['aggregateRating'] = [
+        //     '@type' => 'AggregateRating',
+        //     'ratingValue' => '4.5',
+        //     'reviewCount' => '10'
+        // ];
 
         return $schema;
     }
