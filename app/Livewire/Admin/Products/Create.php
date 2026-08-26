@@ -49,6 +49,7 @@ class Create extends Component
     public $primary_image;
     public $gallery_images = [];
     public $product_video;
+    public $video_poster;  // ✅ اضافه شد - thumbnail ویدئو
 
     // تصاویر/رسانه‌های موجود (فقط در حالت ویرایش)
 
@@ -70,6 +71,10 @@ class Create extends Component
     public $seo_keywords;
     public $seo_canonical_url;
     public bool $canonicalManuallyEdited = false;
+
+    // تیراژهای محصول
+    public $quantity_tiers = [];
+    public $showQuantityTiers = false;
 
 
 
@@ -121,6 +126,10 @@ class Create extends Component
         $this->canonicalManuallyEdited = (bool) $product->seo_canonical_url;
 
         $this->selectedCategoryName = $product->category?->name ?? '';
+
+        // بارگذاری تیراژها
+        $this->quantity_tiers = $product->quantity_tiers ?? [];
+        $this->showQuantityTiers = !empty($this->quantity_tiers);
 
         $this->existingGalleries = $product->galleries
             ->sortBy(function ($g) {
@@ -593,6 +602,7 @@ class Create extends Component
             'is_active' => $this->is_active,
             'short_description' => $this->short_description,
             'description' => $this->full_description,
+            'quantity_tiers' => !empty($this->quantity_tiers) ? $this->quantity_tiers : null,
         ];
 
         if ($this->isEdit) {
@@ -716,14 +726,25 @@ class Create extends Component
 
             foreach ($oldVideos as $oldVideo) {
                 Storage::disk('public')->delete($oldVideo->file_path);
+                // حذف poster قبلی اگر وجود دارد
+                if ($oldVideo->poster_path) {
+                    Storage::disk('public')->delete($oldVideo->poster_path);
+                }
                 $oldVideo->delete();
             }
 
             $path = $this->product_video->store('products/videos', 'public');
+            
+            // آپلود poster اگر آپلود شده باشد
+            $posterPath = null;
+            if ($this->video_poster) {
+                $posterPath = $this->video_poster->store('products/video-posters', 'public');
+            }
 
             $product->galleries()->create([
                 'file_path'  => $path,
                 'file_type'  => 'video',
+                'poster_path' => $posterPath,  // ✅ اضافه شد
                 'is_primary' => false,
                 'file_size'  => $this->product_video->getSize(),
                 'mime_type'  => $this->product_video->getMimeType(),
@@ -739,6 +760,82 @@ class Create extends Component
         ]);
 
         return redirect()->route('admin.products.index');
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  مدیریت تیراژها
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * اضافه کردن تیراژ جدید
+     */
+    public function addQuantityTier(): void
+    {
+        if (count($this->quantity_tiers) >= 5) {
+            $this->dispatch('notify', [
+                'message' => 'حداکثر 5 تیراژ می‌توانید تعریف کنید.',
+                'type' => 'error',
+            ]);
+            return;
+        }
+
+        $this->quantity_tiers[] = [
+            'name' => 'تیراژ ' . (count($this->quantity_tiers) + 1),
+            'min' => 1,
+            'max' => null,
+        ];
+    }
+
+    /**
+     * حذف تیراژ
+     */
+    public function removeQuantityTier(int $index): void
+    {
+        if (!isset($this->quantity_tiers[$index])) {
+            return;
+        }
+
+        // بررسی امنیت: اگر محصول در حال ویرایش است و تیراژ قیمت‌گذاری شده، نباید حذف شود
+        if ($this->isEdit && $this->productId) {
+            $product = Product::find($this->productId);
+            
+            if ($product) {
+                // بررسی وجود قیمت برای این تیراژ (فقط قیمت‌های سیستم جدید با price_type_id)
+                $hasPrices = $product->prices()
+                    ->where('tier_index', $index)
+                    ->whereNotNull('price_type_id') // فقط قیمت‌های سیستم جدید
+                    ->exists();
+                
+                if ($hasPrices) {
+                    $tierName = $this->quantity_tiers[$index]['name'] ?? "تیراژ " . ($index + 1);
+                    $this->dispatch('notify', [
+                        'message' => "تیراژ «{$tierName}» دارای قیمت‌گذاری است و نمی‌تواند حذف شود. ابتدا قیمت‌های مربوطه را حذف کنید.",
+                        'type' => 'error',
+                    ]);
+                    return;
+                }
+            }
+        }
+
+        unset($this->quantity_tiers[$index]);
+        $this->quantity_tiers = array_values($this->quantity_tiers); // Re-index
+        
+        $this->dispatch('notify', [
+            'message' => 'تیراژ با موفقیت حذف شد.',
+            'type' => 'success',
+        ]);
+    }
+
+    /**
+     * نمایش/مخفی کردن بخش تیراژها
+     */
+    public function toggleQuantityTiers(): void
+    {
+        $this->showQuantityTiers = !$this->showQuantityTiers;
+        
+        if ($this->showQuantityTiers && empty($this->quantity_tiers)) {
+            $this->addQuantityTier();
+        }
     }
 
     public function render()

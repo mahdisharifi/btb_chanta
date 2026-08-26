@@ -112,6 +112,123 @@
             </div>
         </div>
 
+        <!-- بخش تیراژهای محصول -->
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between mb-4 border-b dark:border-gray-600 pb-2">
+                <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                    <x-heroicon-o-cube class="w-5 h-5 text-indigo-600"/>
+                    تیراژهای محصول
+                </h2>
+                <button type="button" 
+                        wire:click="toggleQuantityTiers" 
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors {{ $showQuantityTiers ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' }}">
+                    @if($showQuantityTiers)
+                        <x-heroicon-s-check-circle class="w-4 h-4"/>
+                        فعال
+                    @else
+                        <x-heroicon-o-x-circle class="w-4 h-4"/>
+                        غیرفعال
+                    @endif
+                </button>
+            </div>
+
+            @if($showQuantityTiers)
+                <div class="space-y-3">
+                    @forelse($quantity_tiers as $index => $tier)
+                        @php
+                            // بررسی وجود قیمت برای این تیراژ (فقط در حالت ویرایش و فقط قیمت‌های سیستم جدید)
+                            $hasPrices = false;
+                            if ($isEdit && $productId) {
+                                $product = \App\Models\Product::find($productId);
+                                $hasPrices = $product && $product->prices()
+                                    ->where('tier_index', $index)
+                                    ->whereNotNull('price_type_id') // فقط قیمت‌های سیستم جدید
+                                    ->exists();
+                            }
+                        @endphp
+                        <div wire:key="tier-{{ $index }}" class="flex items-center gap-3 p-4 rounded-lg border {{ $hasPrices ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700' }}">
+                            @if($hasPrices)
+                                <div class="flex-shrink-0">
+                                    <x-heroicon-s-lock-closed class="w-5 h-5 text-amber-600 dark:text-amber-400"/>
+                                </div>
+                            @endif
+                            <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">نام تیراژ</label>
+                                    <input type="text" 
+                                           wire:model="quantity_tiers.{{ $index }}.name" 
+                                           placeholder="مثال: تیراژ کم"
+                                           {{ $hasPrices ? 'readonly' : '' }}
+                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
+                                    @error("quantity_tiers.{$index}.name") 
+                                        <span class="text-red-500 text-xs mt-1">{{ $message }}</span> 
+                                    @enderror
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداقل تعداد</label>
+                                    <input type="number" 
+                                           wire:model="quantity_tiers.{{ $index }}.min_quantity" 
+                                           min="0"
+                                           placeholder="100"
+                                           {{ $hasPrices ? 'readonly' : '' }}
+                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
+                                    @error("quantity_tiers.{$index}.min_quantity") 
+                                        <span class="text-red-500 text-xs mt-1">{{ $message }}</span> 
+                                    @enderror
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداکثر تعداد</label>
+                                    <input type="number" 
+                                           wire:model="quantity_tiers.{{ $index }}.max_quantity" 
+                                           min="0"
+                                           placeholder="500"
+                                           {{ $hasPrices ? 'readonly' : '' }}
+                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
+                                    @error("quantity_tiers.{$index}.max_quantity") 
+                                        <span class="text-red-500 text-xs mt-1">{{ $message }}</span> 
+                                    @enderror
+                                </div>
+                            </div>
+                            @if($hasPrices)
+                                <div class="flex-shrink-0">
+                                    <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-medium rounded-lg">
+                                        <x-heroicon-s-banknotes class="w-4 h-4"/>
+                                        قیمت‌گذاری شده
+                                    </span>
+                                </div>
+                            @else
+                                <button type="button" 
+                                        wire:click="removeQuantityTier({{ $index }})" 
+                                        class="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                                    <x-heroicon-o-trash class="w-5 h-5"/>
+                                </button>
+                            @endif
+                        </div>
+                    @empty
+                        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+                            <x-heroicon-o-cube class="w-12 h-12 mx-auto mb-2 opacity-50"/>
+                            <p class="text-sm">هنوز تیراژی تعریف نشده است.</p>
+                        </div>
+                    @endforelse
+
+                    @if(count($quantity_tiers) < 5)
+                        <button type="button" 
+                                wire:click="addQuantityTier" 
+                                class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-2">
+                            <x-heroicon-o-plus-circle class="w-5 h-5"/>
+                            <span class="text-sm font-medium">افزودن تیراژ جدید</span>
+                        </button>
+                    @else
+                        <p class="text-xs text-amber-600 dark:text-amber-400 text-center py-2">حداکثر 5 تیراژ قابل تعریف است.</p>
+                    @endif
+                </div>
+            @else
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    برای فعال کردن تنظیم تیراژها، دکمه بالا را کلیک کنید.
+                </p>
+            @endif
+        </div>
+
         <!-- بخش ویژگی‌ها -->
         @if($categoryAttributes)
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -502,14 +619,45 @@
                         </video>
                     </div>
                     @endif
+
+                    {{-- ✅ فیلد آپلود تصویر پیش‌نمایش (Poster) --}}
+                    <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <span class="flex items-center gap-2">
+                                <x-heroicon-o-photo class="w-5 h-5" />
+                                تصویر پیش‌نمایش ویدئو (Thumbnail)
+                            </span>
+                        </label>
+
+                        <input type="file"
+                               wire:model="video_poster"
+                               accept="image/jpeg,image/jpg,image/png,image/webp"
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-600 dark:file:text-gray-300 border border-gray-200 dark:border-gray-600 rounded-md">
+
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            این تصویر در گالری محصول به عنوان پیش‌نمایش ویدئو نمایش داده می‌شود
+                        </p>
+
+                        <div wire:loading wire:target="video_poster" class="text-sm text-indigo-600 mt-2">در حال آپلود تصویر...</div>
+                        @error('video_poster') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+
+                        @if ($video_poster)
+                        <div class="mt-3">
+                            <p class="text-xs text-green-600 mb-2">پیش‌نمایش thumbnail:</p>
+                            <img src="{{ $video_poster->temporaryUrl() }}" 
+                                 class="w-32 h-24 object-cover rounded-lg border-2 border-green-500 shadow-sm"
+                                 alt="Video Poster Preview">
+                        </div>
+                        @endif
+                    </div>
                 </div>
             </div>
         </div>
 
         <div class="flex items-center gap-4 border-t border-gray-200 dark:border-gray-700 pt-6">
             <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm transition-colors flex items-center justify-center min-w-[150px]">
-                <span wire:loading.remove wire:target="save, primary_image, gallery_images, product_video">{{ $isEdit ? 'ذخیره تغییرات' : 'ایجاد محصول' }}</span>
-                <span wire:loading wire:target="save, primary_image, gallery_images, product_video">در حال پردازش...</span>
+                <span wire:loading.remove wire:target="save, primary_image, gallery_images, product_video, video_poster">{{ $isEdit ? 'ذخیره تغییرات' : 'ایجاد محصول' }}</span>
+                <span wire:loading wire:target="save, primary_image, gallery_images, product_video, video_poster">در حال پردازش...</span>
             </button>
             <a href="{{ route('admin.products.index') }}" wire:navigate class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 px-4 transition-colors">انصراف</a>
         </div>

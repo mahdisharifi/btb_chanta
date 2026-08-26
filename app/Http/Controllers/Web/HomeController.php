@@ -314,12 +314,9 @@ class HomeController extends Controller
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                'prices' => function ($q) {
-                    $q->select([
-                        'id', 'product_id', 'price_type', 'price',
-                        'min_quantity', 'is_active',
-                    ])
-                        ->where('is_active', true)
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices
+                'productSuppliers.prices' => function ($q) {
+                    $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
                                 ->orWhere('valid_until', '>=', now());
@@ -327,9 +324,9 @@ class HomeController extends Controller
                         ->where(function ($sub) {
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
-                        })
-                        ->orderBy('price', 'asc');
+                        });
                 },
+                'productSuppliers.supplier:id,company_name,brand_name',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'retail_price', 'is_published',
@@ -426,12 +423,9 @@ class HomeController extends Controller
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                'prices' => function ($q) {
-                    $q->select([
-                        'id', 'product_id', 'price_type', 'price',
-                        'min_quantity', 'is_active',
-                    ])
-                        ->where('is_active', true)
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices
+                'productSuppliers.prices' => function ($q) {
+                    $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
                                 ->orWhere('valid_until', '>=', now());
@@ -439,9 +433,9 @@ class HomeController extends Controller
                         ->where(function ($sub) {
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
-                        })
-                        ->orderBy('price', 'asc');
+                        });
                 },
+                'productSuppliers.supplier:id,company_name,brand_name',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'retail_price', 'is_published',

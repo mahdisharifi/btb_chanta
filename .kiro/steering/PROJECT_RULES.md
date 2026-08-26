@@ -132,6 +132,102 @@ git config --global --unset https.proxy
 
 ## استانداردهای کدنویسی
 
+### امنیت در همه صفحات (الزامی)
+
+**این بخش برای تمام صفحات جدید و قدیمی الزامی است:**
+
+#### 1. Validation چندلایه
+```php
+public function rules(): array
+{
+    return [
+        'field' => ['required', 'string', 'max:255', 'regex:/^[allowed_chars]+$/'],
+        'price' => ['numeric', 'min:0', 'max:999999999999'],
+        'status' => ['in:active,inactive'], // فقط مقادیر مجاز
+    ];
+}
+
+public function messages(): array
+{
+    return [
+        'field.required' => 'این فیلد الزامی است.',
+        'field.regex' => 'فرمت ورودی نامعتبر است.',
+        // ...
+    ];
+}
+```
+
+#### 2. Authorization (بررسی دسترسی)
+```php
+// قبل از هر عملیات CRUD
+$userId = Auth::id();
+$supplierId = Auth::user()->supplier->id;
+
+// بررسی مالکیت
+if ($resource->user_id !== $userId) {
+    abort(403, 'شما مجاز به دسترسی به این محتوا نیستید.');
+}
+```
+
+#### 3. Input Sanitization
+```php
+private function sanitizeInput(?string $input): ?string
+{
+    if ($input === null) return null;
+    return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
+}
+
+// استفاده
+'name' => $this->sanitizeInput($this->name)
+```
+
+#### 4. Type Casting (تبدیل صریح)
+```php
+'user_id' => (int)$userId,
+'price' => (float)$price,
+'is_active' => (bool)$isActive,
+'count' => $count ? (int)$count : null,
+```
+
+#### 5. جلوگیری از اسکرول موس در فیلدهای عددی
+```blade
+<input type="number" onwheel="this.blur()" />
+```
+
+#### 6. حفظ Referential Integrity
+```php
+// قبل از حذف، بررسی استفاده در جاهای دیگر
+if ($model->relatedRecords()->exists()) {
+    return $this->error('این رکورد در استفاده است و قابل حذف نیست.');
+}
+```
+
+#### 7. Transaction Safety
+```php
+use Illuminate\Support\Facades\DB;
+
+DB::transaction(function () {
+    // عملیات‌های مرتبط
+    Model::create([...]);
+    AnotherModel::update([...]);
+});
+```
+
+#### چک‌لیست امنیتی (قبل از تکمیل هر صفحه)
+- [ ] Validation با regex, min, max, in
+- [ ] Authorization برای همه CRUD operations  
+- [ ] Sanitization برای string inputs
+- [ ] Type Casting برای همه متغیرها
+- [ ] `onwheel="this.blur()"` برای input[type=number]
+- [ ] بررسی روابط قبل از delete
+- [ ] استفاده از DB::transaction برای عملیات چندمرحله‌ای
+- [ ] Toast notification برای موفقیت/خطا
+- [ ] Messages فارسی برای validation errors
+
+**مستندات بیشتر:** `.kiro/docs/price-matrix-security.md`
+
+---
+
 ### تاریخ و زمان
 ```php
 // استفاده از Jalali

@@ -56,20 +56,36 @@ $retailPrice = $product->retailPrices
 }
 
 $wholesalePrice = null;
-if ($canSeeWholesalePrice && $product->prices->isNotEmpty()) {
-    // اگر supplier مشخص شده، فقط قیمت‌های آن supplier را نمایش بده
-    if ($supplier) {
-        $wholesalePrice = $product->prices
-            ->where('supplier_id', $supplier->id)
-            ->where('is_active', true)
-            ->sortBy('price')
-            ->first();
-    } else {
-        // در غیر این صورت، کمترین قیمت را نمایش بده
-        $wholesalePrice = $product->prices
-            ->where('is_active', true)
-            ->sortBy('price')
-            ->first();
+if ($canSeeWholesalePrice && $product->relationLoaded('productSuppliers')) {
+    // جمع‌آوری تمام قیمت‌های فعال از productSuppliers
+    $allPrices = collect();
+    
+    foreach ($product->productSuppliers as $ps) {
+        if ($ps->relationLoaded('prices')) {
+            $allPrices = $allPrices->merge($ps->prices);
+        }
+    }
+    
+    if ($allPrices->isNotEmpty()) {
+        // اگر supplier مشخص شده، فقط قیمت‌های آن supplier را نمایش بده
+        if ($supplier) {
+            $wholesalePrice = $allPrices
+                ->where('product_supplier_id', function($price) use ($product, $supplier) {
+                    return $product->productSuppliers
+                        ->where('supplier_id', $supplier->id)
+                        ->pluck('id')
+                        ->contains($price->product_supplier_id);
+                })
+                ->where('is_active', true)
+                ->sortBy('price')
+                ->first();
+        } else {
+            // در غیر این صورت، کمترین قیمت را نمایش بده
+            $wholesalePrice = $allPrices
+                ->where('is_active', true)
+                ->sortBy('price')
+                ->first();
+        }
     }
 }
 

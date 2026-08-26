@@ -8,6 +8,7 @@ use App\Livewire\Supplier\Products\Index as ProductIndex;
 use App\Livewire\Supplier\Products\Create as ProductCreate;
 use App\Livewire\Supplier\Products\Edit as ProductEdit;
 use App\Livewire\Supplier\Products\EditPrice;
+use App\Livewire\Supplier\Settings\ManageCheckPeriods;
 use App\Livewire\Supplier\ProductSelection;
 use App\Livewire\Supplier\Pricing;
 use App\Livewire\Supplier\MyProducts;
@@ -38,6 +39,9 @@ Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_ad
         Route::get('/products/create', ProductCreate::class)->name('products.create');
         Route::get('/products/{product:id}/edit', ProductEdit::class)->name('products.edit');
         Route::get('/products/{product:id}/edit-price', EditPrice::class)->name('products.edit-price');
+
+        // تنظیمات
+        Route::get('/settings/check-periods', ManageCheckPeriods::class)->name('settings.check-periods');
 
         Route::get('/product-selection', ProductSelection::class)->name('product-selection');
         Route::get('/pricing', Pricing::class)->name('pricing');

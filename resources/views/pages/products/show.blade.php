@@ -74,39 +74,75 @@ use App\Helpers\PriceHelper;
 
             {{-- ──── LEFT: Product Gallery ──── --}}
             @php
-            $mainImages  = $product->imagesBySize('xl');
-            $thumbImages = $product->imagesBySize('sm')->keyBy('id');
+            // جمع‌آوری تصاویر و ویدئوها
+            $allMedia = $product->allMediaSorted->map(function ($gallery) use ($product) {
+                return [
+                    'id' => $gallery->id,
+                    'type' => $gallery->file_type, // 'image' یا 'video'
+                    'url' => $gallery->file_type === 'image' ? $gallery->getVersionUrl('xl') : $gallery->full_url,
+                    'thumb' => $gallery->file_type === 'image' ? $gallery->getVersionUrl('sm') : $gallery->getVideoThumbnailUrl(),
+                    'alt' => $gallery->alt_text ?? $product->title,
+                    'title' => $gallery->title,
+                ];
+            })->values();
             @endphp
 
             <div class="lg:col-span-5" x-data="{
-    activeImage: 0,
-    images: {{ Js::from($mainImages->map(fn ($img) => [
-        'src'   => $img['url'],
-        'thumb' => $thumbImages[$img['id']]['url'] ?? $img['url'],
-        'alt'   => $img['alt_text'] ?? $product->title,
-    ])->values()) }},
-    get currentImage() { return this.images[this.activeImage] || this.images[0] || null; },
-    next() { this.activeImage = (this.activeImage + 1) % this.images.length; },
-    prev() { this.activeImage = (this.activeImage - 1 + this.images.length) % this.images.length; },
+    activeMedia: 0,
+    zoomOpen: false,
+    media: {{ Js::from($allMedia) }},
+    get currentMedia() { return this.media[this.activeMedia] || this.media[0] || null; },
+    get isVideo() { return this.currentMedia?.type === 'video'; },
+    get isImage() { return this.currentMedia?.type === 'image'; },
+    next() { this.activeMedia = (this.activeMedia + 1) % this.media.length; },
+    prev() { this.activeMedia = (this.activeMedia - 1 + this.media.length) % this.media.length; },
+    openZoom() { if (this.isImage) this.zoomOpen = true; },
+    closeZoom() { this.zoomOpen = false; },
 }">
 
-                {{-- Main Image --}}
+                {{-- Main Media Display --}}
                 <div class="relative bg-white rounded-2xl border border-gray-200 overflow-hidden aspect-square mb-4 shadow-sm group">
-                    <template x-if="currentImage">
-                        <img :src="currentImage.src"
-                             :alt="currentImage.alt"
-                             width="800" height="800"
-                             loading="eager"
-                             fetchpriority="high"
-                             decoding="async"
-                             error="$el.src='{{ asset('images/placeholder.webp') }}'"
-                             x-transition:enter="transition ease-out duration-300"
-                             x-transition:enter-start="opacity-0 scale-95"
-                             x-transition:enter-end="opacity-100 scale-100"
-                             class="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105">
+                    {{-- Image Display --}}
+                    <template x-if="currentMedia && isImage">
+                        <div @click="openZoom()" class="cursor-zoom-in">
+                            <img :src="currentMedia.url"
+                                 :alt="currentMedia.alt"
+                                 width="800" height="800"
+                                 loading="eager"
+                                 fetchpriority="high"
+                                 decoding="async"
+                                 onerror="this.src='{{ asset('images/placeholder.webp') }}'"
+                                 x-transition:enter="transition ease-out duration-300"
+                                 x-transition:enter-start="opacity-0 scale-95"
+                                 x-transition:enter-end="opacity-100 scale-100"
+                                 class="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105">
+                            
+                            {{-- Zoom Icon Hint --}}
+                            <div class="absolute bottom-3 left-3 bg-black/60 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <x-heroicon-o-magnifying-glass-plus class="w-4 h-4" />
+                                <span>کلیک برای بزرگنمایی</span>
+                            </div>
+                        </div>
                     </template>
 
-                    <template x-if="!currentImage">
+                    {{-- Video Display --}}
+                    <template x-if="currentMedia && isVideo">
+                        <div class="w-full h-full flex items-center justify-center p-4">
+                            <video 
+                                :src="currentMedia.url"
+                                :poster="currentMedia.thumb"
+                                controls
+                                class="w-full h-full object-contain rounded-lg"
+                                x-transition:enter="transition ease-out duration-300"
+                                x-transition:enter-start="opacity-0"
+                                x-transition:enter-end="opacity-100">
+                                مرورگر شما از پخش ویدئو پشتیبانی نمی‌کند.
+                            </video>
+                        </div>
+                    </template>
+
+                    {{-- No Media Placeholder --}}
+                    <template x-if="!currentMedia">
                         <div class="w-full h-full flex items-center justify-center text-gray-300">
                             <svg class="w-24 h-24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
@@ -116,16 +152,16 @@ use App\Helpers\PriceHelper;
                     </template>
 
                     {{-- Navigation Arrows --}}
-                    <template x-if="images.length > 1">
+                    <template x-if="media.length > 1">
                         <div>
                             <button @click="prev()"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100">
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100 z-10">
                                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                                 </svg>
                             </button>
                             <button @click="next()"
-                                    class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100">
+                                    class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100 z-10">
                                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                                 </svg>
@@ -135,26 +171,88 @@ use App\Helpers\PriceHelper;
 
                     {{-- Featured Badge --}}
                     @if($product->is_featured)
-                    <span class="absolute top-3 right-3 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg">
+                    <span class="absolute top-3 right-3 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg z-10">
                             ⭐ ویژه
                         </span>
                     @endif
                 </div>
 
                 {{-- Thumbnail Gallery --}}
-                <template x-if="images.length > 1">
+                <template x-if="media.length > 1">
                     <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300">
-                        <template x-for="(img, index) in images" :key="index">
-                            <button @click="activeImage = index"
-                                    class="shrink-0 w-16 h-16 rounded-xl border-2 overflow-hidden transition-all duration-200"
-                                    :class="activeImage === index
+                        <template x-for="(item, index) in media" :key="index">
+                            <button @click="activeMedia = index"
+                                    class="relative shrink-0 w-16 h-16 rounded-xl border-2 overflow-hidden transition-all duration-200"
+                                    :class="activeMedia === index
                                         ? 'border-blue-500 shadow-lg shadow-blue-100 ring-2 ring-blue-200'
                                         : 'border-gray-200 hover:border-gray-300'">
-                                <img :src="img.thumb" :alt="img.alt" class="w-full h-full object-cover">
+                                <img :src="item.thumb" :alt="item.alt" class="w-full h-full object-cover">
+                                
+                                {{-- Video Badge --}}
+                                <template x-if="item.type === 'video'">
+                                    <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                        </svg>
+                                    </div>
+                                </template>
                             </button>
                         </template>
                     </div>
                 </template>
+
+                {{-- Zoom Modal (فقط برای تصاویر) --}}
+                <div x-show="zoomOpen" 
+                     x-cloak
+                     @click.self="closeZoom()"
+                     @keydown.escape.window="closeZoom()"
+                     class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+                     x-transition:enter="transition ease-out duration-300"
+                     x-transition:enter-start="opacity-0"
+                     x-transition:enter-end="opacity-100"
+                     x-transition:leave="transition ease-in duration-200"
+                     x-transition:leave-start="opacity-100"
+                     x-transition:leave-end="opacity-0">
+                    
+                    {{-- Close Button --}}
+                    <button @click="closeZoom()"
+                            class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center text-white transition-all z-10">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+
+                    {{-- Navigation in Zoom --}}
+                    <template x-if="media.length > 1">
+                        <div>
+                            <button @click.stop="prev()"
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center text-white transition-all">
+                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                </svg>
+                            </button>
+                            <button @click.stop="next()"
+                                    class="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center text-white transition-all">
+                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </template>
+
+                    {{-- Zoomed Image --}}
+                    <template x-if="currentMedia && isImage">
+                        <img :src="currentMedia.url"
+                             :alt="currentMedia.alt"
+                             class="max-w-full max-h-full object-contain"
+                             @click.stop>
+                    </template>
+
+                    {{-- Image Counter --}}
+                    <div class="absolute bottom-4 right-1/2 translate-x-1/2 bg-white/10 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm">
+                        <span x-text="activeMedia + 1"></span> / <span x-text="media.length"></span>
+                    </div>
+                </div>
             </div>
 
 
@@ -371,6 +469,137 @@ use App\Helpers\PriceHelper;
             @endif
 
             {{-- ══════════════════════════════════════════
+            PRICE MATRIX COMPARISON — ماتریس بهترین قیمت‌ها
+            ══════════════════════════════════════════ --}}
+            @if($hasMatrixPricing)
+            <div class="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-6 shadow-lg">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                        <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-extrabold text-gray-900">ماتریس بهترین قیمت‌ها</h3>
+                        <p class="text-sm text-gray-600">مقایسه قیمت‌های تمام تامین‌کنندگان در یک نگاه</p>
+                    </div>
+                </div>
+                
+                {{-- ماتریس بهترین قیمت‌ها --}}
+                <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">نوع فروش</th>
+                                @php
+                                    $allTiers = $productSuppliers->flatMap(fn($ps) => $ps->prices)->pluck('tier_index')->unique()->sort()->values();
+                                    $tierNames = $product->quantity_tiers ?? [];
+                                @endphp
+                                @foreach($allTiers as $tier)
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                                        {{ $tierNames[$tier]['name'] ?? "تیراژ {$tier}" }}
+                                    </th>
+                                @endforeach
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            @php
+                                // جمع‌آوری تمام انواع قیمت یکتا
+                                $allPriceTypes = $productSuppliers
+                                    ->flatMap(fn($ps) => $ps->prices)
+                                    ->map(function($price) {
+                                        $code = $price->priceType ? $price->priceType->code : 'cash';
+                                        $name = $price->priceType ? $price->priceType->name : 'نقدی';
+                                        $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
+                                        $checkPeriodDays = $price->checkPeriod ? $price->checkPeriod->days : 0;
+                                        $checkPeriodName = $price->checkPeriod ? $price->checkPeriod->name : '';
+                                        
+                                        return [
+                                            'key' => "{$code}_{$checkPeriodId}",
+                                            'name' => $name,
+                                            'check_period_name' => $checkPeriodName,
+                                            'sort_key' => $code === 'cash' ? 0 : $checkPeriodDays,
+                                            'display' => $checkPeriodName ? "{$name} ({$checkPeriodName})" : $name,
+                                        ];
+                                    })
+                                    ->unique('key')
+                                    ->sortBy('sort_key')
+                                    ->values();
+                            @endphp
+                            
+                            @foreach($allPriceTypes as $priceType)
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-4 py-3 text-sm font-semibold text-gray-900 whitespace-nowrap">{{ $priceType['display'] }}</td>
+                                    
+                                    @foreach($allTiers as $tier)
+                                        @php
+                                            // پیدا کردن تمام قیمت‌ها برای این سلول
+                                            $cellPrices = $productSuppliers->flatMap(function($ps) use ($priceType, $tier) {
+                                                return $ps->prices->filter(function($price) use ($priceType, $tier) {
+                                                    $code = $price->priceType ? $price->priceType->code : 'cash';
+                                                    $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
+                                                    $key = "{$code}_{$checkPeriodId}";
+                                                    return $key === $priceType['key'] && $price->tier_index == $tier;
+                                                })->map(function($price) use ($ps) {
+                                                    return [
+                                                        'supplier' => $ps->supplier,
+                                                        'amount' => $price->price,
+                                                    ];
+                                                });
+                                            })->sortBy('amount');
+                                        @endphp
+                                        
+                                        <td class="px-4 py-3 text-center border-r border-gray-100">
+                                            @if($cellPrices->isNotEmpty())
+                                                @php 
+                                                    $bestPrice = $cellPrices->first();
+                                                    $supplierId = $bestPrice['supplier']->id;
+                                                    $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
+                                                @endphp
+                                                <a href="#{{ $anchorId }}" 
+                                                   class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-2 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer"
+                                                   onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
+                                                    <div class="text-base font-bold">{{ number_format($bestPrice['amount']) }}</div>
+                                                    @if($showSupplierInfo)
+                                                        <div class="text-xs text-green-700 mt-1 font-medium">
+                                                            {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
+                                                        </div>
+                                                    @endif
+                                                </a>
+                                            @else
+                                                <span class="text-gray-300">—</span>
+                                            @endif
+                                        </td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                
+                {{-- راهنما --}}
+                <div class="mt-3 flex items-center gap-6 text-xs text-gray-600 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 bg-green-50 ring-2 ring-green-400 rounded"></div>
+                        <span>بهترین قیمت از تمام تامین‌کنندگان</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+                        </svg>
+                        <span>کلیک روی قیمت → نمایش جزئیات تامین‌کننده</span>
+                    </div>
+                </div>
+            </div>
+            @else
+            <div class="mb-6 bg-yellow-100 border-2 border-yellow-400 rounded p-4">
+                <strong>⚠️ شرط false است:</strong><br>
+                hasMatrixPricing: {{ $hasMatrixPricing ? 'true' : 'false' }}<br>
+                hasMultipleSuppliers: {{ $hasMultipleSuppliers ? 'true' : 'false' }}
+            </div>
+            @endif
+
+            {{-- ══════════════════════════════════════════
             STACKED VIEW — همه تأمین‌کنندگان زیر هم
             ══════════════════════════════════════════ --}}
             <div x-show="!compareMode" x-transition>
@@ -460,7 +689,7 @@ use App\Helpers\PriceHelper;
                             </div>
                         </button>
 
-                        {{-- ── بدنه: لیست قیمت‌ها (Collapsible) ── --}}
+                        {{-- ── بدنه: ماتریس قیمت‌ها (Collapsible) ── --}}
                         <div x-show="expanded"
                              x-transition:enter="transition ease-out duration-200"
                              x-transition:enter-start="opacity-0 -translate-y-2"
@@ -469,68 +698,14 @@ use App\Helpers\PriceHelper;
                              x-transition:leave-start="opacity-100 translate-y-0"
                              x-transition:leave-end="opacity-0 -translate-y-2">
 
-                            {{-- لیست قیمت‌ها --}}
-                            <div class="divide-y divide-gray-100">
-                                @forelse($ps->activePrices->sortBy('price') as $price)
-                                @php
-                                $isLowest = $hasMultipleSuppliers && $price->price == $overallLowestPrice;
-                                $ptVal = is_object($price->price_type) ? $price->price_type->value : (string) $price->price_type;
-                                @endphp
-                                <div class="flex items-center justify-between px-5 py-3.5 transition-colors {{ $isLowest ? 'bg-green-50/60' : 'hover:bg-gray-50/80' }}">
-                                    <div class="flex items-center gap-3">
-                                        {{-- آیکون نوع قیمت --}}
-                                        @switch($ptVal)
-                                        @case('carton')
-                                        <span class="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-lg shadow-sm">📦</span>
-                                        @break
-                                        @case('sub_carton')
-                                        <span class="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center text-lg shadow-sm">📋</span>
-                                        @break
-                                        @case('warranty')
-                                        <span class="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center text-lg shadow-sm">🛡️</span>
-                                        @break
-                                        @case('check')
-                                        <span class="w-9 h-9 rounded-lg bg-purple-100 flex items-center justify-center text-lg shadow-sm">📝</span>
-                                        @break
-                                        @default
-                                        <span class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-lg shadow-sm">💰</span>
-                                        @endswitch
-
-                                        <div>
-                                            <div class="font-semibold text-gray-700 text-sm flex items-center gap-2 flex-wrap">
-                                                {{ method_exists($price->price_type, 'label') ? $price->price_type->label() : $ptVal }}
-                                                @if($ptVal === 'warranty' && !empty($price->warranty_months))
-                                                <span class="text-[11px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{{ $price->warranty_months }} ماه</span>
-                                                @endif
-                                                @if(!empty($price->check_months))
-                                                <span class="text-[11px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{{ $price->check_months }} ماهه</span>
-                                                @endif
-                                                @if($isLowest)
-                                                <span class="text-[10px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full font-bold animate-pulse">✓ بهترین قیمت</span>
-                                                @endif
-                                            </div>
-                                            @if(($price->min_quantity ?? 0) > 1 || $price->max_quantity)
-                                            <div class="text-[11px] text-gray-400 mt-0.5">
-                                                تعداد سفارش: {{ $price->min_quantity ?? 1 }}
-                                                @if($price->max_quantity) تا {{ number_format($price->max_quantity) }} @else به بالا @endif
-                                            </div>
-                                            @endif
-                                        </div>
-                                    </div>
-
-                                    {{-- ✅ اصلاح #9: قیمت هر ردیف --}}
-                                    <div class="text-left shrink-0">
-                                                                <span class="font-extrabold {{ $isLowest ? 'text-green-700' : 'text-gray-800' }} text-lg tabular-nums">
-                                                                    {{ PriceHelper::formatNumber($price->price) }}
-                                                                </span>
-                                        <span class="text-xs text-gray-400 mr-1">تومان</span>
-                                    </div>
-                                </div>
-                                @empty
-                                <div class="px-5 py-6 text-center text-gray-400 text-sm">
-                                    قیمتی برای این تأمین‌کننده ثبت نشده است
-                                </div>
-                                @endforelse
+                            {{-- ✅ نمایش ماتریسی قیمت‌ها --}}
+                            <div class="px-5 py-4">
+                                <x-supplier-price-matrix 
+                                    :productSupplier="$ps" 
+                                    :product="$product"
+                                    :hasMultipleSuppliers="$hasMultipleSuppliers"
+                                    :overallLowestPrice="$overallLowestPrice"
+                                />
                             </div>
 
                             {{-- فوتر: اطلاعات تماس --}}
@@ -659,35 +834,42 @@ use App\Helpers\PriceHelper;
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                         @php
-                        // جمع‌آوری تمام انواع قیمت یکتا از همه تأمین‌کنندگان
+                        // جمع‌آوری تمام انواع قیمت یکتا از همه تأمین‌کنندگان (ساختار جدید)
                         $allPriceTypes = $productSuppliers
-                        ->flatMap(fn($ps) => $ps->activePrices)
-                        ->map(function($price) {
-                        $key = is_object($price->price_type) ? $price->price_type->value : (string) $price->price_type;
-                        if ($price->warranty_months) $key .= '_w' . $price->warranty_months;
-                        if ($price->check_months) $key .= '_c' . $price->check_months;
-                        return [
-                        'key'              => $key,
-                        'label'            => method_exists($price->price_type, 'label') ? $price->price_type->label() : (is_object($price->price_type) ? $price->price_type->value : (string) $price->price_type),
-                        'warranty_months'  => $price->warranty_months,
-                        'check_months'     => $price->check_months,
-                        'price_type_value' => is_object($price->price_type) ? $price->price_type->value : (string) $price->price_type,
-                        ];
-                        })
-                        ->unique('key')
-                        ->values();
+                            ->flatMap(fn($ps) => $ps->prices)
+                            ->map(function($price) {
+                                $priceTypeCode = $price->priceType?->code ?? 'cash';
+                                $priceTypeName = $price->priceType?->name ?? 'نقدی';
+                                $checkPeriodId = $price->check_period_id ?? 0;
+                                $tierIndex = $price->tier_index ?? 0;
+                                
+                                // کلید یکتا برای هر ترکیب
+                                $key = "{$priceTypeCode}_{$checkPeriodId}_{$tierIndex}";
+                                
+                                return [
+                                    'key' => $key,
+                                    'label' => $priceTypeName,
+                                    'check_period_name' => $price->checkPeriod?->name,
+                                    'tier_index' => $tierIndex,
+                                    'price_type_code' => $priceTypeCode,
+                                    'check_period_id' => $checkPeriodId,
+                                ];
+                            })
+                            ->unique('key')
+                            ->values();
                         @endphp
 
                         @forelse($allPriceTypes as $idx => $pti)
                         @php
                         // یافتن قیمت مطابق هر تأمین‌کننده
                         $pricesForType = $productSuppliers->map(function($ps) use ($pti) {
-                        return $ps->activePrices->first(function($p) use ($pti) {
-                        $key = is_object($p->price_type) ? $p->price_type->value : (string) $p->price_type;
-                        if ($p->warranty_months) $key .= '_w' . $p->warranty_months;
-                        if ($p->check_months) $key .= '_c' . $p->check_months;
-                        return $key === $pti['key'];
-                        });
+                            return $ps->prices->first(function($p) use ($pti) {
+                                $priceTypeCode = $p->priceType?->code ?? 'cash';
+                                $checkPeriodId = $p->check_period_id ?? 0;
+                                $tierIndex = $p->tier_index ?? 0;
+                                $key = "{$priceTypeCode}_{$checkPeriodId}_{$tierIndex}";
+                                return $key === $pti['key'];
+                            });
                         });
                         $validPrices = $pricesForType->filter()->pluck('price');
                         $lowestForType = $validPrices->min();
@@ -695,11 +877,11 @@ use App\Helpers\PriceHelper;
                         <tr class="{{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} hover:bg-blue-50/30 transition-colors">
                             <td class="px-4 py-3 text-right sticky right-0 {{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} z-10">
                                 <div class="font-semibold text-gray-700 text-xs">{{ $pti['label'] }}</div>
-                                @if($pti['warranty_months'])
-                                <div class="text-[10px] text-green-600 mt-0.5">{{ $pti['warranty_months'] }} ماه گارانتی</div>
+                                @if($pti['check_period_name'])
+                                <div class="text-[10px] text-purple-600 mt-0.5">{{ $pti['check_period_name'] }}</div>
                                 @endif
-                                @if($pti['check_months'])
-                                <div class="text-[10px] text-purple-600 mt-0.5">چک {{ $pti['check_months'] }} ماهه</div>
+                                @if($pti['tier_index'] > 0)
+                                <div class="text-[10px] text-blue-600 mt-0.5">تیراژ: {{ $pti['tier_index'] }}</div>
                                 @endif
                             </td>
                             @foreach($pricesForType as $price)

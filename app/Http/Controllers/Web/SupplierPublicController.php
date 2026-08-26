@@ -172,13 +172,15 @@ class SupplierPublicController extends Controller
                     ->orderByDesc('is_primary')->orderBy('sort_order')->limit(1),
                 'retailPrices' => fn($q) => $q->where('is_published', true)
                     ->orderBy('retail_price')->limit(1),
-                // بارگذاری قیمت‌های این supplier
-                'prices' => fn($q) => $q->where('is_active', true)
-                    ->bySupplier($supplier->id)
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_until')->orWhere('valid_until', '>=', now());
-                    })
-                    ->orderBy('price'),
+                // بارگذاری تامین‌کننده و قیمت‌های این supplier
+                'productSuppliers' => fn($q) => $q->where('supplier_id', $supplier->id)
+                    ->with([
+                        'prices' => fn($priceQ) => $priceQ->where('is_active', true)
+                            ->where(function ($sub) {
+                                $sub->whereNull('valid_until')->orWhere('valid_until', '>=', now());
+                            })
+                            ->orderBy('price')
+                    ]),
             ]);
 
         // ─── فیلتر دسته‌بندی ───

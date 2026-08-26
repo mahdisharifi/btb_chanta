@@ -11,7 +11,6 @@ use App\Livewire\Admin\Users\Create as UsersCreate;
 use App\Livewire\Admin\Users\Edit as UsersEdit;
 use App\Livewire\Admin\Products\Index as AdminProductIndex;
 use App\Livewire\Admin\Products\Create as AdminProductCreate;
-use App\Livewire\Admin\Products\Edit as AdminProductEdit;
 use App\Livewire\Admin\Products\Show as AdminProductShow;
 use App\Livewire\Admin\Categories\Index as CategoriesIndex;
 use App\Livewire\Admin\Categories\Create as CategoryCreate;

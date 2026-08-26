@@ -19,8 +19,16 @@
     $gallery  = $product->relationLoaded('galleries') ? $product->galleries->first() : null;
     $imageUrl = $gallery?->file_path ? asset('storage/' . $gallery->file_path) : null;
 
-    // قیمت‌ها
-    $wholesalePrices  = $product->relationLoaded('prices') ? $product->prices : collect();
+    // قیمت‌ها - استفاده از ساختار جدید productSuppliers
+    $wholesalePrices = collect();
+    if ($product->relationLoaded('productSuppliers')) {
+        foreach ($product->productSuppliers as $ps) {
+            if ($ps->relationLoaded('prices')) {
+                $wholesalePrices = $wholesalePrices->merge($ps->prices->where('is_active', true));
+            }
+        }
+    }
+    
     $retailPriceModel = $product->relationLoaded('retailPrices') ? $product->retailPrices->first() : null;
 
     $lowestWholesale  = $wholesalePrices->isNotEmpty() ? $wholesalePrices->min('price') : null;

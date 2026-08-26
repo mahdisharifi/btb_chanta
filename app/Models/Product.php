@@ -30,6 +30,7 @@ class Product extends Model
         'specifications',
         'weight',
         'dimensions',
+        'quantity_tiers', // تیراژهای محصول
         'is_active',
         'is_featured',
         'status',
@@ -38,13 +39,13 @@ class Product extends Model
         'seo_description',
         'seo_keywords',
         'seo_canonical_url',
-        'legacy_id', // اضافه شد
-
+        'legacy_id',
     ];
 
     protected $casts = [
         'specifications' => 'array',
         'dimensions'     => 'array',
+        'quantity_tiers' => 'array', // تیراژها به صورت JSON
         'is_active'      => 'boolean',
         'is_featured'    => 'boolean',
         'status'         => ProductStatus::class,
@@ -449,6 +450,16 @@ class Product extends Model
     {
         return $this->hasMany(ProductGallery::class)
             ->where('file_type', 'image')
+            ->orderBy('sort_order')
+            ->orderByDesc('is_primary');
+    }
+
+    /**
+     * تمام مدیای محصول (images + videos) - مرتب شده
+     */
+    public function allMediaSorted(): HasMany
+    {
+        return $this->hasMany(ProductGallery::class)
             ->orderBy('sort_order')
             ->orderByDesc('is_primary');
     }

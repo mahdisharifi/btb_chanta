@@ -289,39 +289,27 @@ class ProductController extends Controller
             'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text'])
                 ->orderByDesc('is_primary')
                 ->orderBy('sort_order'),
-            'prices' => fn($q) => $q->select(['id', 'product_id', 'price', 'price_type', 'min_quantity', 'warranty_months', 'check_months', 'is_active', 'valid_from', 'valid_until'])
-                ->where('is_active', true)
-                ->where(function ($sub) {
-                    $sub->whereNull('valid_until')
-                        ->orWhere('valid_until', '>=', now());
-                })
-                ->where(function ($sub) {
-                    $sub->whereNull('valid_from')
-                        ->orWhere('valid_from', '<=', now());
-                })
-                ->orderBy('price', 'asc'),
+            // 🔴 DEPRECATED: ساختار قدیمی prices حذف شد - اکنون از productSuppliers.prices استفاده می‌شود
             'retailPrices' => fn($q) => $q->select(['id', 'product_id', 'user_id', 'retail_price', 'is_published'])
                 ->where('is_published', true)
                 ->with('user:id,name')
                 ->orderBy('retail_price', 'asc'),
         ]);
 
-        // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده ───
+        // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده با ساختار ماتریسی ───
         $productSuppliers = $product->productSuppliers()
             ->active()
             ->select(['id', 'product_id', 'supplier_id', 'is_primary', 'sort_order'])
             ->with([
-                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
-                'activePrices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type', 'min_quantity', 'warranty_months', 'check_months', 'is_active', 'valid_from', 'valid_until'])
-                    ->where('is_active', true)
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
-                    })
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_from')
-                            ->orWhere('valid_from', '<=', now());
-                    })
+                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active,slug',
+                // بارگذاری قیمت‌های ماتریسی جدید با relations (با fallback به ساختار قدیمی)
+                'prices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type_id', 'tier_index', 'check_period_id', 'is_active', 'valid_from', 'valid_until'])
+                    ->activeAndValid()
+                    ->with([
+                        'priceType:id,name,code',
+                        'checkPeriod:id,name,days,is_active'
+                    ])
+                    ->orderBy('tier_index', 'asc')
                     ->orderBy('price', 'asc'),
             ])
             ->orderByDesc('is_primary')
@@ -330,8 +318,12 @@ class ProductController extends Controller
 
         $hasMultipleSuppliers = $productSuppliers->count() > 1;
 
-        // ─── 6. محاسبه قیمت‌های کلی - بهینه‌شده ───
-        $allSupplierPrices = $productSuppliers->flatMap(fn($ps) => $ps->activePrices);
+        // بررسی اینکه آیا ساختار ماتریسی موجود است یا خیر
+        // (اگر هر قیمتی وجود داشته باشد، ماتریس نمایش داده می‌شود)
+        $hasMatrixPricing = $productSuppliers->flatMap(fn($ps) => $ps->prices)->isNotEmpty();
+
+        // ─── 6. محاسبه قیمت‌های کلی - بهینه‌شده با ساختار ماتریسی ───
+        $allSupplierPrices = $productSuppliers->flatMap(fn($ps) => $ps->prices);
         $usePivotPrices = $allSupplierPrices->isNotEmpty();
 
         if ($usePivotPrices) {
@@ -339,9 +331,17 @@ class ProductController extends Controller
             $overallHighestPrice = $allSupplierPrices->max('price');
             $directPrices = collect();
         } else {
-            $directPrices = $product->prices;
-            $overallLowestPrice = $directPrices->min('price');
-            $overallHighestPrice = $directPrices->max('price');
+            // ✅ جمع‌آوری قیمت‌ها از productSuppliers (ساختار جدید)
+            $directPrices = collect();
+            if ($product->relationLoaded('productSuppliers')) {
+                foreach ($product->productSuppliers as $ps) {
+                    if ($ps->relationLoaded('prices')) {
+                        $directPrices = $directPrices->merge($ps->prices->where('is_active', true));
+                    }
+                }
+            }
+            $overallLowestPrice = $directPrices->isNotEmpty() ? $directPrices->min('price') : null;
+            $overallHighestPrice = $directPrices->isNotEmpty() ? $directPrices->max('price') : null;
         }
 
         // ─── 8. آمار مقایسه تأمین‌کنندگان ───
@@ -404,6 +404,7 @@ class ProductController extends Controller
             'product'               => $product,
             'productSuppliers'      => $productSuppliers,
             'hasMultipleSuppliers'  => $hasMultipleSuppliers,
+            'hasMatrixPricing'      => $hasMatrixPricing,
             'overallLowestPrice'    => $overallLowestPrice,
             'overallHighestPrice'   => $overallHighestPrice,
             'retailPrices'          => $retailPrices,
@@ -577,12 +578,9 @@ class ProductController extends Controller
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                'prices' => function ($q) {
-                    $q->select([
-                        'id', 'product_id', 'price_type', 'price',
-                        'min_quantity', 'is_active', 'valid_from', 'valid_until',
-                    ])
-                        ->where('is_active', true)
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices
+                'productSuppliers.prices' => function ($q) {
+                    $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
                                 ->orWhere('valid_until', '>=', now());
@@ -590,9 +588,9 @@ class ProductController extends Controller
                         ->where(function ($sub) {
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
-                        })
-                        ->orderBy('price', 'asc');
+                        });
                 },
+                'productSuppliers.supplier:id,company_name,brand_name',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'user_id', 'retail_price', 'is_published',
@@ -1029,7 +1027,16 @@ class ProductController extends Controller
                     'website'      => $product->supplier->website ?? null,
                 ];
 
-                $data['wholesalePrices'] = $product->prices;
+                // ✅ جمع‌آوری قیمت‌ها از productSuppliers
+                $wholesalePrices = collect();
+                if ($product->relationLoaded('productSuppliers')) {
+                    foreach ($product->productSuppliers as $ps) {
+                        if ($ps->relationLoaded('prices')) {
+                            $wholesalePrices = $wholesalePrices->merge($ps->prices->where('is_active', true));
+                        }
+                    }
+                }
+                $data['wholesalePrices'] = $wholesalePrices;
 
                 // قیمت خرده‌فروشی خود کاربر
                 $myPrice = $product->retailPrices
@@ -1039,8 +1046,8 @@ class ProductController extends Controller
                 $data['myRetailPrice'] = $myPrice;
 
                 // محاسبه حاشیه سود
-                if ($myPrice && $product->prices->isNotEmpty()) {
-                    $lowestWholesale = $product->prices->min('price');
+                if ($myPrice && $wholesalePrices->isNotEmpty()) {
+                    $lowestWholesale = $wholesalePrices->min('price');
                     if ($lowestWholesale > 0) {
                         $profitAmount     = $myPrice->retail_price - $lowestWholesale;
                         $profitPercentage = round(($profitAmount / $lowestWholesale) * 100, 1);
@@ -1067,7 +1074,17 @@ class ProductController extends Controller
                 $data['showSupplierInfo']    = true;
                 $data['showWholesalePrices'] = true;
                 $data['supplierInfo']        = $product->supplier;
-                $data['wholesalePrices']     = $product->prices;
+                
+                // ✅ جمع‌آوری قیمت‌ها از productSuppliers
+                $wholesalePrices = collect();
+                if ($product->relationLoaded('productSuppliers')) {
+                    foreach ($product->productSuppliers as $ps) {
+                        if ($ps->relationLoaded('prices')) {
+                            $wholesalePrices = $wholesalePrices->merge($ps->prices->where('is_active', true));
+                        }
+                    }
+                }
+                $data['wholesalePrices'] = $wholesalePrices;
                 break;
 
             case 'end_user':

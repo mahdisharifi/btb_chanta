@@ -68,6 +68,7 @@ class ProductGallery extends Model
         'file_name',
         'base_name',        // ✅ نام پایه برای نسخه‌ها
         'file_type',
+        'poster_path',      // ✅ اضافه شد - thumbnail ویدئو
         'title',
         'alt_text',
         'sort_order',
@@ -366,22 +367,38 @@ class ProductGallery extends Model
 
     /**
      * URL thumbnail ویدیو
+     * 
+     * اولویت:
+     * 1. poster_path (آپلود دستی کاربر)
+     * 2. auto-generated poster در posters/{filename}.jpg
+     * 3. fallback placeholder
      */
-    private function getVideoThumbnailUrl(): string
+    public function getVideoThumbnailUrl(): string
     {
-        if (empty($this->file_path)) {
-            return $this->getDefaultImageUrl();
+        // 1️⃣ اولویت اول: poster_path (آپلود دستی)
+        if (!empty($this->poster_path)) {
+            if (Str::startsWith($this->poster_path, ['http://', 'https://'])) {
+                return $this->poster_path;
+            }
+            
+            if (Storage::disk(self::STORAGE_DISK)->exists($this->poster_path)) {
+                return asset('storage/' . $this->poster_path);
+            }
         }
 
-        $directory = pathinfo($this->file_path, PATHINFO_DIRNAME);
-        $filename  = pathinfo($this->file_path, PATHINFO_FILENAME);
-        $posterPath = "{$directory}/posters/{$filename}.jpg";
+        // 2️⃣ اولویت دوم: auto-generated poster
+        if (!empty($this->file_path)) {
+            $directory = pathinfo($this->file_path, PATHINFO_DIRNAME);
+            $filename  = pathinfo($this->file_path, PATHINFO_FILENAME);
+            $posterPath = "{$directory}/posters/{$filename}.jpg";
 
-        if (Storage::disk(self::STORAGE_DISK)->exists($posterPath)) {
-            return asset('storage/' . $posterPath);
+            if (Storage::disk(self::STORAGE_DISK)->exists($posterPath)) {
+                return asset('storage/' . $posterPath);
+            }
         }
 
-        return asset('images/placeholders/video-default.png');
+        // 3️⃣ fallback: placeholder
+        return asset('images/placeholders/video-default.svg');
     }
 
     /**
