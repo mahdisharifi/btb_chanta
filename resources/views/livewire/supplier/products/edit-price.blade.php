@@ -78,7 +78,18 @@
 
     {{-- ═══════════ Main Card Form ═══════════ --}}
     <x-card>
-        <form wire:submit="save">
+        <form wire:submit="save" x-data="{ 
+            warrantyType: @entangle('warrantyType').live,
+            hasWarranty: @entangle('hasWarranty').live,
+            init() {
+                // پاک کردن warrantyValue هنگام تغییر warrantyType
+                this.$watch('warrantyType', (newValue, oldValue) => {
+                    if (oldValue && newValue !== oldValue) {
+                        $wire.warrantyValue = null;
+                    }
+                });
+            }
+        }">
             <div class="p-6">
 
                 {{-- ─── Section 1: اطلاعات عرضه ─── --}}
@@ -110,6 +121,248 @@
                 </div>
 
                 @if(!empty($quantityTiers))
+                <hr class="my-8 border-gray-200 dark:border-gray-700">
+
+                {{-- ─── Section 1.5: هزینه گارانتی سراسری ─── --}}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-6 mb-8">
+                    <div class="md:col-span-1">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                            <x-heroicon-o-shield-check class="w-5 h-5 text-purple-600"/>
+                            تنظیمات گارانتی
+                        </h3>
+                        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                            تعیین نوع، مدت و هزینه گارانتی محصول.
+                        </p>
+                    </div>
+
+                    <div class="md:col-span-2 space-y-6">
+                        {{-- نکته مهم --}}
+                        <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                            <div class="flex items-start gap-3">
+                                <x-heroicon-o-light-bulb class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"/>
+                                <div class="text-sm">
+                                    <p class="font-semibold text-amber-800 dark:text-amber-200">💡 توضیح مهم:</p>
+                                    <ul class="text-amber-700 dark:text-amber-300 mt-2 space-y-1 list-disc list-inside">
+                                        <li><strong>بدون گارانتی:</strong> محصول هیچ گارانتی ندارد</li>
+                                        <li><strong>با گارانتی:</strong> محصول گارانتی دارد و به صورت <strong>آپشن اضافی</strong> به مشتری نمایش داده می‌شود</li>
+                                        <li><strong>هزینه آپشن:</strong> مشتری می‌تواند محصول را با یا بدون گارانتی خریداری کند</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- آیا محصول با گارانتی است؟ --}}
+                        <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border-2 border-gray-300 dark:border-gray-700">
+                            <label class="flex items-center cursor-pointer">
+                                <input type="checkbox" wire:model.live="hasWarranty" class="rounded" x-model="hasWarranty">
+                                <span class="ms-3 text-base font-semibold text-gray-900 dark:text-gray-100">
+                                    ✅ این محصول با گارانتی عرضه می‌شود
+                                </span>
+                            </label>
+                        </div>
+
+                        {{-- اطلاعات گارانتی (فقط اگر hasWarranty = true) --}}
+                        <div x-show="hasWarranty" x-cloak class="space-y-4 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                            {{-- ارائه‌دهنده گارانتی --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    ارائه‌دهنده گارانتی:
+                                </label>
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyProvider === 'none' ? 'border-gray-400 bg-gray-100 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyProvider" value="none" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">نامشخص</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyProvider === 'manufacturer' ? 'border-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyProvider" value="manufacturer" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">شرکتی</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyProvider === 'seller' ? 'border-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyProvider" value="seller" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">فروشنده</span>
+                                    </label>
+                                </div>
+                                <x-input-error :messages="$errors->get('warrantyProvider')" class="mt-2" />
+                            </div>
+
+                            {{-- نوع پوشش گارانتی --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    نوع پوشش گارانتی:
+                                </label>
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyCoverageType === 'full' ? 'border-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyCoverageType" value="full" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">کامل</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyCoverageType === 'limited' ? 'border-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyCoverageType" value="limited" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">محدود</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyCoverageType === 'parts_only' ? 'border-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyCoverageType" value="parts_only" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">فقط قطعات</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyCoverageType === 'service_only' ? 'border-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyCoverageType" value="service_only" class="text-purple-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">فقط خدمات</span>
+                                    </label>
+                                </div>
+                                <x-input-error :messages="$errors->get('warrantyCoverageType')" class="mt-2" />
+                            </div>
+
+                            {{-- ✅ نوع گارانتی (تست، مدت‌دار، مادام‌العمر) --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    نوع گارانتی:
+                                </label>
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyTypeCoverage === 'test' ? 'border-orange-500 bg-orange-100 dark:bg-orange-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyTypeCoverage" value="test" class="text-orange-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">تست</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyTypeCoverage === 'limited' ? 'border-blue-500 bg-blue-100 dark:bg-blue-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyTypeCoverage" value="limited" class="text-blue-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">مدت‌دار</span>
+                                    </label>
+                                    <label class="flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all"
+                                           :class="$wire.warrantyTypeCoverage === 'lifetime' ? 'border-green-500 bg-green-100 dark:bg-green-900/30' : 'border-gray-300 dark:border-gray-700'">
+                                        <input type="radio" wire:model="warrantyTypeCoverage" value="lifetime" class="text-green-600">
+                                        <span class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-100">مادام‌العمر</span>
+                                    </label>
+                                </div>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                    💡 <strong>تست:</strong> گارانتی آزمایشی کوتاه‌مدت | <strong>مدت‌دار:</strong> گارانتی با زمان مشخص | <strong>مادام‌العمر:</strong> گارانتی بدون محدودیت زمانی
+                                </p>
+                                <x-input-error :messages="$errors->get('warrantyTypeCoverage')" class="mt-2" />
+                            </div>
+
+                            {{-- مدت گارانتی --}}
+                            <div x-data="{ warrantyTypeCoverage: @entangle('warrantyTypeCoverage').live }">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    مدت گارانتی (برای تست و مدت‌دار):
+                                </label>
+                                <div class="flex items-center gap-3">
+                                    <input type="number" 
+                                           wire:model="warrantyDurationDays" 
+                                           placeholder="مثلاً 365" 
+                                           min="1" 
+                                           max="7300"
+                                           :disabled="warrantyTypeCoverage === 'lifetime'"
+                                           :class="warrantyTypeCoverage === 'lifetime' ? 'opacity-50 cursor-not-allowed' : ''"
+                                           class="w-32 px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-900 rounded-md"
+                                           onwheel="this.blur()">
+                                    <span class="text-sm text-gray-600 dark:text-gray-400">روز</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400" x-show="$wire.warrantyDurationDays && warrantyTypeCoverage !== 'lifetime'">
+                                        ≈ <span x-text="Math.round($wire.warrantyDurationDays / 30)"></span> ماه
+                                        (<span x-text="($wire.warrantyDurationDays / 365).toFixed(1)"></span> سال)
+                                    </span>
+                                    <span class="text-xs text-orange-600 dark:text-orange-400 font-medium" x-show="warrantyTypeCoverage === 'lifetime'">
+                                        برای مادام‌العمر نیاز به تعیین مدت نیست
+                                    </span>
+                                </div>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    💡 برای <strong>گارانتی تست</strong> مدت کوتاه (مثلاً 7 روز) و برای <strong>مدت‌دار</strong> مدت بلند (مثلاً 365 روز = 1 سال) تعیین کنید.
+                                </p>
+                                <x-input-error :messages="$errors->get('warrantyDurationDays')" class="mt-2" />
+                            </div>
+                        </div>
+
+                        {{-- هزینه گارانتی (فقط اگر hasWarranty = true) --}}
+                        <div x-show="hasWarranty" x-cloak>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                💰 هزینه آپشن گارانتی (به عنوان انتخاب اضافی برای مشتری):
+                            </label>
+                            <div class="space-y-3">
+                                {{-- بدون هزینه --}}
+                                <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all"
+                                       :class="warrantyType === 'none' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'">
+                                    <input type="radio" wire:model.live="warrantyType" value="none" class="mt-1" x-model="warrantyType">
+                                    <div class="ms-3 flex-1">
+                                        <div class="font-medium text-gray-900 dark:text-gray-100">بدون هزینه اضافه</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">گارانتی بدون هزینه اضافی (قیمت‌ها بدون تغییر)</div>
+                                    </div>
+                                </label>
+
+                                {{-- درصد ثابت --}}
+                                <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all"
+                                       :class="warrantyType === 'percentage' ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'">
+                                    <input type="radio" wire:model.live="warrantyType" value="percentage" class="mt-1" x-model="warrantyType">
+                                    <div class="ms-3 flex-1">
+                                        <div class="font-medium text-gray-900 dark:text-gray-100">درصد ثابت برای همه</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">درصدی به تمام قیمت‌های پایه اضافه می‌شود</div>
+                                        <template x-if="warrantyType === 'percentage'">
+                                            <div class="flex items-center gap-2">
+                                                <input type="number" 
+                                                       wire:model="warrantyValue" 
+                                                       step="0.01" 
+                                                       min="0" 
+                                                       max="100" 
+                                                       placeholder="5"
+                                                       class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-900 rounded-md text-sm"
+                                                       onwheel="this.blur()">
+                                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">% اضافه بر قیمت پایه</span>
+                                            </div>
+                                        </template>
+                                        <div x-show="warrantyType === 'percentage' && $wire.warrantyValue" x-cloak class="mt-2 text-xs text-green-600 dark:text-green-400">
+                                            💬 مثال: قیمت 100,000 تومان → با گارانتی <span x-text="(100000 * (1 + ($wire.warrantyValue || 0) / 100)).toLocaleString('fa-IR')"></span> تومان
+                                        </div>
+                                    </div>
+                                </label>
+
+                                {{-- مبلغ ثابت --}}
+                                <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all"
+                                       :class="warrantyType === 'fixed' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'">
+                                    <input type="radio" wire:model.live="warrantyType" value="fixed" class="mt-1" x-model="warrantyType">
+                                    <div class="ms-3 flex-1">
+                                        <div class="font-medium text-gray-900 dark:text-gray-100">مبلغ ثابت برای همه</div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">مبلغ مشخصی به تمام قیمت‌ها اضافه می‌شود</div>
+                                        <template x-if="warrantyType === 'fixed'">
+                                            <div class="flex items-center gap-2">
+                                                <input type="number" 
+                                                       wire:model="warrantyValue" 
+                                                       step="1000" 
+                                                       min="0" 
+                                                       placeholder="10000"
+                                                       class="w-40 px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-900 rounded-md text-sm"
+                                                       onwheel="this.blur()">
+                                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">تومان به همه قیمت‌ها اضافه شود</span>
+                                            </div>
+                                        </template>
+                                        <div x-show="warrantyType === 'fixed' && $wire.warrantyValue" x-cloak class="mt-2 text-xs text-blue-600 dark:text-blue-400">
+                                            💬 مثال: <span x-text="($wire.warrantyValue || 0).toLocaleString('fa-IR')"></span> تومان به تمام قیمت‌ها اضافه می‌شود
+                                        </div>
+                                    </div>
+                                </label>
+
+                                {{-- سفارشی --}}
+                                <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all"
+                                       :class="warrantyType === 'custom' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'">
+                                    <input type="radio" wire:model.live="warrantyType" value="custom" class="mt-1" x-model="warrantyType">
+                                    <div class="ms-3 flex-1">
+                                        <div class="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                            سفارشی (پیشرفته)
+                                            <span class="text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full">Advanced</span>
+                                        </div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400">برای هر تیراژ/نوع قیمت جداگانه در ماتریس زیر تعیین کنید</div>
+                                    </div>
+                                </label>
+                            </div>
+                            <x-input-error :messages="$errors->get('warrantyType')" class="mt-2" />
+                            <x-input-error :messages="$errors->get('warrantyValue')" class="mt-2" />
+                        </div>
+                    </div>
+                </div>
+
                 <hr class="my-8 border-gray-200 dark:border-gray-700">
 
                 {{-- ─── Section 2: ماتریس قیمت ─── --}}
@@ -189,47 +442,48 @@
                                                 {{-- قیمت نقدی یا گارانتی --}}
                                                 <div>
                                                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                                        {{ $priceType->code === 'warranty' ? 'قیمت گارانتی' : 'قیمت' }}
+                                                        {{ $priceType->code === 'warranty' ? 'هزینه گارانتی (مازاد)' : 'قیمت' }}
                                                     </label>
                                                     <div class="relative">
                                                         <input type="number"
                                                                wire:model="priceMatrix.{{ $tierIndex }}.{{ $priceType->id }}.price"
                                                                placeholder="0"
                                                                onwheel="this.blur()"
+                                                               :disabled="'{{ $priceType->code }}' === 'warranty' && warrantyType !== 'custom'"
+                                                               :class="'{{ $priceType->code }}' === 'warranty' && warrantyType !== 'custom' ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
                                                                class="block w-full pe-16 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm">
                                                         <div class="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3">
                                                             <span class="text-gray-500 text-xs">تومان</span>
                                                         </div>
                                                     </div>
+                                                    @if($priceType->code === 'warranty')
+                                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                            💡 مبلغ اضافه‌ای که به قیمت نقدی افزوده می‌شود
+                                                        </p>
+                                                    @endif
                                                 </div>
 
-                                                {{-- فیلدهای گارانتی --}}
+                                                {{-- پیام توضیحی برای حالت غیر custom --}}
                                                 @if($priceType->code === 'warranty')
-                                                    @php
-                                                        $warrantyTypePath = "priceMatrix.{$tierIndex}.{$priceType->id}.warranty_type";
-                                                    @endphp
-                                                    <div class="mt-3 space-y-2" 
-                                                         x-data="{ 
-                                                             warrantyType: @entangle($warrantyTypePath).live 
-                                                         }">
-                                                        <div>
-                                                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">نوع گارانتی</label>
-                                                            <select x-model="warrantyType"
-                                                                    wire:model.live="priceMatrix.{{ $tierIndex }}.{{ $priceType->id }}.warranty_type"
-                                                                    class="block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-xs">
-                                                                <option value="">انتخاب کنید</option>
-                                                                <option value="test">تست</option>
-                                                                <option value="limited">مدت‌دار</option>
-                                                                <option value="lifetime">مادام‌العمر</option>
-                                                            </select>
-                                                        </div>
-                                                        <div x-show="warrantyType === 'limited'" x-cloak>
-                                                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">مدت گارانتی (روز)</label>
-                                                            <input type="number"
-                                                                   wire:model="priceMatrix.{{ $tierIndex }}.{{ $priceType->id }}.warranty_duration"
-                                                                   placeholder="365"
-                                                                   onwheel="this.blur()"
-                                                                   class="block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-xs">
+                                                    <div x-show="warrantyType !== 'custom'" x-cloak class="mt-3 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                                                        <div class="flex items-start gap-2">
+                                                            <x-heroicon-o-information-circle class="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"/>
+                                                            <div class="text-xs text-blue-700 dark:text-blue-300">
+                                                                <p class="font-semibold mb-1">💡 محاسبه خودکار هزینه گارانتی</p>
+                                                                <p class="mb-1">هزینه گارانتی بر اساس تنظیمات بالا به صورت خودکار محاسبه می‌شود:</p>
+                                                                <ul class="list-disc list-inside space-y-0.5">
+                                                                    <li x-show="warrantyType === 'none'"><strong>بدون هزینه:</strong> قیمت نقدی = قیمت با گارانتی</li>
+                                                                    <li x-show="warrantyType === 'percentage'">
+                                                                        <strong>درصد <span x-text="$wire.warrantyValue || 0"></span>%:</strong> قیمت با گارانتی = قیمت نقدی + <span x-text="$wire.warrantyValue || 0"></span>%
+                                                                    </li>
+                                                                    <li x-show="warrantyType === 'fixed'">
+                                                                        <strong>مبلغ ثابت:</strong> قیمت با گارانتی = قیمت نقدی + <span x-text="($wire.warrantyValue || 0).toLocaleString('fa-IR')"></span> تومان
+                                                                    </li>
+                                                                </ul>
+                                                                <p class="mt-2 text-blue-600 dark:text-blue-400 font-medium border-t border-blue-200 dark:border-blue-700 pt-2">
+                                                                    برای تعیین هزینه متفاوت، گزینه "سفارشی (پیشرفته)" را در بالا انتخاب کنید.
+                                                                </p>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 @endif

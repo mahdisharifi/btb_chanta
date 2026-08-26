@@ -22,10 +22,52 @@ class EditPrice extends Component
     public ?string $sku = '';
     public bool $is_active = false;
     
+    // ✅ هزینه گارانتی سراسری
+    public string $warrantyType = 'none';  // none, percentage, fixed, custom
+    public ?float $warrantyValue = null;
+    
+    // ✅ اطلاعات گارانتی محصول
+    public bool $hasWarranty = false;           // آیا محصول با گارانتی است؟
+    public string $warrantyProvider = 'none';   // none, manufacturer, seller
+    public string $warrantyCoverageType = 'full'; // full, limited, parts_only, service_only
+    public string $warrantyTypeCoverage = 'limited'; // ✅ جدید: test, limited, lifetime (نوع گارانتی)
+    public ?int $warrantyDurationDays = null;   // مدت گارانتی (روز)
+    
     // تیراژها و انواع قیمت
     public array $quantityTiers = [];
     public $priceTypes;
     public $checkPeriods;
+
+    /**
+     * Updated hook - اجرا می‌شود وقتی property تغییر می‌کند
+     */
+    public function updatedWarrantyType($value)
+    {
+        // اگر از custom به گزینه دیگر سویچ شد، قیمت‌های گارانتی در ماتریس را پاک کن
+        if ($value !== 'custom') {
+            $this->clearWarrantyPricesFromMatrix();
+        }
+    }
+    
+    /**
+     * پاک کردن قیمت‌های گارانتی از ماتریس
+     */
+    protected function clearWarrantyPricesFromMatrix(): void
+    {
+        // پیدا کردن price_type_id مربوط به گارانتی
+        $warrantyPriceType = $this->priceTypes->firstWhere('code', 'warranty');
+        
+        if (!$warrantyPriceType) {
+            return;
+        }
+        
+        // پاک کردن قیمت‌های گارانتی از تمام تیراژها
+        foreach ($this->priceMatrix as $tierIndex => $priceTypes) {
+            if (isset($priceTypes[$warrantyPriceType->id]['price'])) {
+                $this->priceMatrix[$tierIndex][$warrantyPriceType->id]['price'] = null;
+            }
+        }
+    }
 
     /**
      * Mount component
@@ -49,6 +91,15 @@ class EditPrice extends Component
         // Load data
         $this->sku = $this->productSupplier->sku;
         $this->is_active = $this->productSupplier->is_active;
+        
+        // ✅ بارگذاری تنظیمات گارانتی
+        $this->warrantyType = $this->productSupplier->warranty_type ?? 'none';
+        $this->warrantyValue = $this->productSupplier->warranty_value;
+        $this->hasWarranty = $this->productSupplier->has_warranty ?? false;
+        $this->warrantyProvider = $this->productSupplier->warranty_provider ?? 'none';
+        $this->warrantyCoverageType = $this->productSupplier->warranty_coverage_type ?? 'full';
+        $this->warrantyTypeCoverage = $this->productSupplier->warranty_type_coverage ?? 'limited'; // ✅
+        $this->warrantyDurationDays = $this->productSupplier->warranty_duration_days;
         
         // تیراژهای محصول
         $this->quantityTiers = $this->product->quantity_tiers ?? [];
@@ -95,8 +146,6 @@ class EditPrice extends Component
                 
                 $this->priceMatrix[$tierIndex][$key] = [
                     'price' => $existingPrice->price ?? null,
-                    'warranty_type' => $existingPrice->warranty_type ?? null,
-                    'warranty_duration' => $existingPrice->warranty_duration ?? null,
                 ];
                 
                 // قیمت‌های چکی (اگر نوع قیمت = چکی باشد)
@@ -126,6 +175,75 @@ class EditPrice extends Component
             'sku' => ['nullable', 'string', 'max:255', 'regex:/^[a-zA-Z0-9\-_]+$/'],
             'is_active' => ['boolean'],
             
+            // ✅ هزینه گارانتی سراسری
+            'warrantyType' => ['required', 'string', 'in:none,percentage,fixed,custom'],
+            'warrantyValue' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                function ($attribute, $value, $fail) {
+                    // فقط اگر نوع percentage یا fixed است، value الزامی است
+                    if (in_array($this->warrantyType, ['percentage', 'fixed']) && ($value === null || $value === '')) {
+                        $fail('مقدار هزینه گارانتی الزامی است.');
+                    }
+                    
+                    // بررسی محدوده درصد
+                    if ($this->warrantyType === 'percentage' && $value !== null && $value > 100) {
+                        $fail('درصد گارانتی نمی‌تواند بیشتر از 100 باشد.');
+                    }
+                    
+                    // بررسی محدوده مبلغ
+                    if ($this->warrantyType === 'fixed' && $value !== null && $value > 999999999) {
+                        $fail('مبلغ گارانتی بیش از حد مجاز است.');
+                    }
+                },
+            ],
+            
+            // ✅ اطلاعات گارانتی محصول
+            'hasWarranty' => ['boolean'],
+            'warrantyProvider' => [
+                function ($attribute, $value, $fail) {
+                    if ($this->hasWarranty && ($value === null || $value === '' || $value === 'none')) {
+                        $fail('ارائه‌دهنده گارانتی الزامی است. لطفاً شرکتی یا فروشنده را انتخاب کنید.');
+                    }
+                    if ($value !== null && !in_array($value, ['none', 'manufacturer', 'seller'])) {
+                        $fail('ارائه‌دهنده گارانتی نامعتبر است.');
+                    }
+                },
+            ],
+            'warrantyCoverageType' => [
+                function ($attribute, $value, $fail) {
+                    if ($this->hasWarranty && ($value === null || $value === '')) {
+                        $fail('نوع پوشش گارانتی الزامی است.');
+                    }
+                    if ($value !== null && !in_array($value, ['full', 'limited', 'parts_only', 'service_only'])) {
+                        $fail('نوع پوشش گارانتی نامعتبر است.');
+                    }
+                },
+            ],
+            'warrantyTypeCoverage' => [
+                function ($attribute, $value, $fail) {
+                    if ($this->hasWarranty && ($value === null || $value === '')) {
+                        $fail('نوع گارانتی الزامی است.');
+                    }
+                    if ($value !== null && !in_array($value, ['test', 'limited', 'lifetime'])) {
+                        $fail('نوع گارانتی نامعتبر است.');
+                    }
+                },
+            ],
+            'warrantyDurationDays' => [
+                'nullable',
+                'integer',
+                'min:1',
+                'max:7300', // حداکثر 20 سال
+                function ($attribute, $value, $fail) {
+                    // اگر نوع گارانتی تست یا مدت‌دار است، مدت الزامی است
+                    if ($this->hasWarranty && in_array($this->warrantyTypeCoverage, ['test', 'limited']) && ($value === null || $value === '')) {
+                        $fail('برای گارانتی تست و مدت‌دار، تعیین مدت گارانتی الزامی است.');
+                    }
+                },
+            ],
+            
             // ماتریس قیمت
             'priceMatrix' => ['array'],
             'priceMatrix.*' => ['array'],
@@ -133,16 +251,6 @@ class EditPrice extends Component
             
             // قیمت اصلی (نقدی/گارانتی)
             'priceMatrix.*.*.price' => ['nullable', 'numeric', 'min:0', 'max:999999999999'],
-            
-            // فیلدهای گارانتی
-            'priceMatrix.*.*.warranty_type' => ['nullable', 'string', 'in:test,limited,lifetime'],
-            'priceMatrix.*.*.warranty_duration' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:3650', // حداکثر 10 سال
-                'required_if:priceMatrix.*.*.warranty_type,limited'
-            ],
             
             // قیمت‌های چکی
             'priceMatrix.*.*.check_periods' => ['nullable', 'array'],
@@ -158,12 +266,26 @@ class EditPrice extends Component
     {
         return [
             'sku.regex' => 'SKU فقط می‌تواند شامل حروف انگلیسی، اعداد، خط تیره و زیرخط باشد.',
+            
+            'warrantyType.required' => 'نوع هزینه گارانتی الزامی است.',
+            'warrantyType.in' => 'نوع هزینه گارانتی نامعتبر است.',
+            'warrantyValue.required_if' => 'مقدار هزینه گارانتی الزامی است.',
+            'warrantyValue.numeric' => 'مقدار گارانتی باید عدد باشد.',
+            'warrantyValue.min' => 'مقدار گارانتی نمی‌تواند منفی باشد.',
+            
+            'warrantyProvider.required_if' => 'ارائه‌دهنده گارانتی الزامی است.',
+            'warrantyProvider.in' => 'ارائه‌دهنده گارانتی نامعتبر است.',
+            'warrantyCoverageType.required_if' => 'نوع پوشش گارانتی الزامی است.',
+            'warrantyCoverageType.in' => 'نوع پوشش گارانتی نامعتبر است.',
+            'warrantyTypeCoverage.required_if' => 'نوع گارانتی الزامی است.',
+            'warrantyTypeCoverage.in' => 'نوع گارانتی نامعتبر است.',
+            'warrantyDurationDays.integer' => 'مدت گارانتی باید عدد صحیح باشد.',
+            'warrantyDurationDays.min' => 'مدت گارانتی نمی‌تواند کمتر از 1 روز باشد.',
+            'warrantyDurationDays.max' => 'مدت گارانتی نمی‌تواند بیشتر از 20 سال (7300 روز) باشد.',
+            
             'priceMatrix.*.*.price.numeric' => 'قیمت باید عدد باشد.',
             'priceMatrix.*.*.price.min' => 'قیمت نمی‌تواند منفی باشد.',
             'priceMatrix.*.*.price.max' => 'قیمت بیش از حد مجاز است.',
-            'priceMatrix.*.*.warranty_type.in' => 'نوع گارانتی نامعتبر است.',
-            'priceMatrix.*.*.warranty_duration.required_if' => 'برای گارانتی مدت‌دار، مدت گارانتی الزامی است.',
-            'priceMatrix.*.*.warranty_duration.max' => 'مدت گارانتی نمی‌تواند بیشتر از 10 سال باشد.',
             'priceMatrix.*.*.check_periods.*.price.numeric' => 'قیمت چک باید عدد باشد.',
             'priceMatrix.*.*.check_periods.*.price.min' => 'قیمت چک نمی‌تواند منفی باشد.',
         ];
@@ -187,6 +309,13 @@ class EditPrice extends Component
             $this->productSupplier->update([
                 'sku' => $this->sanitizeInput($this->sku),
                 'is_active' => (bool)$this->is_active,
+                'warranty_type' => $this->warrantyType,
+                'warranty_value' => $this->warrantyValue,
+                'has_warranty' => $this->hasWarranty,
+                'warranty_provider' => $this->warrantyProvider,
+                'warranty_coverage_type' => $this->warrantyCoverageType,
+                'warranty_type_coverage' => $this->warrantyTypeCoverage,     // ✅ جدید
+                'warranty_duration_days' => $this->warrantyDurationDays,
             ]);
 
             // 2. حذف قیمت‌های قبلی سیستم جدید
@@ -210,28 +339,19 @@ class EditPrice extends Component
                     $priceType = $this->priceTypes->firstWhere('id', $priceTypeId);
                     if (!$priceType) continue;
                     
+                    // ✅ اگر نوع قیمت = گارانتی و warrantyType != custom، از ذخیره صرف‌نظر کن
+                    if ($priceType->code === 'warranty' && $this->warrantyType !== 'custom') {
+                        continue;
+                    }
+                    
                     // قیمت نقدی یا گارانتی
                     if (!empty($data['price']) && is_numeric($data['price'])) {
-                        $warrantyType = $data['warranty_type'] ?? null;
-                        $warrantyDuration = $data['warranty_duration'] ?? null;
-                        
-                        // امنیت: Sanitize warranty fields
-                        if ($warrantyType && !in_array($warrantyType, ['test', 'limited', 'lifetime'])) {
-                            $warrantyType = null;
-                        }
-                        
-                        if ($warrantyDuration && (!is_numeric($warrantyDuration) || $warrantyDuration < 0)) {
-                            $warrantyDuration = null;
-                        }
-                        
                         $this->productSupplier->prices()->create([
                             'product_id' => $this->product->id,
                             'price_type_id' => (int)$priceTypeId,
                             'tier_index' => (int)$tierIndex,
                             'check_period_id' => null,
                             'price' => (float)$data['price'],
-                            'warranty_type' => $warrantyType,
-                            'warranty_duration' => $warrantyDuration ? (int)$warrantyDuration : null,
                             'is_active' => (bool)$this->is_active,
                         ]);
                     }
