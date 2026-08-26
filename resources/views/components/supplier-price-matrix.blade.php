@@ -27,6 +27,11 @@ $hasWarranty = $ps->has_warranty ?? false;
 $warrantyType = $ps->warranty_type ?? 'none';
 $warrantyValue = $ps->warranty_value;
 
+// بررسی اینکه آیا واقعاً گارانتی با هزینه داریم یا نه
+$hasWarrantyWithCost = $hasWarranty 
+    && $warrantyType !== 'none' 
+    && ($warrantyType === 'custom' || ($warrantyValue !== null && $warrantyValue !== ''));
+
 // استخراج تیراژها
 $tiers = $basePrices->pluck('tier_index')->unique()->sort()->values();
 
@@ -62,87 +67,59 @@ $priceTypes = $basePrices
     ->sortBy('sort_key')
     ->values();
 
-// ✅ اضافه کردن نوع قیمت گارانتی (اگر گارانتی فعال باشد)
-if ($hasWarranty && $warrantyType !== 'none') {
-    $priceTypes = $priceTypes->push([
-        'key' => 'warranty_0',
-        'code' => 'warranty',
-        'name' => 'با گارانتی',
-        'check_period_name' => '',
-        'sort_key' => 1000, // بعد از همه
-        'display_label' => '🛡️ با گارانتی',
-    ]);
-}
-
-// ساخت ماتریس
+// ساخت ماتریس با قیمت‌های پایه
 $matrix = [];
 foreach ($priceTypes as $priceType) {
     foreach ($tiers as $tier) {
-        // اگر نوع warranty نیست، قیمت عادی را پیدا کن
-        if ($priceType['code'] !== 'warranty') {
-            $cellPrice = $basePrices->first(function($price) use ($priceType, $tier) {
-                $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
-                $priceTypeCode = $price->priceType ? $price->priceType->code : 'cash';
-                $itemKey = "{$priceTypeCode}_{$checkPeriodId}";
-                return $itemKey === $priceType['key'] && $price->tier_index == $tier;
-            });
+        $cellPrice = $basePrices->first(function($price) use ($priceType, $tier) {
+            $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
+            $priceTypeCode = $price->priceType ? $price->priceType->code : 'cash';
+            $itemKey = "{$priceTypeCode}_{$checkPeriodId}";
+            return $itemKey === $priceType['key'] && $price->tier_index == $tier;
+        });
+        
+        if ($cellPrice) {
+            $isLowest = $hasMultipleSuppliers && $cellPrice->price == $overallLowestPrice;
             
-            if ($cellPrice) {
-                $isLowest = $hasMultipleSuppliers && $cellPrice->price == $overallLowestPrice;
-                $matrix[$priceType['key']][$tier] = [
-                    'price' => $cellPrice,
-                    'amount' => $cellPrice->price,
-                    'is_lowest' => $isLowest,
-                    'is_warranty' => false,
-                ];
-            }
-        } else {
-            // ✅ محاسبه قیمت با گارانتی
-            // ابتدا قیمت پایه را پیدا کن (نقدی یا اولین قیمت موجود)
-            $basePrice = $basePrices->first(function($price) use ($tier) {
-                $code = $price->priceType ? $price->priceType->code : 'cash';
-                return $code === 'cash' && $price->tier_index == $tier;
-            });
+            // محاسبه قیمت با گارانتی (برای استفاده در Alpine.js)
+            $warrantyPrice = null;
+            $warrantyCost = null;
             
-            // اگر قیمت نقدی نداریم، از اولین قیمت موجود استفاده کن
-            if (!$basePrice) {
-                $basePrice = $basePrices->first(function($price) use ($tier) {
-                    return $price->tier_index == $tier;
-                });
-            }
-            
-            if ($basePrice) {
-                $basePriceAmount = $basePrice->price;
-                $warrantyPriceAmount = null;
-                
-                // بررسی نوع محاسبه
+            if ($hasWarrantyWithCost) {
                 if ($warrantyType === 'custom') {
                     // قیمت سفارشی از دیتابیس
-                    $customPrice = $customWarrantyPrices->first(function($price) use ($tier) {
+                    // برای custom، ما به دنبال قیمت گارانتی مطابق با همان priceType و tier هستیم
+                    $customPrice = $customWarrantyPrices->first(function($price) use ($priceType, $tier) {
+                        // اگر قیمت گارانتی با check_period مشخصی ثبت شده باشد، باید مطابقت داشته باشد
+                        $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
+                        $priceTypeCode = $price->priceType ? $price->priceType->code : 'warranty';
+                        
+                        // برای custom، معمولاً فقط tier مهم است (نه نوع فروش)
+                        // اما اگر کاربر برای هر check_period قیمت متفاوتی وارد کرده، باید در نظر بگیریم
                         return $price->tier_index == $tier;
                     });
                     
                     if ($customPrice) {
-                        // قیمت سفارشی = قیمت پایه + هزینه گارانتی
-                        $warrantyPriceAmount = $basePriceAmount + $customPrice->price;
+                        $warrantyPrice = $cellPrice->price + $customPrice->price;
+                        $warrantyCost = $customPrice->price;
                     }
                 } else {
                     // محاسبه با متد calculatePriceWithWarranty
-                    $warrantyPriceAmount = $ps->calculatePriceWithWarranty($basePriceAmount);
-                }
-                
-                if ($warrantyPriceAmount !== null) {
-                    $isLowest = $hasMultipleSuppliers && $warrantyPriceAmount == $overallLowestPrice;
-                    $matrix[$priceType['key']][$tier] = [
-                        'price' => null, // قیمت محاسبه‌شده است، نه از دیتابیس
-                        'amount' => $warrantyPriceAmount,
-                        'is_lowest' => $isLowest,
-                        'is_warranty' => true,
-                        'base_price' => $basePriceAmount,
-                        'warranty_cost' => $warrantyPriceAmount - $basePriceAmount,
-                    ];
+                    $warrantyPrice = $ps->calculatePriceWithWarranty($cellPrice->price);
+                    
+                    if ($warrantyPrice !== null && $warrantyPrice != $cellPrice->price) {
+                        $warrantyCost = $warrantyPrice - $cellPrice->price;
+                    }
                 }
             }
+            
+            $matrix[$priceType['key']][$tier] = [
+                'price' => $cellPrice,
+                'base_amount' => $cellPrice->price,
+                'warranty_amount' => $warrantyPrice,
+                'warranty_cost' => $warrantyCost,
+                'is_lowest' => $isLowest,
+            ];
         }
     }
 }
@@ -150,6 +127,45 @@ foreach ($priceTypes as $priceType) {
 // ساخت anchor ID برای لینک از ماتریس بالا
 $supplierId = $ps->supplier->id;
 @endphp
+
+{{-- Wrapper با Alpine.js برای مدیریت state --}}
+<div @if($hasWarrantyWithCost) x-data="{ showWithWarranty: false }" @endif>
+
+{{-- Toggle برای نمایش قیمت با گارانتی --}}
+@if($hasWarrantyWithCost)
+<div class="mb-4 flex items-center justify-between gap-4 px-4 py-3 bg-gradient-to-l from-purple-50 to-white border border-purple-200 rounded-lg">
+    <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+            <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+        </div>
+        <div>
+            <div class="text-sm font-bold text-purple-900">نمایش قیمت با گارانتی</div>
+            <div class="text-xs text-purple-600">
+                @switch($warrantyType)
+                    @case('percentage')
+                        هزینه گارانتی: {{ $warrantyValue }}% اضافه بر قیمت پایه
+                        @break
+                    @case('fixed')
+                        هزینه گارانتی: {{ number_format($warrantyValue) }} تومان ثابت
+                        @break
+                    @case('custom')
+                        هزینه گارانتی: سفارشی بر اساس تیراژ و نوع فروش
+                        @break
+                @endswitch
+            </div>
+        </div>
+    </div>
+    
+    {{-- Toggle Switch --}}
+    <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" x-model="showWithWarranty" class="sr-only peer">
+        <div class="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-purple-600"></div>
+        <span class="ms-3 text-sm font-medium text-gray-700 sr-only">نمایش با گارانتی</span>
+    </label>
+</div>
+@endif
 
 <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200">
@@ -184,25 +200,44 @@ $supplierId = $ps->supplier->id;
                             class="px-4 py-3 text-sm text-center border-r border-gray-100 transition-all duration-300"
                         >
                             @if($cell)
-                                <div class="
-                                    @if($cell['is_lowest'])
-                                        bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5
-                                    @elseif($cell['is_warranty'])
-                                        bg-purple-50 text-purple-800 rounded-lg px-2 py-1.5 border border-purple-200
+                                @php
+                                    // آیا این سلول گارانتی دارد؟
+                                    $hasWarrantyPrice = $hasWarrantyWithCost && $cell['warranty_amount'] !== null;
+                                @endphp
+                                
+                                <div 
+                                    class="transition-all duration-200"
+                                    @if($hasWarrantyPrice)
+                                        :class="{
+                                            'bg-purple-50 border border-purple-200 rounded-lg px-2 py-1.5 text-purple-800': showWithWarranty,
+                                            '@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif': !showWithWarranty
+                                        }"
                                     @else
-                                        text-gray-800
+                                        class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif"
                                     @endif
-                                ">
+                                >
                                     <span class="text-base font-semibold tabular-nums">
-                                        {{ PriceHelper::formatNumber($cell['amount']) }}
+                                        @if($hasWarrantyPrice)
+                                            <span x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
+                                            <span x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
+                                        @else
+                                            {{ PriceHelper::formatNumber($cell['base_amount']) }}
+                                        @endif
                                     </span>
                                     <span class="text-xs text-gray-400 mr-1">تومان</span>
                                     
                                     @if($cell['is_lowest'])
-                                        <div class="text-xs text-green-700 mt-0.5">✓ بهترین قیمت</div>
-                                    @elseif($cell['is_warranty'])
-                                        <div class="text-xs text-purple-600 mt-0.5">
-                                            (پایه: {{ PriceHelper::formatNumber($cell['base_price']) }})
+                                        <div 
+                                            class="text-xs text-green-700 mt-0.5"
+                                            @if($hasWarrantyPrice) x-show="!showWithWarranty" @endif
+                                        >
+                                            ✓ بهترین قیمت
+                                        </div>
+                                    @endif
+                                    
+                                    @if($hasWarrantyPrice)
+                                        <div x-show="showWithWarranty" x-cloak class="text-xs text-purple-600 mt-0.5">
+                                            (پایه: {{ PriceHelper::formatNumber($cell['base_amount']) }})
                                         </div>
                                     @endif
                                 </div>
@@ -216,6 +251,8 @@ $supplierId = $ps->supplier->id;
         </tbody>
     </table>
 </div>
+
+</div>{{-- End Alpine.js wrapper --}}
 
 {{-- قیمت‌های گارانتی جداگانه --}}
 @php

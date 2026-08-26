@@ -677,19 +677,31 @@ class ProductSupplier extends Model
      */
     public function calculatePriceWithWarranty($basePrice)
     {
-        if ($this->warranty_type === 'none' || empty($this->warranty_value)) {
+        // اگر گارانتی غیرفعال است
+        if (!$this->has_warranty || $this->warranty_type === 'none') {
             return $basePrice;
         }
 
+        // درصدی
         if ($this->warranty_type === 'percentage') {
+            // اگر warranty_value خالی یا null باشد، هزینه‌ای اضافه نمی‌شود
+            if ($this->warranty_value === null || $this->warranty_value === '') {
+                return $basePrice;
+            }
             return $basePrice * (1 + $this->warranty_value / 100);
         }
 
+        // مبلغ ثابت
         if ($this->warranty_type === 'fixed') {
+            // اگر warranty_value خالی یا null باشد، هزینه‌ای اضافه نمی‌شود
+            if ($this->warranty_value === null || $this->warranty_value === '') {
+                return $basePrice;
+            }
             return $basePrice + $this->warranty_value;
         }
 
         // custom: هزینه گارانتی در جدول product_supplier_prices است
+        // در این حالت، محاسبه در view انجام می‌شود
         return $basePrice;
     }
 

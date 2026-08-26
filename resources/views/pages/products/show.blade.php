@@ -495,17 +495,44 @@ use App\Helpers\PriceHelper;
             @endif
             
             @if($hasMatrixPricing)
-            <div class="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-6 shadow-lg">
-                <div class="flex items-center gap-3 mb-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                        <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                        </svg>
+            <div class="mb-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-6 shadow-lg" x-data="{ showWarrantyPrices: false }">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                            <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-extrabold text-gray-900">ماتریس بهترین قیمت‌ها</h3>
+                            <p class="text-sm text-gray-600">مقایسه قیمت‌های تمام تامین‌کنندگان در یک نگاه</p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 class="text-xl font-extrabold text-gray-900">ماتریس بهترین قیمت‌ها</h3>
-                        <p class="text-sm text-gray-600">مقایسه قیمت‌های تمام تامین‌کنندگان در یک نگاه</p>
+                    
+                    @php
+                        // بررسی اینکه آیا حداقل یک تامین‌کننده گارانتی دارد
+                        $hasAnyWarranty = $productSuppliers->contains(function($ps) {
+                            return $ps->has_warranty 
+                                && $ps->warranty_type !== 'none' 
+                                && ($ps->warranty_type === 'custom' || ($ps->warranty_value !== null && $ps->warranty_value !== ''));
+                        });
+                    @endphp
+                    
+                    @if($hasAnyWarranty)
+                    {{-- Toggle برای نمایش قیمت با گارانتی --}}
+                    <div class="flex items-center gap-3 bg-white px-4 py-2 rounded-lg shadow-sm border border-purple-200">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                            </svg>
+                            <span class="text-sm font-medium text-gray-700">با گارانتی</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" x-model="showWarrantyPrices" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
                     </div>
+                    @endif
                 </div>
                 
                 {{-- ماتریس بهترین قیمت‌ها --}}
@@ -576,42 +603,164 @@ use App\Helpers\PriceHelper;
                                     
                                     @foreach($allTiers as $tier)
                                         @php
-                                            // پیدا کردن تمام قیمت‌ها برای این سلول
+                                            // پیدا کردن تمام قیمت‌ها برای این سلول (بدون گارانتی)
                                             $cellPrices = $productSuppliers->flatMap(function($ps) use ($priceType, $tier) {
                                                 return $ps->prices->filter(function($price) use ($priceType, $tier) {
                                                     $code = $price->priceType ? $price->priceType->code : 'cash';
                                                     $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
                                                     $key = "{$code}_{$checkPeriodId}";
-                                                    return $key === $priceType['key'] && $price->tier_index == $tier;
-                                                })->map(function($price) use ($ps) {
+                                                    // فقط قیمت‌های غیر warranty
+                                                    return $code !== 'warranty' && $key === $priceType['key'] && $price->tier_index == $tier;
+                                                })->map(function($price) use ($ps, $tier) {
+                                                    // محاسبه قیمت با گارانتی
+                                                    $baseAmount = $price->price;
+                                                    $warrantyAmount = null;
+                                                    
+                                                    $hasWarrantyWithCost = $ps->has_warranty 
+                                                        && $ps->warranty_type !== 'none' 
+                                                        && ($ps->warranty_type === 'custom' || ($ps->warranty_value !== null && $ps->warranty_value !== ''));
+                                                    
+                                                    if ($hasWarrantyWithCost) {
+                                                        if ($ps->warranty_type === 'custom') {
+                                                            // قیمت سفارشی
+                                                            $customWarrantyPrice = $ps->prices->first(function($p) use ($tier) {
+                                                                $code = $p->priceType ? $p->priceType->code : null;
+                                                                return $code === 'warranty' && $p->tier_index == $tier;
+                                                            });
+                                                            
+                                                            if ($customWarrantyPrice) {
+                                                                $warrantyAmount = $baseAmount + $customWarrantyPrice->price;
+                                                            }
+                                                        } else {
+                                                            // محاسبه percentage/fixed
+                                                            $warrantyAmount = $ps->calculatePriceWithWarranty($baseAmount);
+                                                        }
+                                                    }
+                                                    
                                                     return [
                                                         'supplier' => $ps->supplier,
-                                                        'amount' => $price->price,
+                                                        'supplier_id' => $ps->supplier->id,
+                                                        'amount' => $baseAmount,
+                                                        'warranty_amount' => $warrantyAmount,
+                                                        'has_warranty' => $hasWarrantyWithCost,
+                                                        'warranty_type' => $ps->warranty_type,
+                                                        'productSupplier' => $ps,
                                                     ];
                                                 });
                                             })->sortBy('amount');
+                                            
+                                            // پیدا کردن کمترین قیمت (بدون گارانتی)
+                                            $lowestAmount = $cellPrices->min('amount');
+                                            
+                                            // پیدا کردن تمام تامین‌کنندگان با کمترین قیمت
+                                            $bestPriceSuppliers = $cellPrices->filter(function($item) use ($lowestAmount) {
+                                                return $item['amount'] == $lowestAmount;
+                                            })->values();
+                                            
+                                            // پیدا کردن کمترین قیمت با گارانتی
+                                            $cellPricesWithWarranty = $cellPrices->filter(fn($item) => $item['warranty_amount'] !== null);
+                                            $lowestWarrantyAmount = $cellPricesWithWarranty->min('warranty_amount');
+                                            
+                                            $bestWarrantySuppliers = $cellPricesWithWarranty->filter(function($item) use ($lowestWarrantyAmount) {
+                                                return $item['warranty_amount'] == $lowestWarrantyAmount;
+                                            })->values();
                                         @endphp
                                         
                                         <td class="px-4 py-3 text-center border-r border-gray-100">
-                                            @if($cellPrices->isNotEmpty())
-                                                @php 
-                                                    $bestPrice = $cellPrices->first();
-                                                    $supplierId = $bestPrice['supplier']->id;
-                                                    $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
-                                                @endphp
-                                                <a href="#{{ $anchorId }}" 
-                                                   class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer"
-                                                   onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
-                                                    <div class="text-lg font-extrabold tabular-nums">{{ number_format($bestPrice['amount']) }}</div>
-                                                    @if($showSupplierInfo)
-                                                        <div class="text-xs text-green-700 mt-1 font-medium">
-                                                            {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
+                                            {{-- نمایش قیمت بدون گارانتی --}}
+                                            <div x-show="!showWarrantyPrices">
+                                                @if($bestPriceSuppliers->isNotEmpty())
+                                                    @php 
+                                                        $bestPrice = $bestPriceSuppliers->first();
+                                                        $supplierId = $bestPrice['supplier_id'];
+                                                        $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
+                                                        $hasMultipleBest = $bestPriceSuppliers->count() > 1;
+                                                    @endphp
+                                                    <a href="#{{ $anchorId }}" 
+                                                       class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer group relative"
+                                                       onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
+                                                        <div class="text-lg font-extrabold tabular-nums">{{ number_format($bestPrice['amount']) }}</div>
+                                                        @if($showSupplierInfo && !$hasMultipleBest)
+                                                            <div class="text-xs text-green-700 mt-1 font-medium">
+                                                                {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
+                                                            </div>
+                                                        @elseif($hasMultipleBest)
+                                                            <div class="text-xs text-green-700 mt-1 font-medium">
+                                                                {{ $bestPriceSuppliers->count() }} تامین‌کننده
+                                                            </div>
+                                                            {{-- Tooltip --}}
+                                                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
+                                                                <div class="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
+                                                                    <div class="font-semibold mb-1.5">تامین‌کنندگان با قیمت یکسان:</div>
+                                                                    <ul class="space-y-1">
+                                                                        @foreach($bestPriceSuppliers as $supplier)
+                                                                            <li class="flex items-center gap-1.5">
+                                                                                <svg class="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                                                </svg>
+                                                                                <span>{{ $supplier['supplier']->brand_name ?? $supplier['supplier']->company_name }}</span>
+                                                                            </li>
+                                                                        @endforeach
+                                                                    </ul>
+                                                                    <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                                                </div>
+                                                            </div>
+                                                        @endif
+                                                    </a>
+                                                @else
+                                                    <span class="text-gray-300 text-lg">—</span>
+                                                @endif
+                                            </div>
+                                            
+                                            {{-- نمایش قیمت با گارانتی --}}
+                                            <div x-show="showWarrantyPrices" x-cloak>
+                                                @if($bestWarrantySuppliers->isNotEmpty())
+                                                    @php 
+                                                        $bestWarrantyPrice = $bestWarrantySuppliers->first();
+                                                        $wSupplierId = $bestWarrantyPrice['supplier_id'];
+                                                        $wAnchorId = "supplier-{$wSupplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
+                                                        $hasMultipleBestWarranty = $bestWarrantySuppliers->count() > 1;
+                                                    @endphp
+                                                    <a href="#{{ $wAnchorId }}" 
+                                                       class="block bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-purple-400 hover:ring-purple-500 cursor-pointer group relative"
+                                                       onclick="event.preventDefault(); document.getElementById('{{ $wAnchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-purple-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-purple-100'), 2000);">
+                                                        <div class="flex items-center justify-center gap-1.5">
+                                                            <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                                                            </svg>
+                                                            <div class="text-lg font-extrabold tabular-nums">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
                                                         </div>
-                                                    @endif
-                                                </a>
-                                            @else
-                                                <span class="text-gray-300 text-lg">—</span>
-                                            @endif
+                                                        @if($showSupplierInfo && !$hasMultipleBestWarranty)
+                                                            <div class="text-xs text-purple-700 mt-1 font-medium">
+                                                                {{ $bestWarrantyPrice['supplier']->brand_name ?? $bestWarrantyPrice['supplier']->company_name }}
+                                                            </div>
+                                                        @elseif($hasMultipleBestWarranty)
+                                                            <div class="text-xs text-purple-700 mt-1 font-medium">
+                                                                {{ $bestWarrantySuppliers->count() }} تامین‌کننده
+                                                            </div>
+                                                            {{-- Tooltip --}}
+                                                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
+                                                                <div class="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
+                                                                    <div class="font-semibold mb-1.5">تامین‌کنندگان با قیمت یکسان (با گارانتی):</div>
+                                                                    <ul class="space-y-1">
+                                                                        @foreach($bestWarrantySuppliers as $supplier)
+                                                                            <li class="flex items-center gap-1.5">
+                                                                                <svg class="w-3 h-3 text-purple-400" fill="currentColor" viewBox="0 0 20 20">
+                                                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                                                </svg>
+                                                                                <span>{{ $supplier['supplier']->brand_name ?? $supplier['supplier']->company_name }}</span>
+                                                                            </li>
+                                                                        @endforeach
+                                                                    </ul>
+                                                                    <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                                                </div>
+                                                            </div>
+                                                        @endif
+                                                    </a>
+                                                @else
+                                                    <span class="text-gray-400 text-sm">گارانتی موجود نیست</span>
+                                                @endif
+                                            </div>
                                         </td>
                                     @endforeach
                                 </tr>
@@ -622,9 +771,13 @@ use App\Helpers\PriceHelper;
                 
                 {{-- راهنما --}}
                 <div class="mt-3 flex items-center gap-6 text-xs text-gray-600 flex-wrap">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2" x-show="!showWarrantyPrices">
                         <div class="w-4 h-4 bg-green-50 ring-2 ring-green-400 rounded"></div>
-                        <span>بهترین قیمت از تمام تامین‌کنندگان</span>
+                        <span>بهترین قیمت (بدون گارانتی)</span>
+                    </div>
+                    <div class="flex items-center gap-2" x-show="showWarrantyPrices" x-cloak>
+                        <div class="w-4 h-4 bg-purple-50 ring-2 ring-purple-400 rounded"></div>
+                        <span>بهترین قیمت با گارانتی</span>
                     </div>
                     <div class="flex items-center gap-2">
                         <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
