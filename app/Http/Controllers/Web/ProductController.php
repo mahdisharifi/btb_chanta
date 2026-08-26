@@ -299,7 +299,12 @@ class ProductController extends Controller
         // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده با ساختار ماتریسی ───
         $productSuppliers = $product->productSuppliers()
             ->active()
-            ->select(['id', 'product_id', 'supplier_id', 'is_primary', 'sort_order'])
+            ->select([
+                'id', 'product_id', 'supplier_id', 'is_primary', 'sort_order',
+                // ✅ فیلدهای گارانتی
+                'has_warranty', 'warranty_type', 'warranty_value', 'warranty_provider',
+                'warranty_coverage_type', 'warranty_type_coverage', 'warranty_duration_days'
+            ])
             ->with([
                 'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active,slug',
                 // بارگذاری قیمت‌های ماتریسی جدید با relations (با fallback به ساختار قدیمی)
