@@ -511,10 +511,10 @@ use App\Helpers\PriceHelper;
                     
                     @php
                         // بررسی اینکه آیا حداقل یک تامین‌کننده گارانتی دارد
+                        // نکته: warranty_value = 0 معتبر است (گارانتی رایگان)
                         $hasAnyWarranty = $productSuppliers->contains(function($ps) {
                             return $ps->has_warranty 
-                                && $ps->warranty_type !== 'none' 
-                                && ($ps->warranty_type === 'custom' || ($ps->warranty_value !== null && $ps->warranty_value !== ''));
+                                && ($ps->warranty_type === 'none' || $ps->warranty_type === 'custom' || $ps->warranty_value !== null);
                         });
                     @endphp
                     
@@ -616,9 +616,10 @@ use App\Helpers\PriceHelper;
                                                     $baseAmount = $price->price;
                                                     $warrantyAmount = null;
                                                     
+                                                    // نکته 1: warranty_type = 'none' یعنی گارانتی رایگان (بدون هزینه اضافه) و معتبر است!
+                                                    // نکته 2: warranty_value = 0 هم معتبر است (گارانتی رایگان)
                                                     $hasWarrantyWithCost = $ps->has_warranty 
-                                                        && $ps->warranty_type !== 'none' 
-                                                        && ($ps->warranty_type === 'custom' || ($ps->warranty_value !== null && $ps->warranty_value !== ''));
+                                                        && ($ps->warranty_type === 'none' || $ps->warranty_type === 'custom' || $ps->warranty_value !== null);
                                                     
                                                     if ($hasWarrantyWithCost) {
                                                         if ($ps->warranty_type === 'custom') {
@@ -657,11 +658,42 @@ use App\Helpers\PriceHelper;
                                                 return $item['amount'] == $lowestAmount;
                                             })->values();
                                             
-                                            // پیدا کردن کمترین قیمت با گارانتی
-                                            $cellPricesWithWarranty = $cellPrices->filter(fn($item) => $item['warranty_amount'] !== null);
-                                            $lowestWarrantyAmount = $cellPricesWithWarranty->min('warranty_amount');
+                                            // محاسبه بهترین گارانتی با الگوریتم منصفانه
+                                            $allWarrantyPricesForCell = $cellPrices->filter(fn($item) => $item['warranty_amount'] !== null);
                                             
-                                            $bestWarrantySuppliers = $cellPricesWithWarranty->filter(function($item) use ($lowestWarrantyAmount) {
+                                            // 1. گارانتی رایگان (cost = 0) که جزء بهترین قیمت‌های پایه باشد
+                                            // 2. کمترین cost_per_day
+                                            $bestWarrantyItems = $allWarrantyPricesForCell->map(function($item) use ($lowestAmount) {
+                                                $warrantyCost = $item['warranty_amount'] - $item['amount'];
+                                                $ps = $item['productSupplier'];
+                                                
+                                                // محاسبه cost per day
+                                                $costPerDay = $ps->getWarrantyCostPerDay();
+                                                
+                                                // اگر گارانتی رایگان باشد و قیمت پایه بهترین باشد
+                                                $isFreeAndBest = ($warrantyCost == 0 || $warrantyCost === null) && $item['amount'] == $lowestAmount;
+                                                
+                                                return [
+                                                    'item' => $item,
+                                                    'cost_per_day' => $costPerDay ?? PHP_FLOAT_MAX,
+                                                    'is_free_and_best' => $isFreeAndBest,
+                                                    'warranty_cost' => $warrantyCost,
+                                                ];
+                                            })
+                                            ->sortBy(function($data) {
+                                                // اولویت 1: رایگان + بهترین قیمت پایه
+                                                if ($data['is_free_and_best']) {
+                                                    return -1000000;
+                                                }
+                                                // اولویت 2: cost per day
+                                                return $data['cost_per_day'];
+                                            });
+                                            
+                                            $bestWarrantyData = $bestWarrantyItems->first();
+                                            $lowestWarrantyAmount = $bestWarrantyData ? $bestWarrantyData['item']['warranty_amount'] : null;
+                                            
+                                            // فیلتر کردن تامین‌کنندگان با بهترین گارانتی
+                                            $bestWarrantySuppliers = $allWarrantyPricesForCell->filter(function($item) use ($lowestWarrantyAmount) {
                                                 return $item['warranty_amount'] == $lowestWarrantyAmount;
                                             })->values();
                                         @endphp
@@ -741,7 +773,7 @@ use App\Helpers\PriceHelper;
                                                             {{-- Tooltip --}}
                                                             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
                                                                 <div class="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
-                                                                    <div class="font-semibold mb-1.5">تامین‌کنندگان با قیمت یکسان (با گارانتی):</div>
+                                                                    <div class="font-semibold mb-1.5">تامین‌کنندگان با بهترین گارانتی:</div>
                                                                     <ul class="space-y-1">
                                                                         @foreach($bestWarrantySuppliers as $supplier)
                                                                             <li class="flex items-center gap-1.5">
@@ -897,6 +929,7 @@ use App\Helpers\PriceHelper;
                                     :product="$product"
                                     :hasMultipleSuppliers="$hasMultipleSuppliers"
                                     :overallLowestPrice="$overallLowestPrice"
+                                    :allProductSuppliers="$productSuppliers"
                                 />
                             </div>
 

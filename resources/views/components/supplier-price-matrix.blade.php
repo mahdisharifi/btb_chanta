@@ -1,9 +1,12 @@
-@props(['productSupplier', 'product', 'hasMultipleSuppliers' => false, 'overallLowestPrice' => null])
+@props(['productSupplier', 'product', 'hasMultipleSuppliers' => false, 'overallLowestPrice' => null, 'allProductSuppliers' => null])
 
 @php
 use App\Helpers\PriceHelper;
 
 $ps = $productSupplier;
+
+// اگر allProductSuppliers پاس نشده، فقط خود این تامین‌کننده را در نظر بگیریم
+$allSuppliers = $allProductSuppliers ?? collect([$ps]);
 
 // جمع‌آوری تمام قیمت‌های نقدی و چکی (بدون گارانتی)
 $basePrices = $ps->prices->filter(function($price) {
@@ -27,10 +30,11 @@ $hasWarranty = $ps->has_warranty ?? false;
 $warrantyType = $ps->warranty_type ?? 'none';
 $warrantyValue = $ps->warranty_value;
 
-// بررسی اینکه آیا واقعاً گارانتی با هزینه داریم یا نه
+// بررسی اینکه آیا واقعاً گارانتی داریم یا نه
+// نکته 1: warranty_type = 'none' یعنی گارانتی رایگان (بدون هزینه اضافه) و معتبر است!
+// نکته 2: warranty_value = 0 هم معتبر است (گارانتی رایگان)
 $hasWarrantyWithCost = $hasWarranty 
-    && $warrantyType !== 'none' 
-    && ($warrantyType === 'custom' || ($warrantyValue !== null && $warrantyValue !== ''));
+    && ($warrantyType === 'none' || $warrantyType === 'custom' || $warrantyValue !== null);
 
 // استخراج تیراژها
 $tiers = $basePrices->pluck('tier_index')->unique()->sort()->values();
@@ -79,7 +83,35 @@ foreach ($priceTypes as $priceType) {
         });
         
         if ($cellPrice) {
-            $isLowest = $hasMultipleSuppliers && $cellPrice->price == $overallLowestPrice;
+            // محاسبه اینکه آیا این قیمت در این سلول بهترین است یا نه
+            $isLowest = false;
+            
+            if ($hasMultipleSuppliers) {
+                // پیدا کردن تمام قیمت‌ها برای این سلول از همه تامین‌کنندگان
+                $allPricesInCell = $allSuppliers->flatMap(function($supplier) use ($priceType, $tier) {
+                    return $supplier->prices->filter(function($price) use ($priceType, $tier) {
+                        $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
+                        $priceTypeCode = $price->priceType ? $price->priceType->code : 'cash';
+                        $itemKey = "{$priceTypeCode}_{$checkPeriodId}";
+                        $code = $price->priceType ? $price->priceType->code : 'cash';
+                        return $code !== 'warranty' && $itemKey === $priceType['key'] && $price->tier_index == $tier;
+                    });
+                });
+                
+                // اگر فقط یک تامین‌کننده برای این سلول قیمت دارد → سبز
+                if ($allPricesInCell->count() == 1) {
+                    $isLowest = true;
+                } else {
+                    // پیدا کردن کمترین قیمت در این سلول
+                    $lowestPriceInCell = $allPricesInCell->min('price');
+                    
+                    // آیا قیمت فعلی برابر با کمترین قیمت است؟
+                    $isLowest = $cellPrice->price == $lowestPriceInCell;
+                }
+            } else {
+                // اگر کلاً فقط یک تامین‌کننده است → همه قیمت‌ها سبز
+                $isLowest = true;
+            }
             
             // محاسبه قیمت با گارانتی (برای استفاده در Alpine.js)
             $warrantyPrice = null;
@@ -107,7 +139,8 @@ foreach ($priceTypes as $priceType) {
                     // محاسبه با متد calculatePriceWithWarranty
                     $warrantyPrice = $ps->calculatePriceWithWarranty($cellPrice->price);
                     
-                    if ($warrantyPrice !== null && $warrantyPrice != $cellPrice->price) {
+                    // نکته مهم: حتی اگر گارانتی رایگان باشد (warranty_value=0)، باید نمایش داده شود
+                    if ($warrantyPrice !== null) {
                         $warrantyCost = $warrantyPrice - $cellPrice->price;
                     }
                 }
@@ -175,8 +208,28 @@ $supplierId = $ps->supplier->id;
                     نوع فروش
                 </th>
                 @foreach($tiers as $tier)
-                    <th scope="col" class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase border-r border-gray-200">
-                        {{ $tierNames[$tier] }}
+                    @php
+                        $tierData = $quantityTiers[$tier] ?? null;
+                        $tierName = $tierNames[$tier];
+                        $minQty = $tierData['min_quantity'] ?? null;
+                        $maxQty = $tierData['max_quantity'] ?? null;
+                        
+                        // ساخت متن محدوده
+                        if ($minQty && $maxQty) {
+                            $rangeText = "{$minQty}–{$maxQty}";
+                        } elseif ($minQty) {
+                            $rangeText = "{$minQty}+";
+                        } else {
+                            $rangeText = null;
+                        }
+                    @endphp
+                    <th scope="col" class="px-4 py-4 text-center border-r border-gray-200">
+                        {{-- محدوده تعداد: بزرگتر و بولدتر --}}
+                        @if($rangeText)
+                            <div class="text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }}</div>
+                        @endif
+                        {{-- نام تیراژ: کوچکتر --}}
+                        <div class="text-xs font-medium text-gray-500 uppercase">{{ $tierName }}</div>
                     </th>
                 @endforeach
             </tr>
@@ -260,7 +313,7 @@ $warrantyPrices = $customWarrantyPrices; // استفاده از متغیر تع�
 $allPrices = $basePrices; // برای استفاده در محاسبه نمونه
 @endphp
 
-@if($hasWarranty && $warrantyType !== 'none')
+@if($hasWarranty)
 <div class="mt-4" x-data="{ showWarranty: false }">
     {{-- دکمه نمایش جزئیات گارانتی --}}
     <button 
@@ -345,7 +398,7 @@ $allPrices = $basePrices; // برای استفاده در محاسبه نمون�
                     <div class="text-xs font-semibold text-purple-600 mb-1">ارائه‌دهنده</div>
                     <div class="text-sm font-bold text-gray-800">
                         @if($ps->warranty_provider === 'manufacturer')
-                            🏭 شرکتی (سازنده)
+                            🏭 گارانتی شرکتی
                         @elseif($ps->warranty_provider === 'seller')
                             🏪 فروشنده
                         @endif
@@ -420,19 +473,21 @@ $allPrices = $basePrices; // برای استفاده در محاسبه نمون�
         @endif
 
         {{-- نمایش نمونه محاسبه --}}
-        @if(in_array($warrantyType, ['percentage', 'fixed']) && $allPrices->isNotEmpty())
+        @if($warrantyType !== 'custom' && $allPrices->isNotEmpty())
             @php
                 $sampleBasePrice = $allPrices->min('price');
                 $sampleWarrantyPrice = $ps->calculatePriceWithWarranty($sampleBasePrice);
                 $warrantyCost = $sampleWarrantyPrice - $sampleBasePrice;
             @endphp
-            @if($warrantyCost > 0)
-                <div class="bg-white/80 rounded-lg p-3 border border-purple-300 border-dashed">
-                    <div class="text-xs text-purple-700 mb-2 font-medium">💡 مثال محاسبه:</div>
-                    <div class="flex items-center justify-between text-sm">
-                        <span class="text-gray-600">قیمت پایه:</span>
-                        <span class="font-semibold text-gray-800 tabular-nums">{{ number_format($sampleBasePrice) }} تومان</span>
-                    </div>
+            
+            <div class="bg-white/80 rounded-lg p-3 border border-purple-300 border-dashed">
+                <div class="text-xs text-purple-700 mb-2 font-medium">💡 مثال محاسبه:</div>
+                <div class="flex items-center justify-between text-sm">
+                    <span class="text-gray-600">قیمت پایه:</span>
+                    <span class="font-semibold text-gray-800 tabular-nums">{{ number_format($sampleBasePrice) }} تومان</span>
+                </div>
+                
+                @if($warrantyCost > 0)
                     <div class="flex items-center justify-between text-sm mt-1">
                         <span class="text-purple-600">+ هزینه گارانتی:</span>
                         <span class="font-semibold text-purple-800 tabular-nums">{{ number_format($warrantyCost) }} تومان</span>
@@ -441,8 +496,17 @@ $allPrices = $basePrices; // برای استفاده در محاسبه نمون�
                         <span class="text-sm font-bold text-purple-900">قیمت با گارانتی:</span>
                         <span class="text-lg font-extrabold text-purple-900 tabular-nums">{{ number_format($sampleWarrantyPrice) }} تومان</span>
                     </div>
-                </div>
-            @endif
+                @else
+                    <div class="flex items-center justify-between text-sm mt-1">
+                        <span class="text-green-600">+ هزینه گارانتی:</span>
+                        <span class="font-semibold text-green-800">رایگان 🎁</span>
+                    </div>
+                    <div class="border-t border-purple-200 mt-2 pt-2 flex items-center justify-between">
+                        <span class="text-sm font-bold text-purple-900">قیمت با گارانتی:</span>
+                        <span class="text-lg font-extrabold text-purple-900 tabular-nums">{{ number_format($sampleWarrantyPrice) }} تومان</span>
+                    </div>
+                @endif
+            </div>
         @endif
 
         {{-- توضیح --}}
@@ -452,8 +516,10 @@ $allPrices = $basePrices; // برای استفاده در محاسبه نمون�
             </svg>
             <p class="leading-relaxed">
                 <strong>نکته:</strong> گارانتی به عنوان یک آپشن اضافی ارائه می‌شود. مشتری می‌تواند محصول را با یا بدون گارانتی خریداری کند.
-                @if($warrantyType !== 'none')
+                @if($warrantyCost > 0)
                     در صورت انتخاب گارانتی، هزینه آن به قیمت پایه اضافه خواهد شد.
+                @else
+                    گارانتی این محصول رایگان ارائه می‌شود.
                 @endif
             </p>
         </div>

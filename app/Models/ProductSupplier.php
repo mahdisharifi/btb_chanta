@@ -670,6 +670,45 @@ class ProductSupplier extends Model
     }
 
     /**
+     * محاسبه ارزش روزانه گارانتی (هزینه گارانتی / تعداد روزها)
+     * هر چه کمتر باشد، گارانتی منصفانه‌تر است
+     * 
+     * @return float|null null اگر گارانتی نداشته باشد
+     */
+    public function getWarrantyCostPerDay(): ?float
+    {
+        if (!$this->has_warranty || $this->warranty_type === 'none') {
+            return null;
+        }
+        
+        if (!$this->warranty_duration_days || $this->warranty_duration_days <= 0) {
+            return null;
+        }
+        
+        // برای گارانتی مادام‌العمر، تعداد روزها را خیلی بالا در نظر می‌گیریم
+        $days = $this->warranty_type_coverage === 'lifetime' ? 36500 : $this->warranty_duration_days;
+        
+        // محاسبه میانگین هزینه
+        if ($this->warranty_type === 'percentage') {
+            // برای درصدی، از درصد استفاده می‌کنیم (نسبی)
+            return $this->warranty_value / $days;
+        } elseif ($this->warranty_type === 'fixed') {
+            // برای ثابت، تقسیم بر روزها
+            return $this->warranty_value / $days;
+        } elseif ($this->warranty_type === 'custom') {
+            // برای custom، باید میانگین قیمت‌های گارانتی را محاسبه کنیم
+            $customPrices = $this->prices->where('priceType.code', 'warranty');
+            if ($customPrices->isEmpty()) {
+                return null;
+            }
+            $avgCost = $customPrices->avg('price');
+            return $avgCost / $days;
+        }
+        
+        return null;
+    }
+
+    /**
      * محاسبه قیمت نهایی با احتساب هزینه گارانتی
      * 
      * @param int|float $basePrice قیمت پایه (بدون گارانتی)
