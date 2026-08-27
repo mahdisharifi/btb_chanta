@@ -166,33 +166,33 @@ $supplierId = $ps->supplier->id;
 
 {{-- Toggle برای نمایش قیمت با گارانتی - با بهبود Accessibility --}}
 @if($hasWarrantyWithCost)
-<div class="mb-4 flex items-center justify-between gap-4 px-4 py-3 bg-gradient-to-l from-purple-50 to-white border border-purple-200 rounded-lg">
-    <div class="flex items-center gap-3">
-        <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
-            <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<div class="mb-4 flex flex-wrap items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-l from-purple-50 to-white border border-purple-200 rounded-lg">
+    <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+        <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+            <svg class="w-4 h-4 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
             </svg>
         </div>
-        <div>
-            <div class="text-sm sm:text-base font-bold text-purple-900">نمایش قیمت با گارانتی</div>
-            <div class="text-xs sm:text-sm text-purple-600">
+        <div class="min-w-0 flex-1">
+            <div class="text-xs sm:text-base font-bold text-purple-900 truncate">نمایش قیمت با گارانتی</div>
+            <div class="text-[10px] sm:text-sm text-purple-600 truncate">
                 @switch($warrantyType)
                     @case('percentage')
-                        هزینه گارانتی: {{ $warrantyValue }}% اضافه بر قیمت پایه
+                        هزینه: {{ $warrantyValue }}%
                         @break
                     @case('fixed')
-                        هزینه گارانتی: {{ number_format($warrantyValue) }} تومان ثابت
+                        هزینه: {{ number_format($warrantyValue) }} تومان
                         @break
                     @case('custom')
-                        هزینه گارانتی: سفارشی بر اساس تیراژ و نوع فروش
+                        هزینه: سفارشی
                         @break
                 @endswitch
             </div>
         </div>
     </div>
     
-    {{-- Toggle Switch - بزرگتر برای Touch --}}
-    <label class="relative inline-flex items-center cursor-pointer min-w-[56px] min-h-[44px]" 
+    {{-- Toggle Switch - بزرگتر برای Touch (WCAG compliant) --}}
+    <label class="relative inline-flex items-center cursor-pointer min-w-[56px] min-h-[44px] p-1 flex-shrink-0" 
            role="switch" 
            aria-checked="false"
            x-bind:aria-checked="showWithWarranty.toString()">
@@ -211,7 +211,7 @@ $supplierId = $ps->supplier->id;
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
                 <tr>
-                    <th scope="col" class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10">
+                    <th scope="col" class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">
                         نوع فروش
                     </th>
                     @foreach($tiers as $tier)
@@ -230,21 +230,21 @@ $supplierId = $ps->supplier->id;
                                 $rangeText = null;
                             }
                         @endphp
-                        <th scope="col" class="px-3 sm:px-4 py-4 text-center border-r border-gray-200 min-w-[120px]">
-                            {{-- محدوده تعداد: Responsive sizing --}}
+                        <th scope="col" class="px-3 sm:px-4 py-3 sm:py-4 text-center border-r border-gray-200 min-w-[100px] sm:min-w-[120px]">
+                            {{-- محدوده تعداد: بهینه برای موبایل --}}
                             @if($rangeText)
-                                <div class="text-base sm:text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }} عدد</div>
+                                <div class="text-sm sm:text-base md:text-lg font-extrabold text-gray-900 tabular-nums leading-tight mb-0.5">{{ $rangeText }} عدد</div>
                             @endif
                             {{-- نام تیراژ: کوچکتر --}}
-                            <div class="text-xs sm:text-sm font-medium text-gray-600 uppercase">{{ $tierName }}</div>
+                            <div class="text-[10px] sm:text-xs md:text-sm font-medium text-gray-600 uppercase leading-tight">{{ $tierName }}</div>
                         </th>
                     @endforeach
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-100">
                 @foreach($priceTypes as $priceType)
-                    <tr class="hover:bg-gray-50/50 transition-colors">
-                        <td class="px-4 py-3 text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap sticky right-0 bg-white z-10">
+                    <tr class="group hover:bg-gray-50/50 transition-colors">
+                        <td class="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50/50 z-10 transition-colors border-l-2 border-gray-300">
                             {{ $priceType['display_label'] }}
                         </td>
                         
@@ -257,7 +257,7 @@ $supplierId = $ps->supplier->id;
                             
                             <td 
                                 id="{{ $anchorId }}"
-                                class="px-3 sm:px-4 py-3 text-xs sm:text-sm text-center border-r border-gray-100 transition-all duration-300"
+                                class="px-2 sm:px-3 py-2 sm:py-3 text-xs sm:text-sm text-center border-r border-gray-100 transition-all duration-300"
                             >
                                 @if($cell)
                                     @php
@@ -269,14 +269,14 @@ $supplierId = $ps->supplier->id;
                                         class="transition-all duration-200"
                                         @if($hasWarrantyPrice)
                                             :class="{
-                                                'bg-purple-50 border border-purple-200 rounded-lg px-2 py-1.5 text-purple-800': showWithWarranty,
-                                                '@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif': !showWithWarranty
+                                                'bg-purple-50 border border-purple-200 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 text-purple-800': showWithWarranty,
+                                                '@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @else text-gray-800 @endif': !showWithWarranty
                                             }"
                                         @else
-                                            class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif"
+                                            class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @else text-gray-800 @endif"
                                         @endif
                                     >
-                                        <span class="text-sm sm:text-base font-semibold tabular-nums">
+                                        <span class="text-base sm:text-lg md:text-xl font-semibold tabular-nums leading-tight tracking-tight">
                                             @if($hasWarrantyPrice)
                                                 <span x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
                                                 <span x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
@@ -284,14 +284,14 @@ $supplierId = $ps->supplier->id;
                                             {{ PriceHelper::formatNumber($cell['base_amount']) }}
                                         @endif
                                     </span>
-                                    <span class="text-xs text-gray-600 mr-1">تومان</span>
+                                    <span class="text-[10px] sm:text-xs text-gray-600 mr-0.5">تومان</span>
                                     
                                     @if($cell['is_lowest'])
                                         <div 
-                                            class="text-xs text-green-700 mt-0.5"
+                                            class="text-[10px] sm:text-xs text-green-700 mt-0.5 leading-tight"
                                             @if($hasWarrantyPrice) x-show="!showWithWarranty" @endif
                                         >
-                                            ✓ بهترین قیمت
+                                            ✓ بهترین
                                         </div>
                                     @endif
                                     

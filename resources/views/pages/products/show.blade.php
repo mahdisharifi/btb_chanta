@@ -288,59 +288,6 @@ use App\Helpers\PriceHelper;
                     @endif
                 </div>
 
-                {{-- ✅ اصلاح #1: Retail Price Card (Visible to ALL) --}}
-                <div class="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <div class="text-sm text-gray-500 font-medium mb-1">قیمت خرده‌فروشی</div>
-                            @if($displayRetailPrice)
-                            <div class="flex items-baseline gap-2">
-                                    <span class="text-3xl font-extrabold text-gray-900 tabular-nums">
-                                        {{ PriceHelper::formatNumber($displayRetailPrice->retail_price ?? 0) }}
-                                    </span>
-                                <span class="text-sm text-gray-500 font-medium">تومان</span>
-                            </div>
-                            @else
-                            <div class="text-lg text-gray-400 font-medium">قیمت ثبت نشده</div>
-                            @endif
-                        </div>
-                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center">
-                            <svg class="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                        </div>
-                    </div>
-
-                    {{-- ✅ اصلاح #2: My Retail Price (for retailers) --}}
-                    @if(($canSetRetailPrice ?? false) && ($myRetailPrice ?? null))
-                    <div class="mt-3 pt-3 border-t border-gray-100">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs text-gray-400">قیمت تنظیم‌شده شما:</span>
-                            <span class="text-sm font-bold text-blue-600">
-                                    {{ PriceHelper::format($myRetailPrice->retail_price ?? 0) }}
-                                </span>
-                        </div>
-                    </div>
-                    @endif
-
-                    {{-- ✅ اصلاح #3: Profit Margin (for retailer_premium) --}}
-                    @if(!empty($profitMargin))
-                    <div class="mt-3 pt-3 border-t border-gray-100">
-                        <div class="flex items-center gap-4 text-xs">
-                                <span class="flex items-center gap-1 {{ $profitMargin['profit_amount'] >= 0 ? 'text-green-600' : 'text-red-600' }}">
-                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                              d="{{ $profitMargin['profit_amount'] >= 0 ? 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' : 'M13 17h8m0 0V9m0 8l-8-8-4 4-6-6' }}"/>
-                                    </svg>
-                                    سود: {{ PriceHelper::formatNumber(abs($profitMargin['profit_amount'])) }} تومان
-                                    ({{ $profitMargin['profit_percentage'] }}%)
-                                </span>
-                        </div>
-                    </div>
-                    @endif
-                </div>
-
                 {{-- Short Description --}}
                 @if($product->short_description)
                 <div class="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
@@ -353,59 +300,6 @@ use App\Helpers\PriceHelper;
                     <p class="text-gray-600 leading-relaxed text-sm">
                         {{ $product->short_description }}
                     </p>
-                </div>
-                @endif
-
-                {{-- Supplier Info (for retailer_premium / admin only) --}}
-                @if($showSupplierInfo && $product->supplier)
-                <div class="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                    <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                        </svg>
-                        اطلاعات تأمین‌کننده
-                    </h3>
-                    <div class="flex items-center gap-4">
-                        @if($product->supplier->logo_path)
-                        <img src="{{ asset('storage/' . $product->supplier->logo_path) }}"
-                             alt="{{ $product->supplier->company_name }}"
-                             class="w-14 h-14 rounded-xl object-cover border border-gray-200">
-                        @else
-                        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-600 font-bold text-lg">
-                            {{ mb_substr($product->supplier->company_name ?? '?', 0, 1) }}
-                        </div>
-                        @endif
-                        <div>
-                            <div class="font-bold text-gray-800 flex items-center gap-2">
-                                {{ $product->supplier->company_name }}
-                                @if($product->supplier->is_verified)
-                                <span class="inline-flex items-center gap-1 text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                                            </svg>
-                                            تأیید شده
-                                        </span>
-                                @endif
-                            </div>
-                            @if($product->supplier->brand_name)
-                            <div class="text-xs text-gray-500 mt-0.5">برند: {{ $product->supplier->brand_name }}</div>
-                            @endif
-                            @if($canViewSupplierInfo)
-                            <div class="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-                                @if($product->supplier->phone)
-                                <a href="tel:{{ $product->supplier->phone }}" class="hover:text-blue-600 transition-colors">
-                                    📞 {{ $product->supplier->phone }}
-                                </a>
-                                @endif
-                                @if($product->supplier->mobile)
-                                <a href="tel:{{ $product->supplier->mobile }}" class="hover:text-blue-600 transition-colors">
-                                    📱 {{ $product->supplier->mobile }}
-                                </a>
-                                @endif
-                            </div>
-                            @endif
-                        </div>
-                    </div>
                 </div>
                 @endif
 
@@ -547,7 +441,7 @@ use App\Helpers\PriceHelper;
                         <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase tracking-wider sticky right-0 bg-gray-50 z-10">نوع فروش</th>
+                                <th class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase tracking-wider sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع فروش</th>
                                 @php
                                     $allTiers = $productSuppliers->flatMap(fn($ps) => $ps->prices)->pluck('tier_index')->unique()->sort()->values();
                                     $tierNames = $product->quantity_tiers ?? [];
@@ -568,13 +462,13 @@ use App\Helpers\PriceHelper;
                                             $rangeText = null;
                                         }
                                     @endphp
-                                    <th class="px-3 sm:px-4 py-4 text-center border-r border-gray-200 min-w-[120px]">
-                                        {{-- محدوده تعداد: Responsive --}}
+                                    <th class="px-3 sm:px-4 py-3 sm:py-4 text-center border-r border-gray-200 min-w-[100px] sm:min-w-[120px]">
+                                        {{-- محدوده تعداد: بهینه برای موبایل --}}
                                         @if($rangeText)
-                                            <div class="text-base sm:text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }} عدد</div>
+                                            <div class="text-sm sm:text-base md:text-lg font-extrabold text-gray-900 tabular-nums leading-tight mb-0.5">{{ $rangeText }} عدد</div>
                                         @endif
                                         {{-- نام تیراژ: کوچکتر --}}
-                                        <div class="text-xs sm:text-sm font-medium text-gray-600 uppercase">{{ $tierName }}</div>
+                                        <div class="text-[10px] sm:text-xs md:text-sm font-medium text-gray-600 uppercase leading-tight">{{ $tierName }}</div>
                                     </th>
                                 @endforeach
                             </tr>
@@ -605,8 +499,8 @@ use App\Helpers\PriceHelper;
                             @endphp
                             
                             @foreach($allPriceTypes as $priceType)
-                                <tr class="hover:bg-gray-50 transition-colors">
-                                    <td class="px-4 py-3 text-sm font-semibold text-gray-900 whitespace-nowrap">{{ $priceType['display'] }}</td>
+                                <tr class="group hover:bg-gray-50 transition-colors">
+                                    <td class="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50 z-10 transition-colors border-l-2 border-gray-300">{{ $priceType['display'] }}</td>
                                     
                                     @foreach($allTiers as $tier)
                                         @php
@@ -705,7 +599,7 @@ use App\Helpers\PriceHelper;
                                             })->values();
                                         @endphp
                                         
-                                        <td class="px-4 py-3 text-center border-r border-gray-100">
+                                        <td class="px-3 sm:px-4 py-2 sm:py-3 text-center border-r border-gray-100">
                                             {{-- نمایش قیمت بدون گارانتی --}}
                                             <div x-show="!showWarrantyPrices">
                                                 @if($bestPriceSuppliers->isNotEmpty())
@@ -718,7 +612,7 @@ use App\Helpers\PriceHelper;
                                                     <a href="#{{ $anchorId }}" 
                                                        class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer group relative"
                                                        onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
-                                                        <div class="text-lg font-extrabold tabular-nums">{{ number_format($bestPrice['amount']) }}</div>
+                                                        <div class="text-base sm:text-lg md:text-xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestPrice['amount']) }}</div>
                                                         @if($showSupplierInfo && !$hasMultipleBest)
                                                             <div class="text-xs text-green-700 mt-1 font-medium">
                                                                 {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
@@ -747,7 +641,7 @@ use App\Helpers\PriceHelper;
                                                         @endif
                                                     </a>
                                                 @else
-                                                    <span class="text-gray-300 text-lg">—</span>
+                                                    <span class="text-gray-300 text-base sm:text-lg">—</span>
                                                 @endif
                                             </div>
                                             
@@ -767,7 +661,7 @@ use App\Helpers\PriceHelper;
                                                             <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                                                             </svg>
-                                                            <div class="text-lg font-extrabold tabular-nums">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
+                                                            <div class="text-base sm:text-lg md:text-xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
                                                         </div>
                                                         @if($showSupplierInfo && !$hasMultipleBestWarranty)
                                                             <div class="text-xs text-purple-700 mt-1 font-medium">
@@ -1051,7 +945,7 @@ use App\Helpers\PriceHelper;
                     <table class="w-full text-sm">
                         <thead>
                         <tr class="bg-gray-50">
-                            <th class="text-right px-4 py-3 font-bold text-gray-600 border-b min-w-[150px] sticky right-0 bg-gray-50 z-10">نوع قیمت</th>
+                            <th class="text-right px-4 py-3 font-bold text-gray-600 border-b min-w-[150px] sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع قیمت</th>
                             @foreach($productSuppliers as $ps)
                             <th class="text-center px-3 py-3 border-b min-w-[140px]">
                                 <div class="flex flex-col items-center gap-1">
@@ -1118,8 +1012,8 @@ use App\Helpers\PriceHelper;
                         $validPrices = $pricesForType->filter()->pluck('price');
                         $lowestForType = $validPrices->min();
                         @endphp
-                        <tr class="{{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} hover:bg-blue-50/30 transition-colors">
-                            <td class="px-4 py-3 text-right sticky right-0 {{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} z-10">
+                        <tr class="group {{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} hover:bg-blue-50/30 transition-colors">
+                            <td class="px-4 py-3 text-right sticky right-0 {{ $idx % 2 === 0 ? 'bg-white group-hover:bg-blue-50/30' : 'bg-gray-50/50 group-hover:bg-blue-50/30' }} z-10 transition-colors border-l-2 border-gray-300">
                                 <div class="font-semibold text-gray-700 text-xs">{{ $pti['label'] }}</div>
                                 @if($pti['check_period_name'])
                                 <div class="text-[10px] text-purple-600 mt-0.5">{{ $pti['check_period_name'] }}</div>
@@ -1157,7 +1051,7 @@ use App\Helpers\PriceHelper;
 
                         {{-- ✅ اصلاح #12: ردیف خلاصه: پایین‌ترین قیمت هر تأمین‌کننده --}}
                         <tr class="bg-blue-50 font-bold border-t-2 border-blue-200">
-                            <td class="px-4 py-3 text-right sticky right-0 bg-blue-50 z-10 text-blue-700 text-xs">
+                            <td class="px-4 py-3 text-right sticky right-0 bg-blue-50 z-10 text-blue-700 text-xs border-l-2 border-gray-300">
                                 🏆 پایین‌ترین قیمت
                             </td>
                             @foreach($productSuppliers as $ps)
