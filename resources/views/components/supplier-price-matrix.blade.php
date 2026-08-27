@@ -211,7 +211,7 @@ $supplierId = $ps->supplier->id;
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
                 <tr>
-                    <th scope="col" class="px-2 sm:px-3 py-1.5 sm:py-2 text-right text-[10px] sm:text-xs font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">
+                    <th scope="col" class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 text-right text-xs sm:text-sm md:text-base font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">
                         نوع فروش
                     </th>
                     @foreach($tiers as $tier)
@@ -230,13 +230,13 @@ $supplierId = $ps->supplier->id;
                                 $rangeText = null;
                             }
                         @endphp
-                        <th scope="col" class="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-r border-gray-200 min-w-[90px] sm:min-w-[110px]">
+                        <th scope="col" class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 text-center border-r border-gray-200 min-w-[90px] sm:min-w-[110px] md:min-w-[130px]">
                             {{-- محدوده تعداد: بهینه برای موبایل --}}
                             @if($rangeText)
-                                <div class="text-sm sm:text-base md:text-lg font-extrabold text-gray-900 tabular-nums leading-tight mb-0.5">{{ $rangeText }} عدد</div>
+                                <div class="text-base sm:text-lg md:text-xl font-extrabold text-gray-900 tabular-nums leading-tight mb-0.5">{{ $rangeText }} عدد</div>
                             @endif
                             {{-- نام تیراژ: کوچکتر --}}
-                            <div class="text-[9px] sm:text-[10px] md:text-xs font-medium text-gray-600 uppercase leading-tight">{{ $tierName }}</div>
+                            <div class="text-[10px] sm:text-xs md:text-sm font-medium text-gray-600 uppercase leading-tight">{{ $tierName }}</div>
                         </th>
                     @endforeach
                 </tr>
@@ -244,7 +244,7 @@ $supplierId = $ps->supplier->id;
             <tbody class="bg-white divide-y divide-gray-100">
                 @foreach($priceTypes as $priceType)
                     <tr class="group hover:bg-gray-50/50 transition-colors">
-                        <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-medium text-gray-700 whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50/50 z-10 transition-colors border-l-2 border-gray-300">
+                        <td class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 text-xs sm:text-sm md:text-base font-medium text-gray-700 whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50/50 z-10 transition-colors border-l-2 border-gray-300">
                             @php
                                 // بهینه‌سازی عنوان چکی: دوخطی
                                 $displayLabel = $priceType['display_label'];
@@ -256,7 +256,7 @@ $supplierId = $ps->supplier->id;
                                     $periodText = str_replace(['چک ', 'چك '], '', $checkPeriodName);
                                     echo '<div class="leading-tight">';
                                     echo '<div>چکی</div>';
-                                    echo '<div class="text-[9px] sm:text-[10px] text-gray-500">' . $periodText . '</div>';
+                                    echo '<div class="text-[10px] sm:text-xs md:text-sm text-gray-500">' . $periodText . '</div>';
                                     echo '</div>';
                                 } else {
                                     echo $displayLabel;
@@ -273,7 +273,7 @@ $supplierId = $ps->supplier->id;
                             
                             <td 
                                 id="{{ $anchorId }}"
-                                class="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-center border-r border-gray-100 transition-all duration-300"
+                                class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 text-xs sm:text-sm md:text-base text-center border-r border-gray-100 transition-all duration-300"
                             >
                                 @if($cell)
                                     @php
@@ -292,19 +292,17 @@ $supplierId = $ps->supplier->id;
                                             class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @else text-gray-800 @endif"
                                         @endif
                                     >
-                                        <span class="text-sm sm:text-base md:text-lg font-semibold tabular-nums leading-tight tracking-tight">
+                                        <span class="text-base sm:text-lg md:text-xl lg:text-2xl font-semibold tabular-nums leading-tight tracking-tight">
                                             @if($hasWarrantyPrice)
                                                 <span x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
                                                 <span x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
                                             @else
-                                            {{ PriceHelper::formatNumber($cell['base_amount']) }}
-                                        @endif
-                                    </span>
-                                    <span class="text-[10px] sm:text-xs text-gray-600 mr-0.5">تومان</span>
-                                    
+                                                {{ PriceHelper::formatNumber($cell['base_amount']) }}
+                                            @endif
+                                        </span>
                                     @if($cell['is_lowest'])
                                         <div 
-                                            class="text-[10px] sm:text-xs text-green-700 mt-0.5 leading-tight"
+                                            class="text-[10px] sm:text-xs md:text-sm text-green-700 mt-0.5 leading-tight"
                                             @if($hasWarrantyPrice) x-show="!showWithWarranty" @endif
                                         >
                                             ✓ بهترین
