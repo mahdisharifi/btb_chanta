@@ -519,28 +519,35 @@ use App\Helpers\PriceHelper;
                     @endphp
                     
                     @if($hasAnyWarranty)
-                    {{-- Toggle برای نمایش قیمت با گارانتی --}}
-                    <div class="flex items-center gap-3 bg-white px-4 py-2 rounded-lg shadow-sm border border-purple-200">
+                    {{-- Toggle برای نمایش قیمت با گارانتی - بهبود Touch Target --}}
+                    <div class="flex items-center gap-3 bg-white px-4 py-3 rounded-lg shadow-sm border border-purple-200">
                         <div class="flex items-center gap-2">
-                            <svg class="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg class="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                             </svg>
-                            <span class="text-sm font-medium text-gray-700">با گارانتی</span>
+                            <span class="text-sm sm:text-base font-medium text-gray-700">با گارانتی</span>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" x-model="showWarrantyPrices" class="sr-only peer">
-                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        <label class="relative inline-flex items-center cursor-pointer min-w-[48px] min-h-[44px]" 
+                               role="switch"
+                               aria-checked="false"
+                               x-bind:aria-checked="showWarrantyPrices.toString()">
+                            <input type="checkbox" x-model="showWarrantyPrices" class="sr-only peer" aria-label="نمایش قیمت با گارانتی">
+                            <div class="w-12 h-6 sm:w-14 sm:h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 sm:after:h-6 sm:after:w-6 after:transition-all peer-checked:bg-purple-600"></div>
                         </label>
                     </div>
                     @endif
                 </div>
                 
-                {{-- ماتریس بهترین قیمت‌ها --}}
-                <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-                    <table class="min-w-full divide-y divide-gray-200">
+                {{-- ماتریس بهترین قیمت‌ها - با بهبودهای Responsive --}}
+                <div class="relative">
+                    {{-- Scrollbar indicator --}}
+                    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-xl border border-gray-200 bg-white shadow-sm
+                                shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)] 
+                                md:shadow-sm">
+                        <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">نوع فروش</th>
+                                <th class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase tracking-wider sticky right-0 bg-gray-50 z-10">نوع فروش</th>
                                 @php
                                     $allTiers = $productSuppliers->flatMap(fn($ps) => $ps->prices)->pluck('tier_index')->unique()->sort()->values();
                                     $tierNames = $product->quantity_tiers ?? [];
@@ -561,13 +568,13 @@ use App\Helpers\PriceHelper;
                                             $rangeText = null;
                                         }
                                     @endphp
-                                    <th class="px-4 py-4 text-center border-r border-gray-200">
-                                        {{-- محدوده تعداد: بزرگتر و بلدتر --}}
+                                    <th class="px-3 sm:px-4 py-4 text-center border-r border-gray-200 min-w-[120px]">
+                                        {{-- محدوده تعداد: Responsive --}}
                                         @if($rangeText)
-                                            <div class="text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }}</div>
+                                            <div class="text-base sm:text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }} عدد</div>
                                         @endif
                                         {{-- نام تیراژ: کوچکتر --}}
-                                        <div class="text-xs font-medium text-gray-500 uppercase">{{ $tierName }}</div>
+                                        <div class="text-xs sm:text-sm font-medium text-gray-600 uppercase">{{ $tierName }}</div>
                                     </th>
                                 @endforeach
                             </tr>
@@ -800,6 +807,18 @@ use App\Helpers\PriceHelper;
                         </tbody>
                     </table>
                 </div>
+                
+                {{-- Scroll hint برای موبایل --}}
+                <div class="md:hidden text-center text-xs text-gray-600 mt-2 flex items-center justify-center gap-1">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
+                    </svg>
+                    <span>برای مشاهده تمام ستون‌ها به چپ و راست بکشید</span>
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                    </svg>
+                </div>
+            </div>
                 
                 {{-- راهنما --}}
                 <div class="mt-3 flex items-center gap-6 text-xs text-gray-600 flex-wrap">

@@ -164,18 +164,18 @@ $supplierId = $ps->supplier->id;
 {{-- Wrapper با Alpine.js برای مدیریت state --}}
 <div @if($hasWarrantyWithCost) x-data="{ showWithWarranty: false }" @endif>
 
-{{-- Toggle برای نمایش قیمت با گارانتی --}}
+{{-- Toggle برای نمایش قیمت با گارانتی - با بهبود Accessibility --}}
 @if($hasWarrantyWithCost)
 <div class="mb-4 flex items-center justify-between gap-4 px-4 py-3 bg-gradient-to-l from-purple-50 to-white border border-purple-200 rounded-lg">
     <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
-            <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+            <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
             </svg>
         </div>
         <div>
-            <div class="text-sm font-bold text-purple-900">نمایش قیمت با گارانتی</div>
-            <div class="text-xs text-purple-600">
+            <div class="text-sm sm:text-base font-bold text-purple-900">نمایش قیمت با گارانتی</div>
+            <div class="text-xs sm:text-sm text-purple-600">
                 @switch($warrantyType)
                     @case('percentage')
                         هزینه گارانتی: {{ $warrantyValue }}% اضافه بر قیمت پایه
@@ -191,93 +191,100 @@ $supplierId = $ps->supplier->id;
         </div>
     </div>
     
-    {{-- Toggle Switch --}}
-    <label class="relative inline-flex items-center cursor-pointer">
-        <input type="checkbox" x-model="showWithWarranty" class="sr-only peer">
-        <div class="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-purple-600"></div>
-        <span class="ms-3 text-sm font-medium text-gray-700 sr-only">نمایش با گارانتی</span>
+    {{-- Toggle Switch - بزرگتر برای Touch --}}
+    <label class="relative inline-flex items-center cursor-pointer min-w-[56px] min-h-[44px]" 
+           role="switch" 
+           aria-checked="false"
+           x-bind:aria-checked="showWithWarranty.toString()">
+        <input type="checkbox" x-model="showWithWarranty" class="sr-only peer" aria-label="نمایش قیمت با گارانتی">
+        <div class="w-14 h-7 sm:w-16 sm:h-8 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 sm:after:h-7 sm:after:w-7 after:transition-all peer-checked:bg-purple-600"></div>
     </label>
 </div>
 @endif
 
-<div class="overflow-x-auto">
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                    نوع فروش
-                </th>
-                @foreach($tiers as $tier)
-                    @php
-                        $tierData = $quantityTiers[$tier] ?? null;
-                        $tierName = $tierNames[$tier];
-                        $minQty = $tierData['min_quantity'] ?? null;
-                        $maxQty = $tierData['max_quantity'] ?? null;
-                        
-                        // ساخت متن محدوده
-                        if ($minQty && $maxQty) {
-                            $rangeText = "{$minQty}–{$maxQty}";
-                        } elseif ($minQty) {
-                            $rangeText = "{$minQty}+";
-                        } else {
-                            $rangeText = null;
-                        }
-                    @endphp
-                    <th scope="col" class="px-4 py-4 text-center border-r border-gray-200">
-                        {{-- محدوده تعداد: بزرگتر و بولدتر --}}
-                        @if($rangeText)
-                            <div class="text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }}</div>
-                        @endif
-                        {{-- نام تیراژ: کوچکتر --}}
-                        <div class="text-xs font-medium text-gray-500 uppercase">{{ $tierName }}</div>
+{{-- جدول با بهبودهای Responsive و Accessibility --}}
+<div class="relative">
+    {{-- Scrollbar indicator برای موبایل --}}
+    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-lg
+                shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)] 
+                md:shadow-none">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10">
+                        نوع فروش
                     </th>
-                @endforeach
-            </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-100">
-            @foreach($priceTypes as $priceType)
-                <tr class="hover:bg-gray-50/50 transition-colors">
-                    <td class="px-4 py-3 text-sm font-medium text-gray-700 whitespace-nowrap">
-                        {{ $priceType['display_label'] }}
-                    </td>
-                    
                     @foreach($tiers as $tier)
                         @php
-                            $cell = isset($matrix[$priceType['key']][$tier]) ? $matrix[$priceType['key']][$tier] : null;
-                            // ساخت anchor ID مطابق با ماتریس بالا
-                            $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
+                            $tierData = $quantityTiers[$tier] ?? null;
+                            $tierName = $tierNames[$tier];
+                            $minQty = $tierData['min_quantity'] ?? null;
+                            $maxQty = $tierData['max_quantity'] ?? null;
+                            
+                            // ساخت متن محدوده
+                            if ($minQty && $maxQty) {
+                                $rangeText = "{$minQty}–{$maxQty}";
+                            } elseif ($minQty) {
+                                $rangeText = "{$minQty}+";
+                            } else {
+                                $rangeText = null;
+                            }
                         @endphp
+                        <th scope="col" class="px-3 sm:px-4 py-4 text-center border-r border-gray-200 min-w-[120px]">
+                            {{-- محدوده تعداد: Responsive sizing --}}
+                            @if($rangeText)
+                                <div class="text-base sm:text-lg font-extrabold text-gray-900 tabular-nums mb-1">{{ $rangeText }} عدد</div>
+                            @endif
+                            {{-- نام تیراژ: کوچکتر --}}
+                            <div class="text-xs sm:text-sm font-medium text-gray-600 uppercase">{{ $tierName }}</div>
+                        </th>
+                    @endforeach
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-100">
+                @foreach($priceTypes as $priceType)
+                    <tr class="hover:bg-gray-50/50 transition-colors">
+                        <td class="px-4 py-3 text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap sticky right-0 bg-white z-10">
+                            {{ $priceType['display_label'] }}
+                        </td>
                         
-                        <td 
-                            id="{{ $anchorId }}"
-                            class="px-4 py-3 text-sm text-center border-r border-gray-100 transition-all duration-300"
-                        >
-                            @if($cell)
-                                @php
-                                    // آیا این سلول گارانتی دارد؟
-                                    $hasWarrantyPrice = $hasWarrantyWithCost && $cell['warranty_amount'] !== null;
-                                @endphp
-                                
-                                <div 
-                                    class="transition-all duration-200"
-                                    @if($hasWarrantyPrice)
-                                        :class="{
-                                            'bg-purple-50 border border-purple-200 rounded-lg px-2 py-1.5 text-purple-800': showWithWarranty,
-                                            '@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif': !showWithWarranty
-                                        }"
-                                    @else
-                                        class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif"
-                                    @endif
-                                >
-                                    <span class="text-base font-semibold tabular-nums">
+                        @foreach($tiers as $tier)
+                            @php
+                                $cell = isset($matrix[$priceType['key']][$tier]) ? $matrix[$priceType['key']][$tier] : null;
+                                // ساخت anchor ID مطابق با ماتریس بالا
+                                $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
+                            @endphp
+                            
+                            <td 
+                                id="{{ $anchorId }}"
+                                class="px-3 sm:px-4 py-3 text-xs sm:text-sm text-center border-r border-gray-100 transition-all duration-300"
+                            >
+                                @if($cell)
+                                    @php
+                                        // آیا این سلول گارانتی دارد؟
+                                        $hasWarrantyPrice = $hasWarrantyWithCost && $cell['warranty_amount'] !== null;
+                                    @endphp
+                                    
+                                    <div 
+                                        class="transition-all duration-200"
                                         @if($hasWarrantyPrice)
-                                            <span x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
-                                            <span x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
+                                            :class="{
+                                                'bg-purple-50 border border-purple-200 rounded-lg px-2 py-1.5 text-purple-800': showWithWarranty,
+                                                '@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif': !showWithWarranty
+                                            }"
                                         @else
+                                            class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-2 py-1.5 @else text-gray-800 @endif"
+                                        @endif
+                                    >
+                                        <span class="text-sm sm:text-base font-semibold tabular-nums">
+                                            @if($hasWarrantyPrice)
+                                                <span x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
+                                                <span x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
+                                            @else
                                             {{ PriceHelper::formatNumber($cell['base_amount']) }}
                                         @endif
                                     </span>
-                                    <span class="text-xs text-gray-400 mr-1">تومان</span>
+                                    <span class="text-xs text-gray-600 mr-1">تومان</span>
                                     
                                     @if($cell['is_lowest'])
                                         <div 
@@ -295,7 +302,7 @@ $supplierId = $ps->supplier->id;
                                     @endif
                                 </div>
                             @else
-                                <span class="text-gray-300">—</span>
+                                <span class="text-gray-400">—</span>
                             @endif
                         </td>
                     @endforeach
@@ -303,6 +310,18 @@ $supplierId = $ps->supplier->id;
             @endforeach
         </tbody>
     </table>
+</div>
+
+{{-- Scroll hint برای موبایل --}}
+<div class="md:hidden text-center text-xs text-gray-500 mt-2 flex items-center justify-center gap-1">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
+    </svg>
+    <span>برای مشاهده تمام ستون‌ها به چپ و راست بکشید</span>
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+    </svg>
+</div>
 </div>
 
 </div>{{-- End Alpine.js wrapper --}}
