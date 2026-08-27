@@ -325,7 +325,7 @@ use App\Helpers\PriceHelper;
                     @endif
                 </h3>
                 @if($hasMultipleSuppliers && $usePivotPrices)
-                <button @click="compareMode = !compareMode"
+                <button @click="compareMode = !compareMode; if(compareMode) { setTimeout(() => document.getElementById('price-comparison-section').scrollIntoView({behavior: 'smooth', block: 'start'}), 100); }"
                         class="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all border"
                         :class="compareMode
                                             ? 'bg-blue-600 text-white border-blue-600 shadow-md'
@@ -950,139 +950,222 @@ use App\Helpers\PriceHelper;
                  x-transition:enter="transition ease-out duration-300"
                  x-transition:enter-start="opacity-0 translate-y-4"
                  x-transition:enter-end="opacity-100 translate-y-0"
-                 class="mt-4">
+                 class="mt-4"
+                 id="price-comparison-section">
 
-                <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-                    <table class="w-full text-sm">
-                        <thead>
-                        <tr class="bg-gray-50">
-                            <th class="text-right px-4 py-3 font-bold text-gray-600 border-b min-w-[150px] sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع قیمت</th>
-                            @foreach($productSuppliers as $ps)
-                            <th class="text-center px-3 py-3 border-b min-w-[140px]">
-                                <div class="flex flex-col items-center gap-1">
-                                    @if($ps->supplier && $ps->supplier->logo_path)
-                                    <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}" class="w-8 h-8 rounded-lg object-cover border border-gray-200">
-                                    @else
-                                    <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
-                                        {{ mb_substr($ps->supplier->company_name ?? '?', 0, 1) }}
-                                    </div>
+                {{-- عنوان بخش مقایسه --}}
+                <div class="mb-4 flex items-center justify-between">
+                    <h3 class="text-base font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                        مقایسه جامع قیمت تامین‌کنندگان
+                    </h3>
+                    <span class="text-xs text-gray-500">{{ $productSuppliers->count() }} تامین‌کننده</span>
+                </div>
+
+                @php
+                // استخراج تمام تیراژهای موجود
+                $allTiersForComparison = $productSuppliers
+                    ->flatMap(fn($ps) => $ps->prices)
+                    ->pluck('tier_index')
+                    ->unique()
+                    ->sort()
+                    ->values();
+                    
+                $tierNamesForComparison = $product->quantity_tiers ?? [];
+                @endphp
+
+                {{-- جداول مقایسه برای هر تیراژ --}}
+                <div class="space-y-6">
+                    @foreach($allTiersForComparison as $tierIndex)
+                        @php
+                            $tierData = $tierNamesForComparison[$tierIndex] ?? null;
+                            $tierName = $tierData['name'] ?? "تیراژ {$tierIndex}";
+                            $minQty = $tierData['min_quantity'] ?? null;
+                            $maxQty = $tierData['max_quantity'] ?? null;
+                            
+                            // ساخت متن محدوده
+                            if ($minQty && $maxQty) {
+                                $rangeText = "{$minQty} تا {$maxQty} عدد";
+                            } elseif ($minQty) {
+                                $rangeText = "{$minQty}+ عدد";
+                            } else {
+                                $rangeText = null;
+                            }
+                            
+                            // جمع‌آوری انواع قیمت برای این تیراژ
+                            $priceTypesForTier = $productSuppliers
+                                ->flatMap(fn($ps) => $ps->prices)
+                                ->filter(fn($p) => $p->tier_index == $tierIndex)
+                                ->map(function($price) {
+                                    $code = $price->priceType ? $price->priceType->code : 'cash';
+                                    $name = $price->priceType ? $price->priceType->name : 'نقدی';
+                                    $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
+                                    $checkPeriodDays = $price->checkPeriod ? $price->checkPeriod->days : 0;
+                                    $checkPeriodName = $price->checkPeriod ? $price->checkPeriod->name : '';
+                                    
+                                    return [
+                                        'key' => "{$code}_{$checkPeriodId}",
+                                        'name' => $name,
+                                        'code' => $code,
+                                        'check_period_name' => $checkPeriodName,
+                                        'check_period_days' => $checkPeriodDays,
+                                        'sort_key' => $code === 'cash' ? 0 : $checkPeriodDays,
+                                    ];
+                                })
+                                ->unique('key')
+                                ->sortBy('sort_key')
+                                ->values();
+                        @endphp
+
+                        <div class="bg-gradient-to-br from-gray-50 to-blue-50 rounded-2xl border-2 border-blue-200 p-4 shadow-lg">
+                            {{-- عنوان تیراژ --}}
+                            <div class="mb-3 flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
+                                    {{ $tierIndex }}
+                                </div>
+                                <div>
+                                    <div class="text-sm font-bold text-gray-900">{{ $tierName }}</div>
+                                    @if($rangeText)
+                                        <div class="text-xs text-gray-600">{{ $rangeText }}</div>
                                     @endif
-                                    <span class="font-bold text-gray-700 text-xs">{{ $ps->supplier->company_name ?? '?' }}</span>
-                                    <div class="flex items-center gap-1">
-                                        @if($ps->is_primary)
-                                        <span class="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded-full">⭐</span>
-                                        @endif
-                                        @if($ps->supplier && $ps->supplier->is_verified)
-                                        <span class="text-[9px] bg-green-100 text-green-700 px-1 py-0.5 rounded-full">✓</span>
-                                        @endif
-                                    </div>
                                 </div>
-                            </th>
-                            @endforeach
-                        </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                        @php
-                        // جمع‌آوری تمام انواع قیمت یکتا از همه تأمین‌کنندگان (ساختار جدید)
-                        $allPriceTypes = $productSuppliers
-                            ->flatMap(fn($ps) => $ps->prices)
-                            ->map(function($price) {
-                                $priceTypeCode = $price->priceType?->code ?? 'cash';
-                                $priceTypeName = $price->priceType?->name ?? 'نقدی';
-                                $checkPeriodId = $price->check_period_id ?? 0;
-                                $tierIndex = $price->tier_index ?? 0;
-                                
-                                // کلید یکتا برای هر ترکیب
-                                $key = "{$priceTypeCode}_{$checkPeriodId}_{$tierIndex}";
-                                
-                                return [
-                                    'key' => $key,
-                                    'label' => $priceTypeName,
-                                    'check_period_name' => $price->checkPeriod?->name,
-                                    'tier_index' => $tierIndex,
-                                    'price_type_code' => $priceTypeCode,
-                                    'check_period_id' => $checkPeriodId,
-                                ];
-                            })
-                            ->unique('key')
-                            ->values();
-                        @endphp
+                            </div>
 
-                        @forelse($allPriceTypes as $idx => $pti)
-                        @php
-                        // یافتن قیمت مطابق هر تأمین‌کننده
-                        $pricesForType = $productSuppliers->map(function($ps) use ($pti) {
-                            return $ps->prices->first(function($p) use ($pti) {
-                                $priceTypeCode = $p->priceType?->code ?? 'cash';
-                                $checkPeriodId = $p->check_period_id ?? 0;
-                                $tierIndex = $p->tier_index ?? 0;
-                                $key = "{$priceTypeCode}_{$checkPeriodId}_{$tierIndex}";
-                                return $key === $pti['key'];
-                            });
-                        });
-                        $validPrices = $pricesForType->filter()->pluck('price');
-                        $lowestForType = $validPrices->min();
-                        @endphp
-                        <tr class="group {{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} hover:bg-blue-50/30 transition-colors">
-                            <td class="px-4 py-3 text-right sticky right-0 {{ $idx % 2 === 0 ? 'bg-white group-hover:bg-blue-50/30' : 'bg-gray-50/50 group-hover:bg-blue-50/30' }} z-10 transition-colors border-l-2 border-gray-300">
-                                <div class="font-semibold text-gray-700 text-xs">{{ $pti['label'] }}</div>
-                                @if($pti['check_period_name'])
-                                <div class="text-[10px] text-purple-600 mt-0.5">{{ $pti['check_period_name'] }}</div>
-                                @endif
-                                @if($pti['tier_index'] > 0)
-                                <div class="text-[10px] text-blue-600 mt-0.5">تیراژ: {{ $pti['tier_index'] }}</div>
-                                @endif
-                            </td>
-                            @foreach($pricesForType as $price)
-                            <td class="px-3 py-3 text-center">
-                                @if($price)
-                                {{-- ✅ اصلاح #11: قیمت در جدول مقایسه --}}
-                                <div class="font-extrabold text-sm tabular-nums {{ $price->price == $lowestForType && $validPrices->count() > 1 ? 'text-green-600' : 'text-gray-800' }}">
-                                    {{ PriceHelper::formatNumber($price->price) }}
-                                </div>
-                                @if($price->price == $lowestForType && $validPrices->count() > 1)
-                                <span class="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full mt-0.5 inline-block">✓ ارزان‌ترین</span>
-                                @elseif($price->price != $lowestForType && $lowestForType > 0)
-                                @php $diff = round((($price->price - $lowestForType) / $lowestForType) * 100, 1); @endphp
-                                <div class="text-[10px] text-red-400 mt-0.5">+{{ $diff }}%</div>
-                                @endif
-                                @else
-                                <span class="text-gray-300 text-lg">—</span>
-                                @endif
-                            </td>
-                            @endforeach
-                        </tr>
-                        @empty
-                        <tr>
-                            <td colspan="{{ $productSuppliers->count() + 1 }}" class="px-4 py-8 text-center text-gray-400">
-                                قیمتی برای مقایسه وجود ندارد
-                            </td>
-                        </tr>
-                        @endforelse
+                            {{-- جدول مقایسه --}}
+                            <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                                <table class="w-full text-sm">
+                                    <thead>
+                                        <tr class="bg-gray-50">
+                                            <th class="text-right px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع فروش</th>
+                                            @foreach($productSuppliers as $ps)
+                                            <th class="text-center px-2 sm:px-3 py-1.5 sm:py-2 border-b min-w-[100px] sm:min-w-[120px]">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    @if($ps->supplier && $ps->supplier->logo_path)
+                                                    <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}" class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg object-cover border border-gray-200">
+                                                    @else
+                                                    <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                                                        {{ mb_substr($ps->supplier->company_name ?? '?', 0, 1) }}
+                                                    </div>
+                                                    @endif
+                                                    <span class="font-bold text-gray-700 text-[10px] sm:text-xs leading-tight text-center">{{ $ps->supplier->company_name ?? '?' }}</span>
+                                                    <div class="flex items-center gap-1">
+                                                        @if($ps->is_primary)
+                                                        <span class="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded-full">⭐</span>
+                                                        @endif
+                                                        @if($ps->supplier && $ps->supplier->is_verified)
+                                                        <span class="text-[9px] bg-green-100 text-green-700 px-1 py-0.5 rounded-full">✓</span>
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                            </th>
+                                            @endforeach
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        @forelse($priceTypesForTier as $idx => $pti)
+                                            @php
+                                            // یافتن قیمت مطابق هر تأمین‌کننده برای این تیراژ و نوع قیمت
+                                            $pricesForType = $productSuppliers->map(function($ps) use ($pti, $tierIndex) {
+                                                return $ps->prices->first(function($p) use ($pti, $tierIndex) {
+                                                    $code = $p->priceType ? $p->priceType->code : 'cash';
+                                                    $checkPeriodId = $p->checkPeriod ? $p->checkPeriod->id : 0;
+                                                    $key = "{$code}_{$checkPeriodId}";
+                                                    return $key === $pti['key'] && $p->tier_index == $tierIndex;
+                                                });
+                                            });
+                                            $validPrices = $pricesForType->filter()->pluck('price');
+                                            $lowestForType = $validPrices->min();
+                                            @endphp
+                                            <tr class="group {{ $idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50' }} hover:bg-blue-50/30 transition-colors">
+                                                <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-right sticky right-0 {{ $idx % 2 === 0 ? 'bg-white group-hover:bg-blue-50/30' : 'bg-gray-50/50 group-hover:bg-blue-50/30' }} z-10 transition-colors border-l-2 border-gray-300">
+                                                    {{-- عنوان بهینه برای چکی (مثل ماتریس‌ها) --}}
+                                                    @if($pti['check_period_name'])
+                                                        <div class="leading-tight">
+                                                            <div class="text-[10px] sm:text-xs font-semibold text-gray-900">{{ $pti['name'] }}</div>
+                                                            <div class="text-[9px] sm:text-[10px] text-gray-500 mt-0.5">{{ $pti['check_period_days'] }} روزه</div>
+                                                        </div>
+                                                    @else
+                                                        <div class="text-[10px] sm:text-xs font-semibold text-gray-900">{{ $pti['name'] }}</div>
+                                                    @endif
+                                                </td>
+                                                @foreach($pricesForType as $price)
+                                                <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-center">
+                                                    @if($price)
+                                                    <div class="font-extrabold text-sm sm:text-base tabular-nums {{ $price->price == $lowestForType && $validPrices->count() > 1 ? 'text-green-600' : 'text-gray-800' }}">
+                                                        {{ PriceHelper::formatNumber($price->price) }}
+                                                    </div>
+                                                    @if($price->price == $lowestForType && $validPrices->count() > 1)
+                                                    <span class="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full mt-0.5 inline-block">✓ ارزان‌ترین</span>
+                                                    @elseif($price->price != $lowestForType && $lowestForType > 0)
+                                                    @php $diff = round((($price->price - $lowestForType) / $lowestForType) * 100, 1); @endphp
+                                                    <div class="text-[10px] text-red-400 mt-0.5">+{{ $diff }}%</div>
+                                                    @endif
+                                                    @else
+                                                    <span class="text-gray-300 text-sm">—</span>
+                                                    @endif
+                                                </td>
+                                                @endforeach
+                                            </tr>
+                                        @empty
+                                            <tr>
+                                                <td colspan="{{ $productSuppliers->count() + 1 }}" class="px-4 py-6 text-center text-gray-400 text-xs">
+                                                    قیمتی برای این تیراژ ثبت نشده است
+                                                </td>
+                                            </tr>
+                                        @endforelse
 
-                        {{-- ✅ اصلاح #12: ردیف خلاصه: پایین‌ترین قیمت هر تأمین‌کننده --}}
-                        <tr class="bg-blue-50 font-bold border-t-2 border-blue-200">
-                            <td class="px-4 py-3 text-right sticky right-0 bg-blue-50 z-10 text-blue-700 text-xs border-l-2 border-gray-300">
-                                🏆 پایین‌ترین قیمت
-                            </td>
-                            @foreach($productSuppliers as $ps)
-                            @php $sLowest = $ps->activePrices->min('price'); @endphp
-                            <td class="px-3 py-3 text-center">
-                                @if($sLowest)
-                                <span class="text-sm tabular-nums {{ $sLowest == $overallLowestPrice ? 'text-green-600' : 'text-gray-700' }}">
-                                                                {{ PriceHelper::formatNumber($sLowest) }}
-                                                            </span>
-                                @if($sLowest == $overallLowestPrice)
-                                <span class="text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full mr-0.5">🏆</span>
-                                @endif
-                                @else
-                                <span class="text-gray-300">—</span>
-                                @endif
-                            </td>
-                            @endforeach
-                        </tr>
-                        </tbody>
-                    </table>
+                                        {{-- ردیف خلاصه: پایین‌ترین قیمت هر تأمین‌کننده در این تیراژ --}}
+                                        <tr class="bg-blue-50 font-bold border-t-2 border-blue-200">
+                                            <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-right sticky right-0 bg-blue-50 z-10 text-blue-700 text-[10px] sm:text-xs border-l-2 border-gray-300">
+                                                🏆 بهترین قیمت این تیراژ
+                                            </td>
+                                            @foreach($productSuppliers as $ps)
+                                            @php 
+                                                $tierLowest = $ps->prices
+                                                    ->filter(fn($p) => $p->tier_index == $tierIndex)
+                                                    ->min('price');
+                                                $tierOverallLowest = $productSuppliers
+                                                    ->flatMap(fn($ps) => $ps->prices)
+                                                    ->filter(fn($p) => $p->tier_index == $tierIndex)
+                                                    ->min('price');
+                                            @endphp
+                                            <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-center">
+                                                @if($tierLowest)
+                                                <span class="text-sm sm:text-base tabular-nums {{ $tierLowest == $tierOverallLowest ? 'text-green-600' : 'text-gray-700' }}">
+                                                    {{ PriceHelper::formatNumber($tierLowest) }}
+                                                </span>
+                                                @if($tierLowest == $tierOverallLowest)
+                                                <span class="text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full mr-0.5">🏆</span>
+                                                @endif
+                                                @else
+                                                <span class="text-gray-300">—</span>
+                                                @endif
+                                            </td>
+                                            @endforeach
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                {{-- راهنما --}}
+                <div class="mt-4 flex items-center gap-4 text-[10px] sm:text-xs text-gray-600 flex-wrap bg-white rounded-lg border border-gray-200 p-3">
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-3 h-3 bg-green-50 ring-2 ring-green-400 rounded"></div>
+                        <span>ارزان‌ترین قیمت</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-red-400 font-bold">+X%</span>
+                        <span>درصد گران‌تر از ارزان‌ترین</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-[9px] bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full">🏆</span>
+                        <span>بهترین قیمت کل</span>
+                    </div>
                 </div>
             </div>
             @endif
