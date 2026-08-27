@@ -42,7 +42,7 @@ use App\Helpers\PriceHelper;
         BREADCRUMB
         ═══════════════════════════════════════════════════════ --}}
         @if(!empty($breadcrumbs))
-        <nav class="mb-6" aria-label="Breadcrumb">
+        <nav class="mb-4" aria-label="Breadcrumb">
             <ol class="flex items-center flex-wrap gap-1.5 text-sm text-gray-500">
                 @foreach($breadcrumbs as $index => $crumb)
                 <li class="flex items-center">
@@ -68,7 +68,7 @@ use App\Helpers\PriceHelper;
         {{-- ═══════════════════════════════════════════════════════
         MAIN PRODUCT SECTION (Gallery + Info)
         ═══════════════════════════════════════════════════════ --}}
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-10">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
 
 
 
@@ -101,7 +101,7 @@ use App\Helpers\PriceHelper;
 }">
 
                 {{-- Main Media Display --}}
-                <div class="relative bg-white rounded-2xl border border-gray-200 overflow-hidden aspect-square mb-4 shadow-sm group">
+                <div class="relative bg-white rounded-2xl border border-gray-200 overflow-hidden aspect-[4/3] sm:aspect-square mb-3 shadow-sm group">
                     {{-- Image Display --}}
                     <template x-if="currentMedia && isImage">
                         <div @click="openZoom()" class="cursor-zoom-in">
@@ -257,7 +257,7 @@ use App\Helpers\PriceHelper;
 
 
             {{-- ──── RIGHT: Product Info ──── --}}
-            <div class="lg:col-span-7 space-y-6">
+            <div class="lg:col-span-7 space-y-4">
 
                 {{-- Product Title --}}
                 <div>
@@ -270,7 +270,7 @@ use App\Helpers\PriceHelper;
                         {{ $product->category->name }}
                     </a>
                     @endif
-                    <h1 class="text-2xl lg:text-3xl font-extrabold text-gray-900 leading-tight">
+                    <h1 class="text-xl lg:text-2xl font-bold text-gray-900 leading-snug">
                         {{ $product->title }}
                     </h1>
                     @if($product->sku)
@@ -290,9 +290,9 @@ use App\Helpers\PriceHelper;
 
                 {{-- Short Description --}}
                 @if($product->short_description)
-                <div class="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-                    <h3 class="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div class="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+                    <h3 class="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                         </svg>
                         توضیحات کوتاه
@@ -314,9 +314,9 @@ use App\Helpers\PriceHelper;
         <div x-data="{ compareMode: false }">
 
             {{-- ── هدر بخش ── --}}
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="font-bold text-gray-700 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-base font-semibold text-gray-700 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
                     قیمت‌های عمده تأمین‌کنندگان
                     @if($hasMultipleSuppliers)
                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
@@ -432,16 +432,16 @@ use App\Helpers\PriceHelper;
                     @endif
                 </div>
                 
-                {{-- ماتریس بهترین قیمت‌ها - با بهبودهای Responsive --}}
+                {{-- ماتریس بهترین قیمت‌ها - بهینه‌سازی شده --}}
                 <div class="relative">
                     {{-- Scrollbar indicator --}}
-                    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-xl border border-gray-200 bg-white shadow-sm
+                    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-lg border border-gray-200 bg-white
                                 shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)] 
-                                md:shadow-sm">
+                                md:shadow-none">
                         <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-3 text-right text-xs sm:text-sm font-medium text-gray-600 uppercase tracking-wider sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع فروش</th>
+                                <th class="px-2 sm:px-3 py-1.5 sm:py-2 text-right text-[10px] sm:text-xs font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع فروش</th>
                                 @php
                                     $allTiers = $productSuppliers->flatMap(fn($ps) => $ps->prices)->pluck('tier_index')->unique()->sort()->values();
                                     $tierNames = $product->quantity_tiers ?? [];
@@ -462,13 +462,13 @@ use App\Helpers\PriceHelper;
                                             $rangeText = null;
                                         }
                                     @endphp
-                                    <th class="px-3 sm:px-4 py-3 sm:py-4 text-center border-r border-gray-200 min-w-[100px] sm:min-w-[120px]">
-                                        {{-- محدوده تعداد: بهینه برای موبایل --}}
+                                    <th class="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-r border-gray-200 min-w-[90px] sm:min-w-[110px]">
+                                        {{-- محدوده تعداد --}}
                                         @if($rangeText)
-                                            <div class="text-sm sm:text-base md:text-lg font-extrabold text-gray-900 tabular-nums leading-tight mb-0.5">{{ $rangeText }} عدد</div>
+                                            <div class="text-sm sm:text-base md:text-lg font-extrabold text-gray-900 tabular-nums leading-tight">{{ $rangeText }} عدد</div>
                                         @endif
-                                        {{-- نام تیراژ: کوچکتر --}}
-                                        <div class="text-[10px] sm:text-xs md:text-sm font-medium text-gray-600 uppercase leading-tight">{{ $tierName }}</div>
+                                        {{-- نام تیراژ --}}
+                                        <div class="text-[9px] sm:text-[10px] md:text-xs font-medium text-gray-600 uppercase leading-tight mt-0.5">{{ $tierName }}</div>
                                     </th>
                                 @endforeach
                             </tr>
@@ -489,6 +489,7 @@ use App\Helpers\PriceHelper;
                                             'key' => "{$code}_{$checkPeriodId}",
                                             'name' => $name,
                                             'check_period_name' => $checkPeriodName,
+                                            'check_period_days' => $checkPeriodDays,
                                             'sort_key' => $code === 'cash' ? 0 : $checkPeriodDays,
                                             'display' => $checkPeriodName ? "{$name} ({$checkPeriodName})" : $name,
                                         ];
@@ -500,7 +501,17 @@ use App\Helpers\PriceHelper;
                             
                             @foreach($allPriceTypes as $priceType)
                                 <tr class="group hover:bg-gray-50 transition-colors">
-                                    <td class="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50 z-10 transition-colors border-l-2 border-gray-300">{{ $priceType['display'] }}</td>
+                                    <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-semibold text-gray-900 whitespace-nowrap sticky right-0 bg-white group-hover:bg-gray-50 z-10 transition-colors border-l-2 border-gray-300">
+                                        {{-- Task #3: عنوان بهینه برای چکی --}}
+                                        @if($priceType['check_period_name'])
+                                            <div class="leading-tight">
+                                                <div>{{ $priceType['name'] }}</div>
+                                                <div class="text-[9px] sm:text-[10px] text-gray-500 mt-0.5">{{ $priceType['check_period_days'] }} روزه</div>
+                                            </div>
+                                        @else
+                                            {{ $priceType['display'] }}
+                                        @endif
+                                    </td>
                                     
                                     @foreach($allTiers as $tier)
                                         @php
@@ -599,7 +610,7 @@ use App\Helpers\PriceHelper;
                                             })->values();
                                         @endphp
                                         
-                                        <td class="px-3 sm:px-4 py-2 sm:py-3 text-center border-r border-gray-100">
+                                        <td class="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-r border-gray-100">
                                             {{-- نمایش قیمت بدون گارانتی --}}
                                             <div x-show="!showWarrantyPrices">
                                                 @if($bestPriceSuppliers->isNotEmpty())
@@ -610,20 +621,20 @@ use App\Helpers\PriceHelper;
                                                         $hasMultipleBest = $bestPriceSuppliers->count() > 1;
                                                     @endphp
                                                     <a href="#{{ $anchorId }}" 
-                                                       class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer group relative"
+                                                       class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-2 py-1.5 sm:px-3 sm:py-2 rounded-md transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer group relative"
                                                        onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
-                                                        <div class="text-base sm:text-lg md:text-xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestPrice['amount']) }}</div>
+                                                        <div class="text-sm sm:text-base md:text-lg font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestPrice['amount']) }}</div>
                                                         @if($showSupplierInfo && !$hasMultipleBest)
-                                                            <div class="text-xs text-green-700 mt-1 font-medium">
+                                                            <div class="text-[9px] sm:text-[10px] text-green-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
                                                             </div>
                                                         @elseif($hasMultipleBest)
-                                                            <div class="text-xs text-green-700 mt-1 font-medium">
+                                                            <div class="text-[9px] sm:text-[10px] text-green-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestPriceSuppliers->count() }} تامین‌کننده
                                                             </div>
                                                             {{-- Tooltip --}}
                                                             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
-                                                                <div class="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
+                                                                <div class="bg-gray-900 text-white text-[10px] rounded-lg py-2 px-3 shadow-lg">
                                                                     <div class="font-semibold mb-1.5">تامین‌کنندگان با قیمت یکسان:</div>
                                                                     <ul class="space-y-1">
                                                                         @foreach($bestPriceSuppliers as $supplier)
@@ -641,7 +652,7 @@ use App\Helpers\PriceHelper;
                                                         @endif
                                                     </a>
                                                 @else
-                                                    <span class="text-gray-300 text-base sm:text-lg">—</span>
+                                                    <span class="text-gray-300 text-sm sm:text-base">—</span>
                                                 @endif
                                             </div>
                                             
@@ -655,25 +666,25 @@ use App\Helpers\PriceHelper;
                                                         $hasMultipleBestWarranty = $bestWarrantySuppliers->count() > 1;
                                                     @endphp
                                                     <a href="#{{ $wAnchorId }}" 
-                                                       class="block bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold px-3 py-3 rounded-lg transition-all duration-200 ring-2 ring-purple-400 hover:ring-purple-500 cursor-pointer group relative"
+                                                       class="block bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold px-2 py-1.5 sm:px-3 sm:py-2 rounded-md transition-all duration-200 ring-2 ring-purple-400 hover:ring-purple-500 cursor-pointer group relative"
                                                        onclick="event.preventDefault(); document.getElementById('{{ $wAnchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-purple-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-purple-100'), 2000);">
-                                                        <div class="flex items-center justify-center gap-1.5">
-                                                            <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <div class="flex items-center justify-center gap-1">
+                                                            <svg class="w-3 h-3 sm:w-4 sm:h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                                                             </svg>
-                                                            <div class="text-base sm:text-lg md:text-xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
+                                                            <div class="text-sm sm:text-base md:text-lg font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
                                                         </div>
                                                         @if($showSupplierInfo && !$hasMultipleBestWarranty)
-                                                            <div class="text-xs text-purple-700 mt-1 font-medium">
+                                                            <div class="text-[9px] sm:text-[10px] text-purple-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestWarrantyPrice['supplier']->brand_name ?? $bestWarrantyPrice['supplier']->company_name }}
                                                             </div>
                                                         @elseif($hasMultipleBestWarranty)
-                                                            <div class="text-xs text-purple-700 mt-1 font-medium">
+                                                            <div class="text-[9px] sm:text-[10px] text-purple-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestWarrantySuppliers->count() }} تامین‌کننده
                                                             </div>
                                                             {{-- Tooltip --}}
                                                             <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
-                                                                <div class="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 shadow-lg">
+                                                                <div class="bg-gray-900 text-white text-[10px] rounded-lg py-2 px-3 shadow-lg">
                                                                     <div class="font-semibold mb-1.5">تامین‌کنندگان با بهترین گارانتی:</div>
                                                                     <ul class="space-y-1">
                                                                         @foreach($bestWarrantySuppliers as $supplier)
@@ -702,33 +713,33 @@ use App\Helpers\PriceHelper;
                     </table>
                 </div>
                 
-                {{-- Scroll hint برای موبایل --}}
-                <div class="md:hidden text-center text-xs text-gray-600 mt-2 flex items-center justify-center gap-1">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {{-- Scroll hint --}}
+                <div class="md:hidden text-center text-[10px] text-gray-500 mt-2 flex items-center justify-center gap-1">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
                     </svg>
                     <span>برای مشاهده تمام ستون‌ها به چپ و راست بکشید</span>
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
                     </svg>
                 </div>
             </div>
                 
                 {{-- راهنما --}}
-                <div class="mt-3 flex items-center gap-6 text-xs text-gray-600 flex-wrap">
-                    <div class="flex items-center gap-2" x-show="!showWarrantyPrices">
-                        <div class="w-4 h-4 bg-green-50 ring-2 ring-green-400 rounded"></div>
-                        <span>بهترین قیمت (بدون گارانتی)</span>
+                <div class="mt-2 flex items-center gap-4 text-[10px] sm:text-xs text-gray-600 flex-wrap">
+                    <div class="flex items-center gap-1.5" x-show="!showWarrantyPrices">
+                        <div class="w-3 h-3 bg-green-50 ring-2 ring-green-400 rounded"></div>
+                        <span>بهترین قیمت</span>
                     </div>
-                    <div class="flex items-center gap-2" x-show="showWarrantyPrices" x-cloak>
-                        <div class="w-4 h-4 bg-purple-50 ring-2 ring-purple-400 rounded"></div>
+                    <div class="flex items-center gap-1.5" x-show="showWarrantyPrices" x-cloak>
+                        <div class="w-3 h-3 bg-purple-50 ring-2 ring-purple-400 rounded"></div>
                         <span>بهترین قیمت با گارانتی</span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="flex items-center gap-1.5">
+                        <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
                         </svg>
-                        <span>کلیک روی قیمت → نمایش جزئیات تامین‌کننده</span>
+                        <span>کلیک → جزئیات تامین‌کننده</span>
                     </div>
                 </div>
             </div>
