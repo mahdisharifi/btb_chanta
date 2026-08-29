@@ -131,11 +131,15 @@
             </div>
 
             {{-- Mobile menu button --}}
-            <button @click="mobileMenu = !mobileMenu" class="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100">
-                <svg x-show="!mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button @click="mobileMenu = !mobileMenu" 
+                    class="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                    aria-label="منوی موبایل"
+                    :aria-expanded="mobileMenu"
+                    aria-controls="mobile-menu">
+                <svg x-show="!mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
-                <svg x-show="mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;">
+                <svg x-show="mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
@@ -143,6 +147,7 @@
 
         {{-- Mobile Menu --}}
         <div x-show="mobileMenu"
+             id="mobile-menu"
              x-transition:enter="transition ease-out duration-200"
              x-transition:enter-start="opacity-0 -translate-y-2"
              x-transition:enter-end="opacity-100 translate-y-0"
@@ -183,7 +188,9 @@
      class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
     <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
         <span>✅ {{ session('success') }}</span>
-        <button @click="show = false" class="text-green-500 hover:text-green-700">&times;</button>
+        <button @click="show = false" 
+                class="text-green-500 hover:text-green-700" 
+                aria-label="بستن پیام موفقیت">&times;</button>
     </div>
 </div>
 @endif
@@ -193,7 +200,9 @@
      class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
     <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
         <span>❌ {{ session('error') }}</span>
-        <button @click="show = false" class="text-red-500 hover:text-red-700">&times;</button>
+        <button @click="show = false" 
+                class="text-red-500 hover:text-red-700"
+                aria-label="بستن پیام خطا">&times;</button>
     </div>
 </div>
 @endif
@@ -205,7 +214,7 @@
 </main>
 
 {{-- Footer --}}
-<footer class="bg-gray-800 text-gray-300 mt-16">
+<footer class="bg-gray-800 text-gray-100 mt-16">
 
     {{-- Main Footer --}}
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -290,13 +299,26 @@
                 </div>
 
             </div>
-            <a referrerpolicy='origin' target='_blank' href='https://trustseal.enamad.ir/?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t'><img referrerpolicy='origin' src='https://trustseal.enamad.ir/logo.aspx?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t' alt='' style='cursor:pointer' code='uPvXcmevQLu4ywWugwOlGjxP6uDphi3t'></a>
+            <a referrerpolicy='origin' 
+               target='_blank' 
+               rel='noopener noreferrer'
+               href='https://trustseal.enamad.ir/?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t'
+               aria-label="نماد اعتماد الکترونیک - ساماندهی"
+               class="inline-block">
+                <img referrerpolicy='origin' 
+                     src='https://trustseal.enamad.ir/logo.aspx?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t' 
+                     alt='نماد اعتماد الکترونیک' 
+                     style='cursor:pointer' 
+                     width='120' 
+                     height='120'
+                     loading='lazy'>
+            </a>
         </div>
     </div>
 
     {{-- Copyright Bar --}}
     <div class="border-t border-gray-700">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-500">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-300">
             <span>© {{ date('Y') }} مارکت‌پلیس B2B — تمامی حقوق محفوظ است.</span>
             <span class="mt-2 sm:mt-0">توسعه با ❤️ در ایران</span>
         </div>

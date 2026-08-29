@@ -142,7 +142,7 @@ $categorySlug = $category?->slug;
             @endif
 
             @if($product->sku)
-            <span class="text-[10px] text-gray-400">کد: {{ $product->sku }}</span>
+            <span class="text-[10px] text-gray-600 font-medium">کد: {{ $product->sku }}</span>
             @endif
         </div>
 
@@ -289,9 +289,9 @@ $categorySlug = $category?->slug;
 
         {{-- SKU --}}
         @if($product->sku)
-        <div class="mb-3 flex items-center gap-1.5 text-[10px] text-gray-400">
+        <div class="mb-3 flex items-center gap-1.5 text-[10px] text-gray-600">
             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
-            <span>کد: {{ $product->sku }}</span>
+            <span class="font-medium">کد: {{ $product->sku }}</span>
         </div>
         @endif
 

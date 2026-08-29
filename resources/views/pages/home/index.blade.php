@@ -11,7 +11,7 @@
     {{-- HEADER + HERO SECTION --}}
 
     @php
-        $heroImage = asset('storage/' .'images/home/hero-b2b.jpg');
+        $heroImage = asset('storage/' .'images/home/hero-b2b.webp');
     @endphp
 
     <section class="relative overflow-hidden bg-slate-950" x-data="{ mobileMenuOpen: false }">
@@ -20,6 +20,10 @@
             <img
                 src="{{ $heroImage }}"
                 alt="پلتفرم عمده فروشی چن تا؟"
+                width="1920"
+                height="1080"
+                fetchpriority="high"
+                decoding="async"
                 class="h-full w-full object-cover opacity-60 blur-[2px]"
             >
             <!-- گرادینت سنگین‌تر برای خوانایی بهتر -->
@@ -64,7 +68,7 @@
                                 <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 mb-4 border border-emerald-500/20">
                                     <x-heroicon-o-arrows-right-left class="h-7 w-7" />
                                 </div>
-                                <h3 class="text-xl font-bold">خرید بدون واسطه</h3>
+                                <h2 class="text-xl font-bold">خرید بدون واسطه</h2>
                                 <p class="mt-2 text-sm text-slate-400 leading-6">ارتباط مستقیم تأمین‌کننده و کاسب جهت کاهش قیمت و شفافیت.</p>
                             </div>
 
@@ -72,7 +76,7 @@
                                 <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 mb-4 border border-amber-500/20">
                                     <x-heroicon-o-magnifying-glass class="h-7 w-7" />
                                 </div>
-                                <h3 class="text-xl font-bold">جستجوی هوشمند</h3>
+                                <h2 class="text-xl font-bold">جستجوی هوشمند</h2>
                                 <p class="mt-2 text-sm text-slate-400 leading-6">دسترسی سریع به دسته بندی‌ها و محصولات با فیلترهای پیشرفته.</p>
                             </div>
                         </div>
