@@ -72,6 +72,7 @@
             <a
                 href="{{ $moreLink }}"
                 class="text-sm font-semibold text-amber-700 transition hover:text-amber-800"
+                aria-label="مشاهده همه {{ $title }}"
             >
                 مشاهده همه
             </a>

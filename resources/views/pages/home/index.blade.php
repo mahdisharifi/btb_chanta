@@ -138,8 +138,9 @@
                     </div>
                 </div>
                 <a href="{{ route('products.index', ['featured' => 1]) }}"
-                   class="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 transition">
-                    مشاهده همه
+                   class="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 transition"
+                   aria-label="مشاهده همه محصولات ویژه">
+                    مشاهده همه محصولات ویژه
                     <svg class="w-4 h-4 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
