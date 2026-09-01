@@ -444,6 +444,212 @@
                     @endif
                 </div>
             </div>
+
+            {{-- ═══════════ بخش دسته‌بندی‌ها (Accordion) ═══════════ --}}
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" x-data="{ open: false }">
+                <button 
+                    @click="open = !open"
+                    class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4 flex items-center justify-between hover:from-indigo-600 hover:to-purple-700 transition-all">
+                    <div class="flex items-center gap-3">
+                        <x-heroicon-s-folder class="w-6 h-6 text-white"/>
+                        <div class="text-right">
+                            <h2 class="text-lg font-bold text-white">درصد چک برای دسته‌بندی‌های خاص</h2>
+                            <p class="text-xs text-white/80 font-normal mt-0.5">تعیین درصد متفاوت برای دسته‌بندی‌های خاص مانند "چاپ دیجیتال"</p>
+                        </div>
+                        <span class="text-xs bg-white/30 text-white px-3 py-1 rounded-full font-bold">
+                            {{ count($categoryPeriods) }} دسته‌بندی
+                        </span>
+                    </div>
+                    <div class="flex-shrink-0 mr-3">
+                        <x-heroicon-s-chevron-down class="w-5 h-5 text-white transition-transform" ::class="{ 'rotate-180': open }"/>
+                    </div>
+                </button>
+
+                <div x-show="open" x-collapse class="border-t-2 border-gray-100">
+                    <div class="p-6">
+                        {{-- راهنما --}}
+                        <div class="mb-6 bg-purple-50 border-l-4 border-purple-400 p-4 rounded-r-lg">
+                            <div class="flex items-start gap-3">
+                                <x-heroicon-s-information-circle class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5"/>
+                                <div class="text-sm text-purple-900">
+                                    <p class="font-bold mb-1">📊 سلسله مراتب اولویت درصد</p>
+                                    <p class="text-xs mb-2"><strong>1.</strong> محصول (درصد اختصاصی محصول) → <strong>2.</strong> دسته‌بندی (این بخش) → <strong>3.</strong> پیش‌فرض (دوره‌های بالا)</p>
+                                    <p class="text-xs text-purple-700">💡 فقط دسته‌بندی‌های سطح آخر (که محصول دارند) قابل انتخاب هستند.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- فرم افزودن دسته‌بندی --}}
+                        @if(!$editingCategoryId)
+                            <div class="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-5 mb-6">
+                                <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                    <x-heroicon-o-plus-circle class="w-5 h-5 text-indigo-600"/>
+                                    افزودن دسته‌بندی جدید
+                                </h3>
+
+                                <div class="space-y-4">
+                                    {{-- انتخاب دسته‌بندی --}}
+                                    <div>
+                                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                                            دسته‌بندی <span class="text-red-500">*</span>
+                                        </label>
+                                        <select 
+                                            wire:model="selectedCategoryId"
+                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                                            <option value="">-- انتخاب دسته‌بندی --</option>
+                                            @foreach($categories as $id => $name)
+                                                <option value="{{ $id }}">{{ $name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <x-input-error :messages="$errors->get('selectedCategoryId')" class="mt-1" />
+                                        <p class="text-xs text-gray-500 mt-1.5">💡 فقط دسته‌بندی‌های سطح آخر نمایش داده می‌شود</p>
+                                    </div>
+
+                                    {{-- درصدها برای هر دوره --}}
+                                    <div>
+                                        <label class="block text-sm font-bold text-gray-700 mb-2">
+                                            درصد افزایش برای هر دوره <span class="text-red-500">*</span>
+                                        </label>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            @foreach($activePeriods as $period)
+                                                @if($period->is_enabled_for_supplier)
+                                                    <div class="bg-white border border-indigo-200 rounded-lg p-3">
+                                                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                            {{ $period->display_name }}
+                                                        </label>
+                                                        <div class="relative">
+                                                            <input 
+                                                                wire:model="categoryPercentages.{{ $period->id }}"
+                                                                type="number"
+                                                                min="0"
+                                                                max="100"
+                                                                step="0.01"
+                                                                onwheel="this.blur()"
+                                                                class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
+                                                                placeholder="مثال: 5.5"
+                                                            />
+                                                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-bold">%</span>
+                                                        </div>
+                                                    </div>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                        <x-input-error :messages="$errors->get('categoryPercentages')" class="mt-1" />
+                                        <p class="text-xs text-gray-500 mt-2">💡 فقط دوره‌هایی که فعال کرده‌اید نمایش داده می‌شود</p>
+                                    </div>
+
+                                    {{-- دکمه افزودن --}}
+                                    <div class="pt-3 border-t border-gray-200">
+                                        <button 
+                                            wire:click="addCategory"
+                                            class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2">
+                                            <x-heroicon-o-check-circle class="w-5 h-5"/>
+                                            افزودن دسته‌بندی
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+
+                        {{-- لیست دسته‌بندی‌های تنظیم شده --}}
+                        @if(empty($categoryPeriods) && !$editingCategoryId)
+                            <div class="text-center py-12 text-gray-400">
+                                <x-heroicon-o-folder-open class="w-20 h-20 mx-auto mb-4 opacity-30"/>
+                                <p class="text-base font-bold mb-1">هنوز دسته‌بندی‌ای تنظیم نکرده‌اید</p>
+                                <p class="text-sm">در صورت نیاز از فرم بالا استفاده کنید</p>
+                            </div>
+                        @else
+                            <div class="space-y-3">
+                                @foreach($categoryPeriods as $cat)
+                                    @if($editingCategoryId === $cat['category_id'])
+                                        {{-- فرم ویرایش --}}
+                                        <div class="bg-white border-2 border-indigo-400 rounded-xl p-5 shadow-md">
+                                            <h4 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                                <x-heroicon-o-pencil-square class="w-5 h-5 text-indigo-600"/>
+                                                ویرایش: {{ $cat['category_name'] }}
+                                            </h4>
+
+                                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                                @foreach($activePeriods as $period)
+                                                    @if($period->is_enabled_for_supplier)
+                                                        <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                                                            <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                                {{ $period->display_name }}
+                                                            </label>
+                                                            <div class="relative">
+                                                                <input 
+                                                                    wire:model="categoryPercentages.{{ $period->id }}"
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="100"
+                                                                    step="0.01"
+                                                                    onwheel="this.blur()"
+                                                                    class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
+                                                                />
+                                                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-bold">%</span>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+                                                @endforeach
+                                            </div>
+                                            <x-input-error :messages="$errors->get('categoryPercentages')" class="mt-2" />
+
+                                            <div class="flex items-center gap-2 pt-3 border-t border-gray-200">
+                                                <button 
+                                                    wire:click="saveCategoryEdit"
+                                                    class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                                    <x-heroicon-o-check class="w-4 h-4"/>
+                                                    ذخیره
+                                                </button>
+                                                <button 
+                                                    wire:click="cancelCategoryEdit"
+                                                    class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">
+                                                    لغو
+                                                </button>
+                                            </div>
+                                        </div>
+                                    @else
+                                        {{-- نمایش عادی --}}
+                                        <div class="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-4">
+                                            <div class="flex items-start justify-between gap-4">
+                                                <div class="flex-1">
+                                                    <h3 class="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                                        <x-heroicon-s-folder class="w-5 h-5 text-indigo-600"/>
+                                                        {{ $cat['category_name'] }}
+                                                    </h3>
+                                                    <div class="flex flex-wrap gap-2">
+                                                        @foreach($cat['periods'] as $p)
+                                                            <span class="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full">
+                                                                {{ $p['name'] }}: {{ $p['percentage'] }}%
+                                                            </span>
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="flex items-center gap-2 flex-shrink-0">
+                                                    <button 
+                                                        wire:click="startEditCategory({{ $cat['category_id'] }})"
+                                                        class="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                                                        title="ویرایش">
+                                                        <x-heroicon-o-pencil class="w-5 h-5"/>
+                                                    </button>
+                                                    <button 
+                                                        wire:click="removeCategory({{ $cat['category_id'] }})"
+                                                        wire:confirm="آیا مطمئن هستید؟ تنظیمات این دسته‌بندی حذف خواهد شد."
+                                                        class="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                                                        title="حذف">
+                                                        <x-heroicon-o-trash class="w-5 h-5"/>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endif
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

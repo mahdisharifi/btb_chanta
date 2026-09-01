@@ -477,4 +477,71 @@ class Category extends Model
         return $this->belongsToMany(Attribute::class);
     }
 
+    /**
+     * دوره‌های چک مرتبط با این دسته‌بندی برای تامین‌کنندگان مختلف
+     */
+    public function checkPeriods()
+    {
+        return $this->belongsToMany(CheckPeriod::class, 'category_check_period')
+            ->withPivot(['supplier_id', 'percentage_increase', 'is_active'])
+            ->withTimestamps();
+    }
+
+    /**
+     * دریافت درصد افزایش برای یک دوره چک خاص و یک تامین‌کننده خاص
+     * 
+     * @param int $checkPeriodId
+     * @param int $supplierId
+     * @return float|null
+     */
+    public function getCheckPercentageForSupplier(int $checkPeriodId, int $supplierId): ?float
+    {
+        $pivot = \DB::table('category_check_period')
+            ->where('category_id', $this->id)
+            ->where('check_period_id', $checkPeriodId)
+            ->where('supplier_id', $supplierId)
+            ->where('is_active', true)
+            ->first();
+
+        return $pivot ? (float)$pivot->percentage_increase : null;
+    }
+
+    /**
+     * آیا این دسته‌بندی برای تامین‌کننده خاص تنظیمات دوره چک دارد؟
+     * 
+     * @param int $supplierId
+     * @return bool
+     */
+    public function hasCheckPeriodsForSupplier(int $supplierId): bool
+    {
+        return \DB::table('category_check_period')
+            ->where('category_id', $this->id)
+            ->where('supplier_id', $supplierId)
+            ->where('is_active', true)
+            ->exists();
+    }
+
+    /**
+     * دریافت تمام تنظیمات دوره چک برای یک تامین‌کننده خاص
+     * 
+     * @param int $supplierId
+     * @return \Illuminate\Support\Collection
+     */
+    public function getCheckPeriodsForSupplier(int $supplierId): \Illuminate\Support\Collection
+    {
+        return \DB::table('category_check_period')
+            ->join('check_periods', 'category_check_period.check_period_id', '=', 'check_periods.id')
+            ->where('category_check_period.category_id', $this->id)
+            ->where('category_check_period.supplier_id', $supplierId)
+            ->where('category_check_period.is_active', true)
+            ->select([
+                'check_periods.id',
+                'check_periods.name',
+                'check_periods.days',
+                'category_check_period.percentage_increase'
+            ])
+            ->orderBy('check_periods.days')
+            ->get();
+    }
+
 }

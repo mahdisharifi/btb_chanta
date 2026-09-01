@@ -23,16 +23,22 @@ $productPrice = ProductPrice::create([
 ```
 
 ### 2️⃣ اولویت دوم: درصد دسته‌بندی (Category-Level)
-**مکان ذخیره:** `category_check_period` (جدول pivot آینده)
+**مکان ذخیره:** `category_check_period` (جدول pivot)
 
 - **استفاده:** زمانی که یک دسته‌بندی کامل نیاز به درصد خاصی دارد
 - **مثال:** تمام محصولات دسته "چاپ دیجیتال" → 6% برای 30 روزه
-- **وضعیت:** 🔜 آماده برای پیاده‌سازی آینده (TODO)
+- **وضعیت:** ✅ پیاده‌سازی شده
 
 ```php
-// نمونه (آینده):
-Category::find(5)->checkPeriods()->attach(1, [
-    'percentage_increase' => 6.0
+// استفاده در صفحه: /supplier/settings/check-periods
+// بخش accordion دسته‌بندی‌ها
+// ذخیره در: category_check_period
+DB::table('category_check_period')->insert([
+    'supplier_id' => 5,
+    'category_id' => 10, // چاپ دیجیتال
+    'check_period_id' => 1, // 30 روزه
+    'percentage_increase' => 6.0,
+    'is_active' => true,
 ]);
 ```
 
@@ -71,7 +77,6 @@ Category::find(5)->checkPeriods()->attach(1, [
     ┌─────────────────────┐
     │ درصد دسته‌بندی      │
     │   موجود است?        │
-    │  (آینده - TODO)    │
     └─────┬───────────────┘
           │
     ┌─────▼─────┐
@@ -148,7 +153,7 @@ percentage_override: 8%  ← اولویت دارد
 قیمت چک = 100,000 × (1 + 8/100) = 108,000 تومان
 ```
 
-### سناریو 3: آینده - با درصد دسته‌بندی
+### سناریو 3: با درصد دسته‌بندی
 ```
 قیمت نقدی: 100,000 تومان
 دوره: 30 روزه
@@ -186,16 +191,18 @@ CREATE TABLE supplier_check_period (
 );
 ```
 
-### جدول `category_check_period` (آینده - TODO)
+### جدول `category_check_period` (پیاده‌سازی شده)
 ```sql
--- پیاده‌سازی آینده:
 CREATE TABLE category_check_period (
     id BIGINT PRIMARY KEY,
+    supplier_id BIGINT,
     category_id BIGINT,
     check_period_id BIGINT,
-    supplier_id BIGINT,
     percentage_increase DECIMAL(5,2) DEFAULT 0,
-    -- ...
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    UNIQUE KEY unique_supplier_category_period (supplier_id, category_id, check_period_id)
 );
 ```
 
@@ -257,14 +264,17 @@ $productPrice->effective_percentage; // float|null
 ## 📅 تاریخچه تغییرات
 
 - **2026-09-01:** پیاده‌سازی اولیه با Product override + Check period default
-- **آینده:** اضافه کردن Category-level percentage
+- **2026-09-01:** اضافه شدن Category-level percentage (جدول pivot + relations + UI)
 
 ## 🔗 فایل‌های مرتبط
 
-- `app/Models/CheckPeriod.php` - متد `getEffectivePercentage()`
+- `app/Models/CheckPeriod.php` - متد `getEffectivePercentage()` + relation `categories()`
+- `app/Models/Category.php` - relation `checkPeriods()` + متدهای کمکی
 - `app/Models/ProductPrice.php` - متد `calculateCheckPrice()`
 - `database/migrations/2026_09_01_130540_add_percentage_override_to_product_prices_table.php`
-- `app/Livewire/Supplier/Settings/ManageCheckPeriods.php` - مدیریت درصد پیش‌فرض
+- `database/migrations/2026_09_01_142623_create_category_check_period_table.php`
+- `app/Livewire/Supplier/Settings/ManageCheckPeriods.php` - مدیریت درصد پیش‌فرض + دسته‌بندی‌ها
+- `resources/views/livewire/supplier/settings/manage-check-periods.blade.php` - UI با accordion
 
 ---
 

@@ -22,6 +22,12 @@ class EditPrice extends Component
     public ?string $sku = '';
     public bool $is_active = false;
     
+    // ✅ قیمت‌گذاری چک
+    public array $checkPriceMode = []; // [tier_index][period_id] = 'default' | 'percentage' | 'manual'
+    public array $checkPercentageOverride = []; // [tier_index][period_id] = float (درصد اختصاصی)
+    public array $checkPeriodEnabled = []; // [tier_index][period_id] = true/false (فعال/غیرفعال)
+    public array $effectivePercentages = []; // [period_id] = ['value' => float, 'source' => string]
+    
     // ✅ هزینه گارانتی سراسری
     public string $warrantyType = 'none';  // none, percentage, fixed, custom
     public ?float $warrantyValue = null;
@@ -138,6 +144,17 @@ class EditPrice extends Component
                 $this->priceMatrix[$tierIndex] = [];
             }
             
+            // مقداردهی اولیه checkPriceMode و checkPercentageOverride
+            if (!isset($this->checkPriceMode[$tierIndex])) {
+                $this->checkPriceMode[$tierIndex] = [];
+            }
+            if (!isset($this->checkPercentageOverride[$tierIndex])) {
+                $this->checkPercentageOverride[$tierIndex] = [];
+            }
+            if (!isset($this->checkPeriodEnabled[$tierIndex])) {
+                $this->checkPeriodEnabled[$tierIndex] = [];
+            }
+            
             foreach ($this->priceTypes as $priceType) {
                 $key = $priceType->id;
                 
@@ -156,13 +173,38 @@ class EditPrice extends Component
                         $checkKey = $tierIndex . '_' . $key . '_' . $period->id;
                         $checkPrice = $existingPrices->get($checkKey)?->first();
                         
-                        $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id] = [
-                            'price' => $checkPrice->price ?? null,
-                        ];
+                        // ✅ تعیین mode بر اساس داده‌های موجود
+                        if ($checkPrice) {
+                            // دوره فعال است (چون رکورد وجود دارد)
+                            $this->checkPeriodEnabled[$tierIndex][$period->id] = true;
+                            
+                            if ($checkPrice->percentage_override !== null) {
+                                // mode: percentage
+                                $this->checkPriceMode[$tierIndex][$period->id] = 'percentage';
+                                $this->checkPercentageOverride[$tierIndex][$period->id] = (float)$checkPrice->percentage_override;
+                                $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
+                            } elseif ($checkPrice->price !== null) {
+                                // mode: manual
+                                $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
+                                $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                            } else {
+                                // mode: default (price و percentage_override هر دو null)
+                                $this->checkPriceMode[$tierIndex][$period->id] = 'default';
+                                $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
+                            }
+                        } else {
+                            // هیچ رکوردی وجود ندارد → دوره غیرفعال است
+                            $this->checkPeriodEnabled[$tierIndex][$period->id] = false;
+                            $this->checkPriceMode[$tierIndex][$period->id] = 'default';
+                            $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
+                        }
                     }
                 }
             }
         }
+        
+        // بارگذاری درصدهای مؤثر
+        $this->loadEffectivePercentages();
     }
 
     /**
@@ -174,6 +216,35 @@ class EditPrice extends Component
             // اطلاعات عرضه
             'sku' => ['nullable', 'string', 'max:255', 'regex:/^[a-zA-Z0-9\-_]+$/'],
             'is_active' => ['boolean'],
+            
+            // ✅ قیمت‌گذاری چک
+            'checkPriceMode' => ['array'],
+            'checkPriceMode.*' => ['array'],
+            'checkPriceMode.*.*' => ['nullable', 'string', 'in:default,percentage,manual'],
+            
+            'checkPercentageOverride' => ['array'],
+            'checkPercentageOverride.*' => ['array'],
+            'checkPercentageOverride.*.*' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:100',
+                function ($attribute, $value, $fail) {
+                    // استخراج tierIndex و periodId از attribute path
+                    // مثال: checkPercentageOverride.0.5 → tier=0, period=5
+                    preg_match('/checkPercentageOverride\.(\d+)\.(\d+)/', $attribute, $matches);
+                    if (count($matches) === 3) {
+                        $tierIndex = (int)$matches[1];
+                        $periodId = (int)$matches[2];
+                        $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? null;
+                        
+                        // اگر mode='percentage'، درصد الزامی است
+                        if ($mode === 'percentage' && ($value === null || $value === '')) {
+                            $fail('درصد اختصاصی الزامی است.');
+                        }
+                    }
+                },
+            ],
             
             // ✅ هزینه گارانتی سراسری
             'warrantyType' => ['required', 'string', 'in:none,percentage,fixed,custom'],
@@ -255,7 +326,39 @@ class EditPrice extends Component
             // قیمت‌های چکی
             'priceMatrix.*.*.check_periods' => ['nullable', 'array'],
             'priceMatrix.*.*.check_periods.*' => ['array'],
-            'priceMatrix.*.*.check_periods.*.price' => ['nullable', 'numeric', 'min:0', 'max:999999999999'],
+            'priceMatrix.*.*.check_periods.*.price' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999999',
+                function ($attribute, $value, $fail) {
+                    // استخراج tierIndex و periodId از attribute path
+                    // مثال: priceMatrix.0.2.check_periods.5.price → tier=0, priceType=2, period=5
+                    preg_match('/priceMatrix\.(\d+)\.(\d+)\.check_periods\.(\d+)\.price/', $attribute, $matches);
+                    if (count($matches) === 4) {
+                        $tierIndex = (int)$matches[1];
+                        $priceTypeId = (int)$matches[2];
+                        $periodId = (int)$matches[3];
+                        $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? null;
+                        
+                        // اگر mode='manual'، قیمت الزامی است
+                        if ($mode === 'manual' && ($value === null || $value === '')) {
+                            $fail('قیمت دستی الزامی است.');
+                        }
+                        
+                        // بررسی: قیمت چک باید بیشتر یا مساوی قیمت نقدی باشد
+                        if ($value !== null && is_numeric($value)) {
+                            $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+                            if ($cashPriceType) {
+                                $cashPrice = $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? null;
+                                if ($cashPrice && is_numeric($cashPrice) && $value < $cashPrice) {
+                                    $fail('قیمت چک نمی‌تواند کمتر از قیمت نقدی باشد.');
+                                }
+                            }
+                        }
+                    }
+                },
+            ],
         ];
     }
     
@@ -266,6 +369,12 @@ class EditPrice extends Component
     {
         return [
             'sku.regex' => 'SKU فقط می‌تواند شامل حروف انگلیسی، اعداد، خط تیره و زیرخط باشد.',
+            
+            // قیمت‌گذاری چک
+            'checkPriceMode.*.*.in' => 'حالت قیمت‌گذاری نامعتبر است.',
+            'checkPercentageOverride.*.*.numeric' => 'درصد اختصاصی باید عدد باشد.',
+            'checkPercentageOverride.*.*.min' => 'درصد اختصاصی نمی‌تواند منفی باشد.',
+            'checkPercentageOverride.*.*.max' => 'درصد اختصاصی نمی‌تواند بیشتر از 100 باشد.',
             
             'warrantyType.required' => 'نوع هزینه گارانتی الزامی است.',
             'warrantyType.in' => 'نوع هزینه گارانتی نامعتبر است.',
@@ -288,6 +397,7 @@ class EditPrice extends Component
             'priceMatrix.*.*.price.max' => 'قیمت بیش از حد مجاز است.',
             'priceMatrix.*.*.check_periods.*.price.numeric' => 'قیمت چک باید عدد باشد.',
             'priceMatrix.*.*.check_periods.*.price.min' => 'قیمت چک نمی‌تواند منفی باشد.',
+            'priceMatrix.*.*.check_periods.*.price.max' => 'قیمت چک بیش از حد مجاز است.',
         ];
     }
 
@@ -375,16 +485,57 @@ class EditPrice extends Component
                                 continue;
                             }
                             
-                            if (!empty($periodData['price']) && is_numeric($periodData['price'])) {
-                                $this->productSupplier->prices()->create([
-                                    'product_id' => $this->product->id,
-                                    'price_type_id' => (int)$priceTypeId,
-                                    'tier_index' => (int)$tierIndex,
-                                    'check_period_id' => (int)$periodId,
-                                    'price' => (float)$periodData['price'],
-                                    'is_active' => (bool)$this->is_active,
-                                ]);
+                            // ✅ تعیین price و percentage_override بر اساس mode
+                            $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? 'default';
+                            $price = null;
+                            $percentageOverride = null;
+                            
+                            switch ($mode) {
+                                case 'default':
+                                    // هیچ چیز ذخیره نمی‌شود (محاسبه خودکار با سلسله مراتب)
+                                    $price = null;
+                                    $percentageOverride = null;
+                                    break;
+                                    
+                                case 'percentage':
+                                    // ذخیره درصد اختصاصی
+                                    $price = null;
+                                    $percentageOverride = $this->checkPercentageOverride[$tierIndex][$periodId] ?? null;
+                                    
+                                    // validation: درصد باید بین 0 تا 100 باشد
+                                    if ($percentageOverride !== null && ($percentageOverride < 0 || $percentageOverride > 100)) {
+                                        continue 2; // skip this record
+                                    }
+                                    break;
+                                    
+                                case 'manual':
+                                    // ذخیره قیمت دستی
+                                    $price = $periodData['price'] ?? null;
+                                    $percentageOverride = null;
+                                    
+                                    // validation: قیمت باید معتبر باشد
+                                    if ($price === null || !is_numeric($price) || $price < 0) {
+                                        continue 2; // skip this record
+                                    }
+                                    
+                                    $price = (float)$price;
+                                    break;
+                                    
+                                default:
+                                    continue 2; // mode نامعتبر
                             }
+                            
+                            // ذخیره رکورد (حتی اگر price و percentage_override هر دو null باشند)
+                            // برای mode='default' رکورد با null ها ذخیره می‌شود تا نشان دهد کاربر این دوره را فعال کرده
+                            $this->productSupplier->prices()->create([
+                                'product_id' => $this->product->id,
+                                'price_type_id' => (int)$priceTypeId,
+                                'tier_index' => (int)$tierIndex,
+                                'check_period_id' => (int)$periodId,
+                                'price' => $price,
+                                'percentage_override' => $percentageOverride,
+                                'is_active' => (bool)$this->is_active,
+                            ]);
                         }
                     }
                 }
@@ -421,6 +572,182 @@ class EditPrice extends Component
         }
         
         return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  CHECK PRICE CALCULATION METHODS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * محاسبه قیمت چک بر اساس mode انتخاب شده
+     * 
+     * @param int $tierIndex
+     * @param int $periodId
+     * @return float|null
+     */
+    public function calculateCheckPrice(int $tierIndex, int $periodId): ?float
+    {
+        // دریافت قیمت نقدی
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType) return null;
+        
+        $cashPrice = $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? null;
+        if (!$cashPrice || !is_numeric($cashPrice)) return null;
+        
+        $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? 'default';
+        
+        switch ($mode) {
+            case 'default':
+                // محاسبه با سلسله مراتب
+                $percentage = $this->getEffectivePercentageValue($periodId);
+                if ($percentage === null) return null;
+                return $cashPrice * (1 + ($percentage / 100));
+                
+            case 'percentage':
+                // محاسبه با درصد اختصاصی
+                $percentage = $this->checkPercentageOverride[$tierIndex][$periodId] ?? null;
+                if ($percentage === null || !is_numeric($percentage)) return null;
+                return $cashPrice * (1 + ($percentage / 100));
+                
+            case 'manual':
+                // قیمت دستی
+                $checkPriceType = $this->priceTypes->firstWhere('code', 'check');
+                if (!$checkPriceType) return null;
+                
+                $manualPrice = $this->priceMatrix[$tierIndex][$checkPriceType->id]['check_periods'][$periodId]['price'] ?? null;
+                return is_numeric($manualPrice) ? (float)$manualPrice : null;
+                
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * دریافت درصد مؤثر با سلسله مراتب برای یک دوره
+     * 
+     * @param int $periodId
+     * @return array ['value' => float, 'source' => string, 'details' => array]
+     */
+    public function getEffectivePercentage(int $periodId): array
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // 1. بررسی درصد دسته‌بندی
+        if ($this->product->category_id) {
+            $categoryPercentage = DB::table('category_check_period')
+                ->where('category_id', $this->product->category_id)
+                ->where('check_period_id', $periodId)
+                ->where('supplier_id', $supplierId)
+                ->where('is_active', true)
+                ->value('percentage_increase');
+            
+            if ($categoryPercentage !== null) {
+                $category = \App\Models\Category::find($this->product->category_id);
+                return [
+                    'value' => (float)$categoryPercentage,
+                    'source' => 'category',
+                    'details' => [
+                        'category_name' => $category ? $category->name : 'دسته‌بندی',
+                        'category_percentage' => (float)$categoryPercentage,
+                        'default_percentage' => $this->getDefaultPeriodPercentage($periodId),
+                    ],
+                ];
+            }
+        }
+        
+        // 2. درصد پیش‌فرض دوره چک
+        $defaultPercentage = $this->getDefaultPeriodPercentage($periodId);
+        
+        return [
+            'value' => $defaultPercentage,
+            'source' => 'default',
+            'details' => [
+                'default_percentage' => $defaultPercentage,
+            ],
+        ];
+    }
+
+    /**
+     * دریافت مقدار درصد مؤثر (فقط عدد)
+     */
+    private function getEffectivePercentageValue(int $periodId): ?float
+    {
+        $result = $this->getEffectivePercentage($periodId);
+        return $result['value'] ?? null;
+    }
+
+    /**
+     * دریافت درصد پیش‌فرض یک دوره از جدول supplier_check_period
+     */
+    private function getDefaultPeriodPercentage(int $periodId): float
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        $percentage = DB::table('supplier_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('check_period_id', $periodId)
+            ->where('is_active', true)
+            ->value('percentage_increase');
+        
+        return $percentage !== null ? (float)$percentage : 0.0;
+    }
+
+    /**
+     * کپی کردن تنظیمات از یک تیراژ به تیراژهای دیگر
+     * 
+     * @param int $sourceTierIndex
+     * @param array $targetTierIndexes
+     */
+    public function copyTierSettings(int $sourceTierIndex, array $targetTierIndexes = []): void
+    {
+        // اگر target ها مشخص نشده، به همه تیراژها کپی کن
+        if (empty($targetTierIndexes)) {
+            $targetTierIndexes = array_keys($this->quantityTiers);
+            // حذف خود source از لیست
+            $targetTierIndexes = array_filter($targetTierIndexes, fn($i) => $i !== $sourceTierIndex);
+        }
+        
+        foreach ($targetTierIndexes as $targetIndex) {
+            if (!isset($this->quantityTiers[$targetIndex])) continue;
+            
+            // کپی mode ها
+            if (isset($this->checkPriceMode[$sourceTierIndex])) {
+                $this->checkPriceMode[$targetIndex] = $this->checkPriceMode[$sourceTierIndex];
+            }
+            
+            // کپی درصدهای اختصاصی
+            if (isset($this->checkPercentageOverride[$sourceTierIndex])) {
+                $this->checkPercentageOverride[$targetIndex] = $this->checkPercentageOverride[$sourceTierIndex];
+            }
+            
+            // کپی قیمت‌های دستی چک
+            $checkPriceType = $this->priceTypes->firstWhere('code', 'check');
+            if ($checkPriceType && isset($this->priceMatrix[$sourceTierIndex][$checkPriceType->id]['check_periods'])) {
+                if (!isset($this->priceMatrix[$targetIndex][$checkPriceType->id]['check_periods'])) {
+                    $this->priceMatrix[$targetIndex][$checkPriceType->id]['check_periods'] = [];
+                }
+                
+                $this->priceMatrix[$targetIndex][$checkPriceType->id]['check_periods'] = 
+                    $this->priceMatrix[$sourceTierIndex][$checkPriceType->id]['check_periods'];
+            }
+        }
+        
+        $this->dispatch('notify',
+            message: 'تنظیمات با موفقیت کپی شد.',
+            type: 'success'
+        );
+    }
+
+    /**
+     * بارگذاری درصدهای مؤثر برای تمام دوره‌ها (برای نمایش)
+     */
+    public function loadEffectivePercentages(): void
+    {
+        $this->effectivePercentages = [];
+        
+        foreach ($this->checkPeriods as $period) {
+            $this->effectivePercentages[$period->id] = $this->getEffectivePercentage($period->id);
+        }
     }
 
     public function render()

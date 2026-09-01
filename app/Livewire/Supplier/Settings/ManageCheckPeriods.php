@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Supplier\Settings;
 
+use App\Models\Category;
 use App\Models\CheckPeriod;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,7 @@ class ManageCheckPeriods extends Component
 {
     public $globalPeriods = [];
     public $supplierPeriods = [];
+    public $categoryPeriods = []; // دسته‌بندی‌های تنظیم شده
     
     // فرم افزودن
     public $name = '';
@@ -27,9 +29,15 @@ class ManageCheckPeriods extends Component
     public $inlinePercentage = 0;
     public $inlineIsActive = true;
     
+    // مدیریت دسته‌بندی‌ها
+    public $selectedCategoryId = null;
+    public $categoryPercentages = []; // ['check_period_id' => percentage]
+    public $editingCategoryId = null;
+    
     public function mount()
     {
         $this->loadPeriods();
+        $this->loadCategoryPeriods();
     }
     
     public function loadPeriods()
@@ -517,8 +525,253 @@ class ManageCheckPeriods extends Component
         return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
     }
 
+    // ══════════════════════════════════════════════════════════
+    //  CATEGORY MANAGEMENT
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * بارگذاری دسته‌بندی‌هایی که برای آن‌ها درصد تعیین شده
+     */
+    public function loadCategoryPeriods()
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // دریافت تمام تنظیمات
+        $records = DB::table('category_check_period as ccp')
+            ->join('categories as c', 'ccp.category_id', '=', 'c.id')
+            ->join('check_periods as cp', 'ccp.check_period_id', '=', 'cp.id')
+            ->where('ccp.supplier_id', $supplierId)
+            ->where('ccp.is_active', true)
+            ->select([
+                'c.id as category_id',
+                'c.name as category_name',
+                'cp.id as check_period_id',
+                'cp.name as check_period_name',
+                'cp.days',
+                'ccp.percentage_increase',
+            ])
+            ->orderBy('c.name')
+            ->orderBy('cp.days')
+            ->get();
+        
+        // گروه‌بندی بر اساس دسته‌بندی
+        $grouped = [];
+        foreach ($records as $record) {
+            $categoryId = $record->category_id;
+            
+            if (!isset($grouped[$categoryId])) {
+                $grouped[$categoryId] = [
+                    'category_id' => $categoryId,
+                    'category_name' => $record->category_name,
+                    'periods' => [],
+                ];
+            }
+            
+            $grouped[$categoryId]['periods'][] = [
+                'check_period_id' => (int)$record->check_period_id,
+                'name' => $record->check_period_name,
+                'percentage' => (float)$record->percentage_increase,
+            ];
+        }
+        
+        $this->categoryPeriods = array_values($grouped);
+    }
+
+    /**
+     * افزودن دسته‌بندی جدید با درصدهای مشخص
+     */
+    public function addCategory()
+    {
+        $this->validate([
+            'selectedCategoryId' => ['required', 'exists:categories,id'],
+            'categoryPercentages' => ['required', 'array', 'min:1'],
+            'categoryPercentages.*' => ['required', 'numeric', 'min:0', 'max:100'],
+        ], [
+            'selectedCategoryId.required' => 'لطفاً یک دسته‌بندی انتخاب کنید.',
+            'selectedCategoryId.exists' => 'دسته‌بندی انتخاب شده معتبر نیست.',
+            'categoryPercentages.required' => 'لطفاً حداقل یک درصد تعیین کنید.',
+            'categoryPercentages.min' => 'لطفاً حداقل یک درصد تعیین کنید.',
+            'categoryPercentages.*.numeric' => 'درصد باید یک عدد باشد.',
+            'categoryPercentages.*.min' => 'درصد نمی‌تواند منفی باشد.',
+            'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
+        ]);
+        
+        $supplierId = Auth::user()->supplier->id;
+        $categoryId = (int)$this->selectedCategoryId;
+        
+        // بررسی: آیا این دسته‌بندی قبلاً اضافه شده؟
+        $existing = DB::table('category_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('category_id', $categoryId)
+            ->exists();
+        
+        if ($existing) {
+            $this->dispatch('notify',
+                message: 'این دسته‌بندی قبلاً اضافه شده است. می‌توانید آن را ویرایش کنید.',
+                type: 'warning'
+            );
+            return;
+        }
+        
+        // افزودن رکوردها
+        DB::transaction(function () use ($supplierId, $categoryId) {
+            foreach ($this->categoryPercentages as $checkPeriodId => $percentage) {
+                if ($percentage !== null && $percentage !== '') {
+                    DB::table('category_check_period')->insert([
+                        'supplier_id' => $supplierId,
+                        'category_id' => $categoryId,
+                        'check_period_id' => (int)$checkPeriodId,
+                        'percentage_increase' => (float)$percentage,
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+        });
+        
+        $this->reset(['selectedCategoryId', 'categoryPercentages']);
+        $this->loadCategoryPeriods();
+        
+        $this->dispatch('notify',
+            message: 'درصدهای دسته‌بندی با موفقیت تنظیم شد.',
+            type: 'success'
+        );
+        
+        // نمایش هشدار بروزرسانی قیمت
+        $this->showPriceUpdateWarning();
+    }
+
+    /**
+     * حذف تمام تنظیمات یک دسته‌بندی
+     */
+    public function removeCategory($categoryId)
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        DB::table('category_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('category_id', $categoryId)
+            ->delete();
+        
+        $this->loadCategoryPeriods();
+        
+        $this->dispatch('notify',
+            message: 'تنظیمات دسته‌بندی حذف شد.',
+            type: 'success'
+        );
+        
+        // نمایش هشدار بروزرسانی قیمت
+        $this->showPriceUpdateWarning();
+    }
+
+    /**
+     * شروع ویرایش دسته‌بندی
+     */
+    public function startEditCategory($categoryId)
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // بارگذاری درصدهای فعلی
+        $existing = DB::table('category_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('category_id', $categoryId)
+            ->where('is_active', true)
+            ->get();
+        
+        $this->editingCategoryId = $categoryId;
+        $this->categoryPercentages = [];
+        
+        foreach ($existing as $row) {
+            $this->categoryPercentages[$row->check_period_id] = (float)$row->percentage_increase;
+        }
+    }
+
+    /**
+     * ذخیره ویرایش دسته‌بندی
+     */
+    public function saveCategoryEdit()
+    {
+        $this->validate([
+            'categoryPercentages' => ['required', 'array', 'min:1'],
+            'categoryPercentages.*' => ['required', 'numeric', 'min:0', 'max:100'],
+        ], [
+            'categoryPercentages.required' => 'لطفاً حداقل یک درصد تعیین کنید.',
+            'categoryPercentages.min' => 'لطفاً حداقل یک درصد تعیین کنید.',
+            'categoryPercentages.*.numeric' => 'درصد باید یک عدد باشد.',
+            'categoryPercentages.*.min' => 'درصد نمی‌تواند منفی باشد.',
+            'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
+        ]);
+        
+        $supplierId = Auth::user()->supplier->id;
+        $categoryId = $this->editingCategoryId;
+        
+        DB::transaction(function () use ($supplierId, $categoryId) {
+            // حذف تنظیمات قبلی
+            DB::table('category_check_period')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->delete();
+            
+            // افزودن تنظیمات جدید
+            foreach ($this->categoryPercentages as $checkPeriodId => $percentage) {
+                if ($percentage !== null && $percentage !== '') {
+                    DB::table('category_check_period')->insert([
+                        'supplier_id' => $supplierId,
+                        'category_id' => $categoryId,
+                        'check_period_id' => (int)$checkPeriodId,
+                        'percentage_increase' => (float)$percentage,
+                        'is_active' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+        });
+        
+        $this->cancelCategoryEdit();
+        $this->loadCategoryPeriods();
+        
+        $this->dispatch('notify',
+            message: 'درصدهای دسته‌بندی بروزرسانی شد.',
+            type: 'success'
+        );
+        
+        // نمایش هشدار بروزرسانی قیمت
+        $this->showPriceUpdateWarning();
+    }
+
+    /**
+     * لغو ویرایش دسته‌بندی
+     */
+    public function cancelCategoryEdit()
+    {
+        $this->reset(['editingCategoryId', 'categoryPercentages']);
+    }
+
     public function render()
     {
-        return view('livewire.supplier.settings.manage-check-periods');
+        // دریافت فقط دسته‌بندی‌های برگ (که فرزند ندارند) برای dropdown
+        $categories = \App\Models\Category::active()
+            ->whereDoesntHave('children') // فقط دسته‌های بدون فرزند
+            ->ordered()
+            ->get()
+            ->map(function($category) {
+                return [
+                    'id' => $category->id,
+                    'name' => $category->full_path, // نمایش مسیر کامل
+                ];
+            })
+            ->pluck('name', 'id')
+            ->toArray();
+        
+        // دریافت دوره‌های فعال برای نمایش در فرم
+        $supplierId = Auth::user()->supplier->id;
+        $activePeriods = CheckPeriod::getActiveForSupplier($supplierId);
+        
+        return view('livewire.supplier.settings.manage-check-periods', [
+            'categories' => $categories,
+            'activePeriods' => $activePeriods,
+        ]);
     }
 }

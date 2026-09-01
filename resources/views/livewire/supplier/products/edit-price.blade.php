@@ -381,23 +381,92 @@
                     <div class="overflow-x-auto">
                         @foreach($quantityTiers as $tierIndex => $tier)
                             <div class="mb-8 bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                                {{-- عنوان تیراژ --}}
+                                {{-- عنوان تیراژ + دکمه Copy --}}
                                 <div class="mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
-                                    <h4 class="text-base font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                                        <x-heroicon-s-cube class="w-5 h-5 text-indigo-600"/>
-                                        {{ $tier['name'] }}
-                                    </h4>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                        محدوده: 
-                                        @if(isset($tier['min_quantity']))
-                                            از {{ number_format($tier['min_quantity']) }}
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <h4 class="text-base font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                                                <x-heroicon-s-cube class="w-5 h-5 text-indigo-600"/>
+                                                {{ $tier['name'] }}
+                                            </h4>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                محدوده: 
+                                                @if(isset($tier['min_quantity']))
+                                                    از {{ number_format($tier['min_quantity']) }}
+                                                @endif
+                                                @if(isset($tier['max_quantity']))
+                                                    تا {{ number_format($tier['max_quantity']) }} عدد
+                                                @else
+                                                    به بالا
+                                                @endif
+                                            </p>
+                                        </div>
+                                        
+                                        {{-- دکمه Copy Settings --}}
+                                        @if(count($quantityTiers) > 1)
+                                            <div x-data="{ 
+                                                showMenu: false,
+                                                sourceTier: {{ $tierIndex }},
+                                                copyToAll() {
+                                                    $wire.copyTierSettings(this.sourceTier, []);
+                                                    this.showMenu = false;
+                                                },
+                                                copyToTier(targetTier) {
+                                                    $wire.copyTierSettings(this.sourceTier, [targetTier]);
+                                                    this.showMenu = false;
+                                                }
+                                            }" 
+                                            @click.away="showMenu = false"
+                                            class="relative">
+                                                <button type="button" 
+                                                        @click="showMenu = !showMenu"
+                                                        class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors border border-indigo-200 dark:border-indigo-800">
+                                                    <x-heroicon-o-document-duplicate class="w-4 h-4"/>
+                                                    <span>کپی تنظیمات</span>
+                                                    <x-heroicon-s-chevron-down class="w-3 h-3"/>
+                                                </button>
+                                                
+                                                {{-- Dropdown Menu --}}
+                                                <div x-show="showMenu" 
+                                                     x-cloak
+                                                     x-transition:enter="transition ease-out duration-100"
+                                                     x-transition:enter-start="transform opacity-0 scale-95"
+                                                     x-transition:enter-end="transform opacity-100 scale-100"
+                                                     x-transition:leave="transition ease-in duration-75"
+                                                     x-transition:leave-start="transform opacity-100 scale-100"
+                                                     x-transition:leave-end="transform opacity-0 scale-95"
+                                                     class="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-10">
+                                                    <div class="p-2">
+                                                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700 mb-1">
+                                                            کپی به:
+                                                        </div>
+                                                        
+                                                        {{-- گزینه: همه تیراژها --}}
+                                                        <button type="button"
+                                                                @click="copyToAll()"
+                                                                class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-md transition-colors">
+                                                            <x-heroicon-o-clipboard-document-check class="w-4 h-4 text-indigo-600 dark:text-indigo-400"/>
+                                                            <span class="font-medium">همه تیراژها</span>
+                                                        </button>
+                                                        
+                                                        <div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+                                                        
+                                                        {{-- گزینه‌های تک تیراژ --}}
+                                                        @foreach($quantityTiers as $targetIndex => $targetTier)
+                                                            @if($targetIndex !== $tierIndex)
+                                                                <button type="button"
+                                                                        @click="copyToTier({{ $targetIndex }})"
+                                                                        class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors text-right">
+                                                                    <x-heroicon-o-arrow-right class="w-3 h-3 text-gray-500"/>
+                                                                    <span>{{ $targetTier['name'] }}</span>
+                                                                </button>
+                                                            @endif
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                            </div>
                                         @endif
-                                        @if(isset($tier['max_quantity']))
-                                            تا {{ number_format($tier['max_quantity']) }} عدد
-                                        @else
-                                            به بالا
-                                        @endif
-                                    </p>
+                                    </div>
                                 </div>
 
                                 {{-- قیمت‌های این تیراژ --}}
@@ -418,23 +487,144 @@
                                             </div>
 
                                             @if($priceType->code === 'check')
-                                                {{-- قیمت‌های چکی با دوره‌های مختلف --}}
-                                                <div class="space-y-3">
+                                                {{-- قیمت‌های چکی با دوره‌های مختلف و 3 mode --}}
+                                                <div class="space-y-4">
                                                     @foreach($checkPeriods as $period)
-                                                        <div wire:key="tier-{{ $tierIndex }}-type-{{ $priceType->id }}-period-{{ $period->id }}">
-                                                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                                                {{ $period->name }} ({{ $period->days }} روز)
-                                                            </label>
-                                                            <div class="relative">
-                                                                <input type="number"
-                                                                       wire:model="priceMatrix.{{ $tierIndex }}.{{ $priceType->id }}.check_periods.{{ $period->id }}.price"
-                                                                       placeholder="0"
-                                                                       onwheel="this.blur()"
-                                                                       class="block w-full pe-16 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm">
-                                                                <div class="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3">
-                                                                    <span class="text-gray-500 text-xs">تومان</span>
+                                                        @php
+                                                            $mode = $checkPriceMode[$tierIndex][$period->id] ?? 'default';
+                                                            $effectivePercentage = $effectivePercentages[$period->id] ?? null;
+                                                            $calculatedPrice = $this->calculateCheckPrice($tierIndex, $period->id);
+                                                        @endphp
+                                                        <div wire:key="tier-{{ $tierIndex }}-type-{{ $priceType->id }}-period-{{ $period->id }}" 
+                                                             class="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                                                            {{-- عنوان دوره + tooltip سلسله مراتب --}}
+                                                            <div class="flex items-center justify-between mb-2">
+                                                                <label class="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                                                    {{ $period->name }} ({{ $period->days }} روز)
+                                                                </label>
+                                                                @if($effectivePercentage)
+                                                                    <div x-data="{ showTooltip: false }" class="relative">
+                                                                        <button type="button" 
+                                                                                @mouseenter="showTooltip = true" 
+                                                                                @mouseleave="showTooltip = false"
+                                                                                class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                                                            <x-heroicon-o-information-circle class="w-4 h-4"/>
+                                                                        </button>
+                                                                        <div x-show="showTooltip" 
+                                                                             x-cloak
+                                                                             class="absolute left-0 bottom-full mb-2 w-64 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg p-3 shadow-lg z-10">
+                                                                            <div class="font-semibold mb-2 border-b border-gray-700 pb-1">سلسله مراتب درصد:</div>
+                                                                            @if($effectivePercentage['source'] === 'category')
+                                                                                <div class="space-y-1">
+                                                                                    <div class="flex items-center gap-2 text-green-400">
+                                                                                        <x-heroicon-s-check-circle class="w-4 h-4"/>
+                                                                                        <span>دسته‌بندی: {{ $effectivePercentage['details']['category_name'] ?? 'نامشخص' }}</span>
+                                                                                    </div>
+                                                                                    <div class="mr-6 text-green-300 font-bold">
+                                                                                        {{ number_format($effectivePercentage['value'], 2) }}%
+                                                                                    </div>
+                                                                                    <div class="text-gray-400 mt-2 pt-2 border-t border-gray-600">
+                                                                                        <div>پیش‌فرض: {{ number_format($effectivePercentage['details']['default_percentage'] ?? 0, 2) }}%</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            @else
+                                                                                <div class="space-y-1">
+                                                                                    <div class="flex items-center gap-2 text-blue-400">
+                                                                                        <x-heroicon-s-arrow-path class="w-4 h-4"/>
+                                                                                        <span>پیش‌فرض</span>
+                                                                                    </div>
+                                                                                    <div class="mr-6 text-blue-300 font-bold">
+                                                                                        {{ number_format($effectivePercentage['value'], 2) }}%
+                                                                                    </div>
+                                                                                </div>
+                                                                            @endif
+                                                                            <div class="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
+                                                            </div>
+
+                                                            {{-- انتخاب Mode --}}
+                                                            <div class="space-y-2 mb-3">
+                                                                <div class="flex items-center gap-2">
+                                                                    <label class="flex items-center cursor-pointer">
+                                                                        <input type="radio" 
+                                                                               wire:model.live="checkPriceMode.{{ $tierIndex }}.{{ $period->id }}" 
+                                                                               value="default"
+                                                                               class="text-blue-600">
+                                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">پیش‌فرض</span>
+                                                                    </label>
+                                                                    <label class="flex items-center cursor-pointer">
+                                                                        <input type="radio" 
+                                                                               wire:model.live="checkPriceMode.{{ $tierIndex }}.{{ $period->id }}" 
+                                                                               value="percentage"
+                                                                               class="text-orange-600">
+                                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">درصد اختصاصی</span>
+                                                                    </label>
+                                                                    <label class="flex items-center cursor-pointer">
+                                                                        <input type="radio" 
+                                                                               wire:model.live="checkPriceMode.{{ $tierIndex }}.{{ $period->id }}" 
+                                                                               value="manual"
+                                                                               class="text-purple-600">
+                                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">دستی</span>
+                                                                    </label>
                                                                 </div>
                                                             </div>
+
+                                                            {{-- Input بر اساس mode --}}
+                                                            @if($mode === 'default')
+                                                                {{-- نمایش قیمت محاسبه شده --}}
+                                                                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-2">
+                                                                    <div class="flex items-center justify-between">
+                                                                        <span class="text-xs text-blue-700 dark:text-blue-300">قیمت محاسبه شده:</span>
+                                                                        <span class="text-sm font-bold text-blue-900 dark:text-blue-100">
+                                                                            {{ $calculatedPrice ? number_format($calculatedPrice) : '—' }} تومان
+                                                                        </span>
+                                                                    </div>
+                                                                    @if($effectivePercentage)
+                                                                        <div class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                                                            ({{ number_format($effectivePercentage['value'], 2) }}% افزایش)
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            @elseif($mode === 'percentage')
+                                                                {{-- Input درصد اختصاصی --}}
+                                                                <div>
+                                                                    <div class="flex items-center gap-2 mb-1">
+                                                                        <input type="number"
+                                                                               wire:model.live="checkPercentageOverride.{{ $tierIndex }}.{{ $period->id }}"
+                                                                               placeholder="مثال: 10"
+                                                                               step="0.01"
+                                                                               min="0"
+                                                                               max="100"
+                                                                               onwheel="this.blur()"
+                                                                               class="w-20 px-2 py-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-orange-500 focus:ring-orange-500 rounded-md text-xs">
+                                                                        <span class="text-xs text-gray-600 dark:text-gray-400">% افزایش</span>
+                                                                    </div>
+                                                                    @if($calculatedPrice)
+                                                                        <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-md p-2 mt-2">
+                                                                            <div class="flex items-center justify-between">
+                                                                                <span class="text-xs text-orange-700 dark:text-orange-300">قیمت نهایی:</span>
+                                                                                <span class="text-sm font-bold text-orange-900 dark:text-orange-100">
+                                                                                    {{ number_format($calculatedPrice) }} تومان
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            @elseif($mode === 'manual')
+                                                                {{-- Input قیمت دستی --}}
+                                                                <div class="relative">
+                                                                    <input type="number"
+                                                                           wire:model.live="priceMatrix.{{ $tierIndex }}.{{ $priceType->id }}.check_periods.{{ $period->id }}.price"
+                                                                           placeholder="قیمت دستی"
+                                                                           onwheel="this.blur()"
+                                                                           class="block w-full pe-16 border-purple-300 dark:border-purple-700 dark:bg-gray-900 dark:text-gray-300 focus:border-purple-500 focus:ring-purple-500 rounded-md shadow-sm text-xs">
+                                                                    <div class="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3">
+                                                                        <span class="text-gray-500 text-xs">تومان</span>
+                                                                    </div>
+                                                                </div>
+                                                            @endif
                                                         </div>
                                                     @endforeach
                                                 </div>

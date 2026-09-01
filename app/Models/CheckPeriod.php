@@ -54,6 +54,17 @@ class CheckPeriod extends Model
             ->withTimestamps();
     }
 
+    /**
+     * دسته‌بندی‌هایی که برای آن‌ها درصد اختصاصی تعیین شده
+     * با اطلاعات درصد و تامین‌کننده از جدول pivot
+     */
+    public function categories(): BelongsToMany
+    {
+        return $this->belongsToMany(Category::class, 'category_check_period')
+            ->withPivot(['supplier_id', 'percentage_increase', 'is_active'])
+            ->withTimestamps();
+    }
+
     // ══════════════════════════════════════════════════════════
     //  SCOPES
     // ══════════════════════════════════════════════════════════
@@ -131,12 +142,13 @@ class CheckPeriod extends Model
     /**
      * دریافت درصد افزایش با سلسله مراتب:
      * 1. اولویت اول: percentage_override در ProductPrice (اگر null نباشد)
-     * 2. اولویت دوم: درصد دسته‌بندی (فعلاً پیاده‌سازی نشده - آینده)
+     * 2. اولویت دوم: درصد دسته‌بندی (از جدول category_check_period)
      * 3. اولویت سوم: درصد دوره چک از supplier_check_period
      * 
      * @param int $supplierId
-     * @param int|null $productId (برای بررسی category در آینده)
+     * @param int|null $productId (برای بررسی category)
      * @param float|null $priceOverride (از ProductPrice اگر وجود داشته باشد)
+     * @param int $checkPeriodId
      * @return float|null
      */
     public static function getEffectivePercentage(int $supplierId, ?int $productId = null, ?float $priceOverride = null, int $checkPeriodId): ?float
@@ -146,17 +158,22 @@ class CheckPeriod extends Model
             return $priceOverride;
         }
         
-        // Priority 2: Category-level percentage (پیاده‌سازی آینده)
-        // TODO: وقتی جدول categories به‌روز شد، اینجا را اضافه کنید:
-        // if ($productId) {
-        //     $product = Product::find($productId);
-        //     if ($product && $product->category) {
-        //         $categoryPercentage = $product->category->getPercentageForCheckPeriod($checkPeriodId, $supplierId);
-        //         if ($categoryPercentage !== null) {
-        //             return $categoryPercentage;
-        //         }
-        //     }
-        // }
+        // Priority 2: Category-level percentage
+        if ($productId) {
+            $product = Product::find($productId);
+            if ($product && $product->category_id) {
+                $categoryPercentage = \DB::table('category_check_period')
+                    ->where('category_id', $product->category_id)
+                    ->where('check_period_id', $checkPeriodId)
+                    ->where('supplier_id', $supplierId)
+                    ->where('is_active', true)
+                    ->value('percentage_increase');
+                
+                if ($categoryPercentage !== null) {
+                    return (float)$categoryPercentage;
+                }
+            }
+        }
         
         // Priority 3: Check period default percentage
         $checkPeriod = static::find($checkPeriodId);
@@ -197,6 +214,25 @@ class CheckPeriod extends Model
     {
         $pivot = \DB::table('supplier_check_period')
             ->where('check_period_id', $this->id)
+            ->where('supplier_id', $supplierId)
+            ->where('is_active', true)
+            ->first();
+        
+        return $pivot ? (float)$pivot->percentage_increase : null;
+    }
+
+    /**
+     * دریافت درصد افزایش برای یک دسته‌بندی و تامین‌کننده خاص
+     * 
+     * @param int $categoryId
+     * @param int $supplierId
+     * @return float|null
+     */
+    public function getPercentageForCategory(int $categoryId, int $supplierId): ?float
+    {
+        $pivot = \DB::table('category_check_period')
+            ->where('check_period_id', $this->id)
+            ->where('category_id', $categoryId)
             ->where('supplier_id', $supplierId)
             ->where('is_active', true)
             ->first();
