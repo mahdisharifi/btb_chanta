@@ -3,6 +3,7 @@
 namespace App\Livewire\Supplier\FastPricing;
 
 use App\Enums\PriceType;
+use App\Helpers\SecureIdEncoder;
 use App\Models\PriceUpdateBatch;
 use App\Models\PriceUpdateItem;
 use App\Models\ProductSupplier;
@@ -73,11 +74,13 @@ class Import extends Component
                 'created_by' => Auth::id(),
             ]);
 
-            // راه‌اندازی PhpSpreadsheet Reader
+            // ═══════════════════════════════════════════════════════════
+            // خواندن فایل (Excel یا CSV)
+            // ═══════════════════════════════════════════════════════════
             $extension = strtolower($this->file->getClientOriginalExtension());
             
             if ($extension === 'csv' || $extension === 'txt') {
-                // خواندن فایل CSV با جداکننده Tab یا کاما
+                // خواندن فایل CSV
                 $content = file_get_contents($this->file->getRealPath());
                 $lines = explode("\n", $content);
                 $rows = [];
@@ -102,27 +105,31 @@ class Import extends Component
                 $rows = $sheet->toArray();
             }
 
-            if (count($rows) <= 1) {
+            if (count($rows) <= 2) {
                 throw new \Exception("فایل خالی است یا فقط هدر دارد.");
             }
 
-            if (count($rows) > 2000) {
+            if (count($rows) > 2001) { // +1 برای سطر metadata
                 throw new \Exception("تعداد ردیف‌ها بیش از حد مجاز (2000) است.");
             }
 
-            $headers = array_shift($rows);
+            // ═══════════════════════════════════════════════════════════
+            // Parse کردن هدرها و متادیتا
+            // ═══════════════════════════════════════════════════════════
+            $headers = array_shift($rows); // سطر اول: هدرها
+            $metadata = array_shift($rows); // سطر دوم: متادیتا (T0|PT1|CP2)
+            
             $headerMap = [];
-            $priceColumns = [];
+            $priceColumns = []; // فرمت: [colIndex] => ['tier_index' => 0, 'price_type_id' => 1, 'check_period_id' => 2]
 
-            // شناسایی ستون‌ها
-            Log::info('Fast Pricing - Headers detected:', ['headers' => $headers]);
+            Log::info('Fast Pricing Matrix - Headers detected:', ['headers' => $headers]);
+            Log::info('Fast Pricing Matrix - Metadata detected:', ['metadata' => $metadata]);
             
             foreach ($headers as $index => $header) {
-                if ($header === null) continue;
+                if ($header === null || trim($header) === '') continue;
                 $header = trim($header);
 
-                Log::info("Processing header [$index]: $header");
-
+                // ستون‌های ثابت
                 if (str_contains($header, 'شناسه کالا')) {
                     $headerMap['product_id'] = $index;
                 } elseif (str_contains($header, 'SKU')) {
@@ -136,57 +143,36 @@ class Import extends Component
                 } elseif (str_contains($header, 'تعداد')) {
                     $headerMap['min_order_quantity'] = $index;
                 } else {
-                    // حذف پیشوند "قیمت " و پسوند " (تومان)" برای تطبیق بهتر
-                    $cleanHeader = preg_replace('/^قیمت\s*/u', '', $header);
-                    $cleanHeader = preg_replace('/\s*\(تومان\)/u', '', $cleanHeader);
-                    $cleanHeader = trim($cleanHeader);
-
-                    Log::info("Clean header: $cleanHeader");
-
-                    // مرتب‌سازی PriceType ها بر اساس طول label (از بلند به کوتاه)
-                    // تا "زیر کارتن" قبل از "کارتن" بررسی شود
-                    $priceTypes = PriceType::cases();
-                    usort($priceTypes, function ($a, $b) {
-                        return mb_strlen($b->label()) - mb_strlen($a->label());
-                    });
-
-                    foreach ($priceTypes as $priceType) {
-                        Log::info("Checking against PriceType: {$priceType->value} (label: {$priceType->label()})");
-                        
-                        // تطبیق دقیق
-                        if ($cleanHeader === $priceType->label()) {
-                            $priceColumns[$priceType->value] = $index;
-                            Log::info("EXACT MATCH: {$priceType->value} at index $index");
-                            break;
-                        }
-                        
-                        // تطبیق با value
-                        if (str_contains($header, $priceType->value)) {
-                            $priceColumns[$priceType->value] = $index;
-                            Log::info("VALUE MATCH: {$priceType->value} at index $index");
-                            break;
-                        }
-                        
-                        // تطبیق جزئی (فقط اگر هدر کامل شامل label باشد)
-                        if (str_contains($header, $priceType->label())) {
-                            $priceColumns[$priceType->value] = $index;
-                            Log::info("PARTIAL MATCH: {$priceType->value} at index $index");
-                            break;
-                        }
+                    // ستون‌های قیمت: parse متادیتا
+                    $meta = $metadata[$index] ?? null;
+                    if ($meta && preg_match('/T(\d+)\|PT(\d+)\|CP(\d+)/', $meta, $matches)) {
+                        $priceColumns[$index] = [
+                            'tier_index' => (int)$matches[1],
+                            'price_type_id' => (int)$matches[2],
+                            'check_period_id' => (int)$matches[3] === 0 ? null : (int)$matches[3],
+                            'header_text' => $header,
+                        ];
+                        Log::info("Price column detected at index $index", $priceColumns[$index]);
                     }
                 }
             }
 
-            Log::info('Fast Pricing - Header Map:', ['headerMap' => $headerMap, 'priceColumns' => $priceColumns]);
+            Log::info('Fast Pricing Matrix - Parsed structure:', [
+                'headerMap' => $headerMap,
+                'priceColumnsCount' => count($priceColumns)
+            ]);
 
             if (!isset($headerMap['product_id'])) {
                 throw new \Exception("ستون 'شناسه کالا' یافت نشد. لطفاً از قالب استاندارد سیستم استفاده کنید.");
             }
 
+            // ═══════════════════════════════════════════════════════════
+            // پردازش ردیف‌های داده
+            // ═══════════════════════════════════════════════════════════
             $validItemsCount = 0;
 
             foreach ($rows as $rowIndex => $row) {
-                $actualRowNumber = $rowIndex + 2; // +1 برای صفر-بیس بودن و +1 برای هدر
+                $actualRowNumber = $rowIndex + 3; // +1 برای هدر، +1 برای metadata، +1 برای zero-index
 
                 // بررسی خالی بودن ردیف
                 $isEmptyRow = true;
@@ -199,11 +185,10 @@ class Import extends Component
                 if ($isEmptyRow) continue;
 
                 $rowErrors = [];
-                $encryptedId = $row[$headerMap['product_id']] ?? null;
+                $encodedId = $row[$headerMap['product_id']] ?? null;
                 $productName = isset($headerMap['product_name']) ? ($row[$headerMap['product_name']] ?? 'نامشخص') : 'نامشخص';
-                $sku = isset($headerMap['sku']) ? ($row[$headerMap['sku']] ?? '') : '';
 
-                if (empty($encryptedId)) {
+                if (empty($encodedId)) {
                     $rowErrors[] = "ستون شناسه کالا خالی است.";
                     $this->errorRows[] = [
                         'row' => $actualRowNumber,
@@ -213,10 +198,11 @@ class Import extends Component
                     continue;
                 }
 
+                // رمزگشایی با SecureIdEncoder
                 try {
-                    $productId = Crypt::decryptString($encryptedId);
-                } catch (\Exception $e) {
-                    $rowErrors[] = "شناسه کالا دستکاری شده یا نامعتبر است.";
+                    $productSupplierId = SecureIdEncoder::decode($encodedId);
+                } catch (\InvalidArgumentException $e) {
+                    $rowErrors[] = "شناسه کالا نامعتبر یا دستکاری شده: " . $e->getMessage();
                     $this->errorRows[] = [
                         'row' => $actualRowNumber,
                         'product_name' => $productName,
@@ -225,9 +211,10 @@ class Import extends Component
                     continue;
                 }
 
+                // بارگذاری ProductSupplier با قیمت‌های موجود
                 $productSupplier = ProductSupplier::where('supplier_id', $supplier->id)
-                    ->where('id', $productId)
-                    ->with('prices')
+                    ->where('id', $productSupplierId)
+                    ->with(['product', 'prices.priceType', 'prices.checkPeriod'])
                     ->first();
 
                 if (!$productSupplier) {
@@ -240,26 +227,59 @@ class Import extends Component
                     continue;
                 }
 
-                $oldPrices = [];
+                // ═══════════════════════════════════════════════════════════
+                // ساخت نقشه قیمت‌های قدیم (به فرمت ماتریس)
+                // ═══════════════════════════════════════════════════════════
+                $oldPricesMatrix = [];
                 foreach ($productSupplier->prices as $priceObj) {
-                    $oldPrices[$priceObj->price_type->value] = $priceObj->price;
+                    $key = sprintf(
+                        'T%d|PT%d|CP%d',
+                        $priceObj->tier_index,
+                        $priceObj->price_type_id,
+                        $priceObj->check_period_id ?? 0
+                    );
+                    $oldPricesMatrix[$key] = [
+                        'price' => (int)$priceObj->price,
+                        'tier_index' => $priceObj->tier_index,
+                        'price_type_id' => $priceObj->price_type_id,
+                        'check_period_id' => $priceObj->check_period_id,
+                    ];
                 }
 
-                $oldStock = $productSupplier->stock_quantity;
-
-                $newPrices = [];
-                foreach ($priceColumns as $type => $colIndex) {
-                    $val = $row[$colIndex] ?? null;
-                    if ($val !== null && trim((string)$val) !== '') {
-                        $cleanedVal = preg_replace('/[^\d]/', '', (string)$val);
-                        if (is_numeric($cleanedVal)) {
-                            $newPrices[$type] = (int)$cleanedVal;
-                        } else {
-                            $rowErrors[] = "فرمت قیمت برای ستون نامعتبر است.";
+                // ═══════════════════════════════════════════════════════════
+                // خواندن قیمت‌های جدید از فایل
+                // ═══════════════════════════════════════════════════════════
+                $newPricesMatrix = [];
+                foreach ($priceColumns as $colIndex => $priceInfo) {
+                    $cellValue = $row[$colIndex] ?? null;
+                    
+                    if ($cellValue !== null && trim((string)$cellValue) !== '') {
+                        $cleanedVal = preg_replace('/[^\d]/', '', (string)$cellValue);
+                        
+                        if (is_numeric($cleanedVal) && $cleanedVal > 0) {
+                            $key = sprintf(
+                                'T%d|PT%d|CP%d',
+                                $priceInfo['tier_index'],
+                                $priceInfo['price_type_id'],
+                                $priceInfo['check_period_id'] ?? 0
+                            );
+                            
+                            $newPricesMatrix[$key] = [
+                                'price' => (int)$cleanedVal,
+                                'tier_index' => $priceInfo['tier_index'],
+                                'price_type_id' => $priceInfo['price_type_id'],
+                                'check_period_id' => $priceInfo['check_period_id'],
+                            ];
+                        } elseif ($cleanedVal !== '') {
+                            $rowErrors[] = "فرمت قیمت نامعتبر در ستون '{$priceInfo['header_text']}'.";
                         }
                     }
                 }
 
+                // ═══════════════════════════════════════════════════════════
+                // خواندن فیلدهای دیگر (موجودی، تعداد، وضعیت)
+                // ═══════════════════════════════════════════════════════════
+                $oldStock = $productSupplier->stock_quantity;
                 $newStock = null;
                 if (isset($headerMap['stock_quantity'])) {
                     $stockVal = $row[$headerMap['stock_quantity']] ?? null;
@@ -273,7 +293,6 @@ class Import extends Component
                     }
                 }
 
-                // خواندن ستون تعداد (min_order_quantity)
                 $newMinOrderQuantity = null;
                 if (isset($headerMap['min_order_quantity'])) {
                     $quantityVal = $row[$headerMap['min_order_quantity']] ?? null;
@@ -282,18 +301,17 @@ class Import extends Component
                         if (is_numeric($cleanedQuantity)) {
                             $newMinOrderQuantity = (int)$cleanedQuantity;
                         } else {
-                            $rowErrors[] = "فرمت تعداد نامعتبر است.";
+                            $rowErrors[] = "فرمت تعداد حداقل نامعتبر است.";
                         }
                     }
                 }
 
-                // خواندن ستون وضعیت (1 = فعال، 0 = غیرفعال)
                 $newIsActive = null;
                 if (isset($headerMap['status'])) {
                     $statusVal = $row[$headerMap['status']] ?? null;
                     if ($statusVal !== null && trim((string)$statusVal) !== '') {
                         $statusStr = trim((string)$statusVal);
-                        if ($statusStr === '1' || $statusStr === 'فعال' || $statusStr === 'true') {
+                        if ($statusStr === '1' || $statusStr === 'فعال' || strtolower($statusStr) === 'true') {
                             $newIsActive = true;
                         } else {
                             $newIsActive = false;
@@ -301,7 +319,8 @@ class Import extends Component
                     }
                 }
 
-                if (empty($newPrices) && $newStock === null && $newMinOrderQuantity === null && $newIsActive === null) {
+                // بررسی اینکه حداقل یک تغییر وجود داشته باشد
+                if (empty($newPricesMatrix) && $newStock === null && $newMinOrderQuantity === null && $newIsActive === null) {
                     $rowErrors[] = "هیچ قیمت، موجودی، تعداد یا وضعیتی برای بروزرسانی وارد نشده است.";
                 }
 
@@ -314,11 +333,12 @@ class Import extends Component
                     continue;
                 }
 
+                // ایجاد PriceUpdateItem با فرمت ماتریس جدید
                 PriceUpdateItem::create([
                     'price_update_batch_id' => $batch->id,
                     'product_supplier_id' => $productSupplier->id,
-                    'old_prices' => $oldPrices,
-                    'new_prices' => $newPrices,
+                    'old_prices' => $oldPricesMatrix,
+                    'new_prices' => $newPricesMatrix,
                     'old_stock' => $oldStock,
                     'new_stock' => $newStock,
                     'old_min_order_quantity' => $productSupplier->min_order_quantity,
@@ -349,7 +369,7 @@ class Import extends Component
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Fast Pricing Import Error: ' . $e->getMessage(), [
+            Log::error('Fast Pricing Matrix Import Error: ' . $e->getMessage(), [
                 'file' => $this->file ? $this->file->getClientOriginalName() : 'no file',
                 'trace' => $e->getTraceAsString()
             ]);
@@ -358,17 +378,53 @@ class Import extends Component
         }
     }
 
-    public function downloadTemplate()
+    /**
+     * دانلود فایل قیمت‌ها برای یک تیراژ خاص
+     * 
+     * @param int|null $tierIndex اگر null باشد، همه تیراژها در یک فایل
+     */
+    /**
+     * دانلود فایل قیمت‌ها برای یک تیراژ خاص
+     * 
+     * @param int|null $tierIndex اگر null باشد، همه تیراژها در یک فایل
+     */
+    public function downloadTemplate($tierIndex = null)
     {
         $supplier = Auth::user()->supplier;
         if (!$supplier) {
             abort(403, 'تامین کننده یافت نشد.');
         }
 
-        // دریافت تمامی کالاها
-        $productSuppliers = ProductSupplier::where('supplier_id', $supplier->id)
-            ->with(['product', 'prices'])
-            ->get();
+        // دریافت تمامی کالاها با روابط
+        $productSuppliersQuery = ProductSupplier::where('supplier_id', $supplier->id)
+            ->with([
+                'product',
+                'prices.priceType',
+                'prices.checkPeriod'
+            ]);
+
+        // ═══════════════════════════════════════════════════════════
+        // فیلتر کردن محصولات بر اساس تیراژ
+        // ═══════════════════════════════════════════════════════════
+        if ($tierIndex !== null) {
+            // فقط محصولاتی که این تیراژ رو دارن
+            $productSuppliersQuery->whereHas('product', function($q) use ($tierIndex) {
+                $q->whereNotNull('quantity_tiers')
+                  ->whereRaw("JSON_LENGTH(quantity_tiers) > ?", [$tierIndex]);
+            });
+        }
+
+        $productSuppliers = $productSuppliersQuery->get();
+
+        if ($productSuppliers->isEmpty()) {
+            abort(404, 'هیچ محصولی برای این تیراژ یافت نشد.');
+        }
+
+        // دریافت انواع قیمت و دوره‌های چک فعال
+        $priceTypes = \App\Models\PriceType::active()->ordered()->get();
+        $checkPeriods = \App\Models\CheckPeriod::where(function($q) use ($supplier) {
+            $q->whereNull('supplier_id')->orWhere('supplier_id', $supplier->id);
+        })->active()->ordered()->get();
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -376,81 +432,232 @@ class Import extends Component
         // راست‌چین کردن شیت
         $sheet->setRightToLeft(true);
 
+        // ═══════════════════════════════════════════════════════════
+        // ساخت هدرها
+        // ═══════════════════════════════════════════════════════════
         $headers = [
-            'SKU اختصاصی (اختیاری)',
+            'SKU اختصاصی',
             'نام کالا',
-            'تعداد',
-            'وضعیت (1=فعال، 0=غیرفعال)',
+            'تیراژ (فقط نمایش)',
+            'تعداد حداقل',
+            'وضعیت (1/0)',
             'موجودی',
         ];
 
-        $priceTypes = PriceType::cases();
-        foreach ($priceTypes as $type) {
-            $headers[] = 'قیمت ' . $type->label() . ' (تومان)';
+        // ساخت هدرهای قیمت بر اساس تیراژ انتخابی
+        $priceHeaders = [];
+        
+        foreach ($priceTypes as $priceType) {
+            if ($priceType->code === 'warranty') {
+                continue; // گارانتی رو نمایش نمی‌دیم
+            }
+            
+            if ($priceType->code === 'check' && $checkPeriods->isNotEmpty()) {
+                // برای چکی، هر دوره چک یک ستون
+                foreach ($checkPeriods as $checkPeriod) {
+                    $headerText = sprintf('%s %s', $priceType->name, $checkPeriod->display_label);
+                    $priceHeaders[] = [
+                        'text' => $headerText,
+                        'price_type_id' => $priceType->id,
+                        'check_period_id' => $checkPeriod->id,
+                    ];
+                }
+            } else {
+                // نقدی
+                $priceHeaders[] = [
+                    'text' => $priceType->name,
+                    'price_type_id' => $priceType->id,
+                    'check_period_id' => null,
+                ];
+            }
         }
 
-        // انتقال هدر شناسه کالا به انتهای آرایه هدرها
+        // اضافه کردن هدرهای قیمت
+        foreach ($priceHeaders as $ph) {
+            $headers[] = $ph['text'];
+        }
+
+        // شناسه کالا در انتها
         $headers[] = 'شناسه کالا (تغییر ندهید)';
 
+        // ═══════════════════════════════════════════════════════════
         // نوشتن هدرها در سطر اول
+        // ═══════════════════════════════════════════════════════════
         $colIndex = 1;
         foreach ($headers as $header) {
             $colLetter = Coordinate::stringFromColumnIndex($colIndex);
             $sheet->setCellValue($colLetter . '1', $header);
-            $sheet->getStyle($colLetter . '1')->getFont()->setBold(true);
+            
+            // استایل هدر
+            $sheet->getStyle($colLetter . '1')->applyFromArray([
+                'font' => ['bold' => true, 'size' => 11],
+                'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'wrapText' => true],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '4F46E5'], // indigo-600
+                ],
+                'font' => ['color' => ['rgb' => 'FFFFFF'], 'bold' => true],
+            ]);
+            
             $colIndex++;
         }
 
+        // ═══════════════════════════════════════════════════════════
+        // پر کردن داده‌های محصولات
+        // ═══════════════════════════════════════════════════════════
         $rowIndex = 2;
+        
         foreach ($productSuppliers as $ps) {
-            $prices = [];
-            foreach ($ps->prices as $price) {
-                $prices[$price->price_type->value] = $price->price;
+            $product = $ps->product;
+            if (!$product) continue;
+
+            // اطلاعات تیراژ
+            $quantityTiers = $product->quantity_tiers ?? [];
+            
+            // اگر تیراژ خاص انتخاب شده
+            if ($tierIndex !== null) {
+                if (!isset($quantityTiers[$tierIndex])) {
+                    continue; // این محصول این تیراژ رو نداره
+                }
+                $currentTier = $quantityTiers[$tierIndex];
+                $tierName = $currentTier['name'] ?? "تیراژ " . ($tierIndex + 1);
+                
+                // محدوده تیراژ برای نمایش
+                $minQty = $currentTier['min_quantity'] ?? null;
+                $maxQty = $currentTier['max_quantity'] ?? null;
+                if ($minQty && $maxQty) {
+                    $tierDisplay = "{$tierName} ({$minQty}-{$maxQty})";
+                } elseif ($minQty) {
+                    $tierDisplay = "{$tierName} ({$minQty}+)";
+                } else {
+                    $tierDisplay = $tierName;
+                }
+            } else {
+                // فایل جامع همه تیراژها
+                $tierDisplay = 'همه تیراژها';
             }
 
-            $encryptedId = Crypt::encryptString((string)$ps->id);
+            // کدگذاری شناسه با متد جدید (کوتاه‌تر)
+            $encodedId = SecureIdEncoder::encode($ps->id);
+            
+            // اگر تیراژ خاص انتخاب شده، metadata رو اضافه کن
+            if ($tierIndex !== null) {
+                $encodedId = "T{$tierIndex}:" . $encodedId;
+            }
 
-            // ستون‌های اولیه
+            // ستون‌های ثابت
             $sheet->setCellValue('A' . $rowIndex, $ps->sku ?? '');
-            $sheet->setCellValue('B' . $rowIndex, $ps->product->title ?? 'بدون نام');
+            $sheet->setCellValue('B' . $rowIndex, $product->title ?? 'بدون نام');
+            
+            // ستون تیراژ (فقط نمایش - غیرقابل ویرایش)
+            $sheet->setCellValue('C' . $rowIndex, $tierDisplay);
+            $sheet->getStyle('C' . $rowIndex)->applyFromArray([
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F3F4F6'], // gray-100
+                ],
+                'font' => ['color' => ['rgb' => '6B7280']], // gray-500
+            ]);
+            $sheet->getStyle('C' . $rowIndex)
+                ->getProtection()
+                ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
+            
+            $sheet->setCellValue('D' . $rowIndex, $ps->min_order_quantity ?? 1);
+            $sheet->setCellValue('E' . $rowIndex, $ps->is_active ? 1 : 0);
+            $sheet->setCellValue('F' . $rowIndex, $ps->stock_quantity ?? 0);
+            $sheet->getStyle('F' . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
 
-            // تعداد (min_order_quantity)
-            $sheet->setCellValue('C' . $rowIndex, $ps->min_order_quantity ?? 1);
+            // ساخت نقشه قیمت‌های موجود
+            $priceMap = [];
+            foreach ($ps->prices as $price) {
+                // فقط قیمت‌های مربوط به تیراژ انتخابی
+                if ($tierIndex !== null && $price->tier_index !== $tierIndex) {
+                    continue;
+                }
+                
+                $key = sprintf(
+                    'PT%d|CP%d',
+                    $price->price_type_id,
+                    $price->check_period_id ?? 0
+                );
+                $priceMap[$key] = $price->price;
+            }
 
-            // وضعیت به صورت 0 و 1
-            $sheet->setCellValue('D' . $rowIndex, $ps->is_active ? 1 : 0);
-
-            // موجودی با فرمت عددی بدون اعشار
-            $sheet->setCellValue('E' . $rowIndex, $ps->stock_quantity ?? 0);
-            $sheet->getStyle('E' . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
-
-            // قیمت‌ها با فرمت عددی بدون اعشار
-            $currentCol = 6; // شروع از ستون F
-            foreach ($priceTypes as $type) {
-                $colLetter = Coordinate::stringFromColumnIndex($currentCol);
-                $priceValue = $prices[$type->value] ?? '';
+            // پر کردن ستون‌های قیمت
+            $colIndex = 7; // شروع از ستون G
+            foreach ($priceHeaders as $ph) {
+                $colLetter = Coordinate::stringFromColumnIndex($colIndex);
+                $key = sprintf('PT%d|CP%d', $ph['price_type_id'], $ph['check_period_id'] ?? 0);
+                $priceValue = $priceMap[$key] ?? '';
+                
                 $sheet->setCellValue($colLetter . $rowIndex, $priceValue);
                 if ($priceValue !== '') {
                     $sheet->getStyle($colLetter . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
                 }
-                $currentCol++;
+                $colIndex++;
             }
 
             // شناسه کالا در ستون آخر
-            $lastColLetter = Coordinate::stringFromColumnIndex($currentCol);
-            $sheet->setCellValue($lastColLetter . $rowIndex, $encryptedId);
+            $lastColLetter = Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->setCellValue($lastColLetter . $rowIndex, $encodedId);
+            
+            // استایل ستون شناسه (خاکستری و کوچک)
+            $sheet->getStyle($lastColLetter . $rowIndex)->applyFromArray([
+                'font' => ['size' => 8, 'color' => ['rgb' => '9CA3AF']],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F9FAFB'],
+                ],
+            ]);
 
             $rowIndex++;
         }
 
-        // تنظیم عرض خودکار ستون‌ها بر اساس محتوا
+        // ═══════════════════════════════════════════════════════════
+        // تنظیمات نهایی شیت
+        // ═══════════════════════════════════════════════════════════
+        
+        // تنظیم ارتفاع سطر اول (هدرها)
+        $sheet->getRowDimension(1)->setRowHeight(40);
+
+        // تنظیم عرض خودکار ستون‌ها
         $highestColumn = $sheet->getHighestColumn();
         $highestColumnIndex = Coordinate::columnIndexFromString($highestColumn);
         for ($i = 1; $i <= $highestColumnIndex; $i++) {
-            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($i))->setAutoSize(true);
+            $colLetter = Coordinate::stringFromColumnIndex($i);
+            $sheet->getColumnDimension($colLetter)->setAutoSize(true);
         }
 
-        $fileName = 'price_update_template_' . now()->format('Y-m-d_H-i') . '.xlsx';
+        // Freeze اولین سطر (هدر) و سه ستون اول
+        $sheet->freezePane('D2');
+        
+        // قفل کردن ستون تیراژ و شناسه
+        $sheet->getProtection()->setSheet(true);
+        $sheet->getProtection()->setPassword('B2BMarket2024');
+        
+        // فقط ستون‌های قیمت و موجودی قابل ویرایش
+        for ($i = 4; $i <= 6; $i++) { // D, E, F
+            $colLetter = Coordinate::stringFromColumnIndex($i);
+            for ($r = 2; $r <= $rowIndex - 1; $r++) {
+                $sheet->getStyle($colLetter . $r)
+                    ->getProtection()
+                    ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
+            }
+        }
+        
+        // ستون‌های قیمت (از G به بعد تا قبل از آخرین ستون)
+        for ($i = 7; $i < $highestColumnIndex; $i++) {
+            $colLetter = Coordinate::stringFromColumnIndex($i);
+            for ($r = 2; $r <= $rowIndex - 1; $r++) {
+                $sheet->getStyle($colLetter . $r)
+                    ->getProtection()
+                    ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
+            }
+        }
+
+        // نام فایل
+        $tierSuffix = $tierIndex !== null ? "_tier_{$tierIndex}" : "_all_tiers";
+        $fileName = 'fast_pricing' . $tierSuffix . '_' . now()->format('Y-m-d_H-i') . '.xlsx';
 
         return new StreamedResponse(function () use ($spreadsheet) {
             $writer = new XlsxWriter($spreadsheet);

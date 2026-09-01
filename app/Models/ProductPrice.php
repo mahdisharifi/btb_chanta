@@ -18,6 +18,7 @@ class ProductPrice extends Model
         'price_type_id',
         'tier_index',
         'check_period_id',
+        'percentage_override',
         'price',
         'warranty_type',
         'warranty_duration',
@@ -29,13 +30,14 @@ class ProductPrice extends Model
     ];
 
     protected $casts = [
-        'tier_index'       => 'integer',
-        'price'            => 'integer',
-        'warranty_duration' => 'integer',
-        'warranty_price'   => 'integer',
-        'is_active'        => 'boolean',
-        'valid_from'       => 'date',
-        'valid_until'      => 'date',
+        'tier_index'           => 'integer',
+        'percentage_override'  => 'float',
+        'price'                => 'integer',
+        'warranty_duration'    => 'integer',
+        'warranty_price'       => 'integer',
+        'is_active'            => 'boolean',
+        'valid_from'           => 'date',
+        'valid_until'          => 'date',
     ];
 
     // ══════════════════════════════════════════════════════════
@@ -220,6 +222,56 @@ class ProductPrice extends Model
         if ($this->valid_until && $this->valid_until->lt($now)) return false;
         
         return true;
+    }
+
+    /**
+     * محاسبه قیمت چکی بر اساس قیمت نقدی با سلسله مراتب درصد
+     * سلسله مراتب: percentage_override > category percentage (آینده) > check_period percentage
+     * 
+     * @param int $cashPrice قیمت نقدی
+     * @param int $checkPeriodId
+     * @param int $supplierId
+     * @return int|null
+     */
+    public static function calculateCheckPrice(int $cashPrice, int $checkPeriodId, int $supplierId, ?int $productId = null, ?float $percentageOverride = null): ?int
+    {
+        $checkPeriod = CheckPeriod::find($checkPeriodId);
+        
+        if (!$checkPeriod) {
+            return null;
+        }
+        
+        $effectivePercentage = CheckPeriod::getEffectivePercentage(
+            $supplierId, 
+            $productId, 
+            $percentageOverride, 
+            $checkPeriodId
+        );
+        
+        if ($effectivePercentage === null) {
+            return null;
+        }
+        
+        return (int)round($cashPrice * (1 + ($effectivePercentage / 100)));
+    }
+
+    /**
+     * دریافت درصد مؤثر برای این قیمت با توجه به سلسله مراتب
+     * 
+     * @return float|null
+     */
+    public function getEffectivePercentageAttribute(): ?float
+    {
+        if (!$this->checkPeriod) {
+            return null;
+        }
+        
+        return CheckPeriod::getEffectivePercentage(
+            $this->supplier?->id ?? 0,
+            $this->product_id,
+            $this->percentage_override,
+            $this->check_period_id
+        );
     }
 
     public static function getLowestPriceForProduct(int $productId): ?self

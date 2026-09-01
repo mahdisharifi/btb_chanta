@@ -245,6 +245,181 @@ Jalalian::now()->format('Y-m-d')
 <x-heroicon-s-home />
 ```
 
+## راهنمای کاربر در صفحات (User Guide)
+
+### فلسفه راهنمای کاربر
+هر صفحه باید دارای راهنمای کامل و ساده باشد تا کاربر بدون نیاز به پشتیبانی بتواند از آن استفاده کند.
+
+### استانداردهای راهنما
+
+#### 1. ساختار راهنما
+**راهنمای یک‌سطحی (توصیه شده):**
+- یک راهنمای جامع کلی که تمام صفحه را توضیح دهد
+- قابل باز/بسته شدن (collapsible) برای جلوگیری از شلوغی
+- بخش‌بندی با عناوین واضح
+
+```blade
+<!-- نمونه ساختار راهنما -->
+<div x-data="{ showGuide: false }" class="mb-6">
+    <button @click="showGuide = !showGuide" 
+            class="flex items-center gap-2 text-blue-600 hover:text-blue-700">
+        <x-heroicon-o-information-circle class="w-5 h-5" />
+        <span x-text="showGuide ? 'بستن راهنما' : 'راهنمای استفاده'"></span>
+    </button>
+    
+    <div x-show="showGuide" 
+         x-collapse
+         class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <!-- محتوای راهنما -->
+    </div>
+</div>
+```
+
+**راهنمای دوسطحی (فقط در صورت ضرورت):**
+- راهنمای کلی صفحه (بالای صفحه)
+- راهنماهای جزئی هر بخش (tooltip یا info icon)
+- **نکته:** فقط در صورتی استفاده شود که performance مشکلی ایجاد نکند
+
+#### 2. محتوای راهنما
+راهنما باید شامل موارد زیر باشد:
+
+**الف. هدف صفحه:**
+```
+این صفحه برای ... استفاده می‌شود.
+```
+
+**ب. نحوه کار با صفحه:**
+- توضیح هر فیلد/بخش به زبان ساده
+- مثال‌های عملی
+- فرمول محاسبات (اگر وجود دارد)
+
+**ج. نکات مهم:**
+- هشدارها و محدودیت‌ها
+- رفتار پیش‌فرض سیستم
+- تأثیر تنظیمات روی سایر بخش‌ها
+
+**د. مثال محاسبه:**
+```
+مثال: اگر قیمت نقدی 100,000 تومان باشد و درصد افزایش 5% تعیین کنید:
+قیمت چک = 100,000 + (100,000 × 5%) = 105,000 تومان
+```
+
+#### 3. طراحی UI راهنما
+**رنگ‌بندی:**
+- راهنمای عادی: `bg-blue-50 border-blue-200 text-blue-900`
+- هشدار: `bg-yellow-50 border-yellow-200 text-yellow-900`
+- خطر: `bg-red-50 border-red-200 text-red-900`
+- موفقیت: `bg-green-50 border-green-200 text-green-900`
+
+**آیکون:**
+```blade
+<x-heroicon-o-information-circle class="w-5 h-5" /> <!-- راهنما -->
+<x-heroicon-o-exclamation-triangle class="w-5 h-5" /> <!-- هشدار -->
+<x-heroicon-o-light-bulb class="w-5 h-5" /> <!-- نکته -->
+```
+
+**Typography:**
+- عنوان راهنما: `text-base font-semibold`
+- متن راهنما: `text-sm leading-relaxed`
+- نکات: `text-xs italic`
+
+#### 4. مثال کامل راهنما
+**صفحه مدیریت دوره‌های چک:**
+
+```blade
+<div x-data="{ showGuide: false }" class="mb-6">
+    <button @click="showGuide = !showGuide" 
+            class="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition">
+        <x-heroicon-o-information-circle class="w-5 h-5" />
+        <span x-text="showGuide ? 'بستن راهنما' : 'راهنمای استفاده از صفحه'"></span>
+    </button>
+    
+    <div x-show="showGuide" x-collapse class="mt-4 p-5 bg-blue-50 rounded-lg border border-blue-200">
+        <h3 class="text-base font-semibold text-blue-900 mb-3 flex items-center gap-2">
+            <x-heroicon-o-information-circle class="w-5 h-5" />
+            راهنمای مدیریت دوره‌های چک
+        </h3>
+        
+        <div class="space-y-4 text-sm text-blue-900 leading-relaxed">
+            <!-- هدف صفحه -->
+            <div>
+                <p class="font-medium mb-1">این صفحه برای چیست؟</p>
+                <p>در این صفحه می‌توانید دوره‌های پرداخت چک را مدیریت کنید و برای هر دوره، درصد افزایش قیمت نسبت به قیمت نقدی تعیین نمایید.</p>
+            </div>
+            
+            <!-- نحوه کار -->
+            <div>
+                <p class="font-medium mb-2">نحوه کار با صفحه:</p>
+                <ul class="list-disc list-inside space-y-1 mr-4">
+                    <li><strong>دوره‌های پیش‌فرض سیستم:</strong> به صورت پیش‌فرض غیرفعال هستند. برای فعال‌سازی، دکمه فعال/غیرفعال را کلیک کرده و درصد افزایش را وارد کنید.</li>
+                    <li><strong>افزودن دوره جدید:</strong> تعداد روز، نام، و درصد افزایش را وارد کنید. اگر دوره‌ای با همان تعداد روز وجود داشته باشد، به لیست شما اضافه می‌شود.</li>
+                    <li><strong>درصد افزایش:</strong> این درصد بر قیمت نقدی هر تیراژ اعمال می‌شود.</li>
+                </ul>
+            </div>
+            
+            <!-- فرمول محاسبه -->
+            <div class="bg-white p-3 rounded border border-blue-300">
+                <p class="font-medium mb-1">فرمول محاسبه:</p>
+                <code class="text-xs block mb-2">قیمت چک = قیمت نقدی + (قیمت نقدی × درصد افزایش)</code>
+                <p class="text-xs"><strong>مثال:</strong> اگر قیمت نقدی 100,000 تومان و درصد 5% باشد → قیمت چک = 105,000 تومان</p>
+            </div>
+            
+            <!-- هشدار درصد صفر -->
+            <div class="bg-yellow-50 border border-yellow-300 p-3 rounded flex items-start gap-2">
+                <x-heroicon-o-exclamation-triangle class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div class="text-xs">
+                    <p class="font-medium">توجه:</p>
+                    <p>درصد صفر (0%) مجاز است، اما در این حالت قیمت چک برابر قیمت نقدی خواهد بود.</p>
+                </div>
+            </div>
+            
+            <!-- نکته تیراژها -->
+            <div class="bg-blue-100 border border-blue-300 p-3 rounded flex items-start gap-2">
+                <x-heroicon-o-light-bulb class="w-5 h-5 text-blue-700 flex-shrink-0 mt-0.5" />
+                <div class="text-xs">
+                    <p class="font-medium">نکته مهم:</p>
+                    <p>این درصد افزایش بر روی قیمت نقدی <strong>هر تیراژ</strong> اعمال می‌شود. یعنی اگر محصولی 5 تیراژ داشته باشد، برای هر تیراژ قیمت چک جداگانه محاسبه می‌شود.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+#### 5. چک‌لیست راهنمای کاربر
+قبل از تکمیل هر صفحه:
+- [ ] راهنمای کلی صفحه اضافه شده است
+- [ ] هدف صفحه به زبان ساده توضیح داده شده
+- [ ] نحوه استفاده از هر بخش شرح داده شده
+- [ ] مثال‌های عملی آورده شده (اگر نیاز باشد)
+- [ ] فرمول‌های محاسباتی (اگر وجود دارد) نمایش داده شده
+- [ ] هشدارها و نکات مهم برجسته شده‌اند
+- [ ] راهنما قابل باز/بسته شدن است (collapsible)
+- [ ] طراحی راهنما با UI صفحه هماهنگ است
+
+#### 6. راهنمای جزئی (Optional)
+فقط در صورتی که صفحه بسیار پیچیده باشد:
+
+```blade
+<!-- نمونه tooltip برای فیلد خاص -->
+<div class="relative group">
+    <label>نام فیلد</label>
+    <x-heroicon-o-question-mark-circle 
+        class="w-4 h-4 text-gray-400 inline-block cursor-help" />
+    
+    <div class="hidden group-hover:block absolute z-10 w-64 p-2 text-xs 
+                bg-gray-800 text-white rounded shadow-lg">
+        توضیح مختصر درباره این فیلد
+    </div>
+</div>
+```
+
+### نمونه صفحات با راهنمای کامل
+- ✅ `/supplier/settings/check-periods` - مدیریت دوره‌های چک
+- [ ] سایر صفحات به تدریج اضافه می‌شوند
+
+---
+
 ## نکات مهم
 
 1. **عدم وابستگی خارجی:** همه سرویس‌ها باید در سرور داخلی باشند
@@ -255,4 +430,5 @@ Jalalian::now()->format('Y-m-d')
 ---
 
 **تاریخ ایجاد:** 2026-08-02  
+**آخرین بروزرسانی:** 2026-08-27  
 **وضعیت:** فعال

@@ -48,41 +48,54 @@ class Review extends Component
                     continue;
                 }
 
-                // ۱. بروزرسانی قیمت‌ها
-                if (is_array($item->new_prices)) {
-                    foreach ($item->new_prices as $priceType => $priceValue) {
+                // ═══════════════════════════════════════════════════════════
+                // ۱. بروزرسانی قیمت‌ها با ساختار ماتریس جدید
+                // ═══════════════════════════════════════════════════════════
+                if (is_array($item->new_prices) && !empty($item->new_prices)) {
+                    foreach ($item->new_prices as $key => $priceData) {
+                        // Parse key: T0|PT1|CP2
+                        if (!is_array($priceData) || !isset($priceData['price'])) {
+                            continue;
+                        }
 
-                        // اگر سلول کاملا خالی است، هیچ تغییری در این نوع قیمت ایجاد نکن (رد شو)
+                        $tierIndex = $priceData['tier_index'];
+                        $priceTypeId = $priceData['price_type_id'];
+                        $checkPeriodId = $priceData['check_period_id'] ?? null;
+                        $priceValue = $priceData['price'];
+
+                        // اگر قیمت خالی است، رد شو
                         if (is_null($priceValue) || $priceValue === '') {
                             continue;
                         }
 
                         // پاکسازی قیمت از کاراکترهای احتمالی
-                        $cleanPrice = str_replace([',', '،', ' '], '', $priceValue);
+                        $cleanPrice = (int)str_replace([',', '،', ' '], '', (string)$priceValue);
 
-                        if ((int)$cleanPrice <= 0) {
-                            // اگر کاربر صراحتا 0 وارد کرده بود، قیمت صفر و غیرفعال می‌شود
-                            ProductPrice::updateOrCreate(
-                                [
-                                    'product_supplier_id' => $productSupplier->id,
-                                    'price_type' => $priceType,
-                                ],
-                                [
-                                    'product_id' => $productSupplier->product_id,
-                                    'price' => 0,
-                                    'is_active' => false,
-                                ]
-                            );
+                        if ($cleanPrice <= 0) {
+                            // اگر کاربر صراحتاً 0 وارد کرده بود، قیمت را غیرفعال کن
+                            ProductPrice::where('product_supplier_id', $productSupplier->id)
+                                ->where('tier_index', $tierIndex)
+                                ->where('price_type_id', $priceTypeId)
+                                ->where(function($q) use ($checkPeriodId) {
+                                    if ($checkPeriodId) {
+                                        $q->where('check_period_id', $checkPeriodId);
+                                    } else {
+                                        $q->whereNull('check_period_id');
+                                    }
+                                })
+                                ->update(['is_active' => false, 'price' => 0]);
                         } else {
                             // ثبت یا بروزرسانی قیمت معتبر
                             ProductPrice::updateOrCreate(
                                 [
                                     'product_supplier_id' => $productSupplier->id,
-                                    'price_type' => $priceType,
+                                    'tier_index' => (int)$tierIndex,
+                                    'price_type_id' => (int)$priceTypeId,
+                                    'check_period_id' => $checkPeriodId,
                                 ],
                                 [
                                     'product_id' => $productSupplier->product_id,
-                                    'price' => (int) $cleanPrice,
+                                    'price' => $cleanPrice,
                                     'is_active' => true,
                                 ]
                             );
@@ -90,17 +103,23 @@ class Review extends Component
                     }
                 }
 
+                // ═══════════════════════════════════════════════════════════
                 // ۲. بروزرسانی موجودی (فقط در صورت داشتن مقدار)
+                // ═══════════════════════════════════════════════════════════
                 if ($item->new_stock !== null && $item->new_stock !== '') {
                     $productSupplier->stock_quantity = (int) $item->new_stock;
                 }
 
+                // ═══════════════════════════════════════════════════════════
                 // ۳. بروزرسانی حداقل تعداد سفارش (فقط در صورت داشتن مقدار)
+                // ═══════════════════════════════════════════════════════════
                 if ($item->new_min_order_quantity !== null && $item->new_min_order_quantity !== '') {
                     $productSupplier->min_order_quantity = (int) $item->new_min_order_quantity;
                 }
 
+                // ═══════════════════════════════════════════════════════════
                 // ۴. بروزرسانی وضعیت صریح
+                // ═══════════════════════════════════════════════════════════
                 if ($item->new_is_active !== null && $item->new_is_active !== '') {
                     $productSupplier->is_active = (bool) $item->new_is_active;
                 }
@@ -108,7 +127,11 @@ class Review extends Component
                 $productSupplier->save();
             }
 
-            $batch->update(['status' => 'completed']);
+            $batch->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+            ]);
+            
             DB::commit();
 
             session()->flash('success', 'تغییرات با موفقیت بر روی محصولات اعمال شد.');
@@ -116,7 +139,10 @@ class Review extends Component
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error committing price update: ' . $e->getMessage());
+            Log::error('Error committing price update (matrix): ' . $e->getMessage(), [
+                'batch_id' => $batch->id,
+                'trace' => $e->getTraceAsString()
+            ]);
             $this->addError('commit', 'خطا در ثبت نهایی: ' . $e->getMessage());
         }
     }

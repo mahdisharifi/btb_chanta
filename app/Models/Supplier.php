@@ -104,6 +104,17 @@ class Supplier extends Model
         return $this->hasMany(ProductSupplier::class);
     }
 
+    /**
+     * دوره‌های چک فعال این تامین‌کننده
+     * با اطلاعات درصد افزایش قیمت و عنوان اختصاصی از جدول pivot
+     */
+    public function checkPeriods(): BelongsToMany
+    {
+        return $this->belongsToMany(CheckPeriod::class, 'supplier_check_period')
+            ->withPivot('percentage_increase', 'is_active', 'label')
+            ->withTimestamps();
+    }
+
     public function profile(): HasOne
     {
         return $this->hasOne(SupplierProfile::class);

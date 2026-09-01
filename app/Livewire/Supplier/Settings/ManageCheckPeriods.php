@@ -4,6 +4,7 @@ namespace App\Livewire\Supplier\Settings;
 
 use App\Models\CheckPeriod;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -16,12 +17,14 @@ class ManageCheckPeriods extends Component
     // فرم افزودن
     public $name = '';
     public $days = '';
+    public $percentage_increase = 0;
     public $is_active = true;
     
     // ویرایش inline
     public $editingInline = null;
     public $inlineName = '';
     public $inlineDays = '';
+    public $inlinePercentage = 0;
     public $inlineIsActive = true;
     
     public function mount()
@@ -31,23 +34,36 @@ class ManageCheckPeriods extends Component
     
     public function loadPeriods()
     {
-        // دوره‌های پیش‌فرض (global)
-        $this->globalPeriods = CheckPeriod::global()
-            ->active()
-            ->orderBy('days')
+        $supplierId = Auth::user()->supplier->id;
+        
+        // دوره‌های پیش‌فرض (global) با اطلاعات فعال‌سازی و درصد از pivot
+        $this->globalPeriods = CheckPeriod::select('check_periods.*')
+            ->selectRaw('COALESCE(scp.percentage_increase, 0) as supplier_percentage')
+            ->selectRaw('COALESCE(scp.is_active, 0) as is_enabled')
+            ->selectRaw('scp.id as pivot_id')
+            ->selectRaw('scp.label as supplier_label')
+            ->leftJoin('supplier_check_period as scp', function($join) use ($supplierId) {
+                $join->on('check_periods.id', '=', 'scp.check_period_id')
+                     ->where('scp.supplier_id', '=', $supplierId);
+            })
+            ->where('check_periods.scope', 'global')
+            ->where('check_periods.is_active', true)
+            ->orderBy('check_periods.days')
             ->get()
             ->map(function($period) {
                 return [
                     'id' => $period->id,
                     'name' => $period->name,
+                    'display_name' => $period->supplier_label ?: $period->name, // استفاده از label اختصاصی
                     'days' => $period->days,
-                    'is_active' => $period->is_active,
+                    'supplier_percentage' => (float)$period->supplier_percentage,
+                    'is_enabled' => (bool)$period->is_enabled,
+                    'has_pivot' => $period->pivot_id !== null,
                 ];
             })
             ->toArray();
         
         // دوره‌های اختصاصی این تامین‌کننده
-        $supplierId = Auth::user()->supplier->id;
         $this->supplierPeriods = CheckPeriod::forSupplier($supplierId)
             ->orderBy('days')
             ->get()
@@ -78,12 +94,19 @@ class ManageCheckPeriods extends Component
                 'min:1',
                 'max:365',
             ],
+            'percentage_increase' => [
+                'required',
+                'numeric',
+                'min:0',
+                'max:100',
+            ],
             'is_active' => ['boolean'],
         ];
         
         // Unique validation for inline editing
         if ($this->editingInline) {
             $rules['inlineDays'][] = 'unique:check_periods,days,' . $this->editingInline . ',id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL');
+            $rules['inlinePercentage'] = ['required', 'numeric', 'min:0', 'max:100'];
         } else {
             $rules['days'][] = 'unique:check_periods,days,NULL,id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL');
         }
@@ -102,6 +125,13 @@ class ManageCheckPeriods extends Component
             'days.min' => 'تعداد روز باید حداقل 1 باشد.',
             'days.max' => 'تعداد روز نمی‌تواند بیشتر از 365 باشد.',
             'days.unique' => 'این تعداد روز قبلاً ثبت شده است.',
+            'percentage_increase.required' => 'درصد افزایش قیمت الزامی است.',
+            'percentage_increase.numeric' => 'درصد افزایش باید یک عدد باشد.',
+            'percentage_increase.min' => 'درصد افزایش نمی‌تواند منفی باشد.',
+            'percentage_increase.max' => 'درصد افزایش نمی‌تواند بیشتر از 100 باشد.',
+            'inlinePercentage.required' => 'درصد افزایش قیمت الزامی است.',
+            'inlinePercentage.min' => 'درصد افزایش نمی‌تواند منفی باشد.',
+            'inlinePercentage.max' => 'درصد افزایش نمی‌تواند بیشتر از 100 باشد.',
         ];
     }
     
@@ -115,25 +145,72 @@ class ManageCheckPeriods extends Component
         // امنیت: Sanitize inputs
         $sanitizedName = $this->sanitizeInput($this->name);
         $sanitizedDays = (int)$this->days;
+        $sanitizedPercentage = (float)$this->percentage_increase;
         
-        // افزودن جدید
-        CheckPeriod::create([
-            'name' => $sanitizedName,
-            'days' => $sanitizedDays,
-            'scope' => 'supplier',
-            'supplier_id' => $supplierId,
-            'is_active' => (bool)$this->is_active,
-            'sort_order' => CheckPeriod::forSupplier($supplierId)->max('sort_order') + 1,
-        ]);
+        // بررسی: آیا دوره‌ای با این تعداد روز قبلاً وجود دارد؟
+        $existingPeriod = CheckPeriod::where('days', $sanitizedDays)
+            ->where(function($q) use ($supplierId) {
+                $q->where('scope', 'global')
+                  ->orWhere('supplier_id', $supplierId);
+            })
+            ->first();
         
-        $this->reset(['name', 'days']);
+        if ($existingPeriod) {
+            // دوره وجود دارد → فقط به pivot اضافه کن با label اختصاصی
+            DB::table('supplier_check_period')->updateOrInsert(
+                [
+                    'supplier_id' => $supplierId,
+                    'check_period_id' => $existingPeriod->id,
+                ],
+                [
+                    'label' => $sanitizedName, // ذخیره عنوان اختصاصی
+                    'percentage_increase' => $sanitizedPercentage,
+                    'is_active' => (bool)$this->is_active,
+                    'updated_at' => now(),
+                ]
+            );
+            
+            $this->dispatch('notify', 
+                message: 'دوره چک به لیست شما اضافه شد و درصد افزایش تنظیم شد.',
+                type: 'success'
+            );
+            
+            // نمایش هشدار بروزرسانی قیمت (چون درصد تغییر کرد)
+            $this->showPriceUpdateWarning();
+        } else {
+            // دوره جدید → ایجاد کن
+            $newPeriod = CheckPeriod::create([
+                'name' => $sanitizedName,
+                'days' => $sanitizedDays,
+                'scope' => 'supplier',
+                'supplier_id' => $supplierId,
+                'is_active' => (bool)$this->is_active,
+                'sort_order' => CheckPeriod::forSupplier($supplierId)->max('sort_order') + 1,
+            ]);
+            
+            // اضافه کردن به pivot (label برای دوره‌های جدید خودِ name است)
+            DB::table('supplier_check_period')->insert([
+                'supplier_id' => $supplierId,
+                'check_period_id' => $newPeriod->id,
+                'label' => null, // برای دوره‌های خودساخته، از name استفاده می‌شود
+                'percentage_increase' => $sanitizedPercentage,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
+            $this->dispatch('notify', 
+                message: 'دوره چک جدید با موفقیت اضافه شد.',
+                type: 'success'
+            );
+            
+            // نمایش هشدار بروزرسانی قیمت (چون دوره جدید با درصد اضافه شد)
+            $this->showPriceUpdateWarning();
+        }
+        
+        $this->reset(['name', 'days', 'percentage_increase']);
         $this->is_active = true;
         $this->loadPeriods();
-        
-        $this->dispatch('notify', 
-            message: 'دوره چک جدید با موفقیت اضافه شد.',
-            type: 'success'
-        );
     }
     
     public function startInlineEdit($id)
@@ -142,18 +219,16 @@ class ManageCheckPeriods extends Component
         $supplierId = Auth::user()->supplier->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($id);
         
-        // بررسی: آیا در قیمت‌گذاری استفاده شده؟
-        if ($period->productPrices()->exists()) {
-            $this->dispatch('notify',
-                message: 'این دوره در قیمت‌گذاری محصولات استفاده شده و قابل ویرایش نیست.',
-                type: 'error'
-            );
-            return;
-        }
+        // بارگذاری درصد از pivot
+        $pivot = DB::table('supplier_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('check_period_id', $period->id)
+            ->first();
         
         $this->editingInline = (int)$period->id;
         $this->inlineName = $period->name;
         $this->inlineDays = (int)$period->days;
+        $this->inlinePercentage = $pivot ? (float)$pivot->percentage_increase : 0;
         $this->inlineIsActive = (bool)$period->is_active;
     }
     
@@ -167,30 +242,44 @@ class ManageCheckPeriods extends Component
                 'max:50',
                 'regex:/^[\x{0600}-\x{06FF}\s\d]+$/u'
             ],
-            'inlineDays' => [
+            'inlinePercentage' => [
                 'required',
-                'integer',
-                'min:1',
-                'max:365',
-                'unique:check_periods,days,' . $this->editingInline . ',id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL')
+                'numeric',
+                'min:0',
+                'max:100',
             ],
             'inlineIsActive' => ['boolean'],
         ], [
             'inlineName.required' => 'نام دوره الزامی است.',
             'inlineName.min' => 'نام دوره باید حداقل 3 کاراکتر باشد.',
             'inlineName.regex' => 'نام دوره فقط می‌تواند شامل حروف فارسی، اعداد و فاصله باشد.',
-            'inlineDays.required' => 'تعداد روز الزامی است.',
-            'inlineDays.unique' => 'این تعداد روز قبلاً ثبت شده است.',
+            'inlinePercentage.required' => 'درصد افزایش الزامی است.',
+            'inlinePercentage.numeric' => 'درصد افزایش باید عدد باشد.',
+            'inlinePercentage.min' => 'درصد افزایش نمی‌تواند منفی باشد.',
+            'inlinePercentage.max' => 'درصد افزایش نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
         $supplierId = Auth::user()->supplier->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($this->editingInline);
         
+        // بروزرسانی دوره
         $period->update([
             'name' => $this->sanitizeInput($this->inlineName),
-            'days' => (int)$this->inlineDays,
             'is_active' => (bool)$this->inlineIsActive,
         ]);
+        
+        // بروزرسانی درصد در pivot
+        DB::table('supplier_check_period')->updateOrInsert(
+            [
+                'supplier_id' => $supplierId,
+                'check_period_id' => $period->id,
+            ],
+            [
+                'percentage_increase' => (float)$this->inlinePercentage,
+                'is_active' => true,
+                'updated_at' => now(),
+            ]
+        );
         
         $this->cancelInlineEdit();
         $this->loadPeriods();
@@ -199,11 +288,14 @@ class ManageCheckPeriods extends Component
             message: 'دوره چک با موفقیت ویرایش شد.',
             type: 'success'
         );
+        
+        // نمایش هشدار بروزرسانی قیمت
+        $this->showPriceUpdateWarning();
     }
     
     public function cancelInlineEdit()
     {
-        $this->reset(['editingInline', 'inlineName', 'inlineDays', 'inlineIsActive']);
+        $this->reset(['editingInline', 'inlineName', 'inlineDays', 'inlinePercentage', 'inlineIsActive']);
         $this->inlineIsActive = true;
     }
     
@@ -219,63 +311,200 @@ class ManageCheckPeriods extends Component
         $this->is_active = true;
     }
     
+    /**
+     * @deprecated این متد حذف شده - دوره‌ها دیگر قابل حذف نیستند
+     */
     public function delete($id)
     {
-        // امنیت: بررسی مالکیت دوره
+        $this->dispatch('notify',
+            message: 'دوره‌ها قابل حذف نیستند. از دکمه فعال/غیرفعال استفاده کنید.',
+            type: 'warning'
+        );
+    }
+    
+    /**
+     * فعال/غیرفعال کردن یک دوره اختصاصی supplier
+     * توجه: فعال/غیرفعال کردن نیازی به بروزرسانی قیمت ندارد
+     */
+    public function toggleSupplierPeriod($periodId)
+    {
         $supplierId = Auth::user()->supplier->id;
-        $period = CheckPeriod::forSupplier($supplierId)->findOrFail($id);
+        $period = CheckPeriod::forSupplier($supplierId)->findOrFail($periodId);
         
-        // بررسی: آیا این دوره در قیمت‌ها استفاده شده؟
-        $usageCount = $period->productPrices()->count();
+        // تغییر وضعیت
+        $period->update([
+            'is_active' => !$period->is_active
+        ]);
         
-        if ($usageCount > 0) {
+        $status = $period->is_active ? 'فعال' : 'غیرفعال';
+        
+        $this->dispatch('notify',
+            message: "دوره چک {$status} شد.",
+            type: 'success'
+        );
+        
+        $this->loadPeriods();
+    }
+    
+    /**
+     * فعال/غیرفعال کردن یک دوره global برای تامین‌کننده
+     * توجه: فعال/غیرفعال کردن نیازی به بروزرسانی قیمت ندارد
+     */
+    public function toggleGlobalPeriod($periodId, $percentage)
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // بررسی: آیا این دوره قبلاً فعال شده؟
+        $existing = DB::table('supplier_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('check_period_id', $periodId)
+            ->first();
+        
+        if ($existing) {
+            if ($existing->is_active) {
+                // غیرفعال کردن: درصد را صفر کن (بدون هشدار بروزرسانی)
+                DB::table('supplier_check_period')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'is_active' => false,
+                        'percentage_increase' => 0,
+                        'updated_at' => now(),
+                    ]);
+                
+                $this->dispatch('notify',
+                    message: 'دوره چک غیرفعال شد.',
+                    type: 'success'
+                );
+            } else {
+                // فعال کردن: باید درصد تعیین شده باشد
+                $percentage = (float)$percentage;
+                if ($percentage < 0 || $percentage > 100) {
+                    $this->dispatch('notify',
+                        message: 'درصد افزایش باید بین 0 تا 100 باشد.',
+                        type: 'error'
+                    );
+                    return;
+                }
+                
+                // هشدار برای درصد صفر
+                if ($percentage == 0) {
+                    $this->dispatch('notify',
+                        message: '⚠️ توجه: درصد افزایش صفر است. قیمت چکی برابر با نقدی خواهد بود.',
+                        type: 'warning'
+                    );
+                }
+                
+                DB::table('supplier_check_period')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'is_active' => true,
+                        'percentage_increase' => $percentage,
+                        'updated_at' => now(),
+                    ]);
+                
+                $this->dispatch('notify',
+                    message: 'دوره چک فعال شد.',
+                    type: 'success'
+                );
+                
+                // فقط در فعال‌سازی هشدار بروزرسانی نمایش داده می‌شود
+                $this->showPriceUpdateWarning();
+            }
+        } else {
+            // ایجاد جدید: باید درصد تعیین شده باشد
+            $percentage = (float)$percentage;
+            if ($percentage < 0 || $percentage > 100) {
+                $this->dispatch('notify',
+                    message: 'درصد افزایش باید بین 0 تا 100 باشد.',
+                    type: 'error'
+                );
+                return;
+            }
+            
+            // هشدار برای درصد صفر
+            if ($percentage == 0) {
+                $this->dispatch('notify',
+                    message: '⚠️ توجه: درصد افزایش صفر است. قیمت چکی برابر با نقدی خواهد بود.',
+                    type: 'warning'
+                );
+            }
+            
+            DB::table('supplier_check_period')->insert([
+                'supplier_id' => $supplierId,
+                'check_period_id' => $periodId,
+                'label' => null, // دوره‌های global از name خود استفاده می‌کنند
+                'percentage_increase' => $percentage,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
             $this->dispatch('notify',
-                message: "این دوره در قیمت‌گذاری {$usageCount} محصول استفاده شده و نمی‌تواند حذف شود.",
+                message: 'دوره چک فعال شد.',
+                type: 'success'
+            );
+            
+            // فقط در ایجاد جدید هشدار بروزرسانی نمایش داده می‌شود
+            $this->showPriceUpdateWarning();
+        }
+        
+        $this->loadPeriods();
+    }
+    
+    /**
+     * بروزرسانی درصد افزایش برای یک دوره global
+     */
+    public function updateGlobalPercentage($periodId, $percentage)
+    {
+        // Validation
+        $percentage = (float)$percentage;
+        if ($percentage < 0 || $percentage > 100) {
+            $this->dispatch('notify',
+                message: 'درصد افزایش باید بین 0 تا 100 باشد.',
                 type: 'error'
             );
             return;
         }
         
-        $period->delete();
+        $supplierId = Auth::user()->supplier->id;
+        
+        DB::table('supplier_check_period')->updateOrInsert(
+            [
+                'supplier_id' => $supplierId,
+                'check_period_id' => $periodId,
+            ],
+            [
+                'label' => null, // دوره‌های global از name استفاده می‌کنند
+                'percentage_increase' => $percentage,
+                'is_active' => true,
+                'updated_at' => now(),
+            ]
+        );
+        
         $this->loadPeriods();
         
         $this->dispatch('notify',
-            message: 'دوره چک با موفقیت حذف شد.',
+            message: 'درصد افزایش بروزرسانی شد.',
             type: 'success'
         );
+        
+        // نمایش هشدار بروزرسانی قیمت
+        $this->showPriceUpdateWarning();
     }
     
     /**
-     * بررسی قابل حذف بودن دوره
+     * نمایش هشدار بروزرسانی قیمت (بدون redirect خودکار)
      */
-    public function canDelete($id): bool
+    private function showPriceUpdateWarning()
     {
-        $supplierId = Auth::user()->supplier->id;
-        $period = CheckPeriod::forSupplier($supplierId)->find($id);
-        
-        if (!$period) {
-            return false;
-        }
-        
-        return !$period->productPrices()->exists();
-    }
-    
-    public function toggleActive($id)
-    {
-        // امنیت: بررسی مالکیت دوره
-        $supplierId = Auth::user()->supplier->id;
-        $period = CheckPeriod::forSupplier($supplierId)->findOrFail($id);
-        
-        $period->update(['is_active' => !$period->is_active]);
-        $this->loadPeriods();
-        
-        $status = $period->is_active ? 'فعال' : 'غیرفعال';
-        $this->dispatch('notify',
-            message: "دوره چک {$status} شد.",
-            type: 'success'
+        $this->dispatch('notify-with-link',
+            message: '✅ تغییرات ذخیره شد. برای اعمال تغییرات روی قیمت‌ها، به صفحه قیمت‌گذاری سریع بروید.',
+            type: 'success',
+            linkUrl: route('supplier.fast-pricing.import'),
+            linkText: 'رفتن به قیمت‌گذاری سریع'
         );
     }
-    
+
     /**
      * Sanitize user input
      */
