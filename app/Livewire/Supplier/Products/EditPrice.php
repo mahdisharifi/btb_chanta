@@ -183,12 +183,12 @@ class EditPrice extends Component
                                 $this->checkPriceMode[$tierIndex][$period->id] = 'percentage';
                                 $this->checkPercentageOverride[$tierIndex][$period->id] = (float)$checkPrice->percentage_override;
                                 $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
-                            } elseif ($checkPrice->price !== null) {
-                                // mode: manual
+                            } elseif ($checkPrice->price !== null && $checkPrice->price > 0) {
+                                // mode: manual (قیمت دستی بزرگتر از 0)
                                 $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
                                 $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
                             } else {
-                                // mode: default (price و percentage_override هر دو null)
+                                // mode: default (price = 0 یا null)
                                 $this->checkPriceMode[$tierIndex][$period->id] = 'default';
                                 $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
                             }
@@ -245,6 +245,10 @@ class EditPrice extends Component
                     }
                 },
             ],
+            
+            'checkPeriodEnabled' => ['array'],
+            'checkPeriodEnabled.*' => ['array'],
+            'checkPeriodEnabled.*.*' => ['nullable', 'boolean'],
             
             // ✅ هزینه گارانتی سراسری
             'warrantyType' => ['required', 'string', 'in:none,percentage,fixed,custom'],
@@ -485,6 +489,12 @@ class EditPrice extends Component
                                 continue;
                             }
                             
+                            // ✅ بررسی: فقط دوره‌های فعال شده ذخیره شوند
+                            $isEnabled = $this->checkPeriodEnabled[$tierIndex][$periodId] ?? false;
+                            if (!$isEnabled) {
+                                continue; // دوره غیرفعال است، skip
+                            }
+                            
                             // ✅ تعیین price و percentage_override بر اساس mode
                             $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? 'default';
                             $price = null;
@@ -492,18 +502,19 @@ class EditPrice extends Component
                             
                             switch ($mode) {
                                 case 'default':
-                                    // هیچ چیز ذخیره نمی‌شود (محاسبه خودکار با سلسله مراتب)
-                                    $price = null;
+                                    // ✅ ذخیره رکورد با price=0 برای نشان دادن فعال بودن دوره
+                                    // قیمت واقعی از سلسله مراتب درصد محاسبه می‌شود
+                                    $price = 0;
                                     $percentageOverride = null;
                                     break;
                                     
                                 case 'percentage':
                                     // ذخیره درصد اختصاصی
-                                    $price = null;
+                                    $price = 0; // قیمت از درصد محاسبه می‌شود
                                     $percentageOverride = $this->checkPercentageOverride[$tierIndex][$periodId] ?? null;
                                     
                                     // validation: درصد باید بین 0 تا 100 باشد
-                                    if ($percentageOverride !== null && ($percentageOverride < 0 || $percentageOverride > 100)) {
+                                    if ($percentageOverride === null || !is_numeric($percentageOverride) || $percentageOverride < 0 || $percentageOverride > 100) {
                                         continue 2; // skip this record
                                     }
                                     break;
@@ -525,8 +536,7 @@ class EditPrice extends Component
                                     continue 2; // mode نامعتبر
                             }
                             
-                            // ذخیره رکورد (حتی اگر price و percentage_override هر دو null باشند)
-                            // برای mode='default' رکورد با null ها ذخیره می‌شود تا نشان دهد کاربر این دوره را فعال کرده
+                            // ✅ ذخیره رکورد برای همه mode‌ها
                             $this->productSupplier->prices()->create([
                                 'product_id' => $this->product->id,
                                 'price_type_id' => (int)$priceTypeId,
@@ -718,6 +728,11 @@ class EditPrice extends Component
             // کپی درصدهای اختصاصی
             if (isset($this->checkPercentageOverride[$sourceTierIndex])) {
                 $this->checkPercentageOverride[$targetIndex] = $this->checkPercentageOverride[$sourceTierIndex];
+            }
+            
+            // کپی وضعیت فعال/غیرفعال دوره‌ها
+            if (isset($this->checkPeriodEnabled[$sourceTierIndex])) {
+                $this->checkPeriodEnabled[$targetIndex] = $this->checkPeriodEnabled[$sourceTierIndex];
             }
             
             // کپی قیمت‌های دستی چک
