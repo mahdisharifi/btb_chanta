@@ -75,6 +75,11 @@ class Create extends Component
     // تیراژهای محصول
     public $quantity_tiers = [];
     public $showQuantityTiers = false;
+    public bool $hasExistingTiers = false; // ✅ محصول تیراژ دارد؟
+    
+    // ✅ واحد بسته‌بندی و تیراژبندی خودکار
+    public string $packaging_unit_type = 'carton';
+    public int $quantity_per_packaging = 1;
 
 
 
@@ -127,9 +132,16 @@ class Create extends Component
 
         $this->selectedCategoryName = $product->category?->name ?? '';
 
-        // بارگذاری تیراژها
+        // تیراژهای محصول
         $this->quantity_tiers = $product->quantity_tiers ?? [];
         $this->showQuantityTiers = !empty($this->quantity_tiers);
+        
+        // ✅ بارگذاری واحد بسته‌بندی
+        $this->packaging_unit_type = $product->packaging_unit_type ?? 'carton';
+        $this->quantity_per_packaging = $product->quantity_per_packaging ?? 1;
+        
+        // ✅ اگر محصول تیراژ دارد، دیگر تیراژ خودکار پیشنهاد نده
+        $this->hasExistingTiers = !empty($this->quantity_tiers);
 
         $this->existingGalleries = $product->galleries
             ->sortBy(function ($g) {
@@ -564,6 +576,13 @@ class Create extends Component
             'gallery_images.*' => 'nullable|image|max:2048',
             'product_video' => 'nullable|file|mimes:mp4,webm,ogg,mov|max:51200',
             'selectedAttributeValues' => 'array',
+            
+            // ✅ واحد بسته‌بندی
+            'packaging_unit_type' => 'required|string|in:carton,jean,jowab,package,bundle,roll,piece',
+            'quantity_per_packaging' => 'required|integer|min:1|max:999999',
+            
+            // ✅ تیراژ دستی (حداقل 2 تیراژ اگر فعال باشد)
+            'quantity_tiers' => 'nullable|array|min:2',
         ];
 
         $this->validate($rules);
@@ -603,6 +622,10 @@ class Create extends Component
             'short_description' => $this->short_description,
             'description' => $this->full_description,
             'quantity_tiers' => !empty($this->quantity_tiers) ? $this->quantity_tiers : null,
+            
+            // ✅ واحد بسته‌بندی
+            'packaging_unit_type' => $this->packaging_unit_type,
+            'quantity_per_packaging' => $this->quantity_per_packaging,
         ];
 
         if ($this->isEdit) {
@@ -842,8 +865,89 @@ class Create extends Component
     {
         return view('livewire.admin.products.create');
     }
+    
+    /**
+     * ✅ اعمال تیراژبندی خودکار
+     */
+    public function applyAutoTiers(): void
+    {
+        $this->quantity_tiers = $this->generateAutoTiers();
+        $this->showQuantityTiers = true;
+        
+        $this->dispatch('notify', [
+            'message' => 'تیراژبندی خودکار اعمال شد.',
+            'type' => 'success',
+        ]);
+    }
+    
+    /**
+     * ✅ پاک کردن تیراژها (برای تیراژ دستی)
+     */
+    public function clearAutoTiers(): void
+    {
+        $this->quantity_tiers = [];
+        $this->showQuantityTiers = true;
+        
+        $this->dispatch('notify', [
+            'message' => 'تیراژها پاک شدند. می‌توانید تیراژهای دستی اضافه کنید (حداقل 2 تیراژ).',
+            'type' => 'info',
+        ]);
+    }
+    
+    /**
+     * ✅ تیراژبندی خودکار بر اساس تعداد در واحد بسته‌بندی
+     * 
+     * @return array
+     */
+    protected function generateAutoTiers(): array
+    {
+        $qtyPerPack = $this->quantity_per_packaging;
+        
+        if ($qtyPerPack <= 0) {
+            return [];
+        }
+        
+        $unitLabel = $this->getPackagingUnitLabel();
+        
+        return [
+            0 => [
+                'name' => 'خرده‌فروشی',
+                'min_quantity' => 1,
+                'max_quantity' => $qtyPerPack - 1,
+                'description' => "کمتر از یک {$unitLabel} (1 تا " . ($qtyPerPack - 1) . " عدد)",
+            ],
+            1 => [
+                'name' => 'عمده‌فروشی کوچک',
+                'min_quantity' => $qtyPerPack,
+                'max_quantity' => $qtyPerPack * 5,
+                'description' => "1 تا 5 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 5) . " عدد)",
+            ],
+            2 => [
+                'name' => 'عمده‌فروشی بزرگ',
+                'min_quantity' => ($qtyPerPack * 5) + 1,
+                'max_quantity' => null,
+                'description' => "بیش از 5 {$unitLabel} (" . (($qtyPerPack * 5) + 1) . " عدد به بالا)",
+            ],
+        ];
+    }
+    
+    /**
+     * ✅ دریافت برچسب فارسی واحد بسته‌بندی
+     * 
+     * @return string
+     */
+    protected function getPackagingUnitLabel(): string
+    {
+        $labels = [
+            'carton'  => 'کارتن',
+            'jean'    => 'جین',
+            'jowab'   => 'جورب',
+            'package' => 'بسته',
+            'bundle'  => 'شیرینگ',
+            'roll'    => 'طاقه',
+            'piece'   => 'عدد',
+        ];
 
-
-
-
+        return $labels[$this->packaging_unit_type] ?? $this->packaging_unit_type;
+    }
 }

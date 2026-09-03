@@ -112,6 +112,106 @@
             </div>
         </div>
 
+        <!-- بخش واحد بسته‌بندی و تیراژبندی خودکار -->
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2 flex items-center gap-2">
+                <x-heroicon-o-cube class="w-5 h-5 text-indigo-600"/>
+                واحد بسته‌بندی و تیراژبندی
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {{-- نوع واحد بسته‌بندی --}}
+                <div>
+                    <x-input-label for="packaging_unit_type" value="واحد فروش" />
+                    <select wire:model.live="packaging_unit_type" 
+                            id="packaging_unit_type" 
+                            class="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm">
+                        <option value="carton">کارتن</option>
+                        <option value="jean">جین (پارچه)</option>
+                        <option value="jowab">جورب (جوراب)</option>
+                        <option value="package">بسته</option>
+                        <option value="bundle">شیرینگ</option>
+                        <option value="roll">طاقه (پارچه)</option>
+                        <option value="piece">عدد</option>
+                    </select>
+                    <x-input-error :messages="$errors->get('packaging_unit_type')" class="mt-2" />
+                </div>
+                
+                {{-- تعداد در هر واحد --}}
+                <div>
+                    <x-input-label for="quantity_per_packaging" value="تعداد در هر واحد بسته‌بندی" />
+                    <div class="relative">
+                        <input type="number"
+                               wire:model.live="quantity_per_packaging"
+                               id="quantity_per_packaging"
+                               placeholder="مثلاً: 4"
+                               min="1"
+                               max="999999"
+                               onwheel="this.blur()"
+                               class="mt-1 block w-full px-3 py-2 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">
+                                @if($packaging_unit_type === 'roll')
+                                    متر
+                                @elseif($packaging_unit_type === 'jowab')
+                                    جفت
+                                @else
+                                    عدد
+                                @endif
+                            </span>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        💡 مثال: 4 عدد در کارتن، 100 متر در طاقه، 6 عدد در شیرینگ
+                    </p>
+                    <x-input-error :messages="$errors->get('quantity_per_packaging')" class="mt-2" />
+                </div>
+            </div>
+            
+            {{-- نمایش تیراژبندی خودکار (فقط اگر محصول تیراژ ندارد) --}}
+            @if($quantity_per_packaging > 0 && !$hasExistingTiers)
+                <div class="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800 mt-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-indigo-800 dark:text-indigo-300 flex items-center gap-2">
+                            <x-heroicon-o-sparkles class="w-4 h-4"/>
+                            تیراژبندی خودکار
+                        </h3>
+                        <div class="flex gap-2">
+                            <button type="button" 
+                                    wire:click="applyAutoTiers"
+                                    class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors">
+                                اعمال تیراژها
+                            </button>
+                            <button type="button" 
+                                    wire:click="clearAutoTiers"
+                                    class="text-xs px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors">
+                                پاک کردن
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                        @php
+                            $autoTiers = app('App\Livewire\Admin\Products\Create')->generateAutoTiers();
+                        @endphp
+                        @foreach($autoTiers as $tier)
+                            <div class="bg-white dark:bg-gray-800 p-2 rounded border border-indigo-100 dark:border-indigo-900">
+                                <div class="font-medium text-indigo-700 dark:text-indigo-400">{{ $tier['name'] }}</div>
+                                <div class="text-gray-500 dark:text-gray-400 mt-1">
+                                    @if($packaging_unit_type === 'roll')
+                                        {{ $tier['min_quantity'] }} تا {{ $tier['max_quantity'] ?? '∞' }} متر
+                                    @elseif($packaging_unit_type === 'jowab')
+                                        {{ $tier['min_quantity'] }} تا {{ $tier['max_quantity'] ?? '∞' }} جفت
+                                    @else
+                                        {{ $tier['min_quantity'] }} تا {{ $tier['max_quantity'] ?? '∞' }} عدد
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+        </div>
+
         <!-- بخش تیراژهای محصول -->
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <div class="flex items-center justify-between mb-4 border-b dark:border-gray-600 pb-2">

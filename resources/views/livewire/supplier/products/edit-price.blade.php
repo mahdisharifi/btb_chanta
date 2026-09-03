@@ -107,6 +107,7 @@
                             <x-text-input wire:model="sku" id="sku" type="text" class="mt-1 block w-full" placeholder="مثلا: PROD-12345" />
                             <x-input-error :messages="$errors->get('sku')" class="mt-2" />
                         </div>
+</content>
 
                         <div class="sm:col-span-2">
                             <label for="is_active" class="flex items-center cursor-pointer">

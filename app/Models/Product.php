@@ -31,6 +31,8 @@ class Product extends Model
         'weight',
         'dimensions',
         'quantity_tiers', // تیراژهای محصول
+        'packaging_unit_type', // ✅ نوع واحد فروش
+        'quantity_per_packaging', // ✅ تعداد در هر واحد
         'is_active',
         'is_featured',
         'status',
@@ -46,6 +48,7 @@ class Product extends Model
         'specifications' => 'array',
         'dimensions'     => 'array',
         'quantity_tiers' => 'array', // تیراژها به صورت JSON
+        'quantity_per_packaging' => 'integer', // ✅ تعداد در هر واحد
         'is_active'      => 'boolean',
         'is_featured'    => 'boolean',
         'status'         => ProductStatus::class,
@@ -477,5 +480,45 @@ class Product extends Model
                 'title'    => $gallery->title,
             ]);
     }
+    
+    /**
+     * ✅ برچسب فارسی نوع واحد بسته‌بندی
+     */
+    public function getPackagingUnitLabelAttribute(): string
+    {
+        $labels = [
+            'carton'  => 'کارتن',
+            'jean'    => 'جین',
+            'jowab'   => 'جورب',
+            'package' => 'بسته',
+            'bundle'  => 'شیرینگ',
+            'roll'    => 'طاقه',
+            'piece'   => 'عدد',
+        ];
 
+        return $labels[$this->packaging_unit_type] ?? $this->packaging_unit_type;
+    }
+
+    /**
+     * ✅ نمایش کامل واحد بسته‌بندی (مثلاً: "4 عدد در کارتن")
+     */
+    public function getPackagingDisplayAttribute(): string
+    {
+        if (!$this->quantity_per_packaging || $this->quantity_per_packaging <= 1) {
+            return '';
+        }
+
+        $unitLabel = $this->packaging_unit_label;
+        $quantity = $this->quantity_per_packaging;
+
+        // برای واحد‌هایی که متر یا جفت دارند
+        $unitContents = [
+            'roll' => 'متر',   // طاقه = متر
+            'jowab' => 'جفت',  // جورب = جفت
+        ];
+
+        $contentUnit = $unitContents[$this->packaging_unit_type] ?? 'عدد';
+
+        return "{$quantity} {$contentUnit} در {$unitLabel}";
+    }
 }

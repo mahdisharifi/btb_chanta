@@ -38,7 +38,7 @@ class EditPrice extends Component
     public string $warrantyCoverageType = 'full'; // full, limited, parts_only, service_only
     public string $warrantyTypeCoverage = 'limited'; // ✅ جدید: test, limited, lifetime (نوع گارانتی)
     public ?int $warrantyDurationDays = null;   // مدت گارانتی (روز)
-    
+
     // تیراژها و انواع قیمت
     public array $quantityTiers = [];
     public $priceTypes;
@@ -296,6 +296,7 @@ class EditPrice extends Component
                     }
                 },
             ],
+            
             'warrantyTypeCoverage' => [
                 function ($attribute, $value, $fail) {
                     if ($this->hasWarranty && ($value === null || $value === '')) {
