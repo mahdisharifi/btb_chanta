@@ -228,6 +228,8 @@ class ProductPrice extends Model
      * محاسبه قیمت چکی بر اساس قیمت نقدی با سلسله مراتب درصد
      * سلسله مراتب: percentage_override > category percentage (آینده) > check_period percentage
      * 
+     * ✅ بروزرسانی شده: استفاده از PriceRoundingHelper برای رُند کردن هوشمند
+     * 
      * @param int $cashPrice قیمت نقدی
      * @param int $checkPeriodId
      * @param int $supplierId
@@ -252,7 +254,14 @@ class ProductPrice extends Model
             return null;
         }
         
-        return (int)round($cashPrice * (1 + ($effectivePercentage / 100)));
+        // ✅ استفاده از PriceRoundingHelper برای رُند کردن بر اساس رنج‌ها
+        $roundedPrice = \App\Helpers\PriceRoundingHelper::calculateCheckPrice(
+            (float) $cashPrice,
+            (float) $effectivePercentage,
+            $supplierId
+        );
+        
+        return (int) $roundedPrice;
     }
 
     /**

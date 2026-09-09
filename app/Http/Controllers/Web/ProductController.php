@@ -303,7 +303,9 @@ class ProductController extends Controller
                 'id', 'product_id', 'supplier_id', 'is_primary', 'sort_order',
                 // ✅ فیلدهای گارانتی
                 'has_warranty', 'warranty_type', 'warranty_value', 'warranty_provider',
-                'warranty_coverage_type', 'warranty_type_coverage', 'warranty_duration_days'
+                'warranty_coverage_type', 'warranty_type_coverage', 'warranty_duration_days',
+                // ✅ فیلدهای تیراژها
+                'tier_enabled', 'tier_percentages', 'auto_calculate_tiers'
             ])
             ->with([
                 'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active,slug',
@@ -320,6 +322,11 @@ class ProductController extends Controller
             ->orderByDesc('is_primary')
             ->orderBy('sort_order')
             ->get();
+
+        // ✅ سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
+        if ($productSuppliers->count() > 1) {
+            $productSuppliers = $this->sortSuppliersByBestPrices($productSuppliers, $product);
+        }
 
         $hasMultipleSuppliers = $productSuppliers->count() > 1;
 
@@ -942,6 +949,52 @@ class ProductController extends Controller
     // ══════════════════════════════════════════════════════════
     //  PRIVATE: PRODUCT DETAIL HELPERS
     // ══════════════════════════════════════════════════════════
+
+    /**
+     * سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
+     * 
+     * @param \Illuminate\Support\Collection $productSuppliers
+     * @param Product $product
+     * @return \Illuminate\Support\Collection
+     */
+    private function sortSuppliersByBestPrices($productSuppliers, $product)
+    {
+        // محاسبه تعداد قیمت‌های فعال برای هر supplier
+        $supplierScores = $productSuppliers->map(function($ps) use ($product) {
+            // ✅ tier_enabled از model به صورت array برمی‌گردد (cast شده)
+            $tierEnabled = $ps->tier_enabled ?? [];
+            $activePrices = 0;
+            
+            // شمارش قیمت‌های فعال
+            foreach ($ps->prices as $price) {
+                // بررسی فعال بودن تیراژ
+                if (!empty($tierEnabled) && !($tierEnabled[$price->tier_index] ?? true)) {
+                    continue; // تیراژ غیرفعال
+                }
+                
+                // شمارش قیمت فعال
+                $activePrices++;
+            }
+            
+            return [
+                'ps' => $ps,
+                'score' => $activePrices,
+                'is_primary' => $ps->is_primary ? 1 : 0,
+            ];
+        });
+        
+        // سورت بر اساس:
+        // 1. is_primary (تامین‌کننده اصلی اول)
+        // 2. تعداد قیمت‌های فعال (بیشترین اول)
+        // 3. sort_order (ترتیب دستی)
+        $sorted = $supplierScores->sortBy([
+            ['is_primary', 'desc'],
+            ['score', 'desc'],
+            ['ps.sort_order', 'asc'],
+        ])->pluck('ps');
+        
+        return $sorted->values();
+    }
 
     /**
      * افزایش شمارنده بازدید با Rate Limiting

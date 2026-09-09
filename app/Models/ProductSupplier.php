@@ -81,6 +81,9 @@ class ProductSupplier extends Model
         'warranty_coverage_type', // نوع پوشش گارانتی
         'warranty_type_coverage', // ✅ جدید: نوع گارانتی (test/limited/lifetime)
         'warranty_duration_days', // مدت گارانتی
+        'auto_calculate_tiers',   // ✅ فعال/غیرفعال محاسبه خودکار
+        'tier_percentages',       // ✅ درصدهای تیراژها
+        'tier_enabled',           // ✅ وضعیت فعال/غیرفعال تیراژها
         'notes',
         'activated_at',
         'deactivated_at',
@@ -101,6 +104,9 @@ class ProductSupplier extends Model
             'warranty_value'          => 'decimal:2',
             'has_warranty'            => 'boolean',     // ✅
             'warranty_duration_days'  => 'integer',     // ✅
+            'auto_calculate_tiers'    => 'boolean',     // ✅
+            'tier_percentages'        => 'array',       // ✅
+            'tier_enabled'            => 'array',       // ✅
             'activated_at'            => 'datetime',
             'deactivated_at'          => 'datetime',
         ];

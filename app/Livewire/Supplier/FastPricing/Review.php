@@ -52,8 +52,14 @@ class Review extends Component
                 // ۱. بروزرسانی قیمت‌ها با ساختار ماتریس جدید
                 // ═══════════════════════════════════════════════════════════
                 if (is_array($item->new_prices) && !empty($item->new_prices)) {
+                    // ✅ دریافت تنظیمات auto-calculate
+                    $autoCalculate = $productSupplier->auto_calculate_tiers ?? false;
+                    $tierPercentages = $productSupplier->tier_percentages ?? [];
+                    
+                    // ✅ Step 1: ذخیره قیمت‌های نقدی (manual) که کاربر وارد کرده
+                    $cashPrices = []; // [tier_index] => price
+                    
                     foreach ($item->new_prices as $key => $priceData) {
-                        // Parse key: T0|PT1|CP2
                         if (!is_array($priceData) || !isset($priceData['price'])) {
                             continue;
                         }
@@ -71,6 +77,13 @@ class Review extends Component
                         // پاکسازی قیمت از کاراکترهای احتمالی
                         $cleanPrice = (int)str_replace([',', '،', ' '], '', (string)$priceValue);
 
+                        // ✅ شناسایی قیمت نقدی (price_type_id = 1 معمولاً نقدی است)
+                        // بهتر است با code چک کنیم
+                        $priceType = \App\Models\PriceType::find($priceTypeId);
+                        if ($priceType && $priceType->code === 'cash' && $cleanPrice > 0) {
+                            $cashPrices[$tierIndex] = $cleanPrice;
+                        }
+
                         if ($cleanPrice <= 0) {
                             // اگر کاربر صراحتاً 0 وارد کرده بود، قیمت را غیرفعال کن
                             ProductPrice::where('product_supplier_id', $productSupplier->id)
@@ -85,6 +98,9 @@ class Review extends Component
                                 })
                                 ->update(['is_active' => false, 'price' => 0]);
                         } else {
+                            // ✅ رند کردن قیمت manual هم
+                            $roundedManualPrice = \App\Helpers\PriceRoundingHelper::round($cleanPrice, $productSupplier->supplier_id);
+                            
                             // ثبت یا بروزرسانی قیمت معتبر
                             ProductPrice::updateOrCreate(
                                 [
@@ -95,10 +111,72 @@ class Review extends Component
                                 ],
                                 [
                                     'product_id' => $productSupplier->product_id,
-                                    'price' => $cleanPrice,
+                                    'price' => (int)$roundedManualPrice, // ✅ قیمت رند شده
                                     'is_active' => true,
                                 ]
                             );
+                        }
+                    }
+                    
+                    // ✅ Step 2: اگر auto_calculate فعال است، قیمت‌های چکی را محاسبه کن
+                    if ($autoCalculate && !empty($cashPrices) && !empty($tierPercentages)) {
+                        Log::info('Auto-calculating tier prices', [
+                            'product_supplier_id' => $productSupplier->id,
+                            'cash_prices' => $cashPrices,
+                            'tier_percentages' => $tierPercentages
+                        ]);
+                        
+                        // دریافت تمام price types چکی
+                        $checkPriceTypes = \App\Models\PriceType::where('code', 'check')
+                            ->where('is_active', true)
+                            ->get();
+                        
+                        // ✅ فقط دوره‌های چکی فعال شده توسط supplier
+                        $checkPeriods = \App\Models\CheckPeriod::whereHas('suppliers', function($query) use ($productSupplier) {
+                                $query->where('supplier_id', $productSupplier->supplier_id)
+                                      ->where('supplier_check_period.is_active', true);
+                            })
+                            ->active()
+                            ->get();
+                        
+                        foreach ($cashPrices as $tierIndex => $cashPrice) {
+                            $percentage = $tierPercentages[$tierIndex] ?? 0;
+                            $calculatedPrice = $cashPrice * (1 + $percentage / 100);
+                            
+                            // ✅ رند کردن قیمت بر اساس تنظیمات supplier
+                            $roundedPrice = \App\Helpers\PriceRoundingHelper::round($calculatedPrice, $productSupplier->supplier_id);
+                            
+                            // محاسبه قیمت برای هر دوره چک
+                            foreach ($checkPriceTypes as $checkPriceType) {
+                                foreach ($checkPeriods as $checkPeriod) {
+                                    // فقط قیمت‌هایی که کاربر manually وارد نکرده
+                                    $existingInUpload = collect($item->new_prices)->first(function($p) use ($tierIndex, $checkPriceType, $checkPeriod) {
+                                        return isset($p['tier_index']) && $p['tier_index'] == $tierIndex
+                                            && isset($p['price_type_id']) && $p['price_type_id'] == $checkPriceType->id
+                                            && isset($p['check_period_id']) && $p['check_period_id'] == $checkPeriod->id;
+                                    });
+                                    
+                                    // اگر کاربر این قیمت را manual وارد کرده، skip
+                                    if ($existingInUpload && !empty($existingInUpload['price'])) {
+                                        continue;
+                                    }
+                                    
+                                    // محاسبه و ثبت
+                                    ProductPrice::updateOrCreate(
+                                        [
+                                            'product_supplier_id' => $productSupplier->id,
+                                            'tier_index' => (int)$tierIndex,
+                                            'price_type_id' => (int)$checkPriceType->id,
+                                            'check_period_id' => (int)$checkPeriod->id,
+                                        ],
+                                        [
+                                            'product_id' => $productSupplier->product_id,
+                                            'price' => (int)$roundedPrice, // ✅ قیمت رند شده
+                                            'is_active' => true,
+                                        ]
+                                    );
+                                }
+                            }
                         }
                     }
                 }

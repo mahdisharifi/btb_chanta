@@ -8,10 +8,10 @@ $ps = $productSupplier;
 // اگر allProductSuppliers پاس نشده، فقط خود این تامین‌کننده را در نظر بگیریم
 $allSuppliers = $allProductSuppliers ?? collect([$ps]);
 
-// جمع‌آوری تمام قیمت‌های نقدی و چکی (بدون گارانتی)
+// جمع‌آوری تمام قیمت‌های نقدی و چکی (بدون گارانتی) - فقط فعال‌ها
 $basePrices = $ps->prices->filter(function($price) {
     $priceTypeCode = $price->priceType ? $price->priceType->code : 'cash';
-    return $priceTypeCode !== 'warranty';
+    return $priceTypeCode !== 'warranty' && $price->is_active === true;
 });
 
 // جمع‌آوری قیمت‌های گارانتی سفارشی (اگر وجود داشته باشد)
@@ -38,6 +38,14 @@ $hasWarrantyWithCost = $hasWarranty
 
 // استخراج تیراژها
 $tiers = $basePrices->pluck('tier_index')->unique()->sort()->values();
+
+// ✅ فیلتر تیراژهای فعال
+$tierEnabled = $ps->tier_enabled ?? [];
+if (!empty($tierEnabled)) {
+    $tiers = $tiers->filter(function($tier) use ($tierEnabled) {
+        return $tierEnabled[$tier] ?? true;
+    })->values();
+}
 
 // دریافت نام تیراژها
 $tierNames = [];
@@ -75,6 +83,11 @@ $priceTypes = $basePrices
 $matrix = [];
 foreach ($priceTypes as $priceType) {
     foreach ($tiers as $tier) {
+        // ✅ فیلتر: فقط قیمت‌های تیراژهای فعال
+        if (!empty($tierEnabled) && !($tierEnabled[$tier] ?? true)) {
+            continue; // تیراژ غیرفعال → skip
+        }
+        
         $cellPrice = $basePrices->first(function($price) use ($priceType, $tier) {
             $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
             $priceTypeCode = $price->priceType ? $price->priceType->code : 'cash';

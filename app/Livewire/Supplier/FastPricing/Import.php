@@ -130,18 +130,20 @@ class Import extends Component
                 $header = trim($header);
 
                 // ستون‌های ثابت
-                if (str_contains($header, 'شناسه کالا')) {
-                    $headerMap['product_id'] = $index;
-                } elseif (str_contains($header, 'SKU')) {
+                if (str_contains($header, 'SKU')) {
                     $headerMap['sku'] = $index;
                 } elseif (str_contains($header, 'نام کالا')) {
                     $headerMap['product_name'] = $index;
+                } elseif (str_contains($header, 'تیراژ')) {
+                    $headerMap['tier_display'] = $index;
                 } elseif (str_contains($header, 'وضعیت')) {
                     $headerMap['status'] = $index;
                 } elseif (str_contains($header, 'موجودی')) {
                     $headerMap['stock_quantity'] = $index;
                 } elseif (str_contains($header, 'تعداد')) {
                     $headerMap['min_order_quantity'] = $index;
+                } elseif (str_contains($header, 'شناسه کالا')) {
+                    $headerMap['product_id'] = $index;
                 } else {
                     // ستون‌های قیمت: parse متادیتا
                     $meta = $metadata[$index] ?? null;
@@ -249,6 +251,25 @@ class Import extends Component
                 // ═══════════════════════════════════════════════════════════
                 // خواندن قیمت‌های جدید از فایل
                 // ═══════════════════════════════════════════════════════════
+                
+                // ✅ دریافت تیراژهای فعال برای این ProductSupplier
+                $tierEnabled = $productSupplier->tier_enabled ?? [];
+                $product = $productSupplier->product;
+                $quantityTiers = $product->quantity_tiers ?? [];
+                
+                // فیلتر تیراژهای فعال
+                $activeTiers = [];
+                if (empty($tierEnabled)) {
+                    // اگر تنظیمات نباشد، همه فعال
+                    $activeTiers = array_keys($quantityTiers);
+                } else {
+                    foreach ($tierEnabled as $tier => $enabled) {
+                        if ($enabled) {
+                            $activeTiers[] = (int)$tier;
+                        }
+                    }
+                }
+                
                 $newPricesMatrix = [];
                 foreach ($priceColumns as $colIndex => $priceInfo) {
                     $cellValue = $row[$colIndex] ?? null;
@@ -257,6 +278,14 @@ class Import extends Component
                         $cleanedVal = preg_replace('/[^\d]/', '', (string)$cellValue);
                         
                         if (is_numeric($cleanedVal) && $cleanedVal > 0) {
+                            // ✅ بررسی اینکه این تیراژ فعال است یا نه
+                            $tierIndex = $priceInfo['tier_index'];
+                            if (!in_array($tierIndex, $activeTiers)) {
+                                $tierName = $quantityTiers[$tierIndex]['name'] ?? "تیراژ " . ($tierIndex + 1);
+                                $rowErrors[] = "تیراژ '{$tierName}' برای این محصول غیرفعال است. لطفاً ابتدا آن را در تنظیمات محصول فعال کنید.";
+                                continue;
+                            }
+                            
                             $key = sprintf(
                                 'T%d|PT%d|CP%d',
                                 $priceInfo['tier_index'],
@@ -400,7 +429,8 @@ class Import extends Component
             ->with([
                 'product',
                 'prices.priceType',
-                'prices.checkPeriod'
+                'prices.checkPeriod',
+                'supplier' // ✅ برای دسترسی به price_rounding_type
             ]);
 
         // ═══════════════════════════════════════════════════════════
@@ -422,9 +452,19 @@ class Import extends Component
 
         // دریافت انواع قیمت و دوره‌های چک فعال
         $priceTypes = \App\Models\PriceType::active()->ordered()->get();
-        $checkPeriods = \App\Models\CheckPeriod::where(function($q) use ($supplier) {
-            $q->whereNull('supplier_id')->orWhere('supplier_id', $supplier->id);
-        })->active()->ordered()->get();
+        
+        // ✅ فقط دوره‌های چکی که برای این supplier فعال و تنظیم شده‌اند
+        // با اطلاعات pivot (percentage_increase)
+        $checkPeriods = \App\Models\CheckPeriod::whereHas('suppliers', function($query) use ($supplier) {
+                $query->where('supplier_id', $supplier->id)
+                      ->where('supplier_check_period.is_active', true);
+            })
+            ->with(['suppliers' => function($query) use ($supplier) {
+                $query->where('supplier_id', $supplier->id);
+            }])
+            ->active()
+            ->ordered()
+            ->get();
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -447,6 +487,20 @@ class Import extends Component
         // ساخت هدرهای قیمت بر اساس تیراژ انتخابی
         $priceHeaders = [];
         
+        // ✅ دریافت تیراژهای فعال از product (اولین محصول به عنوان نمونه)
+        $firstProduct = $productSuppliers->first()?->product;
+        $quantityTiers = $firstProduct?->quantity_tiers ?? [];
+        
+        // تعیین تیراژهایی که باید در فایل باشند
+        $tiersToInclude = [];
+        if ($tierIndex !== null) {
+            // فقط تیراژ انتخابی
+            $tiersToInclude = [$tierIndex];
+        } else {
+            // همه تیراژها
+            $tiersToInclude = array_keys($quantityTiers);
+        }
+        
         foreach ($priceTypes as $priceType) {
             if ($priceType->code === 'warranty') {
                 continue; // گارانتی رو نمایش نمی‌دیم
@@ -455,20 +509,30 @@ class Import extends Component
             if ($priceType->code === 'check' && $checkPeriods->isNotEmpty()) {
                 // برای چکی، هر دوره چک یک ستون
                 foreach ($checkPeriods as $checkPeriod) {
-                    $headerText = sprintf('%s %s', $priceType->name, $checkPeriod->display_label);
-                    $priceHeaders[] = [
-                        'text' => $headerText,
-                        'price_type_id' => $priceType->id,
-                        'check_period_id' => $checkPeriod->id,
-                    ];
+                    // برای هر تیراژ
+                    foreach ($tiersToInclude as $tier) {
+                        $tierName = $quantityTiers[$tier]['name'] ?? "T{$tier}";
+                        $headerText = sprintf('%s - %s %s', $tierName, $priceType->name, $checkPeriod->display_label);
+                        $priceHeaders[] = [
+                            'text' => $headerText,
+                            'tier_index' => $tier,
+                            'price_type_id' => $priceType->id,
+                            'check_period_id' => $checkPeriod->id,
+                        ];
+                    }
                 }
             } else {
                 // نقدی
-                $priceHeaders[] = [
-                    'text' => $priceType->name,
-                    'price_type_id' => $priceType->id,
-                    'check_period_id' => null,
-                ];
+                foreach ($tiersToInclude as $tier) {
+                    $tierName = $quantityTiers[$tier]['name'] ?? "T{$tier}";
+                    $headerText = sprintf('%s - %s', $tierName, $priceType->name);
+                    $priceHeaders[] = [
+                        'text' => $headerText,
+                        'tier_index' => $tier,
+                        'price_type_id' => $priceType->id,
+                        'check_period_id' => null,
+                    ];
+                }
             }
         }
 
@@ -503,26 +567,95 @@ class Import extends Component
         }
 
         // ═══════════════════════════════════════════════════════════
+        // نوشتن سطر metadata (سطر دوم)
+        // ═══════════════════════════════════════════════════════════
+        $metadataRow = [];
+        
+        // ستون‌های ثابت: خالی
+        $metadataRow[] = ''; // SKU
+        $metadataRow[] = ''; // نام کالا
+        $metadataRow[] = ''; // تیراژ
+        $metadataRow[] = ''; // تعداد حداقل
+        $metadataRow[] = ''; // وضعیت
+        $metadataRow[] = ''; // موجودی
+        
+        // ستون‌های قیمت: فرمت T{tier}|PT{priceType}|CP{checkPeriod}
+        foreach ($priceHeaders as $ph) {
+            $metadata = sprintf(
+                'T%d|PT%d|CP%d',
+                $ph['tier_index'],
+                $ph['price_type_id'],
+                $ph['check_period_id'] ?? 0
+            );
+            $metadataRow[] = $metadata;
+        }
+        
+        $metadataRow[] = ''; // شناسه کالا
+        
+        // نوشتن metadata در سطر 2
+        $colIndex = 1;
+        foreach ($metadataRow as $meta) {
+            $colLetter = Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->setCellValue($colLetter . '2', $meta);
+            
+            // استایل metadata (خاکستری کم‌رنگ)
+            $sheet->getStyle($colLetter . '2')->applyFromArray([
+                'font' => ['size' => 8, 'color' => ['rgb' => '9CA3AF'], 'italic' => true],
+                'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F3F4F6'], // gray-100
+                ],
+            ]);
+            
+            $colIndex++;
+        }
+
+        // ═══════════════════════════════════════════════════════════
         // پر کردن داده‌های محصولات
         // ═══════════════════════════════════════════════════════════
-        $rowIndex = 2;
+        $rowIndex = 3; // سطر سوم (بعد از هدر و metadata)
         
         foreach ($productSuppliers as $ps) {
             $product = $ps->product;
             if (!$product) continue;
 
-            // اطلاعات تیراژ
+            // ✅ دریافت تیراژهای فعال برای این supplier
+            $tierEnabled = $ps->tier_enabled ?? [];
             $quantityTiers = $product->quantity_tiers ?? [];
             
-            // اگر تیراژ خاص انتخاب شده
-            if ($tierIndex !== null) {
-                if (!isset($quantityTiers[$tierIndex])) {
-                    continue; // این محصول این تیراژ رو نداره
+            // فیلتر تیراژهای فعال
+            $activeTiers = [];
+            if (empty($tierEnabled)) {
+                // اگر تنظیمات نباشد، همه فعال
+                $activeTiers = array_keys($quantityTiers);
+            } else {
+                foreach ($tierEnabled as $tier => $enabled) {
+                    if ($enabled) {
+                        $activeTiers[] = $tier;
+                    }
                 }
+            }
+            
+            // اگر تیراژ خاص انتخاب شده و این محصول آن تیراژ را ندارد یا غیرفعال است
+            if ($tierIndex !== null) {
+                if (!in_array($tierIndex, $activeTiers)) {
+                    continue; // این محصول این تیراژ را ندارد یا غیرفعال است
+                }
+            }
+
+            // کدگذاری شناسه
+            $encodedId = SecureIdEncoder::encode($ps->id);
+
+            // ستون‌های ثابت
+            $sheet->setCellValue('A' . $rowIndex, $ps->sku ?? '');
+            $sheet->setCellValue('B' . $rowIndex, $product->title ?? 'بدون نام');
+            
+            // ستون تیراژ (فقط نمایش)
+            $tierDisplay = '';
+            if ($tierIndex !== null && isset($quantityTiers[$tierIndex])) {
                 $currentTier = $quantityTiers[$tierIndex];
                 $tierName = $currentTier['name'] ?? "تیراژ " . ($tierIndex + 1);
-                
-                // محدوده تیراژ برای نمایش
                 $minQty = $currentTier['min_quantity'] ?? null;
                 $maxQty = $currentTier['max_quantity'] ?? null;
                 if ($minQty && $maxQty) {
@@ -533,23 +666,10 @@ class Import extends Component
                     $tierDisplay = $tierName;
                 }
             } else {
-                // فایل جامع همه تیراژها
-                $tierDisplay = 'همه تیراژها';
+                // نمایش تعداد تیراژهای فعال
+                $tierDisplay = count($activeTiers) . ' تیراژ فعال';
             }
-
-            // کدگذاری شناسه با متد جدید (کوتاه‌تر)
-            $encodedId = SecureIdEncoder::encode($ps->id);
             
-            // اگر تیراژ خاص انتخاب شده، metadata رو اضافه کن
-            if ($tierIndex !== null) {
-                $encodedId = "T{$tierIndex}:" . $encodedId;
-            }
-
-            // ستون‌های ثابت
-            $sheet->setCellValue('A' . $rowIndex, $ps->sku ?? '');
-            $sheet->setCellValue('B' . $rowIndex, $product->title ?? 'بدون نام');
-            
-            // ستون تیراژ (فقط نمایش - غیرقابل ویرایش)
             $sheet->setCellValue('C' . $rowIndex, $tierDisplay);
             $sheet->getStyle('C' . $rowIndex)->applyFromArray([
                 'fill' => [
@@ -558,9 +678,6 @@ class Import extends Component
                 ],
                 'font' => ['color' => ['rgb' => '6B7280']], // gray-500
             ]);
-            $sheet->getStyle('C' . $rowIndex)
-                ->getProtection()
-                ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
             
             $sheet->setCellValue('D' . $rowIndex, $ps->min_order_quantity ?? 1);
             $sheet->setCellValue('E' . $rowIndex, $ps->is_active ? 1 : 0);
@@ -570,13 +687,19 @@ class Import extends Component
             // ساخت نقشه قیمت‌های موجود
             $priceMap = [];
             foreach ($ps->prices as $price) {
-                // فقط قیمت‌های مربوط به تیراژ انتخابی
+                // ✅ فقط قیمت‌های تیراژهای فعال
+                if (!in_array($price->tier_index, $activeTiers)) {
+                    continue;
+                }
+                
+                // اگر تیراژ خاص انتخاب شده
                 if ($tierIndex !== null && $price->tier_index !== $tierIndex) {
                     continue;
                 }
                 
                 $key = sprintf(
-                    'PT%d|CP%d',
+                    'T%d|PT%d|CP%d',
+                    $price->tier_index,
                     $price->price_type_id,
                     $price->check_period_id ?? 0
                 );
@@ -585,15 +708,231 @@ class Import extends Component
 
             // پر کردن ستون‌های قیمت
             $colIndex = 7; // شروع از ستون G
+            
+            // ✅ دریافت تنظیمات auto-calculate
+            $autoCalculate = $ps->auto_calculate_tiers ?? false;
+            $tierPercentages = $ps->tier_percentages ?? [];
+            $priceRounding = $ps->supplier->price_rounding_type ?? 'nearest_1';
+            
+            // ✅ شناسایی ستون‌های نقدی (برای مرجع فرمول)
+            $cashColumnMap = []; // [tier_index] => column_letter
+            
             foreach ($priceHeaders as $ph) {
                 $colLetter = Coordinate::stringFromColumnIndex($colIndex);
-                $key = sprintf('PT%d|CP%d', $ph['price_type_id'], $ph['check_period_id'] ?? 0);
+                $key = sprintf(
+                    'T%d|PT%d|CP%d',
+                    $ph['tier_index'],
+                    $ph['price_type_id'],
+                    $ph['check_period_id'] ?? 0
+                );
                 $priceValue = $priceMap[$key] ?? '';
+                
+                // ✅ اگر قیمت نقدی است، ستون را ذخیره کن
+                $priceType = $priceTypes->firstWhere('id', $ph['price_type_id']);
+                if ($priceType && $priceType->code === 'cash') {
+                    $cashColumnMap[$ph['tier_index']] = $colLetter;
+                }
                 
                 $sheet->setCellValue($colLetter . $rowIndex, $priceValue);
                 if ($priceValue !== '') {
                     $sheet->getStyle($colLetter . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
                 }
+                $colIndex++;
+            }
+            
+            // ✅ حالا دوباره loop کنیم تا قیمت‌های خودکار را فرمول بزنیم
+            $colIndex = 7;
+            
+            // ✅ شناسایی تیراژ مرجع از جدول supplier_tier_percentages
+            $referenceTierIndex = 1; // پیش‌فرض: تیراژ 1 (کارتن)
+            $tierSettings = \App\Models\SupplierTierPercentage::where('supplier_id', $ps->supplier_id)
+                ->where('product_id', $ps->product_id)
+                ->get();
+            
+            if ($tierSettings->isNotEmpty()) {
+                $referenceSetting = $tierSettings->firstWhere('is_reference', true);
+                if ($referenceSetting) {
+                    $referenceTierIndex = $referenceSetting->tier_index;
+                }
+            }
+            
+            // ✅ دریافت ستون نقدی تیراژ مرجع از cashColumnMap
+            $referenceCashColumn = $cashColumnMap[$referenceTierIndex] ?? null;
+            
+            foreach ($priceHeaders as $ph) {
+                $colLetter = Coordinate::stringFromColumnIndex($colIndex);
+                $tierIndex = $ph['tier_index'];
+                $priceTypeId = $ph['price_type_id'];
+                $checkPeriodId = $ph['check_period_id'];
+                
+                $priceType = $priceTypes->firstWhere('id', $priceTypeId);
+                $isAutoCalculated = false;
+                $formulaComment = '';
+                
+                // ✅ شرط 1: قیمت‌های نقدی غیر-مرجع (اگر auto_calculate فعال باشد)
+                if ($autoCalculate && $priceType && $priceType->code === 'cash') {
+                    // اگر این تیراژ، مرجع نیست → فرمول بزن
+                    if ($tierIndex !== $referenceTierIndex && $referenceCashColumn && isset($tierPercentages[$tierIndex])) {
+                        $tierPercentage = $tierPercentages[$tierIndex];
+                        
+                        // ✅ فرمول: قیمت نقدی = قیمت مرجع × (1 + tier_percentage / 100)
+                        $baseFormula = sprintf('%s%d*(1+%s/100)', $referenceCashColumn, $rowIndex, $tierPercentage);
+                        
+                        // رند کردن
+                        $formula = match($priceRounding) {
+                            'none' => sprintf('=ROUND(%s, 0)', $baseFormula),
+                            'nearest_1' => sprintf('=ROUND(%s, 0)', $baseFormula),
+                            'nearest_5' => sprintf('=ROUND(%s/5, 0)*5', $baseFormula),
+                            'nearest_10' => sprintf('=ROUND(%s/10, 0)*10', $baseFormula),
+                            'nearest_50' => sprintf('=ROUND(%s/50, 0)*50', $baseFormula),
+                            'nearest_100' => sprintf('=ROUND(%s/100, 0)*100', $baseFormula),
+                            'nearest_500' => sprintf('=ROUND(%s/500, 0)*500', $baseFormula),
+                            'nearest_1000' => sprintf('=ROUND(%s/1000, 0)*1000', $baseFormula),
+                            'floor_10' => sprintf('=FLOOR(%s, 10)', $baseFormula),
+                            'floor_100' => sprintf('=FLOOR(%s, 100)', $baseFormula),
+                            'floor_1000' => sprintf('=FLOOR(%s, 1000)', $baseFormula),
+                            'ceiling_10' => sprintf('=CEILING(%s, 10)', $baseFormula),
+                            'ceiling_100' => sprintf('=CEILING(%s, 100)', $baseFormula),
+                            'ceiling_1000' => sprintf('=CEILING(%s, 1000)', $baseFormula),
+                            default => sprintf('=ROUND(%s, 0)', $baseFormula),
+                        };
+                        
+                        $sheet->setCellValue($colLetter . $rowIndex, $formula);
+                        $sheet->getStyle($colLetter . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
+                        
+                        $isAutoCalculated = true;
+                        
+                        $roundingLabel = match($priceRounding) {
+                            'none' => 'بدون رند',
+                            'nearest_1' => 'نزدیک‌ترین عدد صحیح',
+                            'nearest_5' => 'نزدیک‌ترین 5',
+                            'nearest_10' => 'نزدیک‌ترین 10',
+                            'nearest_50' => 'نزدیک‌ترین 50',
+                            'nearest_100' => 'نزدیک‌ترین 100',
+                            'nearest_500' => 'نزدیک‌ترین 500',
+                            'nearest_1000' => 'نزدیک‌ترین 1000',
+                            'floor_10' => 'رند به پایین (10)',
+                            'floor_100' => 'رند به پایین (100)',
+                            'floor_1000' => 'رند به پایین (1000)',
+                            'ceiling_10' => 'رند به بالا (10)',
+                            'ceiling_100' => 'رند به بالا (100)',
+                            'ceiling_1000' => 'رند به بالا (1000)',
+                            default => 'پیش‌فرض',
+                        };
+                        
+                        $tierName = $quantityTiers[$tierIndex]['name'] ?? "تیراژ " . ($tierIndex + 1);
+                        $referenceTierName = $quantityTiers[$referenceTierIndex]['name'] ?? "تیراژ " . ($referenceTierIndex + 1);
+                        $sign = $tierPercentage >= 0 ? '+' : '';
+                        
+                        $formulaComment = sprintf(
+                            "🔒 قیمت خودکار (قفل شده)\n\n📊 محاسبه:\n  • قیمت مرجع (%s)\n  • %s%s%%\n\n🎯 رند: %s\n\n💡 فرمول: %s\n\n⚠️ این سلول قابل ویرایش نیست",
+                            $referenceTierName,
+                            $sign,
+                            number_format($tierPercentage, 1),
+                            $roundingLabel,
+                            $formula
+                        );
+                    }
+                }
+                
+                // ✅ شرط 2: قیمت‌های چکی (اگر auto_calculate فعال باشد)
+                if ($autoCalculate && $priceType && $priceType->code === 'check' && isset($cashColumnMap[$tierIndex]) && $checkPeriodId) {
+                    $cashCol = $cashColumnMap[$tierIndex];
+                    
+                    // ✅ دریافت درصد اختصاصی این دوره چک از pivot
+                    $checkPeriod = $checkPeriods->firstWhere('id', $checkPeriodId);
+                    $checkPercentage = 0;
+                    
+                    if ($checkPeriod && $checkPeriod->suppliers->isNotEmpty()) {
+                        $pivotData = $checkPeriod->suppliers->first()->pivot;
+                        $checkPercentage = $pivotData->percentage_increase ?? 0;
+                    }
+                    
+                    // ✅ فرمول: قیمت چک = قیمت نقدی همان تیراژ × (1 + درصد چک)
+                    // نه اینکه tier_percentages را اضافه کنیم!
+                    $baseFormula = sprintf('%s%d*(1+%s/100)', $cashCol, $rowIndex, $checkPercentage);
+                    
+                    // انواع رند کردن
+                    $formula = match($priceRounding) {
+                        'none' => sprintf('=ROUND(%s, 0)', $baseFormula),
+                        'nearest_1' => sprintf('=ROUND(%s, 0)', $baseFormula),
+                        'nearest_5' => sprintf('=ROUND(%s/5, 0)*5', $baseFormula),
+                        'nearest_10' => sprintf('=ROUND(%s/10, 0)*10', $baseFormula),
+                        'nearest_50' => sprintf('=ROUND(%s/50, 0)*50', $baseFormula),
+                        'nearest_100' => sprintf('=ROUND(%s/100, 0)*100', $baseFormula),
+                        'nearest_500' => sprintf('=ROUND(%s/500, 0)*500', $baseFormula),
+                        'nearest_1000' => sprintf('=ROUND(%s/1000, 0)*1000', $baseFormula),
+                        'floor_10' => sprintf('=FLOOR(%s, 10)', $baseFormula),
+                        'floor_100' => sprintf('=FLOOR(%s, 100)', $baseFormula),
+                        'floor_1000' => sprintf('=FLOOR(%s, 1000)', $baseFormula),
+                        'ceiling_10' => sprintf('=CEILING(%s, 10)', $baseFormula),
+                        'ceiling_100' => sprintf('=CEILING(%s, 100)', $baseFormula),
+                        'ceiling_1000' => sprintf('=CEILING(%s, 1000)', $baseFormula),
+                        default => sprintf('=ROUND(%s, 0)', $baseFormula),
+                    };
+                    
+                    // اعمال فرمول و قفل
+                    $sheet->setCellValue($colLetter . $rowIndex, $formula);
+                    $sheet->getStyle($colLetter . $rowIndex)->getNumberFormat()->setFormatCode('#,##0');
+                    
+                    $isAutoCalculated = true;
+                    
+                    // متن رند برای کامنت
+                    $roundingLabel = match($priceRounding) {
+                        'none' => 'بدون رند',
+                        'nearest_1' => 'نزدیک‌ترین عدد صحیح',
+                        'nearest_5' => 'نزدیک‌ترین 5',
+                        'nearest_10' => 'نزدیک‌ترین 10',
+                        'nearest_50' => 'نزدیک‌ترین 50',
+                        'nearest_100' => 'نزدیک‌ترین 100',
+                        'nearest_500' => 'نزدیک‌ترین 500',
+                        'nearest_1000' => 'نزدیک‌ترین 1000',
+                        'floor_10' => 'رند به پایین (10)',
+                        'floor_100' => 'رند به پایین (100)',
+                        'floor_1000' => 'رند به پایین (1000)',
+                        'ceiling_10' => 'رند به بالا (10)',
+                        'ceiling_100' => 'رند به بالا (100)',
+                        'ceiling_1000' => 'رند به بالا (1000)',
+                        default => 'پیش‌فرض',
+                    };
+                    
+                    $periodName = $checkPeriod->display_label ?? '';
+                    
+                    $formulaComment = sprintf(
+                        "🔒 قیمت خودکار (قفل شده)\n\n📊 محاسبه:\n  • قیمت نقدی این تیراژ\n  • + درصد دوره چک (%s): %s%%\n\n🎯 رند: %s\n\n💡 فرمول: %s\n\n⚠️ این سلول قابل ویرایش نیست",
+                        $periodName,
+                        number_format($checkPercentage, 1),
+                        $roundingLabel,
+                        $formula
+                    );
+                }
+                
+                // ✅ قفل کردن سلول‌های خودکار
+                if ($isAutoCalculated) {
+                    $sheet->getStyle($colLetter . $rowIndex)
+                        ->getProtection()
+                        ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
+                    
+                    // رنگ پس‌زمینه متفاوت برای نشان دادن خودکار بودن
+                    $sheet->getStyle($colLetter . $rowIndex)->applyFromArray([
+                        'fill' => [
+                            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                            'startColor' => ['rgb' => 'E0E7FF'], // indigo-100
+                        ],
+                        'font' => ['color' => ['rgb' => '4F46E5'], 'italic' => true], // indigo-600
+                    ]);
+                    
+                    // اضافه کردن کامنت
+                    if ($formulaComment) {
+                        $sheet->getComment($colLetter . $rowIndex)
+                            ->getText()
+                            ->createTextRun($formulaComment);
+                        $sheet->getComment($colLetter . $rowIndex)
+                            ->setWidth('300pt')
+                            ->setHeight('80pt');
+                    }
+                }
+                
                 $colIndex++;
             }
 
@@ -617,8 +956,9 @@ class Import extends Component
         // تنظیمات نهایی شیت
         // ═══════════════════════════════════════════════════════════
         
-        // تنظیم ارتفاع سطر اول (هدرها)
+        // تنظیم ارتفاع سطرهای اول و دوم
         $sheet->getRowDimension(1)->setRowHeight(40);
+        $sheet->getRowDimension(2)->setRowHeight(20);
 
         // تنظیم عرض خودکار ستون‌ها
         $highestColumn = $sheet->getHighestColumn();
@@ -628,17 +968,25 @@ class Import extends Component
             $sheet->getColumnDimension($colLetter)->setAutoSize(true);
         }
 
-        // Freeze اولین سطر (هدر) و سه ستون اول
-        $sheet->freezePane('D2');
+        // Freeze هدر و metadata (دو سطر اول) و سه ستون اول
+        $sheet->freezePane('D3');
         
-        // قفل کردن ستون تیراژ و شناسه
+        // قفل کردن ستون تیراژ، metadata و شناسه
         $sheet->getProtection()->setSheet(true);
         $sheet->getProtection()->setPassword('B2BMarket2024');
+        
+        // سطر metadata قفل باشد
+        for ($i = 1; $i <= $highestColumnIndex; $i++) {
+            $colLetter = Coordinate::stringFromColumnIndex($i);
+            $sheet->getStyle($colLetter . '2')
+                ->getProtection()
+                ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
+        }
         
         // فقط ستون‌های قیمت و موجودی قابل ویرایش
         for ($i = 4; $i <= 6; $i++) { // D, E, F
             $colLetter = Coordinate::stringFromColumnIndex($i);
-            for ($r = 2; $r <= $rowIndex - 1; $r++) {
+            for ($r = 3; $r <= $rowIndex - 1; $r++) {
                 $sheet->getStyle($colLetter . $r)
                     ->getProtection()
                     ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
@@ -646,12 +994,17 @@ class Import extends Component
         }
         
         // ستون‌های قیمت (از G به بعد تا قبل از آخرین ستون)
+        // نکته: سلول‌های خودکار قبلاً قفل شده‌اند
         for ($i = 7; $i < $highestColumnIndex; $i++) {
             $colLetter = Coordinate::stringFromColumnIndex($i);
-            for ($r = 2; $r <= $rowIndex - 1; $r++) {
-                $sheet->getStyle($colLetter . $r)
-                    ->getProtection()
-                    ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
+            for ($r = 3; $r <= $rowIndex - 1; $r++) {
+                // فقط سلول‌هایی که قفل نیستند را باز کن
+                $currentLock = $sheet->getStyle($colLetter . $r)->getProtection()->getLocked();
+                if ($currentLock !== \PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED) {
+                    $sheet->getStyle($colLetter . $r)
+                        ->getProtection()
+                        ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
+                }
             }
         }
 

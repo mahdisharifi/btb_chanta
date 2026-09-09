@@ -332,22 +332,29 @@ class ManageCheckPeriods extends Component
     
     /**
      * فعال/غیرفعال کردن یک دوره اختصاصی supplier
-     * توجه: فعال/غیرفعال کردن نیازی به بروزرسانی قیمت ندارد
+     * ✅ هنگام غیرفعال کردن، تمام قیمت‌های این دوره برای همه تیراژها غیرفعال می‌شود
      */
     public function toggleSupplierPeriod($periodId)
     {
         $supplierId = Auth::user()->supplier->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($periodId);
         
-        // تغییر وضعیت
+        // بررسی: اگر دوره فعال است، هشدار نمایش بده
+        if ($period->is_active) {
+            $this->dispatch('confirm-deactivate-period',
+                periodId: $periodId,
+                message: '⚠️ هشدار: با غیرفعال کردن این دوره چکی، تمام قیمت\u200cهای ثبت شده برای این دوره در تمام تیراژها غیرفعال خواهند شد. آیا مطمئن هستید؟'
+            );
+            return; // صبر می\u200cکنیم تا کاربر تایید کند
+        }
+        
+        // فعال کردن: نیازی به هشدار نیست
         $period->update([
-            'is_active' => !$period->is_active
+            'is_active' => true
         ]);
         
-        $status = $period->is_active ? 'فعال' : 'غیرفعال';
-        
         $this->dispatch('notify',
-            message: "دوره چک {$status} شد.",
+            message: 'دوره چک فعال شد.',
             type: 'success'
         );
         
@@ -370,19 +377,12 @@ class ManageCheckPeriods extends Component
         
         if ($existing) {
             if ($existing->is_active) {
-                // غیرفعال کردن: درصد را صفر کن (بدون هشدار بروزرسانی)
-                DB::table('supplier_check_period')
-                    ->where('id', $existing->id)
-                    ->update([
-                        'is_active' => false,
-                        'percentage_increase' => 0,
-                        'updated_at' => now(),
-                    ]);
-                
-                $this->dispatch('notify',
-                    message: 'دوره چک غیرفعال شد.',
-                    type: 'success'
+                // ✅ غیرفعال کردن: هشدار نمایش بده و منتظر تایید بمان
+                $this->dispatch('confirm-deactivate-period',
+                    periodId: $periodId,
+                    message: '⚠️ هشدار: با غیرفعال کردن این دوره چکی، تمام قیمت\u200cهای ثبت شده برای این دوره در تمام تیراژها غیرفعال خواهند شد. آیا مطمئن هستید؟'
                 );
+                return; // صبر می\u200cکنیم تا کاربر تایید کند
             } else {
                 // فعال کردن: باید درصد تعیین شده باشد
                 $percentage = (float)$percentage;
@@ -749,6 +749,63 @@ class ManageCheckPeriods extends Component
         $this->reset(['editingCategoryId', 'categoryPercentages']);
     }
 
+    /**
+     * ✅ تایید و اجرای غیرفعال کردن دوره چکی (global یا اختصاصی)
+     * این متد از سمت فرانت\u200cاند (Alpine.js) صدا زده می\u200cشود
+     */
+    public function confirmDeactivatePeriod($periodId)
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // 1. پیدا کردن دوره برای تشخیص نوع (global یا supplier)
+        $period = CheckPeriod::find($periodId);
+        
+        if (!$period) {
+            $this->dispatch('notify',
+                message: 'دوره چکی یافت نشد.',
+                type: 'error'
+            );
+            return;
+        }
+        
+        // 2. غیرفعال کردن بر اساس نوع دوره
+        if ($period->scope === 'global') {
+            // دوره global: غیرفعال کردن در pivot table
+            DB::table('supplier_check_period')
+                ->where('supplier_id', $supplierId)
+                ->where('check_period_id', $periodId)
+                ->update([
+                    'is_active' => false,
+                    'percentage_increase' => 0,
+                    'updated_at' => now(),
+                ]);
+        } else {
+            // دوره اختصاصی: غیرفعال کردن در خود جدول check_periods
+            $period->update(['is_active' => false]);
+        }
+        
+        // 3. ✅ غیرفعال کردن تمام قیمت\u200cهای این دوره برای این تامین\u200cکننده
+        // یافتن تمام product_supplier های این تامین\u200cکننده
+        $productSupplierIds = DB::table('product_supplier')
+            ->where('supplier_id', $supplierId)
+            ->pluck('id');
+        
+        if ($productSupplierIds->isNotEmpty()) {
+            // غیرفعال کردن تمام قیمت\u200cهای چکی این دوره
+            DB::table('product_prices')
+                ->whereIn('product_supplier_id', $productSupplierIds)
+                ->where('check_period_id', $periodId)
+                ->update(['is_active' => false]);
+        }
+        
+        $this->loadPeriods();
+        
+        $this->dispatch('notify',
+            message: '✅ دوره چک و تمام قیمت\u200cهای مرتبط غیرفعال شدند.',
+            type: 'success'
+        );
+    }
+    
     public function render()
     {
         // دریافت فقط دسته‌بندی‌های برگ (که فرزند ندارند) برای dropdown

@@ -22,22 +22,53 @@
     {{-- Header: عنوان تیراژ + دکمه Copy --}}
     <div class="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <div class="flex items-center justify-between">
-            <div>
-                <h4 class="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                    <x-heroicon-s-cube class="w-5 h-5 text-indigo-600 dark:text-indigo-400"/>
-                    {{ $tier['name'] }}
-                </h4>
-                <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    محدوده: 
-                    @if(isset($tier['min_quantity']))
-                        از {{ number_format($tier['min_quantity']) }}
-                    @endif
-                    @if(isset($tier['max_quantity']))
-                        تا {{ number_format($tier['max_quantity']) }} عدد
-                    @else
-                        به بالا
-                    @endif
-                </p>
+            <div class="flex-1">
+                <div class="flex items-center gap-3">
+                    <h4 class="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                        <x-heroicon-s-cube class="w-5 h-5 text-indigo-600 dark:text-indigo-400"/>
+                        {{ $tier['name'] }}
+                    </h4>
+                    
+                    {{-- Tooltip توضیحی --}}
+                    <div x-data="{ showTooltip: false }" class="relative">
+                        <button type="button" 
+                                @mouseenter="showTooltip = true" 
+                                @mouseleave="showTooltip = false"
+                                class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                            <x-heroicon-o-information-circle class="w-5 h-5"/>
+                        </button>
+                        <div x-show="showTooltip" 
+                             x-cloak
+                             class="absolute right-0 top-full mt-2 w-72 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg p-4 shadow-xl z-20">
+                            <div class="space-y-2">
+                                <p class="font-semibold text-indigo-300">این تیراژ برای چیست؟</p>
+                                <p class="leading-relaxed">
+                                    این یک <strong>نقطه مرجع</strong> است که خریداران برای مقایسه قیمت شما با سایر تأمین‌کنندگان استفاده می‌کنند.
+                                </p>
+                                <div class="bg-amber-900/40 border border-amber-700 rounded px-2 py-1.5 mt-2">
+                                    <p class="text-amber-200 text-xs">
+                                        ⚠️ برای تعداد دقیق، خریدار با شما تماس خواهد گرفت.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {{-- Range نمایش با Badge Style --}}
+                <div class="mt-2 flex items-center gap-2">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-200">
+                        📊 محدوده تعداد:
+                        @if(isset($tier['min_quantity']) && isset($tier['max_quantity']))
+                            <span class="mr-1 font-bold">{{ number_format($tier['min_quantity']) }}</span> تا 
+                            <span class="mr-1 font-bold">{{ number_format($tier['max_quantity']) }}</span> عدد
+                        @elseif(isset($tier['min_quantity']))
+                            از <span class="mr-1 font-bold">{{ number_format($tier['min_quantity']) }}</span> عدد به بالا
+                        @elseif(isset($tier['max_quantity']))
+                            تا <span class="mr-1 font-bold">{{ number_format($tier['max_quantity']) }}</span> عدد
+                        @endif
+                    </span>
+                </div>
             </div>
             
             {{-- دکمه Copy Settings --}}

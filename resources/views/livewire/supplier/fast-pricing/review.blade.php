@@ -121,18 +121,44 @@
                             <td class="px-6 py-4 align-top">
                                 @if($item->new_prices && !empty($item->new_prices))
                                 <div class="space-y-2">
-                                    @foreach($item->new_prices as $type => $priceData)
+                                    @foreach($item->new_prices as $key => $priceData)
                                     @php
-                                    $newPrice = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
-                                    $oldPrice = is_array($item->old_prices) ? ($item->old_prices[$type]['price'] ??
-                                    $item->old_prices[$type] ?? 0) : 0;
-                                    $isDeactivated = ($newPrice === null || $newPrice === '' || (is_numeric($newPrice)
-                                    && $newPrice <= 0));
+                                    // فرمت جدید: key = "T0|PT1|CP2", value = ['price' => 1000, 'tier_index' => 0, ...]
+                                    if (!is_array($priceData) || !isset($priceData['price'])) {
+                                        continue;
+                                    }
+                                    
+                                    $newPrice = $priceData['price'] ?? null;
+                                    $tierIndex = $priceData['tier_index'] ?? 0;
+                                    $priceTypeId = $priceData['price_type_id'] ?? null;
+                                    $checkPeriodId = $priceData['check_period_id'] ?? null;
+                                    
+                                    // دریافت نام تیراژ
+                                    $product = $item->productSupplier?->product;
+                                    $quantityTiers = $product?->quantity_tiers ?? [];
+                                    $tierName = $quantityTiers[$tierIndex]['name'] ?? "تیراژ " . ($tierIndex + 1);
+                                    
+                                    // دریافت نام نوع قیمت
+                                    $priceType = \App\Models\PriceType::find($priceTypeId);
+                                    $priceTypeName = $priceType?->name ?? 'نامشخص';
+                                    
+                                    // دریافت نام دوره چک
+                                    $checkPeriodName = '';
+                                    if ($checkPeriodId) {
+                                        $checkPeriod = \App\Models\CheckPeriod::find($checkPeriodId);
+                                        $checkPeriodName = ' - ' . ($checkPeriod?->display_label ?? '');
+                                    }
+                                    
+                                    // قیمت قبلی
+                                    $oldPrice = is_array($item->old_prices) ? ($item->old_prices[$key]['price'] ?? 0) : 0;
+                                    $isDeactivated = ($newPrice === null || $newPrice === '' || (is_numeric($newPrice) && $newPrice <= 0));
                                     @endphp
 
-                                    <div class="flex items-center justify-between bg-gray-50/80 p-2 rounded-lg text-xs">
-                                        <span
-                                            class="text-gray-500 font-medium">قیمت {{ str_replace('_', ' ', $type) }}:</span>
+                                    <div class="flex items-start justify-between bg-gray-50/80 p-2 rounded-lg text-xs">
+                                        <div class="flex flex-col">
+                                            <span class="text-gray-700 font-medium">{{ $tierName }}</span>
+                                            <span class="text-gray-500 text-[10px]">{{ $priceTypeName }}{{ $checkPeriodName }}</span>
+                                        </div>
                                         <div class="flex items-center gap-2 rtl:space-x-reverse" dir="ltr">
                                             @if($oldPrice && $oldPrice != $newPrice)
                                             <span class="text-gray-400 line-through decoration-red-400/50">{{ number_format($oldPrice) }}</span>
@@ -140,13 +166,11 @@
                                             @endif
 
                                             @if($isDeactivated)
-                                            <span
-                                                class="font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">غیرفعال شد</span>
+                                            <span class="font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">غیرفعال</span>
                                             @else
-                                            <span
-                                                class="font-bold {{ $newPrice > $oldPrice ? 'text-blue-600' : 'text-green-600' }}">
-                                                        {{ number_format($newPrice) }}
-                                                    </span>
+                                            <span class="font-bold {{ $newPrice > $oldPrice ? 'text-blue-600' : 'text-green-600' }}">
+                                                {{ number_format($newPrice) }}
+                                            </span>
                                             @endif
                                         </div>
                                     </div>
@@ -154,9 +178,9 @@
                                 </div>
                                 @else
                                 <span class="text-gray-400 text-xs flex items-center gap-1">
-                                        <x-heroicon-o-minus class="w-3 h-3"/>
-                                        بدون تغییر
-                                    </span>
+                                    <x-heroicon-o-minus class="w-3 h-3"/>
+                                    بدون تغییر
+                                </span>
                                 @endif
                             </td>
 

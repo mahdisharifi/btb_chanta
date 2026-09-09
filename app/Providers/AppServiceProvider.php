@@ -17,6 +17,11 @@ use App\Policies\RetailPricePolicy;
 use App\Policies\SeoPagePolicy;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Event;
+
+// ✅ Event & Listener
+use App\Events\CheckPercentageChanged;
+use App\Listeners\UpdateAffectedCheckPrices;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -51,5 +56,15 @@ class AppServiceProvider extends ServiceProvider
 
             return null;
         });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Register Events
+        |--------------------------------------------------------------------------
+        */
+        Event::listen(
+            CheckPercentageChanged::class,
+            UpdateAffectedCheckPrices::class
+        );
     }
 }

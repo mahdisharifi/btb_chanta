@@ -361,6 +361,19 @@ use App\Helpers\PriceHelper;
                 </div>
             </div>
             @endif
+            
+            {{-- ✅ بررسی تیراژهای فعال --}}
+            @php
+                // جمع‌آوری تمام تیراژهایی که حداقل یک تامین‌کننده قیمت برای آن‌ها دارد
+                $allActiveTiers = $productSuppliers
+                    ->flatMap(fn($ps) => $ps->prices)
+                    ->pluck('tier_index')
+                    ->unique()
+                    ->sort()
+                    ->values();
+                
+                $hasAnyActiveTier = $allActiveTiers->isNotEmpty();
+            @endphp
 
             {{-- ══════════════════════════════════════════
             PRICE MATRIX COMPARISON — ماتریس بهترین قیمت‌ها
@@ -388,7 +401,89 @@ use App\Helpers\PriceHelper;
                 </div>
             @endif
             
-            @if($hasMatrixPricing)
+            
+            {{-- ⚠️ هشدار: بدون تیراژ فعال --}}
+            @if(!$hasAnyActiveTier)
+                <div class="mb-4 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 shadow-md">
+                    <div class="flex items-start gap-4">
+                        <div class="flex-shrink-0">
+                            <div class="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center">
+                                <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="text-base sm:text-lg font-bold text-yellow-900 mb-2">
+                                🔒 این محصول در حال حاضر تیراژ فعالی ندارد
+                            </h4>
+                            <p class="text-sm text-yellow-800 leading-relaxed">
+                                تأمین‌کنندگان هنوز قیمتی برای تیراژهای این محصول ثبت نکرده‌اند. 
+                                لطفاً برای دریافت قیمت و سفارش، مستقیماً با تأمین‌کنندگان تماس بگیرید.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            @endif
+            
+            @if($hasMatrixPricing && $hasAnyActiveTier)
+            
+            {{-- 📘 Info Box: راهنمای تیراژها برای کاربران --}}
+            <div class="mb-4 bg-gradient-to-l from-indigo-50 to-blue-50 border-r-4 border-indigo-500 rounded-lg p-4 shadow-sm">
+                <div class="flex items-start gap-3">
+                    <div class="flex-shrink-0 mt-1">
+                        <svg class="w-6 h-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1 space-y-2">
+                        <h4 class="text-sm font-bold text-indigo-900">
+                            💡 تیراژ چیست و چگونه از آن استفاده کنیم؟
+                        </h4>
+                        <p class="text-sm text-gray-700 leading-relaxed">
+                            <strong>تیراژ</strong> به تعداد کل محصولی که قصد خرید آن را دارید اشاره دارد (نه تعداد کارتن یا بسته). 
+                            قیمت‌های نمایش داده شده در جدول زیر، <strong>نقاط مرجع</strong> برای مقایسه تأمین‌کنندگان هستند.
+                        </p>
+                        <div class="bg-white dark:bg-gray-800 rounded-lg p-3 space-y-2 border border-indigo-200">
+                            <p class="text-xs font-semibold text-gray-800 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                                نحوه استفاده:
+                            </p>
+                            <ul class="text-xs text-gray-700 space-y-1.5 mr-4">
+                                <li class="flex items-start gap-2">
+                                    <span class="text-indigo-500 font-bold mt-0.5">1.</span>
+                                    <span>جدول زیر قیمت‌های تمام تأمین‌کنندگان را در تیراژهای مختلف نمایش می‌دهد</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <span class="text-indigo-500 font-bold mt-0.5">2.</span>
+                                    <span>می‌توانید قیمت‌ها را مقایسه کرده و بهترین گزینه را انتخاب کنید</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <span class="text-amber-600 font-bold mt-0.5">⚠️</span>
+                                    <span class="text-amber-700 font-medium">
+                                        <strong>برای تعداد دقیق خود، حتماً با تأمین‌کننده تماس بگیرید</strong> — این قیمت‌ها فقط برای مقایسه هستند
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                        @if($product->packaging_unit_type && $product->quantity_per_packaging)
+                        <div class="bg-purple-50 border border-purple-200 rounded-lg p-2.5">
+                            <p class="text-xs text-purple-900 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                </svg>
+                                <strong>بسته‌بندی:</strong> 
+                                {{ $product->packaging_unit_label }} 
+                                (هر {{ $product->packaging_unit_label }} = {{ number_format($product->quantity_per_packaging) }} عدد)
+                            </p>
+                        </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+            
             <div class="mb-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 p-2 sm:p-2 shadow-lg" x-data="{ showWarrantyPrices: false }">
                 <div class="flex items-center justify-between gap-3 mb-3">
                     <div class="flex items-center gap-3">
@@ -432,6 +527,61 @@ use App\Helpers\PriceHelper;
                     @endif
                 </div>
                 
+                {{-- 📊 Quick Summary: خلاصه سریع تیراژها --}}
+                @if(!empty($tierNames))
+                <div class="mb-3 bg-white border border-gray-200 rounded-lg p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <svg class="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                        <span class="text-sm font-semibold text-gray-700">تیراژهای قابل مقایسه:</span>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        @php
+                            // ✅ فیلتر تیراژهای فعال برای Quick Summary
+                            $enabledTiersForSummary = [];
+                            foreach ($productSuppliers as $ps) {
+                                // ✅ tier_enabled از model به صورت array برمی‌گردد (cast شده)
+                                $tierEnabled = $ps->tier_enabled ?? [];
+                                if (empty($tierEnabled)) {
+                                    // اگر هیچ تنظیماتی نباشد، همه تیراژها فعال هستند
+                                    foreach ($tierNames as $index => $tier) {
+                                        $enabledTiersForSummary[$index] = true;
+                                    }
+                                } else {
+                                    foreach ($tierEnabled as $index => $enabled) {
+                                        if ($enabled) {
+                                            $enabledTiersForSummary[$index] = true;
+                                        }
+                                    }
+                                }
+                            }
+                        @endphp
+                        @foreach($tierNames as $index => $tierData)
+                            @if($enabledTiersForSummary[$index] ?? true)
+                                @php
+                                    $minQty = $tierData['min_quantity'] ?? null;
+                                    $maxQty = $tierData['max_quantity'] ?? null;
+                                    $tierName = $tierData['name'] ?? 'تیراژ';
+                                    
+                                    if ($minQty && $maxQty) {
+                                        $rangeText = number_format($minQty) . ' تا ' . number_format($maxQty);
+                                    } elseif ($minQty) {
+                                        $rangeText = number_format($minQty) . ' به بالا';
+                                    } else {
+                                        $rangeText = 'نامشخص';
+                                    }
+                                @endphp
+                                <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+                                    <span class="text-xs font-bold text-indigo-900">{{ $tierName }}:</span>
+                                    <span class="text-xs text-indigo-700">{{ $rangeText }} عدد</span>
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+                </div>
+                @endif
+                
                 {{-- ماتریس بهترین قیمت‌ها - بهینه‌سازی شده --}}
                 <div class="relative">
                     {{-- Scrollbar indicator --}}
@@ -443,7 +593,50 @@ use App\Helpers\PriceHelper;
                             <tr>
                                 <th class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 text-right text-xs sm:text-sm md:text-base font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع فروش</th>
                                 @php
-                                    $allTiers = $productSuppliers->flatMap(fn($ps) => $ps->prices)->pluck('tier_index')->unique()->sort()->values();
+                                    // ✅ فیلتر تیراژهای فعال + دارای قیمت
+                                    $enabledTiers = [];
+                                    
+                                    // مرحله 1: جمع‌آوری تیراژهای فعال از همه suppliers
+                                    foreach ($productSuppliers as $ps) {
+                                        $tierEnabled = $ps->tier_enabled ?? [];
+                                        
+                                        if (empty($tierEnabled)) {
+                                            // اگر تنظیمات نباشد، همه تیراژها فعال
+                                            foreach ($product->quantity_tiers ?? [] as $index => $tier) {
+                                                $enabledTiers[$index] = true;
+                                            }
+                                        } else {
+                                            // فقط تیراژهای فعال
+                                            foreach ($tierEnabled as $index => $enabled) {
+                                                if ($enabled) {
+                                                    $enabledTiers[$index] = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    // مرحله 2: فیلتر نهایی - فقط تیراژهایی که قیمت فعال دارند
+                                    $allTiers = $productSuppliers->flatMap(function($ps) use ($enabledTiers) {
+                                        // فیلتر اول: تیراژهای فعال
+                                        $tierEnabled = $ps->tier_enabled ?? [];
+                                        
+                                        return $ps->prices->filter(function($price) use ($tierEnabled, $enabledTiers) {
+                                            $tier = $price->tier_index;
+                                            
+                                            // بررسی 1: آیا در لیست کلی تیراژهای فعال است؟
+                                            if (!($enabledTiers[$tier] ?? true)) {
+                                                return false;
+                                            }
+                                            
+                                            // بررسی 2: آیا برای این supplier فعال است؟
+                                            if (!empty($tierEnabled) && !($tierEnabled[$tier] ?? true)) {
+                                                return false;
+                                            }
+                                            
+                                            return true;
+                                        })->pluck('tier_index');
+                                    })->unique()->sort()->values();
+                                    
                                     $tierNames = $product->quantity_tiers ?? [];
                                 @endphp
                                 @foreach($allTiers as $tier)
@@ -455,20 +648,54 @@ use App\Helpers\PriceHelper;
                                         
                                         // ساخت متن محدوده
                                         if ($minQty && $maxQty) {
-                                            $rangeText = "{$minQty}–{$maxQty}";
+                                            $rangeText = number_format($minQty) . '–' . number_format($maxQty);
                                         } elseif ($minQty) {
-                                            $rangeText = "{$minQty}+";
+                                            $rangeText = number_format($minQty) . '+';
                                         } else {
                                             $rangeText = null;
                                         }
                                     @endphp
-                                    <th class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 text-center border-r border-gray-200 min-w-[90px] sm:min-w-[110px] md:min-w-[130px]">
-                                        {{-- محدوده تعداد --}}
-                                        @if($rangeText)
-                                            <div class="text-base sm:text-lg md:text-xl font-extrabold text-gray-900 tabular-nums leading-tight">{{ $rangeText }} عدد</div>
-                                        @endif
-                                        {{-- نام تیراژ --}}
-                                        <div class="text-[10px] sm:text-xs md:text-sm font-medium text-gray-600 uppercase leading-tight mt-0.5">{{ $tierName }}</div>
+                                    <th class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 text-center border-r border-gray-200 min-w-[90px] sm:min-w-[110px] md:min-w-[130px]" 
+                                        x-data="{ showTooltip: false }">
+                                        <div class="relative">
+                                            {{-- محدوده تعداد + Tooltip --}}
+                                            <div class="flex items-center justify-center gap-1"
+                                                 @mouseenter="showTooltip = true" 
+                                                 @mouseleave="showTooltip = false">
+                                                @if($rangeText)
+                                                    <div class="text-base sm:text-lg md:text-xl font-extrabold text-gray-900 tabular-nums leading-tight">
+                                                        {{ $rangeText }} عدد
+                                                    </div>
+                                                @endif
+                                                <button type="button" class="text-gray-400 hover:text-indigo-600 transition-colors">
+                                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            {{-- نام تیراژ --}}
+                                            <div class="text-[10px] sm:text-xs md:text-sm font-medium text-gray-600 uppercase leading-tight mt-0.5">{{ $tierName }}</div>
+                                            
+                                            {{-- Tooltip --}}
+                                            <div x-show="showTooltip" 
+                                                 x-cloak
+                                                 class="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl z-30"
+                                                 style="pointer-events: none;">
+                                                <div class="space-y-1.5">
+                                                    <p class="font-semibold text-indigo-300">{{ $tierName }}</p>
+                                                    @if($minQty && $maxQty)
+                                                        <p>محدوده: {{ number_format($minQty) }} تا {{ number_format($maxQty) }} عدد</p>
+                                                    @elseif($minQty)
+                                                        <p>از {{ number_format($minQty) }} عدد به بالا</p>
+                                                    @endif
+                                                    <p class="text-amber-300 text-[10px] mt-1.5 border-t border-gray-700 pt-1.5">
+                                                        💡 برای تعداد دقیق خود با تأمین‌کننده تماس بگیرید
+                                                    </p>
+                                                </div>
+                                                {{-- Arrow --}}
+                                                <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                                            </div>
+                                        </div>
                                     </th>
                                 @endforeach
                             </tr>
@@ -515,8 +742,19 @@ use App\Helpers\PriceHelper;
                                     
                                     @foreach($allTiers as $tier)
                                         @php
+                                            // ✅ فیلتر: فقط تیراژهای فعال را در body نمایش بده
+                                            if (!($enabledTiers[$tier] ?? true)) {
+                                                continue; // تیراژ غیرفعال → skip
+                                            }
+                                            
                                             // پیدا کردن تمام قیمت‌ها برای این سلول (بدون گارانتی)
                                             $cellPrices = $productSuppliers->flatMap(function($ps) use ($priceType, $tier) {
+                                                // ✅ فیلتر تیراژهای فعال برای این supplier
+                                                $tierEnabled = $ps->tier_enabled ?? [];
+                                                if (!empty($tierEnabled) && !($tierEnabled[$tier] ?? true)) {
+                                                    return collect(); // تیراژ غیرفعال برای این supplier → skip
+                                                }
+                                                
                                                 return $ps->prices->filter(function($price) use ($priceType, $tier) {
                                                     $code = $price->priceType ? $price->priceType->code : 'cash';
                                                     $checkPeriodId = $price->checkPeriod ? $price->checkPeriod->id : 0;
@@ -713,33 +951,87 @@ use App\Helpers\PriceHelper;
                     </table>
                 </div>
                 
-                {{-- Scroll hint --}}
-                <div class="md:hidden text-center text-[10px] text-gray-500 mt-2 flex items-center justify-center gap-1">
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
-                    </svg>
-                    <span>برای مشاهده تمام ستون‌ها به چپ و راست بکشید</span>
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
-                    </svg>
+                {{-- Scroll hint - بهبود یافته --}}
+                <div class="md:hidden mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                    <div class="flex items-center justify-center gap-2 text-xs text-blue-700">
+                        <svg class="w-4 h-4 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
+                        </svg>
+                        <span class="font-medium">جدول را به چپ و راست بکشید</span>
+                        <svg class="w-4 h-4 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                        </svg>
+                    </div>
                 </div>
             </div>
                 
-                {{-- راهنما --}}
-                <div class="mt-2 flex items-center gap-3 text-xs sm:text-sm text-gray-600 flex-wrap">
-                    <div class="flex items-center gap-1" x-show="!showWarrantyPrices">
-                        <div class="w-3 h-3 bg-green-50 ring-2 ring-green-400 rounded"></div>
-                        <span>بهترین قیمت</span>
-                    </div>
-                    <div class="flex items-center gap-1" x-show="showWarrantyPrices" x-cloak>
-                        <div class="w-3 h-3 bg-purple-50 ring-2 ring-purple-400 rounded"></div>
-                        <span>بهترین قیمت با گارانتی</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+                {{-- راهنما - بهبود یافته با توضیح واحد قیمت --}}
+                <div class="mt-3 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                    <div class="flex items-center gap-2 mb-2.5">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
-                        <span>کلیک → جزئیات تامین‌کننده</span>
+                        <span class="text-sm font-semibold text-gray-700">راهنمای جدول:</span>
+                    </div>
+                    <div class="flex items-start gap-4 flex-wrap">
+                        <div class="flex items-center gap-1.5" x-show="!showWarrantyPrices">
+                            <div class="w-3 h-3 bg-green-50 ring-2 ring-green-400 rounded flex-shrink-0"></div>
+                            <span class="text-xs sm:text-sm text-gray-600">بهترین قیمت</span>
+                        </div>
+                        <div class="flex items-center gap-1.5" x-show="showWarrantyPrices" x-cloak>
+                            <div class="w-3 h-3 bg-purple-50 ring-2 ring-purple-400 rounded flex-shrink-0"></div>
+                            <span class="text-xs sm:text-sm text-gray-600">بهترین قیمت با گارانتی</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <svg class="w-3 h-3 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+                            </svg>
+                            <span class="text-xs sm:text-sm text-gray-600">کلیک → جزئیات تامین‌کننده</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <svg class="w-3 h-3 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span class="text-xs sm:text-sm text-gray-600"><strong class="text-amber-700">قیمت‌ها به ازای هر عدد کالا</strong> است (نه کل تیراژ)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                {{-- 📞 CTA: تماس با تأمین‌کننده برای تعداد دقیق --}}
+                <div class="mt-4 bg-gradient-to-l from-amber-50 to-orange-50 border-2 border-amber-400 rounded-xl p-4 shadow-md">
+                    <div class="flex items-start gap-4">
+                        <div class="flex-shrink-0 mt-1">
+                            <div class="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                                <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="text-base sm:text-lg font-bold text-amber-900 mb-2 flex items-center gap-2">
+                                📞 تعداد دقیق خود را می‌دانید؟
+                            </h4>
+                            <p class="text-sm text-amber-800 leading-relaxed mb-3">
+                                <strong class="text-amber-900">💡 نکته مهم:</strong> تمام قیمت‌های نمایش داده شده در جداول بالا، <strong class="text-amber-900">قیمت هر یک عدد کالا</strong> است (نه قیمت کل تیراژ).
+                                <br>
+                                قیمت‌های بالا فقط برای <strong>مقایسه در نقاط مرجع</strong> (تیراژهای از پیش تعریف شده) هستند. 
+                                برای <strong class="text-amber-900">قیمت نهایی با تعداد دقیق خود</strong> (مثلاً 73 عدد، 250 عدد، یا هر تعداد دیگر)، 
+                                لطفاً با تأمین‌کننده مورد نظرتان تماس بگیرید.
+                            </p>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <a href="#supplier-contact-section" 
+                                   onclick="event.preventDefault(); const el = document.getElementById('supplier-contact-section') || document.querySelectorAll('[data-supplier-card]')[0]; if(el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); el.classList.add('ring-4', 'ring-amber-400'); setTimeout(() => el.classList.remove('ring-4', 'ring-amber-400'), 2000); }"
+                                   class="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm rounded-lg shadow-md transition-all transform hover:scale-105">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                    مشاهده اطلاعات تماس تأمین‌کنندگان
+                                </a>
+                                <span class="text-xs text-amber-700">
+                                    یا به پایین صفحه بروید
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -755,6 +1047,8 @@ use App\Helpers\PriceHelper;
                 <div class="space-y-4">
                     @foreach($productSuppliers as $psIndex => $ps)
                     <div class="border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-md"
+                         data-supplier-card
+                         id="supplier-card-{{ $ps->supplier->id }}"
                          x-data="{ expanded: {{ $psIndex === 0 ? 'true' : ($productSuppliers->count() <= 3 ? 'true' : 'false') }} }">
 
                         {{-- ── هدر تأمین‌کننده (قابل کلیک برای باز/بسته) ── --}}
@@ -965,10 +1259,49 @@ use App\Helpers\PriceHelper;
                 </div>
 
                 @php
-                // استخراج تمام تیراژهای موجود
+                // ✅ استخراج تیراژهای فعال برای مقایسه
+                $enabledTiersForComparison = [];
+                
+                // مرحله 1: جمع‌آوری تیراژهای فعال از همه suppliers
+                foreach ($productSuppliers as $ps) {
+                    $tierEnabled = $ps->tier_enabled ?? [];
+                    
+                    if (empty($tierEnabled)) {
+                        // اگر تنظیمات نباشد، همه تیراژها فعال
+                        foreach ($product->quantity_tiers ?? [] as $index => $tier) {
+                            $enabledTiersForComparison[$index] = true;
+                        }
+                    } else {
+                        // فقط تیراژهای فعال
+                        foreach ($tierEnabled as $index => $enabled) {
+                            if ($enabled) {
+                                $enabledTiersForComparison[$index] = true;
+                            }
+                        }
+                    }
+                }
+                
+                // مرحله 2: فیلتر نهایی - فقط تیراژهایی که قیمت فعال دارند
                 $allTiersForComparison = $productSuppliers
-                    ->flatMap(fn($ps) => $ps->prices)
-                    ->pluck('tier_index')
+                    ->flatMap(function($ps) use ($enabledTiersForComparison) {
+                        $tierEnabled = $ps->tier_enabled ?? [];
+                        
+                        return $ps->prices->filter(function($price) use ($tierEnabled, $enabledTiersForComparison) {
+                            $tier = $price->tier_index;
+                            
+                            // بررسی 1: آیا در لیست کلی تیراژهای فعال است؟
+                            if (!($enabledTiersForComparison[$tier] ?? true)) {
+                                return false;
+                            }
+                            
+                            // بررسی 2: آیا برای این supplier فعال است؟
+                            if (!empty($tierEnabled) && !($tierEnabled[$tier] ?? true)) {
+                                return false;
+                            }
+                            
+                            return true;
+                        })->pluck('tier_index');
+                    })
                     ->unique()
                     ->sort()
                     ->values();
@@ -994,10 +1327,17 @@ use App\Helpers\PriceHelper;
                                 $rangeText = null;
                             }
                             
-                            // جمع‌آوری انواع قیمت برای این تیراژ
+                            // ✅ جمع‌آوری انواع قیمت برای این تیراژ (فقط قیمت‌های تیراژهای فعال)
                             $priceTypesForTier = $productSuppliers
-                                ->flatMap(fn($ps) => $ps->prices)
-                                ->filter(fn($p) => $p->tier_index == $tierIndex)
+                                ->flatMap(function($ps) use ($tierIndex) {
+                                    // بررسی اینکه آیا این تیراژ برای این supplier فعال است
+                                    $tierEnabled = $ps->tier_enabled ?? [];
+                                    if (!empty($tierEnabled) && !($tierEnabled[$tierIndex] ?? true)) {
+                                        return collect(); // تیراژ غیرفعال → skip
+                                    }
+                                    
+                                    return $ps->prices->filter(fn($p) => $p->tier_index == $tierIndex);
+                                })
                                 ->map(function($price) {
                                     $code = $price->priceType ? $price->priceType->code : 'cash';
                                     $name = $price->priceType ? $price->priceType->name : 'نقدی';
@@ -1034,12 +1374,33 @@ use App\Helpers\PriceHelper;
                             </div>
 
                             {{-- جدول مقایسه --}}
+                            @php
+                                // ✅ فیلتر کردن suppliers که برای این تیراژ قیمت فعال دارند
+                                $activeSuppliersForTier = $productSuppliers->filter(function($ps) use ($tierIndex) {
+                                    $tierEnabled = $ps->tier_enabled ?? [];
+                                    
+                                    // بررسی 1: آیا تیراژ برای این supplier فعال است؟
+                                    if (!empty($tierEnabled) && !($tierEnabled[$tierIndex] ?? true)) {
+                                        return false;
+                                    }
+                                    
+                                    // بررسی 2: آیا حداقل یک قیمت برای این تیراژ دارد؟
+                                    return $ps->prices->contains(fn($p) => $p->tier_index == $tierIndex);
+                                });
+                            @endphp
+                            
+                            @if($activeSuppliersForTier->isEmpty())
+                                {{-- اگر هیچ supplier فعالی نداریم، جدول نمایش نمی‌دهیم --}}
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                                    <p class="text-sm text-yellow-700">هیچ تامین‌کننده‌ای برای این تیراژ قیمت فعال ندارد</p>
+                                </div>
+                            @else
                             <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
                                 <table class="w-full text-sm">
                                     <thead>
                                         <tr class="bg-gray-50">
                                             <th class="text-right px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 text-xs sm:text-sm md:text-base font-medium text-gray-600 uppercase sticky right-0 bg-gray-50 z-10 border-l-2 border-gray-300">نوع فروش</th>
-                                            @foreach($productSuppliers as $ps)
+                                            @foreach($activeSuppliersForTier as $ps)
                                             <th class="text-center px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 border-b min-w-[90px] sm:min-w-[110px] md:min-w-[130px]">
                                                 <div class="flex flex-col items-center gap-0.5">
                                                     @if($ps->supplier && $ps->supplier->logo_path)
@@ -1066,8 +1427,8 @@ use App\Helpers\PriceHelper;
                                     <tbody class="divide-y divide-gray-100">
                                         @forelse($priceTypesForTier as $idx => $pti)
                                             @php
-                                            // یافتن قیمت مطابق هر تأمین‌کننده برای این تیراژ و نوع قیمت
-                                            $pricesForType = $productSuppliers->map(function($ps) use ($pti, $tierIndex) {
+                                            // ✅ یافتن قیمت مطابق هر تأمین‌کننده فعال برای این تیراژ و نوع قیمت
+                                            $pricesForType = $activeSuppliersForTier->map(function($ps) use ($pti, $tierIndex) {
                                                 return $ps->prices->first(function($p) use ($pti, $tierIndex) {
                                                     $code = $p->priceType ? $p->priceType->code : 'cash';
                                                     $checkPeriodId = $p->checkPeriod ? $p->checkPeriod->id : 0;
@@ -1110,7 +1471,7 @@ use App\Helpers\PriceHelper;
                                             </tr>
                                         @empty
                                             <tr>
-                                                <td colspan="{{ $productSuppliers->count() + 1 }}" class="px-3 py-4 text-center text-gray-400 text-[10px]">
+                                                <td colspan="{{ $activeSuppliersForTier->count() + 1 }}" class="px-3 py-4 text-center text-gray-400 text-[10px]">
                                                     قیمتی برای این تیراژ ثبت نشده است
                                                 </td>
                                             </tr>
@@ -1121,13 +1482,15 @@ use App\Helpers\PriceHelper;
                                             <td class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 text-right sticky right-0 bg-blue-50 z-10 text-blue-700 text-[10px] sm:text-xs md:text-sm border-l-2 border-gray-300">
                                                 🏆 بهترین
                                             </td>
-                                            @foreach($productSuppliers as $ps)
+                                            @foreach($activeSuppliersForTier as $ps)
                                             @php 
                                                 $tierLowest = $ps->prices
                                                     ->filter(fn($p) => $p->tier_index == $tierIndex)
                                                     ->min('price');
-                                                $tierOverallLowest = $productSuppliers
-                                                    ->flatMap(fn($ps) => $ps->prices)
+                                                
+                                                // محاسبه کمترین قیمت کلی (فقط از suppliers فعال در این تیراژ)
+                                                $tierOverallLowest = $activeSuppliersForTier
+                                                    ->flatMap(fn($supplier) => $supplier->prices)
                                                     ->filter(fn($p) => $p->tier_index == $tierIndex)
                                                     ->min('price');
                                             @endphp
@@ -1148,23 +1511,38 @@ use App\Helpers\PriceHelper;
                                     </tbody>
                                 </table>
                             </div>
+                            @endif
                         </div>
                     @endforeach
                 </div>
 
-                {{-- راهنما --}}
-                <div class="mt-2 flex items-center gap-2 text-xs sm:text-sm md:text-base text-gray-600 flex-wrap bg-white rounded-lg border border-gray-200 p-2">
-                    <div class="flex items-center gap-1">
-                        <div class="w-2.5 h-2.5 bg-green-50 ring-2 ring-green-400 rounded"></div>
-                        <span>ارزان‌ترین</span>
+                {{-- راهنما - بهبود یافته با توضیح واحد قیمت --}}
+                <div class="mt-3 bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+                    <div class="flex items-center gap-2 mb-2.5">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span class="text-sm font-semibold text-gray-700">راهنمای جدول مقایسه:</span>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <span class="text-red-400 font-bold">+X%</span>
-                        <span>درصد گران‌تر</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <span class="text-xs sm:text-sm bg-green-200 text-green-800 px-1 py-0.5 rounded-full">🏆</span>
-                        <span>بهترین کل</span>
+                    <div class="flex items-start gap-4 flex-wrap">
+                        <div class="flex items-center gap-1.5">
+                            <div class="w-2.5 h-2.5 bg-green-50 ring-2 ring-green-400 rounded flex-shrink-0"></div>
+                            <span class="text-xs sm:text-sm md:text-base text-gray-600">ارزان‌ترین</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-xs sm:text-sm md:text-base text-red-400 font-bold">+X%</span>
+                            <span class="text-xs sm:text-sm md:text-base text-gray-600">درصد گران‌تر</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-xs sm:text-sm bg-green-200 text-green-800 px-1 py-0.5 rounded-full">🏆</span>
+                            <span class="text-xs sm:text-sm md:text-base text-gray-600">بهترین کل</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <svg class="w-3 h-3 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span class="text-xs sm:text-sm md:text-base text-gray-600"><strong class="text-amber-700">قیمت‌ها به ازای هر عدد کالا</strong> است (نه کل تیراژ)</span>
+                        </div>
                     </div>
                 </div>
             </div>

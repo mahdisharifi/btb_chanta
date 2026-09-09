@@ -10,29 +10,102 @@
         </h1>
     </div>
 
-    <form wire:submit.prevent="save" class="space-y-6">
+    {{-- 🚨 Error Summary: نمایش تمام خطاها در یک جا --}}
+    @if ($errors->any())
+        <div x-data="{ show: true }" 
+             x-show="show"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 transform -translate-y-2"
+             x-transition:enter-end="opacity-100 transform translate-y-0"
+             id="error-summary"
+             class="bg-red-50 dark:bg-red-900/20 border-2 border-red-400 dark:border-red-600 rounded-lg p-5 mb-6 shadow-lg">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0">
+                    <x-heroicon-s-exclamation-circle class="w-8 h-8 text-red-600 dark:text-red-400"/>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-lg font-bold text-red-900 dark:text-red-100 mb-2 flex items-center gap-2">
+                        ⚠️ خطاهای فرم ({{ $errors->count() }} مورد)
+                    </h3>
+                    <p class="text-sm text-red-800 dark:text-red-200 mb-3">
+                        لطفاً خطاهای زیر را برطرف کنید و دوباره تلاش کنید:
+                    </p>
+                    <ul class="space-y-2">
+                        @foreach ($errors->all() as $index => $error)
+                            <li class="flex items-start gap-2 text-sm">
+                                <span class="flex-shrink-0 inline-flex items-center justify-center w-5 h-5 bg-red-600 dark:bg-red-700 text-white text-xs font-bold rounded-full">
+                                    {{ $index + 1 }}
+                                </span>
+                                <span class="text-red-800 dark:text-red-200">{{ $error }}</span>
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+                <button type="button" 
+                        @click="show = false"
+                        class="flex-shrink-0 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 transition-colors">
+                    <x-heroicon-s-x-mark class="w-6 h-6"/>
+                </button>
+            </div>
+        </div>
+    @endif
+
+    <form wire:submit.prevent="save" 
+          class="space-y-6"
+          x-data="{ 
+              scrollToFirstError() {
+                  // اسکرول به Error Summary
+                  const errorSummary = document.getElementById('error-summary');
+                  if (errorSummary) {
+                      errorSummary.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      return;
+                  }
+                  
+                  // اگر Error Summary نبود، به اولین فیلد با خطا اسکرول کن
+                  const firstError = document.querySelector('.text-red-500, .border-red-500');
+                  if (firstError) {
+                      firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      // فوکوس روی input
+                      const input = firstError.closest('div')?.querySelector('input, select, textarea');
+                      if (input) {
+                          setTimeout(() => input.focus(), 500);
+                      }
+                  }
+              }
+          }"
+          @submit.prevent="$wire.save().then(() => {}).catch(() => { setTimeout(() => scrollToFirstError(), 100); })">
 
         <!-- اطلاعات پایه -->
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2">اطلاعات اصلی</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
+                <div id="field-title">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان محصول *</label>
-                    <input type="text" wire:model.live.debounce.500ms="title" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
+                    <input type="text" 
+                           wire:model.live.debounce.500ms="title" 
+                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm @error('title') border-red-500 dark:border-red-600 @enderror" 
+                           required>
                     @error('title') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نامک (Slug) *<button type="button" wire:click="resetSlugToAuto"
-                                                                                                                        class="text-gray-400 hover:text-gray-600" title="بازتولید خودکار از عنوان">
+                <div id="field-slug">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        نامک (Slug) *
+                        <button type="button" wire:click="resetSlugToAuto"
+                                class="text-gray-400 hover:text-gray-600" title="بازتولید خودکار از عنوان">
                             <x-heroicon-o-arrow-path class="w-4 h-4" />
-                        </button></label>
-                    <input type="text" wire:model="slug" dir="ltr" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left" required>
+                        </button>
+                    </label>
+                    <input type="text" 
+                           wire:model="slug" 
+                           dir="ltr" 
+                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left @error('slug') border-red-500 dark:border-red-600 @enderror" 
+                           required>
                     @error('slug') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
                 <!-- انتخابگر هوشمند دسته‌بندی -->
-                <div x-data="{ open: false }" class="relative">
+                <div x-data="{ open: false }" class="relative" id="field-category_id">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی (فقط دسته‌های نهایی مجاز هستند) *</label>
 
                     <div @click="open = !open" class="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-lg shadow-sm text-sm px-3 py-2 cursor-pointer flex justify-between items-center bg-white dark:bg-gray-900">
@@ -113,7 +186,10 @@
         </div>
 
         <!-- بخش واحد بسته‌بندی و تیراژبندی خودکار -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div id="field-packaging" 
+             class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 
+                    @error('packaging_unit_type') border-red-500 dark:border-red-600 @enderror 
+                    @error('quantity_per_packaging') border-red-500 dark:border-red-600 @enderror">
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2 flex items-center gap-2">
                 <x-heroicon-o-cube class="w-5 h-5 text-indigo-600"/>
                 واحد بسته‌بندی و تیراژبندی
@@ -168,71 +244,141 @@
                 </div>
             </div>
             
-            {{-- نمایش تیراژبندی خودکار (فقط اگر محصول تیراژ ندارد) --}}
-            @if($quantity_per_packaging > 0 && !$hasExistingTiers)
+            {{-- نمایش تیراژبندی خودکار (فقط اگر واحد و تعداد مشخص شده باشد) --}}
+            @if($quantity_per_packaging > 0)
                 <div class="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800 mt-4">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-sm font-semibold text-indigo-800 dark:text-indigo-300 flex items-center gap-2">
                             <x-heroicon-o-sparkles class="w-4 h-4"/>
-                            تیراژبندی خودکار
+                            پیشنهاد تیراژبندی خودکار
                         </h3>
                         <div class="flex gap-2">
-                            <button type="button" 
-                                    wire:click="applyAutoTiers"
-                                    class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors">
-                                اعمال تیراژها
-                            </button>
-                            <button type="button" 
-                                    wire:click="clearAutoTiers"
-                                    class="text-xs px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors">
-                                پاک کردن
-                            </button>
+                            @if(!$tiersApplied)
+                                <button type="button" 
+                                        wire:click="applyAutoTiers"
+                                        class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors flex items-center gap-1">
+                                    <x-heroicon-s-check class="w-4 h-4"/>
+                                    اعمال این تیراژها
+                                </button>
+                            @else
+                                <span class="text-xs px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md flex items-center gap-1">
+                                    <x-heroicon-s-check-circle class="w-4 h-4"/>
+                                    اعمال شده
+                                </span>
+                                <button type="button" 
+                                        wire:click="clearAutoTiers"
+                                        class="text-xs px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors">
+                                    پاک کردن
+                                </button>
+                            @endif
                         </div>
                     </div>
+                    
+                    {{-- نمایش پیش‌نمایش تیراژها --}}
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
                         @php
-                            $autoTiers = app('App\Livewire\Admin\Products\Create')->generateAutoTiers();
+                            $previewTiers = $this->generateAutoTiers();
                         @endphp
-                        @foreach($autoTiers as $tier)
+                        @foreach($previewTiers as $tier)
                             <div class="bg-white dark:bg-gray-800 p-2 rounded border border-indigo-100 dark:border-indigo-900">
                                 <div class="font-medium text-indigo-700 dark:text-indigo-400">{{ $tier['name'] }}</div>
                                 <div class="text-gray-500 dark:text-gray-400 mt-1">
                                     @if($packaging_unit_type === 'roll')
-                                        {{ $tier['min_quantity'] }} تا {{ $tier['max_quantity'] ?? '∞' }} متر
+                                        {{ number_format($tier['min_quantity']) }} تا {{ $tier['max_quantity'] ? number_format($tier['max_quantity']) : '∞' }} متر
                                     @elseif($packaging_unit_type === 'jowab')
-                                        {{ $tier['min_quantity'] }} تا {{ $tier['max_quantity'] ?? '∞' }} جفت
+                                        {{ number_format($tier['min_quantity']) }} تا {{ $tier['max_quantity'] ? number_format($tier['max_quantity']) : '∞' }} جفت
                                     @else
-                                        {{ $tier['min_quantity'] }} تا {{ $tier['max_quantity'] ?? '∞' }} عدد
+                                        {{ number_format($tier['min_quantity']) }} تا {{ $tier['max_quantity'] ? number_format($tier['max_quantity']) : '∞' }} عدد
                                     @endif
                                 </div>
                             </div>
                         @endforeach
+                    </div>
+                    
+                    @if(!$tiersApplied)
+                        <p class="text-xs text-indigo-600 dark:text-indigo-400 mt-3 flex items-center gap-1">
+                            <x-heroicon-o-information-circle class="w-4 h-4"/>
+                            برای اعمال این تیراژها، روی دکمه "اعمال این تیراژها" کلیک کنید. سپس می‌توانید آنها را ویرایش یا تیراژ جدید اضافه کنید.
+                        </p>
+                    @endif
+                </div>
+            @else
+                <div class="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 mt-4">
+                    <div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm">
+                        <x-heroicon-o-exclamation-triangle class="w-5 h-5"/>
+                        <span>برای مشاهده پیشنهاد تیراژبندی خودکار، ابتدا <strong>تعداد در هر واحد بسته‌بندی</strong> را مشخص کنید.</span>
                     </div>
                 </div>
             @endif
         </div>
 
         <!-- بخش تیراژهای محصول -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            <div class="flex items-center justify-between mb-4 border-b dark:border-gray-600 pb-2">
+        <div id="field-quantity_tiers" 
+             class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700
+                    @error('quantity_tiers') border-red-500 dark:border-red-600 @enderror
+                    @error('quantity_tiers.*') border-red-500 dark:border-red-600 @enderror">
+            <div class="mb-4 border-b dark:border-gray-600 pb-2">
                 <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
                     <x-heroicon-o-cube class="w-5 h-5 text-indigo-600"/>
                     تیراژهای محصول
-                </h2>
-                <button type="button" 
-                        wire:click="toggleQuantityTiers" 
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors {{ $showQuantityTiers ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300' }}">
-                    @if($showQuantityTiers)
-                        <x-heroicon-s-check-circle class="w-4 h-4"/>
-                        فعال
-                    @else
-                        <x-heroicon-o-x-circle class="w-4 h-4"/>
-                        غیرفعال
+                    @if($tiersApplied)
+                        <span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded">
+                            فعال
+                        </span>
                     @endif
-                </button>
+                </h2>
             </div>
 
-            @if($showQuantityTiers)
+            @if(!$tiersApplied)
+                {{-- راهنما: ابتدا تیراژبندی خودکار را اعمال کنید --}}
+                <div class="text-center py-8">
+                    <x-heroicon-o-arrow-up class="w-12 h-12 mx-auto mb-3 text-gray-400 dark:text-gray-600"/>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                        برای شروع، ابتدا <strong class="text-indigo-600 dark:text-indigo-400">تیراژبندی خودکار</strong> را در بخش بالا اعمال کنید.
+                    </p>
+                    <p class="text-xs text-gray-500 dark:text-gray-500 mt-2">
+                        پس از اعمال، می‌توانید تیراژها را ویرایش کنید یا تیراژ جدید اضافه کنید.
+                    </p>
+                </div>
+            @else
+                {{-- 📋 راهنمای تیراژها --}}
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                    <div class="flex items-start gap-3">
+                        <x-heroicon-o-information-circle class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"/>
+                        <div class="text-sm text-blue-800 dark:text-blue-200 space-y-2">
+                            <p class="font-semibold">📌 قوانین تیراژها:</p>
+                            <ul class="list-disc list-inside space-y-1 mr-2">
+                                <li><strong>حداقل:</strong> 3 تیراژ الزامی است</li>
+                                <li><strong>حداکثر:</strong> 5 تیراژ می‌توانید تعریف کنید</li>
+                                <li><strong>آخرین تیراژ:</strong> حداکثر تعداد باید خالی باشد (بدون محدودیت)</li>
+                                <li><strong>عدم تداخل:</strong> تیراژها نباید با هم همپوشانی داشته باشند</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- نمایش تعداد تیراژ فعلی --}}
+                <div class="flex items-center justify-between mb-3 px-2">
+                    <span class="text-sm text-gray-600 dark:text-gray-400">
+                        تعداد تیراژها: 
+                        <strong class="text-gray-900 dark:text-gray-100">{{ count($quantity_tiers) }}</strong> 
+                        <span class="text-xs">(حداقل 3، حداکثر 5)</span>
+                    </span>
+                    @if(count($quantity_tiers) < 3)
+                        <span class="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-1 rounded">
+                            ⚠️ حداقل 3 تیراژ لازم است
+                        </span>
+                    @elseif(count($quantity_tiers) === 5)
+                        <span class="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-1 rounded">
+                            ⚠️ حداکثر تعداد رسیده
+                        </span>
+                    @else
+                        <span class="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded">
+                            ✅ معتبر
+                        </span>
+                    @endif
+                </div>
+
                 <div class="space-y-3">
                     @forelse($quantity_tiers as $index => $tier)
                         @php
@@ -316,16 +462,24 @@
                                 wire:click="addQuantityTier" 
                                 class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-2">
                             <x-heroicon-o-plus-circle class="w-5 h-5"/>
-                            <span class="text-sm font-medium">افزودن تیراژ جدید</span>
+                            <span class="text-sm font-medium">
+                                افزودن تیراژ جدید 
+                                @if(count($quantity_tiers) < 3)
+                                    <span class="text-red-600 dark:text-red-400">({{ 3 - count($quantity_tiers) }} تیراژ دیگر لازم است)</span>
+                                @else
+                                    <span class="text-gray-500 dark:text-gray-400">(اختیاری - {{ 5 - count($quantity_tiers) }} تیراژ دیگر مجاز)</span>
+                                @endif
+                            </span>
                         </button>
                     @else
-                        <p class="text-xs text-amber-600 dark:text-amber-400 text-center py-2">حداکثر 5 تیراژ قابل تعریف است.</p>
+                        <div class="text-center py-3 px-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                            <p class="text-sm text-amber-700 dark:text-amber-300 flex items-center justify-center gap-2">
+                                <x-heroicon-s-exclamation-triangle class="w-5 h-5"/>
+                                حداکثر 5 تیراژ قابل تعریف است
+                            </p>
+                        </div>
                     @endif
                 </div>
-            @else
-                <p class="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                    برای فعال کردن تنظیم تیراژها، دکمه بالا را کلیک کنید.
-                </p>
             @endif
         </div>
 

@@ -43,6 +43,12 @@ class EditPrice extends Component
     public array $quantityTiers = [];
     public $priceTypes;
     public $checkPeriods;
+    
+    // ✅ محاسبه خودکار تیراژها
+    public int $referenceTierIndex = 1; // تیراژ مرجع (1 = کارتن)
+    public array $tierPercentages = []; // [tier_index] => percentage (+/- درصد نسبت به مرجع)
+    public bool $autoCalculateTiers = false; // فعال/غیرفعال محاسبه خودکار
+    public array $tierEnabled = []; // [tier_index] => true/false (فعال/غیرفعال تیراژ در محاسبه خودکار)
 
     /**
      * Updated hook - اجرا می‌شود وقتی property تغییر می‌کند
@@ -110,17 +116,37 @@ class EditPrice extends Component
         // تیراژهای محصول
         $this->quantityTiers = $this->product->quantity_tiers ?? [];
         
+        // ✅ مقداردهی اولیه tierEnabled (همه تیراژها فعال)
+        foreach ($this->quantityTiers as $tierIndex => $tier) {
+            $this->tierEnabled[$tierIndex] = true;
+        }
+        
+        // ✅ بارگذاری تنظیمات تیراژ از جدول (اگر وجود داشته باشد)
+        $this->loadTierPercentages();
+        
+        // ✅ بارگذاری تنظیمات tierEnabled از دیتابیس
+        $this->autoCalculateTiers = $this->productSupplier->auto_calculate_tiers ?? false;
+        if (!empty($this->productSupplier->tier_enabled)) {
+            $this->tierEnabled = $this->productSupplier->tier_enabled;
+        }
+        if (!empty($this->productSupplier->tier_percentages)) {
+            $this->tierPercentages = $this->productSupplier->tier_percentages;
+        }
+        
         // بارگذاری انواع قیمت و دوره‌های چک
         $this->priceTypes = PriceType::where('is_active', true)->orderBy('sort_order')->get();
         
-        // دوره‌های پیش‌فرض + دوره‌های اختصاصی این تامین‌کننده (مرتب شده بر اساس تعداد روز)
-        $this->checkPeriods = CheckPeriod::where(function($query) use ($supplierId) {
-            $query->global()
-                  ->orWhere('supplier_id', $supplierId);
-        })
-        ->active()
-        ->orderBy('days') // ترتیب بر اساس تعداد روز
-        ->get();
+        // ✅ دوره‌های چک: فقط دوره‌های فعال شده توسط supplier (از جدول pivot)
+        $this->checkPeriods = CheckPeriod::whereHas('suppliers', function($query) use ($supplierId) {
+                $query->where('supplier_id', $supplierId)
+                      ->where('supplier_check_period.is_active', true);
+            })
+            ->with(['suppliers' => function($query) use ($supplierId) {
+                $query->where('supplier_id', $supplierId);
+            }])
+            ->active()
+            ->orderBy('days')
+            ->get();
         
         $this->initializePriceMatrix();
     }
@@ -173,22 +199,60 @@ class EditPrice extends Component
                         $checkKey = $tierIndex . '_' . $key . '_' . $period->id;
                         $checkPrice = $existingPrices->get($checkKey)?->first();
                         
-                        // ✅ تعیین mode بر اساس داده‌های موجود
+                        // ✅ پیش‌فرض: همه دوره‌ها غیرفعال (فقط اگر رکورد وجود داشته باشد فعال می‌شوند)
                         if ($checkPrice) {
                             // دوره فعال است (چون رکورد وجود دارد)
                             $this->checkPeriodEnabled[$tierIndex][$period->id] = true;
                             
                             if ($checkPrice->percentage_override !== null) {
-                                // mode: percentage
+                                // mode: percentage (درصد اختصاصی وجود دارد)
                                 $this->checkPriceMode[$tierIndex][$period->id] = 'percentage';
                                 $this->checkPercentageOverride[$tierIndex][$period->id] = (float)$checkPrice->percentage_override;
-                                $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
-                            } elseif ($checkPrice->price !== null && $checkPrice->price > 0) {
-                                // mode: manual (قیمت دستی بزرگتر از 0)
-                                $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
+                                // قیمت از دیتابیس خوانده می‌شود (محاسبه شده ذخیره شده است)
                                 $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                            } elseif ($checkPrice->price !== null && $checkPrice->price > 0) {
+                                // ✅ بررسی: آیا این قیمت manual است یا default؟
+                                // برای تشخیص، قیمت را با محاسبه default مقایسه می‌کنیم
+                                
+                                // محاسبه قیمت پیش‌فرض برای مقایسه
+                                $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+                                $cashPrice = $existingPrices->get($tierIndex . '_' . $cashPriceType->id . '_null')?->first()?->price;
+                                
+                                if ($cashPrice && is_numeric($cashPrice)) {
+                                    // ✅ محاسبه قیمت default با در نظر گرفتن rounding
+                                    $percentage = $this->getEffectivePercentageValue($period->id);
+                                    
+                                    if ($percentage !== null) {
+                                        // ✅ استفاده از Helper برای محاسبه و rounding
+                                        $supplier = Auth::user()->supplier;
+                                        $expectedDefaultPrice = \App\Helpers\PriceRoundingHelper::calculateCheckPrice(
+                                            $cashPrice,
+                                            $percentage,
+                                            $supplier // ✅ Model پاس می‌دهیم، نه string
+                                        );
+                                        
+                                        // مقایسه با tolerance 0.01 تومان (به دلیل round-off errors)
+                                        if ($expectedDefaultPrice !== null && abs($checkPrice->price - $expectedDefaultPrice) < 0.01) {
+                                            // قیمت برابر با default است → mode = default
+                                            $this->checkPriceMode[$tierIndex][$period->id] = 'default';
+                                            $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                                        } else {
+                                            // قیمت متفاوت است → mode = manual
+                                            $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
+                                            $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                                        }
+                                    } else {
+                                        // درصد پیدا نشد → فرض می\u200cکنیم manual است
+                                        $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
+                                        $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                                    }
+                                } else {
+                                    // نمی‌توانیم محاسبه کنیم، فرض می‌کنیم manual است
+                                    $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
+                                    $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                                }
                             } else {
-                                // mode: default (price = 0 یا null)
+                                // price = 0 یا null → نباید اتفاق بیفتد با logic جدید، اما برای backward compatibility
                                 $this->checkPriceMode[$tierIndex][$period->id] = 'default';
                                 $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = null;
                             }
@@ -431,7 +495,14 @@ class EditPrice extends Component
                 'warranty_coverage_type' => $this->warrantyCoverageType,
                 'warranty_type_coverage' => $this->warrantyTypeCoverage,     // ✅ جدید
                 'warranty_duration_days' => $this->warrantyDurationDays,
+                // ✅ ذخیره تنظیمات تیراژها
+                'auto_calculate_tiers' => (bool)$this->autoCalculateTiers,
+                'tier_percentages' => $this->tierPercentages,
+                'tier_enabled' => $this->tierEnabled,
             ]);
+
+            // ✅ 1.5. ذخیره تنظیمات تیراژ
+            $this->saveTierPercentages();
 
             // 2. حذف قیمت‌های قبلی سیستم جدید
             $this->productSupplier->prices()
@@ -503,25 +574,39 @@ class EditPrice extends Component
                             
                             switch ($mode) {
                                 case 'default':
-                                    // ✅ ذخیره رکورد با price=0 برای نشان دادن فعال بودن دوره
-                                    // قیمت واقعی از سلسله مراتب درصد محاسبه می‌شود
-                                    $price = 0;
+                                    // ✅ محاسبه و ذخیره قیمت نهایی بر اساس سلسله مراتب درصد
+                                    $calculatedPrice = $this->calculateCheckPrice($tierIndex, $periodId);
+                                    
+                                    // اگر محاسبه موفق نبود، از ذخیره صرف‌نظر کن
+                                    if ($calculatedPrice === null || $calculatedPrice <= 0) {
+                                        continue 2; // skip this record
+                                    }
+                                    
+                                    $price = $calculatedPrice;
                                     $percentageOverride = null;
                                     break;
                                     
                                 case 'percentage':
-                                    // ذخیره درصد اختصاصی
-                                    $price = 0; // قیمت از درصد محاسبه می‌شود
+                                    // ✅ محاسبه و ذخیره قیمت نهایی بر اساس درصد اختصاصی
                                     $percentageOverride = $this->checkPercentageOverride[$tierIndex][$periodId] ?? null;
                                     
                                     // validation: درصد باید بین 0 تا 100 باشد
                                     if ($percentageOverride === null || !is_numeric($percentageOverride) || $percentageOverride < 0 || $percentageOverride > 100) {
                                         continue 2; // skip this record
                                     }
+                                    
+                                    $calculatedPrice = $this->calculateCheckPrice($tierIndex, $periodId);
+                                    
+                                    // اگر محاسبه موفق نبود، از ذخیره صرف‌نظر کن
+                                    if ($calculatedPrice === null || $calculatedPrice <= 0) {
+                                        continue 2; // skip this record
+                                    }
+                                    
+                                    $price = $calculatedPrice;
                                     break;
                                     
                                 case 'manual':
-                                    // ذخیره قیمت دستی
+                                    // ذخیره قیمت دستی (بدون تغییر)
                                     $price = $periodData['price'] ?? null;
                                     $percentageOverride = null;
                                     
@@ -553,16 +638,7 @@ class EditPrice extends Component
             }
         });
 
-        // بارگذاری مجدد دوره‌های چک (برای نمایش دوره‌های جدید)
-        $this->checkPeriods = CheckPeriod::where(function($query) use ($supplierId) {
-            $query->global()
-                  ->orWhere('supplier_id', $supplierId);
-        })
-        ->active()
-        ->orderBy('days')
-        ->get();
-        
-        // بارگذاری مجدد قیمت‌های ذخیره شده
+        // ✅ بارگذاری مجدد قیمت‌های ذخیره شده
         $this->initializePriceMatrix();
 
         $this->dispatch('notify',
@@ -607,21 +683,36 @@ class EditPrice extends Component
         
         $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? 'default';
         
+        // دریافت supplier برای rounding
+        $supplier = Auth::user()->supplier;
+        
         switch ($mode) {
             case 'default':
                 // محاسبه با سلسله مراتب
                 $percentage = $this->getEffectivePercentageValue($periodId);
                 if ($percentage === null) return null;
-                return $cashPrice * (1 + ($percentage / 100));
+                
+                // ✅ استفاده از Helper برای محاسبه و رُند
+                return \App\Helpers\PriceRoundingHelper::calculateCheckPrice(
+                    $cashPrice, 
+                    $percentage, 
+                    $supplier
+                );
                 
             case 'percentage':
                 // محاسبه با درصد اختصاصی
                 $percentage = $this->checkPercentageOverride[$tierIndex][$periodId] ?? null;
                 if ($percentage === null || !is_numeric($percentage)) return null;
-                return $cashPrice * (1 + ($percentage / 100));
+                
+                // ✅ استفاده از Helper برای محاسبه و رُند
+                return \App\Helpers\PriceRoundingHelper::calculateCheckPrice(
+                    $cashPrice, 
+                    $percentage, 
+                    $supplier
+                );
                 
             case 'manual':
-                // قیمت دستی
+                // قیمت دستی - بدون تغییر
                 $checkPriceType = $this->priceTypes->firstWhere('code', 'check');
                 if (!$checkPriceType) return null;
                 
@@ -763,6 +854,210 @@ class EditPrice extends Component
         
         foreach ($this->checkPeriods as $period) {
             $this->effectivePercentages[$period->id] = $this->getEffectivePercentage($period->id);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  TIER AUTO-CALCULATION METHODS
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * بارگذاری تنظیمات درصد تیراژها
+     */
+    public function loadTierPercentages(): void
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // بارگذاری از جدول supplier_tier_percentages (اگر وجود داشته باشد)
+        $savedSettings = \App\Models\SupplierTierPercentage::forSupplier($supplierId)
+            ->where('product_id', $this->product->id)
+            ->active()
+            ->ordered()
+            ->get()
+            ->keyBy('tier_index');
+        
+        if ($savedSettings->isNotEmpty()) {
+            // تنظیمات ذخیره شده وجود دارد
+            $this->autoCalculateTiers = true;
+            
+            foreach ($savedSettings as $tierIndex => $setting) {
+                $this->tierPercentages[$tierIndex] = (float) $setting->percentage;
+                
+                if ($setting->is_reference) {
+                    $this->referenceTierIndex = (int) $tierIndex;
+                }
+            }
+        } else {
+            // تنظیمات پیش‌فرض
+            $this->autoCalculateTiers = false;
+            $this->referenceTierIndex = 1; // تیراژ 2 (tier 1 / عمده‌فروشی کوچک) به عنوان مرجع
+            
+            foreach ($this->quantityTiers as $index => $tier) {
+                $this->tierPercentages[$index] = 0; // درصد پیش‌فرض
+            }
+        }
+    }
+
+    /**
+     * ذخیره تنظیمات درصد تیراژها
+     */
+    public function saveTierPercentages(): void
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        DB::transaction(function () use ($supplierId) {
+            // حذف تنظیمات قبلی این محصول
+            \App\Models\SupplierTierPercentage::where('supplier_id', $supplierId)
+                ->where('product_id', $this->product->id)
+                ->delete();
+            
+            // اگر محاسبه خودکار فعال است، ذخیره کن
+            if ($this->autoCalculateTiers) {
+                foreach ($this->quantityTiers as $index => $tier) {
+                    \App\Models\SupplierTierPercentage::create([
+                        'supplier_id' => $supplierId,
+                        'product_id' => $this->product->id,
+                        'tier_index' => (int) $index,
+                        'tier_label' => $tier['name'] ?? "تیراژ " . ($index + 1),
+                        'percentage' => (float) ($this->tierPercentages[$index] ?? 0),
+                        'is_reference' => ($index == $this->referenceTierIndex),
+                        'is_active' => true,
+                        'sort_order' => $index,
+                    ]);
+                }
+            }
+        });
+    }
+
+    /**
+     * محاسبه خودکار قیمت تیراژها بر اساس تیراژ مرجع
+     */
+    public function calculateTierPrices(): void
+    {
+        if (!$this->autoCalculateTiers) {
+            return;
+        }
+        
+        // دریافت قیمت نقدی تیراژ مرجع
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType) return;
+        
+        $referencePrice = $this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id]['price'] ?? null;
+        
+        if (!$referencePrice || !is_numeric($referencePrice)) {
+            return;
+        }
+        
+        $supplier = Auth::user()->supplier;
+        
+        // محاسبه قیمت سایر تیراژها
+        foreach ($this->quantityTiers as $index => $tier) {
+            // خود تیراژ مرجع را skip کن
+            if ($index == $this->referenceTierIndex) {
+                continue;
+            }
+            
+            // ✅ بررسی فعال بودن تیراژ در محاسبه خودکار
+            if (!($this->tierEnabled[$index] ?? true)) {
+                continue; // تیراژ غیرفعال → محاسبه نشود
+            }
+            
+            $percentage = $this->tierPercentages[$index] ?? 0;
+            
+            // محاسبه قیمت بر اساس درصد
+            $calculatedPrice = $referencePrice * (1 + ($percentage / 100));
+            
+            // رُند کردن با سیستم رنج‌ها
+            $roundedPrice = \App\Helpers\PriceRoundingHelper::round($calculatedPrice, $supplier);
+            
+            // بروزرسانی در priceMatrix
+            $this->priceMatrix[$index][$cashPriceType->id]['price'] = $roundedPrice;
+        }
+        
+        // بروزرسانی قیمت‌های چکی برای همه تیراژها
+        $this->updateAllCheckPrices();
+    }
+
+    /**
+     * بروزرسانی قیمت‌های چکی برای همه تیراژها
+     */
+    private function updateAllCheckPrices(): void
+    {
+        $checkPriceType = $this->priceTypes->firstWhere('code', 'check');
+        if (!$checkPriceType) return;
+        
+        foreach ($this->quantityTiers as $tierIndex => $tier) {
+            foreach ($this->checkPeriods as $period) {
+                // فقط دوره‌های فعال
+                $isEnabled = $this->checkPeriodEnabled[$tierIndex][$period->id] ?? false;
+                if (!$isEnabled) continue;
+                
+                $mode = $this->checkPriceMode[$tierIndex][$period->id] ?? 'default';
+                
+                // فقط برای mode های default و percentage محاسبه مجدد کن
+                if (in_array($mode, ['default', 'percentage'])) {
+                    $calculatedCheckPrice = $this->calculateCheckPrice($tierIndex, $period->id);
+                    
+                    if ($calculatedCheckPrice !== null) {
+                        if (!isset($this->priceMatrix[$tierIndex][$checkPriceType->id]['check_periods'])) {
+                            $this->priceMatrix[$tierIndex][$checkPriceType->id]['check_periods'] = [];
+                        }
+                        
+                        $this->priceMatrix[$tierIndex][$checkPriceType->id]['check_periods'][$period->id]['price'] = $calculatedCheckPrice;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * تغییر تیراژ مرجع
+     */
+    public function updateReferenceTier($newReferenceTierIndex): void
+    {
+        $this->referenceTierIndex = (int) $newReferenceTierIndex;
+        
+        // درصد تیراژ مرجع باید صفر باشد
+        $this->tierPercentages[$this->referenceTierIndex] = 0;
+        
+        $this->dispatch('notify', 
+            message: 'تیراژ مرجع تغییر کرد.',
+            type: 'info'
+        );
+    }
+
+    /**
+     * Hook: وقتی قیمت نقدی تیراژ مرجع تغییر می‌کند
+     */
+    public function updatedPriceMatrix($value, $key): void
+    {
+        // فرمت کلید: priceMatrix.{tierIndex}.{priceTypeId}.price
+        if (!preg_match('/^(\d+)\.(\d+)\.price$/', $key, $matches)) {
+            return;
+        }
+        
+        $tierIndex = (int) $matches[1];
+        $priceTypeId = (int) $matches[2];
+        
+        // بررسی: آیا این تیراژ مرجع است؟
+        if ($tierIndex !== $this->referenceTierIndex) {
+            return;
+        }
+        
+        // بررسی: آیا نوع قیمت = نقدی است؟
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType || $priceTypeId !== $cashPriceType->id) {
+            return;
+        }
+        
+        // اگر محاسبه خودکار فعال است، قیمت سایر تیراژها را محاسبه کن
+        if ($this->autoCalculateTiers) {
+            $this->calculateTierPrices();
+            
+            $this->dispatch('notify', 
+                message: 'قیمت سایر تیراژها خودکار محاسبه شد.',
+                type: 'success'
+            );
         }
     }
 

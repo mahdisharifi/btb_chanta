@@ -78,6 +78,67 @@
         </div>
     </div>
 
+    {{-- ✅ Confirm Dialog برای غیرفعال کردن دوره چکی --}}
+    <div x-data="{ 
+        showConfirm: false, 
+        confirmMessage: '', 
+        confirmPeriodId: null,
+        confirmAction: null
+    }"
+         @confirm-deactivate-period.window="
+            showConfirm = true;
+            confirmMessage = $event.detail.message;
+            confirmPeriodId = $event.detail.periodId;
+            confirmAction = 'deactivate';
+         "
+         x-show="showConfirm"
+         x-cloak
+         class="fixed inset-0 z-50 overflow-y-auto"
+         style="display: none;">
+        
+        {{-- Background Overlay --}}
+        <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @click="showConfirm = false"></div>
+        
+        {{-- Modal Dialog --}}
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all"
+                 @click.stop>
+                
+                {{-- Warning Icon --}}
+                <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
+                    <svg class="h-10 w-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </div>
+                
+                {{-- Title --}}
+                <h3 class="text-lg font-bold text-gray-900 text-center mb-3">
+                    تایید غیرفعال کردن
+                </h3>
+                
+                {{-- Message --}}
+                <p class="text-sm text-gray-700 text-center mb-6 leading-relaxed" x-text="confirmMessage"></p>
+                
+                {{-- Actions --}}
+                <div class="flex gap-3">
+                    <button @click="showConfirm = false"
+                            class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors">
+                        انصراف
+                    </button>
+                    <button @click="
+                                if (confirmAction === 'deactivate') {
+                                    $wire.confirmDeactivatePeriod(confirmPeriodId);
+                                }
+                                showConfirm = false;
+                            "
+                            class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors">
+                        بله، غیرفعال کن
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- ═══════════ Page Header ═══════════ --}}
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-gray-800">مدیریت دوره‌های پرداخت چکی</h1>

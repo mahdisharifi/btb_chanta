@@ -16,6 +16,7 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use App\Helpers\QuantityTierValidator;
 
 #[Layout('components.layouts.admin')]
 class Create extends Component
@@ -76,6 +77,7 @@ class Create extends Component
     public $quantity_tiers = [];
     public $showQuantityTiers = false;
     public bool $hasExistingTiers = false; // ✅ محصول تیراژ دارد؟
+    public bool $tiersApplied = false; // ✅ آیا تیراژها اعمال شده‌اند؟
     
     // ✅ واحد بسته‌بندی و تیراژبندی خودکار
     public string $packaging_unit_type = 'carton';
@@ -140,8 +142,9 @@ class Create extends Component
         $this->packaging_unit_type = $product->packaging_unit_type ?? 'carton';
         $this->quantity_per_packaging = $product->quantity_per_packaging ?? 1;
         
-        // ✅ اگر محصول تیراژ دارد، دیگر تیراژ خودکار پیشنهاد نده
+        // ✅ اگر محصول تیراژ دارد، به عنوان "اعمال شده" علامت‌گذاری کن
         $this->hasExistingTiers = !empty($this->quantity_tiers);
+        $this->tiersApplied = !empty($this->quantity_tiers); // ✅ برای نمایش تیراژها و مخفی کردن پیشنهاد خودکار
 
         $this->existingGalleries = $product->galleries
             ->sortBy(function ($g) {
@@ -581,11 +584,28 @@ class Create extends Component
             'packaging_unit_type' => 'required|string|in:carton,jean,jowab,package,bundle,roll,piece',
             'quantity_per_packaging' => 'required|integer|min:1|max:999999',
             
-            // ✅ تیراژ دستی (حداقل 2 تیراژ اگر فعال باشد)
-            'quantity_tiers' => 'nullable|array|min:2',
+            // ✅ تیراژ (حداقل 3، حداکثر 5 تیراژ الزامی)
+            'quantity_tiers' => 'required|array|min:3|max:5',
+            'quantity_tiers.*.name' => 'required|string|max:100',
+            'quantity_tiers.*.min_quantity' => 'required|integer|min:0',
+            'quantity_tiers.*.max_quantity' => 'nullable|integer',
         ];
 
         $this->validate($rules);
+
+        // ✅ Validation پیشرفته تیراژها
+        if (!empty($this->quantity_tiers)) {
+            try {
+                QuantityTierValidator::validate($this->quantity_tiers);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                // بازنشانی خطاها برای نمایش در UI
+                $this->dispatch('notify', [
+                    'message' => $e->getMessage() ?: 'تیراژها نامعتبر هستند.',
+                    'type' => 'error',
+                ]);
+                throw $e;
+            }
+        }
 
         if (empty($this->sku)) {
             $this->sku = 'PRD-' . strtoupper(Str::random(8));
@@ -818,6 +838,15 @@ class Create extends Component
             return;
         }
 
+        // ✅ بررسی حداقل 3 تیراژ
+        if (count($this->quantity_tiers) <= 3) {
+            $this->dispatch('notify', [
+                'message' => 'حداقل 3 تیراژ برای محصول الزامی است و نمی‌توان کمتر از این تعداد داشت.',
+                'type' => 'error',
+            ]);
+            return;
+        }
+
         // بررسی امنیت: اگر محصول در حال ویرایش است و تیراژ قیمت‌گذاری شده، نباید حذف شود
         if ($this->isEdit && $this->productId) {
             $product = Product::find($this->productId);
@@ -850,48 +879,47 @@ class Create extends Component
     }
 
     /**
-     * نمایش/مخفی کردن بخش تیراژها
-     */
-    public function toggleQuantityTiers(): void
-    {
-        $this->showQuantityTiers = !$this->showQuantityTiers;
-        
-        if ($this->showQuantityTiers && empty($this->quantity_tiers)) {
-            $this->addQuantityTier();
-        }
-    }
-
-    public function render()
-    {
-        return view('livewire.admin.products.create');
-    }
-    
-    /**
      * ✅ اعمال تیراژبندی خودکار
      */
     public function applyAutoTiers(): void
     {
+        // بررسی اینکه واحد بسته‌بندی تعیین شده باشد
+        if ($this->quantity_per_packaging <= 0) {
+            $this->dispatch('notify', [
+                'message' => 'ابتدا تعداد در هر واحد بسته‌بندی را مشخص کنید.',
+                'type' => 'error',
+            ]);
+            return;
+        }
+
         $this->quantity_tiers = $this->generateAutoTiers();
         $this->showQuantityTiers = true;
+        $this->tiersApplied = true; // ✅ علامت‌گذاری که تیراژها اعمال شدند
         
         $this->dispatch('notify', [
-            'message' => 'تیراژبندی خودکار اعمال شد.',
+            'message' => 'تیراژبندی خودکار اعمال شد. اکنون می‌توانید ویرایش کنید یا تیراژ جدید اضافه کنید.',
             'type' => 'success',
         ]);
     }
     
     /**
-     * ✅ پاک کردن تیراژها (برای تیراژ دستی)
+     * ✅ پاک کردن تیراژها (بازگشت به حالت اولیه)
      */
     public function clearAutoTiers(): void
     {
         $this->quantity_tiers = [];
-        $this->showQuantityTiers = true;
+        $this->showQuantityTiers = false;
+        $this->tiersApplied = false;
         
         $this->dispatch('notify', [
-            'message' => 'تیراژها پاک شدند. می‌توانید تیراژهای دستی اضافه کنید (حداقل 2 تیراژ).',
+            'message' => 'تیراژها پاک شدند. می‌توانید دوباره تیراژبندی خودکار را اعمال کنید.',
             'type' => 'info',
         ]);
+    }
+
+    public function render()
+    {
+        return view('livewire.admin.products.create');
     }
     
     /**
@@ -909,6 +937,31 @@ class Create extends Component
         
         $unitLabel = $this->getPackagingUnitLabel();
         
+        // ✅ استثنا: اگر بسته‌بندی 1 عددی باشد
+        if ($qtyPerPack === 1) {
+            return [
+                0 => [
+                    'name' => 'خرده‌فروشی',
+                    'min_quantity' => 1,
+                    'max_quantity' => 1,
+                    'description' => "یک عدد ({$unitLabel} 1 عددی)",
+                ],
+                1 => [
+                    'name' => 'عمده‌فروشی کوچک',
+                    'min_quantity' => 2,
+                    'max_quantity' => 5,
+                    'description' => "2 تا 5 {$unitLabel}",
+                ],
+                2 => [
+                    'name' => 'عمده‌فروشی بزرگ',
+                    'min_quantity' => 6,
+                    'max_quantity' => null,
+                    'description' => "بیش از 5 {$unitLabel} (6 به بالا)",
+                ],
+            ];
+        }
+        
+        // ✅ حالت عادی (quantity_per_packaging >= 2)
         return [
             0 => [
                 'name' => 'خرده‌فروشی',

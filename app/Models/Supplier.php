@@ -41,6 +41,9 @@ class Supplier extends Model
         'company_name_en',
         'brand_name',
         'logo_path',
+        
+        // ✅ تنظیمات قیمت‌گذاری
+        'price_rounding_type',
 
         // Address
         'address',
@@ -189,5 +192,42 @@ class Supplier extends Model
     public function city()
     {
         return $this->belongsTo(City::class);
+    }
+
+    /**
+     * رنج‌های رُند کردن قیمت این تأمین‌کننده
+     */
+    public function priceRoundingRanges(): HasMany
+    {
+        return $this->hasMany(SupplierPriceRoundingRange::class);
+    }
+
+    /**
+     * رنج‌های فعال رُند کردن قیمت
+     */
+    public function activePriceRoundingRanges(): HasMany
+    {
+        return $this->hasMany(SupplierPriceRoundingRange::class)
+            ->where('is_active', true)
+            ->orderBy('min_price', 'asc');
+    }
+
+    /**
+     * تنظیمات درصد تیراژها
+     */
+    public function tierPercentages(): HasMany
+    {
+        return $this->hasMany(SupplierTierPercentage::class);
+    }
+
+    /**
+     * تنظیمات فعال درصد تیراژها
+     */
+    public function activeTierPercentages(): HasMany
+    {
+        return $this->hasMany(SupplierTierPercentage::class)
+            ->where('is_active', true)
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('tier_index', 'asc');
     }
 }

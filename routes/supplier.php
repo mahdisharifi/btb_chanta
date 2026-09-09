@@ -42,6 +42,7 @@ Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_ad
 
         // تنظیمات
         Route::get('/settings/check-periods', ManageCheckPeriods::class)->name('settings.check-periods');
+        Route::get('/settings/price-rounding', \App\Livewire\Supplier\Settings\ManagePriceRoundingRanges::class)->name('settings.price-rounding');
 
         Route::get('/product-selection', ProductSelection::class)->name('product-selection');
         Route::get('/pricing', Pricing::class)->name('pricing');
