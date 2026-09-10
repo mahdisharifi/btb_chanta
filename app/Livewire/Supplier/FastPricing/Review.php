@@ -119,11 +119,10 @@ class Review extends Component
                     }
                     
                     // ✅ Step 2: اگر auto_calculate فعال است، قیمت‌های چکی را محاسبه کن
-                    if ($autoCalculate && !empty($cashPrices) && !empty($tierPercentages)) {
-                        Log::info('Auto-calculating tier prices', [
+                    if ($autoCalculate && !empty($cashPrices)) {
+                        Log::info('Auto-calculating check prices', [
                             'product_supplier_id' => $productSupplier->id,
                             'cash_prices' => $cashPrices,
-                            'tier_percentages' => $tierPercentages
                         ]);
                         
                         // دریافت تمام price types چکی
@@ -131,24 +130,31 @@ class Review extends Component
                             ->where('is_active', true)
                             ->get();
                         
-                        // ✅ فقط دوره‌های چکی فعال شده توسط supplier
+                        // ✅ فقط دوره‌های چکی فعال شده توسط supplier با اطلاعات pivot
                         $checkPeriods = \App\Models\CheckPeriod::whereHas('suppliers', function($query) use ($productSupplier) {
                                 $query->where('supplier_id', $productSupplier->supplier_id)
                                       ->where('supplier_check_period.is_active', true);
                             })
+                            ->with(['suppliers' => function($query) use ($productSupplier) {
+                                $query->where('supplier_id', $productSupplier->supplier_id);
+                            }])
                             ->active()
                             ->get();
                         
+                        // ✅ دریافت دوره‌های چکی که قبلاً برای این محصول در دیتابیس وجود دارند
+                        $existingCheckPrices = ProductPrice::where('product_supplier_id', $productSupplier->id)
+                            ->whereNotNull('check_period_id')
+                            ->get()
+                            ->keyBy(function($price) {
+                                return $price->tier_index . '_' . $price->check_period_id;
+                            });
+                        
                         foreach ($cashPrices as $tierIndex => $cashPrice) {
-                            $percentage = $tierPercentages[$tierIndex] ?? 0;
-                            $calculatedPrice = $cashPrice * (1 + $percentage / 100);
-                            
-                            // ✅ رند کردن قیمت بر اساس تنظیمات supplier
-                            $roundedPrice = \App\Helpers\PriceRoundingHelper::round($calculatedPrice, $productSupplier->supplier_id);
-                            
                             // محاسبه قیمت برای هر دوره چک
                             foreach ($checkPriceTypes as $checkPriceType) {
                                 foreach ($checkPeriods as $checkPeriod) {
+                                    $checkKey = $tierIndex . '_' . $checkPeriod->id;
+                                    
                                     // فقط قیمت‌هایی که کاربر manually وارد نکرده
                                     $existingInUpload = collect($item->new_prices)->first(function($p) use ($tierIndex, $checkPriceType, $checkPeriod) {
                                         return isset($p['tier_index']) && $p['tier_index'] == $tierIndex
@@ -161,6 +167,31 @@ class Review extends Component
                                         continue;
                                     }
                                     
+                                    // ✅ بررسی: آیا این دوره چک برای این تیراژ قبلاً فعال بوده؟
+                                    // اگر رکوردی در دیتابیس وجود داشته باشد، یعنی فعال بوده
+                                    // اگر رکوردی در آپلود باشد، یعنی کاربر می‌خواهد فعال شود
+                                    // اگر هیچکدام نباشد، یعنی کاربر آن را غیرفعال کرده → skip
+                                    $wasEnabledBefore = $existingCheckPrices->has($checkKey);
+                                    $isEnabledInUpload = $existingInUpload !== null;
+                                    
+                                    if (!$wasEnabledBefore && !$isEnabledInUpload) {
+                                        // این دوره چک برای این تیراژ غیرفعال است → skip
+                                        continue;
+                                    }
+                                    
+                                    // ✅ دریافت درصد اختصاصی این دوره چک از pivot
+                                    $checkPercentage = 0;
+                                    if ($checkPeriod->suppliers->isNotEmpty()) {
+                                        $pivotData = $checkPeriod->suppliers->first()->pivot;
+                                        $checkPercentage = $pivotData->percentage_increase ?? 0;
+                                    }
+                                    
+                                    // ✅ فرمول صحیح: قیمت چک = قیمت نقدی همان تیراژ × (1 + درصد دوره چک)
+                                    $calculatedPrice = $cashPrice * (1 + $checkPercentage / 100);
+                                    
+                                    // ✅ رند کردن قیمت بر اساس تنظیمات supplier
+                                    $roundedPrice = \App\Helpers\PriceRoundingHelper::round($calculatedPrice, $productSupplier->supplier_id);
+                                    
                                     // محاسبه و ثبت
                                     ProductPrice::updateOrCreate(
                                         [
@@ -171,7 +202,7 @@ class Review extends Component
                                         ],
                                         [
                                             'product_id' => $productSupplier->product_id,
-                                            'price' => (int)$roundedPrice, // ✅ قیمت رند شده
+                                            'price' => (int)$roundedPrice,
                                             'is_active' => true,
                                         ]
                                     );
