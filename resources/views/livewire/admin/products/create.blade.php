@@ -244,8 +244,8 @@
                 </div>
             </div>
             
-            {{-- نمایش تیراژبندی خودکار (فقط اگر واحد و تعداد مشخص شده باشد) --}}
-            @if($quantity_per_packaging > 0)
+            {{-- نمایش تیراژبندی خودکار (فقط اگر واحد و تعداد مشخص شده و هنوز اعمال نشده) --}}
+            @if($quantity_per_packaging > 0 && !$tiersApplied)
                 <div class="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800 mt-4">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-sm font-semibold text-indigo-800 dark:text-indigo-300 flex items-center gap-2">
@@ -253,24 +253,12 @@
                             پیشنهاد تیراژبندی خودکار
                         </h3>
                         <div class="flex gap-2">
-                            @if(!$tiersApplied)
-                                <button type="button" 
-                                        wire:click="applyAutoTiers"
-                                        class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors flex items-center gap-1">
-                                    <x-heroicon-s-check class="w-4 h-4"/>
-                                    اعمال این تیراژها
-                                </button>
-                            @else
-                                <span class="text-xs px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md flex items-center gap-1">
-                                    <x-heroicon-s-check-circle class="w-4 h-4"/>
-                                    اعمال شده
-                                </span>
-                                <button type="button" 
-                                        wire:click="clearAutoTiers"
-                                        class="text-xs px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors">
-                                    پاک کردن
-                                </button>
-                            @endif
+                            <button type="button" 
+                                    wire:click="applyAutoTiers"
+                                    class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors flex items-center gap-1">
+                                <x-heroicon-s-check class="w-4 h-4"/>
+                                اعمال این تیراژها
+                            </button>
                         </div>
                     </div>
                     
@@ -295,14 +283,12 @@
                         @endforeach
                     </div>
                     
-                    @if(!$tiersApplied)
-                        <p class="text-xs text-indigo-600 dark:text-indigo-400 mt-3 flex items-center gap-1">
-                            <x-heroicon-o-information-circle class="w-4 h-4"/>
-                            برای اعمال این تیراژها، روی دکمه "اعمال این تیراژها" کلیک کنید. سپس می‌توانید آنها را ویرایش یا تیراژ جدید اضافه کنید.
-                        </p>
-                    @endif
+                    <p class="text-xs text-indigo-600 dark:text-indigo-400 mt-3 flex items-center gap-1">
+                        <x-heroicon-o-information-circle class="w-4 h-4"/>
+                        برای اعمال این تیراژها، روی دکمه "اعمال این تیراژها" کلیک کنید. سپس می‌توانید آنها را ویرایش یا تیراژ جدید اضافه کنید.
+                    </p>
                 </div>
-            @else
+            @elseif($quantity_per_packaging <= 0)
                 <div class="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 mt-4">
                     <div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm">
                         <x-heroicon-o-exclamation-triangle class="w-5 h-5"/>
@@ -349,10 +335,19 @@
                             <p class="font-semibold">📌 قوانین تیراژها:</p>
                             <ul class="list-disc list-inside space-y-1 mr-2">
                                 <li><strong>حداقل:</strong> 3 تیراژ الزامی است</li>
-                                <li><strong>حداکثر:</strong> 5 تیراژ می‌توانید تعریف کنید</li>
+                                <li><strong>حداکثر:</strong> 4 تیراژ می‌توانید تعریف کنید</li>
+                                <li><strong>تیراژ زیر کارتن:</strong> اگر کارتن = 1، این تیراژ غیرفعال می‌شود</li>
+                                <li><strong>حداقل تعداد:</strong> خودکار محاسبه می‌شود (حداکثر تیراژ قبلی + 1)</li>
+                                <li><strong>حداکثر تعداد:</strong> باید بزرگتر از حداقل تعداد باشد</li>
                                 <li><strong>آخرین تیراژ:</strong> حداکثر تعداد باید خالی باشد (بدون محدودیت)</li>
                                 <li><strong>عدم تداخل:</strong> تیراژها نباید با هم همپوشانی داشته باشند</li>
                             </ul>
+                            <div class="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded text-xs">
+                                <strong>⚡ نکته:</strong> وقتی "حداکثر تعداد" یک تیراژ را تغییر می‌دهید، "حداقل تعداد" تیراژ بعدی خودکار به‌روزرسانی می‌شود.
+                            </div>
+                            <div class="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-xs">
+                                <strong>⚠️ هشدار:</strong> اگر تغییری باعث تداخل یا بی‌منطقی شود، تیراژهای بعدی خودکار حذف می‌شوند.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -362,13 +357,13 @@
                     <span class="text-sm text-gray-600 dark:text-gray-400">
                         تعداد تیراژها: 
                         <strong class="text-gray-900 dark:text-gray-100">{{ count($quantity_tiers) }}</strong> 
-                        <span class="text-xs">(حداقل 3، حداکثر 5)</span>
+                        <span class="text-xs">(حداقل 3، حداکثر 4)</span>
                     </span>
                     @if(count($quantity_tiers) < 3)
                         <span class="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-1 rounded">
                             ⚠️ حداقل 3 تیراژ لازم است
                         </span>
-                    @elseif(count($quantity_tiers) === 5)
+                    @elseif(count($quantity_tiers) === 4)
                         <span class="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-1 rounded">
                             ⚠️ حداکثر تعداد رسیده
                         </span>
@@ -400,24 +395,30 @@
                             @endif
                             <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">نام تیراژ</label>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                        نام تیراژ
+                                        <span class="text-xs text-gray-500">(ثابت)</span>
+                                    </label>
                                     <input type="text" 
                                            wire:model="quantity_tiers.{{ $index }}.name" 
                                            placeholder="مثال: تیراژ کم"
-                                           {{ $hasPrices ? 'readonly' : '' }}
-                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
+                                           readonly
+                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-100 dark:text-gray-400 rounded-md shadow-sm text-sm bg-gray-100 cursor-not-allowed">
                                     @error("quantity_tiers.{$index}.name") 
                                         <span class="text-red-500 text-xs mt-1">{{ $message }}</span> 
                                     @enderror
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداقل تعداد</label>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                        حداقل تعداد
+                                        <span class="text-xs text-gray-500">(خودکار)</span>
+                                    </label>
                                     <input type="number" 
                                            wire:model="quantity_tiers.{{ $index }}.min_quantity" 
                                            min="0"
                                            placeholder="100"
-                                           {{ $hasPrices ? 'readonly' : '' }}
-                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
+                                           readonly
+                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-100 dark:text-gray-400 rounded-md shadow-sm text-sm bg-gray-100 cursor-not-allowed">
                                     @error("quantity_tiers.{$index}.min_quantity") 
                                         <span class="text-red-500 text-xs mt-1">{{ $message }}</span> 
                                     @enderror
@@ -425,9 +426,11 @@
                                 <div>
                                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداکثر تعداد</label>
                                     <input type="number" 
-                                           wire:model="quantity_tiers.{{ $index }}.max_quantity" 
+                                           wire:model.live="quantity_tiers.{{ $index }}.max_quantity" 
+                                           wire:change="updateNextTierMin({{ $index }})"
                                            min="0"
                                            placeholder="500"
+                                           onwheel="this.blur()"
                                            {{ $hasPrices ? 'readonly' : '' }}
                                            class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
                                     @error("quantity_tiers.{$index}.max_quantity") 
@@ -457,7 +460,7 @@
                         </div>
                     @endforelse
 
-                    @if(count($quantity_tiers) < 5)
+                    @if(count($quantity_tiers) < 4)
                         <button type="button" 
                                 wire:click="addQuantityTier" 
                                 class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-2">
@@ -467,7 +470,7 @@
                                 @if(count($quantity_tiers) < 3)
                                     <span class="text-red-600 dark:text-red-400">({{ 3 - count($quantity_tiers) }} تیراژ دیگر لازم است)</span>
                                 @else
-                                    <span class="text-gray-500 dark:text-gray-400">(اختیاری - {{ 5 - count($quantity_tiers) }} تیراژ دیگر مجاز)</span>
+                                    <span class="text-gray-500 dark:text-gray-400">(اختیاری - {{ 4 - count($quantity_tiers) }} تیراژ دیگر مجاز)</span>
                                 @endif
                             </span>
                         </button>
@@ -475,7 +478,7 @@
                         <div class="text-center py-3 px-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                             <p class="text-sm text-amber-700 dark:text-amber-300 flex items-center justify-center gap-2">
                                 <x-heroicon-s-exclamation-triangle class="w-5 h-5"/>
-                                حداکثر 5 تیراژ قابل تعریف است
+                                حداکثر 4 تیراژ قابل تعریف است
                             </p>
                         </div>
                     @endif

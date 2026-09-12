@@ -26,16 +26,16 @@ class QuantityTierValidator
      */
     public static function validate(array $tiers): bool
     {
-        // 1. بررسی تعداد تیراژها (3 تا 5)
+        // 1. بررسی تعداد تیراژها (3 تا 4)
         if (count($tiers) < 3) {
             throw ValidationException::withMessages([
                 'quantity_tiers' => ['حداقل 3 تیراژ برای محصول الزامی است.']
             ]);
         }
 
-        if (count($tiers) > 5) {
+        if (count($tiers) > 4) {
             throw ValidationException::withMessages([
-                'quantity_tiers' => ['حداکثر 5 تیراژ می‌توانید تعریف کنید.']
+                'quantity_tiers' => ['حداکثر 4 تیراژ می‌توانید تعریف کنید.']
             ]);
         }
 
@@ -58,25 +58,41 @@ class QuantityTierValidator
                 ? (int)$tier['max_quantity'] 
                 : null;
 
-            // min باید مثبت باشد
+            // min باید مثبت یا صفر باشد (صفر برای تیراژهای غیرفعال مجاز است)
             if ($minQty < 0) {
                 throw ValidationException::withMessages([
                     "quantity_tiers.{$index}.min_quantity" => ['حداقل تعداد نمی‌تواند منفی باشد.']
                 ]);
             }
 
-            // max باید بزرگتر از min باشد (اگر مقداردهی شده)
-            if ($maxQty !== null && $maxQty <= $minQty) {
+            // ✅ استثنا: تیراژ غیرفعال (min=0, max=0) مجاز است
+            $isInactiveTier = ($minQty === 0 && $maxQty === 0);
+            
+            // ✅ استثنا: تیراژ تک‌عددی (min=max) مجاز است (مثلاً زیر کارتن با 1 عدد)
+            $isSingleValueTier = ($maxQty !== null && $maxQty === $minQty);
+            
+            // ✅ قانون جدید: max باید بزرگتر از min باشد (به جز استثناها)
+            if (!$isInactiveTier && !$isSingleValueTier && $maxQty !== null && $maxQty <= $minQty) {
                 throw ValidationException::withMessages([
                     "quantity_tiers.{$index}.max_quantity" => [
-                        'حداکثر تعداد باید بزرگتر از حداقل تعداد باشد.'
+                        'حداکثر تعداد باید بزرگتر از حداقل تعداد باشد. ' .
+                        "(حداقل: {$minQty}، حداکثر: {$maxQty})"
                     ]
                 ]);
             }
         }
 
-        // 3. بررسی عدم overlap و ترتیب صعودی
-        $sortedTiers = collect($tiers)->sortBy('min_quantity')->values()->toArray();
+        // 3. بررسی عدم overlap و ترتیب صعودی + قانون min = max_قبلی + 1
+        $sortedTiers = collect($tiers)
+            ->filter(function($tier) {
+                // ✅ تیراژهای غیرفعال (min=0, max=0) را از بررسی overlap حذف کن
+                $min = (int)($tier['min_quantity'] ?? 0);
+                $max = isset($tier['max_quantity']) && $tier['max_quantity'] !== null ? (int)$tier['max_quantity'] : null;
+                return !($min === 0 && $max === 0);
+            })
+            ->sortBy('min_quantity')
+            ->values()
+            ->toArray();
         
         for ($i = 0; $i < count($sortedTiers) - 1; $i++) {
             $current = $sortedTiers[$i];
@@ -88,13 +104,42 @@ class QuantityTierValidator
                 : null;
             $nextMin = (int)$next['min_quantity'];
 
-            // اگر current max دارد، next باید بعد از آن شروع شود
+            // ✅ قانون جدید: min تیراژ بعدی باید دقیقاً max تیراژ فعلی + 1 باشد (به جز تیراژ اول)
             if ($currentMax !== null) {
+                $expectedNextMin = $currentMax + 1;
+                
+                // استثنا: اگر تیراژ اول (زیر کارتن) است و min=1 دارد، قانون اعمال نمی‌شود
+                $isFirstTierException = ($i === 0 && $currentMin === 1);
+                
+                if (!$isFirstTierException && $nextMin !== $expectedNextMin) {
+                    throw ValidationException::withMessages([
+                        'quantity_tiers' => [
+                            "تیراژ «{$next['name']}» باید از عدد {$expectedNextMin} شروع شود " .
+                            "(یک عدد بعد از حداکثر تیراژ قبلی: {$currentMax})."
+                        ]
+                    ]);
+                }
+                
+                // بررسی overlap (برای امنیت بیشتر)
                 if ($nextMin <= $currentMax) {
                     throw ValidationException::withMessages([
                         'quantity_tiers' => [
                             "تیراژ «{$next['name']}» با تیراژ «{$current['name']}» هم‌پوشانی دارد. " .
                             "تیراژ بعدی باید از عدد " . ($currentMax + 1) . " شروع شود."
+                        ]
+                    ]);
+                }
+                
+                // ✅ بازدارنده: بررسی اینکه max تیراژ بعدی از min آن بزرگتر است
+                $nextMax = isset($next['max_quantity']) && $next['max_quantity'] !== null 
+                    ? (int)$next['max_quantity'] 
+                    : null;
+                
+                if ($nextMax !== null && $nextMax < $nextMin) {
+                    throw ValidationException::withMessages([
+                        'quantity_tiers' => [
+                            "تیراژ «{$next['name']}» نامعتبر است: حداکثر تعداد ({$nextMax}) " .
+                            "نمی‌تواند کمتر از حداقل تعداد ({$nextMin}) باشد."
                         ]
                     ]);
                 }
@@ -128,8 +173,8 @@ class QuantityTierValidator
             $errors[] = 'حداقل 3 تیراژ الزامی است.';
         }
 
-        if (count($tiers) > 5) {
-            $errors[] = 'حداکثر 5 تیراژ مجاز است.';
+        if (count($tiers) > 4) {
+            $errors[] = 'حداکثر 4 تیراژ مجاز است.';
         }
 
         return [

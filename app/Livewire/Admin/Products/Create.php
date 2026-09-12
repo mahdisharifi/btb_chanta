@@ -584,8 +584,8 @@ class Create extends Component
             'packaging_unit_type' => 'required|string|in:carton,jean,jowab,package,bundle,roll,piece',
             'quantity_per_packaging' => 'required|integer|min:1|max:999999',
             
-            // ✅ تیراژ (حداقل 3، حداکثر 5 تیراژ الزامی)
-            'quantity_tiers' => 'required|array|min:3|max:5',
+            // ✅ تیراژ (حداقل 3، حداکثر 4 تیراژ الزامی)
+            'quantity_tiers' => 'required|array|min:3|max:4',
             'quantity_tiers.*.name' => 'required|string|max:100',
             'quantity_tiers.*.min_quantity' => 'required|integer|min:0',
             'quantity_tiers.*.max_quantity' => 'nullable|integer',
@@ -814,19 +814,164 @@ class Create extends Component
      */
     public function addQuantityTier(): void
     {
-        if (count($this->quantity_tiers) >= 5) {
+        if (count($this->quantity_tiers) >= 4) {
             $this->dispatch('notify', [
-                'message' => 'حداکثر 5 تیراژ می‌توانید تعریف کنید.',
+                'message' => 'حداکثر 4 تیراژ می‌توانید تعریف کنید.',
                 'type' => 'error',
             ]);
             return;
         }
 
+        // محاسبه min_quantity جدید بر اساس max_quantity تیراژ قبلی
+        $lastTier = end($this->quantity_tiers);
+        $newMin = $lastTier && isset($lastTier['max_quantity']) && $lastTier['max_quantity'] > 0 
+            ? $lastTier['max_quantity'] + 1 
+            : 1;
+
         $this->quantity_tiers[] = [
             'name' => 'تیراژ ' . (count($this->quantity_tiers) + 1),
-            'min' => 1,
-            'max' => null,
+            'min_quantity' => $newMin,
+            'max_quantity' => null,
         ];
+    }
+    
+    /**
+     * هنگامی که max_quantity تیراژی تغییر می‌کند، min_quantity تیراژ بعدی را خودکار محاسبه کن
+     * و در صورت بی‌منطقی، تیراژهای بعدی را حذف کن
+     */
+    public function updateNextTierMin(int $index): void
+    {
+        $currentMax = $this->quantity_tiers[$index]['max_quantity'] ?? null;
+        $currentMin = $this->quantity_tiers[$index]['min_quantity'] ?? 0;
+        
+        // بررسی 1: max باید بزرگتر از min باشد
+        if ($currentMax !== null && $currentMax <= $currentMin) {
+            // max نامعتبر است، تیراژهای بعدی را حذف کن
+            $this->removeAllTiersAfter($index);
+            
+            $this->dispatch('notify', [
+                'message' => 'حداکثر تعداد باید بزرگتر از حداقل تعداد باشد. تیراژهای بعدی حذف شدند.',
+                'type' => 'warning',
+            ]);
+            return;
+        }
+        
+        // اگر تیراژ بعدی وجود دارد
+        if (isset($this->quantity_tiers[$index + 1])) {
+            // فقط اگر max_quantity معتبر باشد
+            if ($currentMax !== null && $currentMax > 0) {
+                $expectedNextMin = $currentMax + 1;
+                $this->quantity_tiers[$index + 1]['min_quantity'] = $expectedNextMin;
+                
+                // بررسی 2: اگر min جدید از max فعلی تیراژ بعدی بزرگتر شد
+                $nextMax = $this->quantity_tiers[$index + 1]['max_quantity'] ?? null;
+                if ($nextMax !== null && $nextMax < $expectedNextMin) {
+                    // تداخل ایجاد شده، تیراژهای بعدی را حذف کن
+                    $this->removeAllTiersAfter($index);
+                    
+                    $this->dispatch('notify', [
+                        'message' => 'تغییر باعث تداخل در تیراژهای بعدی شد. تیراژهای نامعتبر حذف شدند.',
+                        'type' => 'info',
+                    ]);
+                    return;
+                }
+                
+                // بررسی تیراژهای بعدی را به‌طور بازگشتی انجام بده
+                $this->cascadeUpdateTiers($index + 1);
+            }
+        }
+    }
+    
+    /**
+     * به‌روزرسانی بازگشتی تیراژهای بعدی
+     */
+    private function cascadeUpdateTiers(int $startIndex): void
+    {
+        // اگر تیراژ بعدی وجود ندارد، متوقف شو
+        if (!isset($this->quantity_tiers[$startIndex + 1])) {
+            return;
+        }
+        
+        $currentMax = $this->quantity_tiers[$startIndex]['max_quantity'] ?? null;
+        
+        // اگر max فعلی معتبر نیست، متوقف شو
+        if ($currentMax === null) {
+            return;
+        }
+        
+        $expectedNextMin = $currentMax + 1;
+        $nextMax = $this->quantity_tiers[$startIndex + 1]['max_quantity'] ?? null;
+        
+        // اگر تداخل ایجاد شده، تیراژهای بعدی را حذف کن
+        if ($nextMax !== null && $nextMax < $expectedNextMin) {
+            $this->removeAllTiersAfter($startIndex);
+            return;
+        }
+        
+        // به‌روزرسانی min تیراژ بعدی
+        $this->quantity_tiers[$startIndex + 1]['min_quantity'] = $expectedNextMin;
+        
+        // ادامه به‌روزرسانی برای تیراژ بعدی
+        $this->cascadeUpdateTiers($startIndex + 1);
+    }
+    
+    /**
+     * حذف تمام تیراژهای بعد از index مشخص شده
+     */
+    private function removeAllTiersAfter(int $index): void
+    {
+        $totalTiers = count($this->quantity_tiers);
+        $removedCount = 0;
+        
+        // حذف تیراژهای بعد از index
+        for ($i = $index + 1; $i < $totalTiers; $i++) {
+            unset($this->quantity_tiers[$i]);
+            $removedCount++;
+        }
+        
+        // بازنویسی ایندکس‌ها
+        $this->quantity_tiers = array_values($this->quantity_tiers);
+        
+        if ($removedCount > 0) {
+            $this->dispatch('notify', [
+                'message' => "{$removedCount} تیراژ نامعتبر حذف شد.",
+                'type' => 'info',
+            ]);
+        }
+    }
+    
+    /**
+     * Livewire lifecycle hook - وقتی quantity_tiers تغییر می‌کند
+     */
+    public function updatedQuantityTiers($value, $key): void
+    {
+        // اگر max_quantity تیراژی تغییر کرد
+        if (strpos($key, '.max_quantity') !== false) {
+            // پیدا کردن index تیراژ فعلی
+            preg_match('/(\d+)\.max_quantity/', $key, $matches);
+            if (isset($matches[1])) {
+                $currentIndex = (int)$matches[1];
+                $this->updateNextTierMin($currentIndex);
+            }
+        }
+        
+        // اگر min_quantity تیراژی تغییر کرد (برای بررسی دستی)
+        if (strpos($key, '.min_quantity') !== false) {
+            preg_match('/(\d+)\.min_quantity/', $key, $matches);
+            if (isset($matches[1])) {
+                $currentIndex = (int)$matches[1];
+                $currentMin = $this->quantity_tiers[$currentIndex]['min_quantity'] ?? 0;
+                $currentMax = $this->quantity_tiers[$currentIndex]['max_quantity'] ?? null;
+                
+                // بررسی: min باید کوچکتر از max باشد
+                if ($currentMax !== null && $currentMin >= $currentMax) {
+                    $this->dispatch('notify', [
+                        'message' => 'حداقل تعداد نمی‌تواند بزرگتر یا مساوی حداکثر تعداد باشد.',
+                        'type' => 'error',
+                    ]);
+                }
+            }
+        }
     }
 
     /**
@@ -907,6 +1052,22 @@ class Create extends Component
      */
     public function clearAutoTiers(): void
     {
+        // بررسی اینکه آیا محصول قیمت دارد یا خیر (فقط در حالت ویرایش)
+        if ($this->isEdit && $this->productId) {
+            $product = Product::find($this->productId);
+            $hasPrices = $product && $product->prices()
+                ->whereNotNull('price_type_id') // فقط قیمت‌های سیستم جدید
+                ->exists();
+                
+            if ($hasPrices) {
+                $this->dispatch('notify', [
+                    'message' => 'امکان پاک کردن تیراژها وجود ندارد زیرا محصول دارای قیمت‌گذاری است.',
+                    'type' => 'error',
+                ]);
+                return;
+            }
+        }
+        
         $this->quantity_tiers = [];
         $this->showQuantityTiers = false;
         $this->tiersApplied = false;
@@ -937,26 +1098,40 @@ class Create extends Component
         
         $unitLabel = $this->getPackagingUnitLabel();
         
-        // ✅ استثنا: اگر بسته‌بندی 1 عددی باشد
+        // ═══════════════════════════════════════════════════════════
+        // ✅ ساختار جدید 4 تیراژی
+        // ═══════════════════════════════════════════════════════════
+        
+        // ✅ استثنا: اگر بسته‌بندی (کارتن/مرجع) = 1 عددی باشد
         if ($qtyPerPack === 1) {
             return [
                 0 => [
-                    'name' => 'خرده‌فروشی',
-                    'min_quantity' => 1,
-                    'max_quantity' => 1,
-                    'description' => "یک عدد ({$unitLabel} 1 عددی)",
+                    'name' => 'زیر کارتن',
+                    'min_quantity' => 0,
+                    'max_quantity' => 0,
+                    'description' => 'غیرفعال (کارتن 1 عددی است)',
+                    'is_active' => false, // ✅ غیرفعال
                 ],
                 1 => [
-                    'name' => 'عمده‌فروشی کوچک',
-                    'min_quantity' => 2,
-                    'max_quantity' => 5,
-                    'description' => "2 تا 5 {$unitLabel}",
+                    'name' => 'کارتن',
+                    'min_quantity' => 1,
+                    'max_quantity' => 4,
+                    'description' => "1 تا 4 {$unitLabel}",
+                    'is_active' => true,
                 ],
                 2 => [
-                    'name' => 'عمده‌فروشی بزرگ',
-                    'min_quantity' => 6,
+                    'name' => 'عمده',
+                    'min_quantity' => 5,
+                    'max_quantity' => 15,
+                    'description' => "5 تا 15 {$unitLabel}",
+                    'is_active' => true,
+                ],
+                3 => [
+                    'name' => 'بار',
+                    'min_quantity' => 16,
                     'max_quantity' => null,
-                    'description' => "بیش از 5 {$unitLabel} (6 به بالا)",
+                    'description' => "16 {$unitLabel} به بالا",
+                    'is_active' => true,
                 ],
             ];
         }
@@ -964,22 +1139,32 @@ class Create extends Component
         // ✅ حالت عادی (quantity_per_packaging >= 2)
         return [
             0 => [
-                'name' => 'خرده‌فروشی',
+                'name' => 'زیر کارتن',
                 'min_quantity' => 1,
                 'max_quantity' => $qtyPerPack - 1,
                 'description' => "کمتر از یک {$unitLabel} (1 تا " . ($qtyPerPack - 1) . " عدد)",
+                'is_active' => true,
             ],
             1 => [
-                'name' => 'عمده‌فروشی کوچک',
-                'min_quantity' => $qtyPerPack,
-                'max_quantity' => $qtyPerPack * 5,
-                'description' => "1 تا 5 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 5) . " عدد)",
+                'name' => 'کارتن',
+                'min_quantity' => $qtyPerPack, // max_قبلی + 1 = (qtyPerPack-1) + 1
+                'max_quantity' => $qtyPerPack * 4,
+                'description' => "1 تا 4 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 4) . " عدد)",
+                'is_active' => true,
             ],
             2 => [
-                'name' => 'عمده‌فروشی بزرگ',
-                'min_quantity' => ($qtyPerPack * 5) + 1,
+                'name' => 'عمده',
+                'min_quantity' => ($qtyPerPack * 4) + 1, // max_قبلی + 1
+                'max_quantity' => $qtyPerPack * 15,
+                'description' => "5 تا 15 {$unitLabel} (" . (($qtyPerPack * 4) + 1) . " تا " . ($qtyPerPack * 15) . " عدد)",
+                'is_active' => true,
+            ],
+            3 => [
+                'name' => 'بار',
+                'min_quantity' => ($qtyPerPack * 15) + 1, // max_قبلی + 1
                 'max_quantity' => null,
-                'description' => "بیش از 5 {$unitLabel} (" . (($qtyPerPack * 5) + 1) . " عدد به بالا)",
+                'description' => "16 {$unitLabel} به بالا (" . (($qtyPerPack * 15) + 1) . " عدد به بالا)",
+                'is_active' => true,
             ],
         ];
     }

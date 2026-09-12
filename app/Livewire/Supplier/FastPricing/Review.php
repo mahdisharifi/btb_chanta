@@ -287,6 +287,44 @@ class Review extends Component
         $validRecords = $batch->items()->where('status', 'valid')->count();
         $invalidRecords = $batch->items()->where('status', 'invalid')->count();
 
-        return view('livewire.supplier.fast-pricing.review', compact('items', 'totalRecords', 'validRecords', 'invalidRecords'));
+        // ✅ Cache: دریافت یکباره تنظیمات rounding برای supplier جاری
+        $supplierId = Auth::user()->supplier->id;
+        $roundingCache = $this->buildRoundingCache($supplierId);
+
+        return view('livewire.supplier.fast-pricing.review', compact('items', 'totalRecords', 'validRecords', 'invalidRecords', 'roundingCache'));
+    }
+
+    /**
+     * ساخت cache برای رندسازی قیمت‌ها (بهبود پرفرمنس)
+     * 
+     * @param int $supplierId
+     * @return array
+     */
+    protected function buildRoundingCache(int $supplierId): array
+    {
+        $supplier = \App\Models\Supplier::find($supplierId);
+        if (!$supplier) {
+            return ['type' => 'nearest_1', 'ranges' => []];
+        }
+
+        // دریافت رنج‌های فعال
+        $ranges = \App\Models\SupplierPriceRoundingRange::forSupplier($supplierId)
+            ->active()
+            ->ordered()
+            ->get()
+            ->map(function($range) {
+                return [
+                    'min_price' => (float)$range->min_price,
+                    'max_price' => $range->max_price ? (float)$range->max_price : null,
+                    'rounding_method' => $range->rounding_method, // ceil, floor, nearest
+                    'rounding_step' => (int)$range->rounding_step, // 100, 500, 1000, etc.
+                ];
+            })
+            ->toArray();
+
+        return [
+            'type' => $supplier->price_rounding_type ?? 'nearest_1',
+            'ranges' => $ranges,
+        ];
     }
 }

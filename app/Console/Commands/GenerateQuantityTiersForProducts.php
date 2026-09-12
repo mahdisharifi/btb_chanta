@@ -32,7 +32,7 @@ class GenerateQuantityTiersForProducts extends Command
      *
      * @var string
      */
-    protected $description = 'ایجاد تیراژ خودکار (3-5 تیراژ) برای محصولاتی که تیراژ ندارند';
+    protected $description = 'ایجاد تیراژ خودکار (4 تیراژ) برای محصولاتی که تیراژ ندارند';
 
     /**
      * آمار
@@ -182,26 +182,40 @@ class GenerateQuantityTiersForProducts extends Command
     {
         $unitLabel = $this->getPackagingUnitLabel($packagingType);
 
-        // ✅ استثنا: اگر بسته‌بندی 1 عددی باشد (برای همه انواع، نه فقط carton)
+        // ═══════════════════════════════════════════════════════════
+        // ✅ ساختار جدید 4 تیراژی
+        // ═══════════════════════════════════════════════════════════
+        
+        // ✅ استثنا: اگر بسته‌بندی (کارتن/مرجع) = 1 عددی باشد
         if ($qtyPerPack === 1) {
             return [
                 [
-                    'name' => 'خرده‌فروشی',
+                    'name' => 'زیر کارتن',
+                    'min_quantity' => 0,
+                    'max_quantity' => 0,
+                    'description' => 'غیرفعال (کارتن 1 عددی است)',
+                    'is_active' => false,
+                ],
+                [
+                    'name' => 'کارتن',
                     'min_quantity' => 1,
-                    'max_quantity' => 1,
-                    'description' => "یک عدد ({$unitLabel} 1 عددی)",
+                    'max_quantity' => 4,
+                    'description' => "1 تا 4 {$unitLabel}",
+                    'is_active' => true,
                 ],
                 [
-                    'name' => 'عمده‌فروشی کوچک',
-                    'min_quantity' => 2,
-                    'max_quantity' => 5,
-                    'description' => "2 تا 5 {$unitLabel}",
+                    'name' => 'عمده',
+                    'min_quantity' => 5,
+                    'max_quantity' => 15,
+                    'description' => "5 تا 15 {$unitLabel}",
+                    'is_active' => true,
                 ],
                 [
-                    'name' => 'عمده‌فروشی بزرگ',
-                    'min_quantity' => 6,
+                    'name' => 'بار',
+                    'min_quantity' => 16,
                     'max_quantity' => null,
-                    'description' => "بیش از 5 {$unitLabel} (6 به بالا)",
+                    'description' => "16 {$unitLabel} به بالا",
+                    'is_active' => true,
                 ],
             ];
         }
@@ -209,22 +223,32 @@ class GenerateQuantityTiersForProducts extends Command
         // ✅ حالت عادی (quantity_per_packaging >= 2)
         return [
             [
-                'name' => 'خرده‌فروشی',
+                'name' => 'زیر کارتن',
                 'min_quantity' => 1,
                 'max_quantity' => $qtyPerPack - 1,
                 'description' => "کمتر از یک {$unitLabel} (1 تا " . ($qtyPerPack - 1) . " عدد)",
+                'is_active' => true,
             ],
             [
-                'name' => 'عمده‌فروشی کوچک',
-                'min_quantity' => $qtyPerPack,
-                'max_quantity' => $qtyPerPack * 5,
-                'description' => "1 تا 5 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 5) . " عدد)",
+                'name' => 'کارتن',
+                'min_quantity' => $qtyPerPack, // max_قبلی + 1 = (qtyPerPack-1) + 1
+                'max_quantity' => $qtyPerPack * 4,
+                'description' => "1 تا 4 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 4) . " عدد)",
+                'is_active' => true,
             ],
             [
-                'name' => 'عمده‌فروشی بزرگ',
-                'min_quantity' => ($qtyPerPack * 5) + 1,
+                'name' => 'عمده',
+                'min_quantity' => ($qtyPerPack * 4) + 1, // max_قبلی + 1
+                'max_quantity' => $qtyPerPack * 15,
+                'description' => "5 تا 15 {$unitLabel} (" . (($qtyPerPack * 4) + 1) . " تا " . ($qtyPerPack * 15) . " عدد)",
+                'is_active' => true,
+            ],
+            [
+                'name' => 'بار',
+                'min_quantity' => ($qtyPerPack * 15) + 1, // max_قبلی + 1
                 'max_quantity' => null,
-                'description' => "بیش از 5 {$unitLabel} (" . (($qtyPerPack * 5) + 1) . " عدد به بالا)",
+                'description' => "16 {$unitLabel} به بالا (" . (($qtyPerPack * 15) + 1) . " عدد به بالا)",
+                'is_active' => true,
             ],
         ];
     }

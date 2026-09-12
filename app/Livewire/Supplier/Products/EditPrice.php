@@ -47,6 +47,7 @@ class EditPrice extends Component
     // ✅ محاسبه خودکار تیراژها
     public int $referenceTierIndex = 1; // تیراژ مرجع (1 = کارتن)
     public array $tierPercentages = []; // [tier_index] => percentage (+/- درصد نسبت به مرجع)
+    public array $tierPriceMode = []; // [tier_index] => 'default' | 'percentage' (مشابه checkPriceMode)
     public bool $autoCalculateTiers = false; // فعال/غیرفعال محاسبه خودکار
     public array $tierEnabled = []; // [tier_index] => true/false (فعال/غیرفعال تیراژ در محاسبه خودکار)
 
@@ -129,7 +130,10 @@ class EditPrice extends Component
         if (!empty($this->productSupplier->tier_enabled)) {
             $this->tierEnabled = $this->productSupplier->tier_enabled;
         }
-        if (!empty($this->productSupplier->tier_percentages)) {
+        
+        // ✅ فقط در صورتی که product_supplier دارای tier_percentages باشد، آن را overwrite کن
+        // اگر null باشد، از مقادیر بارگذاری شده در loadTierPercentages استفاده کن
+        if (!empty($this->productSupplier->tier_percentages) && is_array($this->productSupplier->tier_percentages)) {
             $this->tierPercentages = $this->productSupplier->tier_percentages;
         }
         
@@ -485,6 +489,16 @@ class EditPrice extends Component
 
         DB::transaction(function () use ($supplierId) {
             // 1. بروزرسانی اطلاعات تامین‌کننده
+            // ✅ محاسبه tier_percentages: فقط تیراژهایی که mode='percentage' دارند
+            $tierPercentagesToSave = [];
+            foreach ($this->tierPercentages as $tierIndex => $percentage) {
+                $mode = $this->tierPriceMode[$tierIndex] ?? 'default';
+                if ($mode === 'percentage') {
+                    // فقط درصدهای اختصاصی ذخیره شوند
+                    $tierPercentagesToSave[$tierIndex] = $percentage;
+                }
+            }
+            
             $this->productSupplier->update([
                 'sku' => $this->sanitizeInput($this->sku),
                 'is_active' => (bool)$this->is_active,
@@ -497,7 +511,7 @@ class EditPrice extends Component
                 'warranty_duration_days' => $this->warrantyDurationDays,
                 // ✅ ذخیره تنظیمات تیراژها
                 'auto_calculate_tiers' => (bool)$this->autoCalculateTiers,
-                'tier_percentages' => $this->tierPercentages,
+                'tier_percentages' => empty($tierPercentagesToSave) ? null : $tierPercentagesToSave,
                 'tier_enabled' => $this->tierEnabled,
             ]);
 
@@ -867,6 +881,7 @@ class EditPrice extends Component
     public function loadTierPercentages(): void
     {
         $supplierId = Auth::user()->supplier->id;
+        $categoryId = $this->product->category_id ?? null;
         
         // بارگذاری از جدول supplier_tier_percentages (اگر وجود داشته باشد)
         $savedSettings = \App\Models\SupplierTierPercentage::forSupplier($supplierId)
@@ -877,25 +892,76 @@ class EditPrice extends Component
             ->keyBy('tier_index');
         
         if ($savedSettings->isNotEmpty()) {
-            // تنظیمات ذخیره شده وجود دارد
+            // تنظیمات ذخیره شده برای این محصول وجود دارد
             $this->autoCalculateTiers = true;
             
             foreach ($savedSettings as $tierIndex => $setting) {
-                $this->tierPercentages[$tierIndex] = (float) $setting->percentage;
+                $savedPercentage = (float) $setting->percentage;
+                $this->tierPercentages[$tierIndex] = $savedPercentage;
+                
+                // ✅ تشخیص mode: مقایسه با درصد مؤثر (دسته‌بندی یا پیشفرض)
+                $effectivePercentage = $this->getEffectiveTierPercentage($supplierId, $categoryId, $tierIndex);
+                
+                // اگر درصد ذخیره شده با درصد مؤثر برابر باشد → default
+                if (abs($savedPercentage - $effectivePercentage) < 0.01) {
+                    $this->tierPriceMode[$tierIndex] = 'default';
+                } else {
+                    $this->tierPriceMode[$tierIndex] = 'percentage';
+                }
                 
                 if ($setting->is_reference) {
                     $this->referenceTierIndex = (int) $tierIndex;
                 }
             }
         } else {
-            // تنظیمات پیش‌فرض
+            // ✅ هیچ تنظیمات ذخیره شده‌ای برای این محصول وجود ندارد
+            // باید با اولویت‌بندی درصدها را لود کنیم
             $this->autoCalculateTiers = false;
-            $this->referenceTierIndex = 1; // تیراژ 2 (tier 1 / عمده‌فروشی کوچک) به عنوان مرجع
+            $this->referenceTierIndex = 1; // تیراژ 1 (کارتن) به عنوان مرجع
             
             foreach ($this->quantityTiers as $index => $tier) {
-                $this->tierPercentages[$index] = 0; // درصد پیش‌فرض
+                // ✅ استفاده از getEffectiveTierPercentage برای اولویت‌بندی
+                $this->tierPercentages[$index] = $this->getEffectiveTierPercentage($supplierId, $categoryId, $index);
+                $this->tierPriceMode[$index] = 'default'; // ✅ حالت پیشفرض
             }
         }
+        
+        // ✅ تیراژ مرجع همیشه 0% است
+        $this->tierPercentages[$this->referenceTierIndex] = 0;
+    }
+
+    /**
+     * بارگذاری درصدهای پیشفرض از تنظیمات تامین‌کننده
+     */
+    public function loadDefaultTierPercentages(): void
+    {
+        $supplierId = Auth::user()->supplier->id;
+        
+        // بارگذاری تنظیمات پیشفرض
+        $defaultTierSettings = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId);
+        
+        if ($defaultTierSettings->isEmpty()) {
+            $this->dispatch('notify', 
+                message: 'هیچ تنظیمات پیشفرضی یافت نشد. لطفاً ابتدا در بخش تنظیمات، درصدهای پیشفرض را تعیین کنید.',
+                type: 'warning'
+            );
+            return;
+        }
+        
+        // بارگذاری درصدها
+        foreach ($this->quantityTiers as $index => $tier) {
+            $defaultSetting = $defaultTierSettings->firstWhere('tier_index', $index);
+            $this->tierPercentages[$index] = $defaultSetting ? (float)$defaultSetting->percentage_change : 0;
+            $this->tierPriceMode[$index] = 'default'; // ✅ تنظیم mode به پیشفرض
+        }
+        
+        // ✅ تیراژ مرجع همیشه 0% است
+        $this->tierPercentages[$this->referenceTierIndex] = 0;
+        
+        $this->dispatch('notify', 
+            message: '✅ درصدهای پیشفرض با موفقیت بارگذاری شدند.',
+            type: 'success'
+        );
     }
 
     /**
@@ -904,8 +970,9 @@ class EditPrice extends Component
     public function saveTierPercentages(): void
     {
         $supplierId = Auth::user()->supplier->id;
+        $categoryId = $this->product->category_id ?? null;
         
-        DB::transaction(function () use ($supplierId) {
+        DB::transaction(function () use ($supplierId, $categoryId) {
             // حذف تنظیمات قبلی این محصول
             \App\Models\SupplierTierPercentage::where('supplier_id', $supplierId)
                 ->where('product_id', $this->product->id)
@@ -914,12 +981,23 @@ class EditPrice extends Component
             // اگر محاسبه خودکار فعال است، ذخیره کن
             if ($this->autoCalculateTiers) {
                 foreach ($this->quantityTiers as $index => $tier) {
+                    // ✅ تشخیص درصد بر اساس mode
+                    $mode = $this->tierPriceMode[$index] ?? 'default';
+                    
+                    if ($mode === 'default') {
+                        // استفاده از درصد مؤثر (دسته‌بندی یا پیشفرض)
+                        $percentage = $this->getEffectiveTierPercentage($supplierId, $categoryId, $index);
+                    } else {
+                        // استفاده از درصد اختصاصی
+                        $percentage = (float) ($this->tierPercentages[$index] ?? 0);
+                    }
+                    
                     \App\Models\SupplierTierPercentage::create([
                         'supplier_id' => $supplierId,
                         'product_id' => $this->product->id,
                         'tier_index' => (int) $index,
                         'tier_label' => $tier['name'] ?? "تیراژ " . ($index + 1),
-                        'percentage' => (float) ($this->tierPercentages[$index] ?? 0),
+                        'percentage' => $percentage,
                         'is_reference' => ($index == $this->referenceTierIndex),
                         'is_active' => true,
                         'sort_order' => $index,
@@ -949,6 +1027,10 @@ class EditPrice extends Component
         }
         
         $supplier = Auth::user()->supplier;
+        $supplierId = $supplier->id;
+        
+        // ✅ دریافت دسته‌بندی محصول برای بررسی درصد اختصاصی
+        $categoryId = $this->product->category_id ?? null;
         
         // محاسبه قیمت سایر تیراژها
         foreach ($this->quantityTiers as $index => $tier) {
@@ -962,7 +1044,16 @@ class EditPrice extends Component
                 continue; // تیراژ غیرفعال → محاسبه نشود
             }
             
-            $percentage = $this->tierPercentages[$index] ?? 0;
+            // ✅ تشخیص درصد بر اساس mode
+            $mode = $this->tierPriceMode[$index] ?? 'default';
+            
+            if ($mode === 'default') {
+                // ✅ اولویت‌بندی: دسته‌بندی > پیشفرض
+                $percentage = $this->getEffectiveTierPercentage($supplierId, $categoryId, $index);
+            } else {
+                // استفاده از درصد اختصاصی (وارد شده توسط کاربر)
+                $percentage = $this->tierPercentages[$index] ?? 0;
+            }
             
             // محاسبه قیمت بر اساس درصد
             $calculatedPrice = $referencePrice * (1 + ($percentage / 100));
@@ -976,6 +1067,76 @@ class EditPrice extends Component
         
         // بروزرسانی قیمت‌های چکی برای همه تیراژها
         $this->updateAllCheckPrices();
+    }
+    
+    /**
+     * دریافت درصد مؤثر برای تیراژ (با اولویت‌بندی)
+     * اولویت: دسته‌بندی > پیشفرض
+     * 
+     * @param int $supplierId
+     * @param int|null $categoryId
+     * @param int $tierIndex
+     * @return float
+     */
+    private function getEffectiveTierPercentage(int $supplierId, ?int $categoryId, int $tierIndex): float
+    {
+        // 1. بررسی درصد اختصاصی دسته‌بندی
+        if ($categoryId) {
+            $categoryDiscount = DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->where('tier_index', $tierIndex)
+                ->where('is_active', true)
+                ->value('percentage_change');
+            
+            if ($categoryDiscount !== null) {
+                return (float) $categoryDiscount;
+            }
+        }
+        
+        // 2. استفاده از درصد پیشفرض
+        $defaultSetting = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId)
+            ->firstWhere('tier_index', $tierIndex);
+        
+        return $defaultSetting ? (float) $defaultSetting->percentage_change : 0;
+    }
+
+    /**
+     * دریافت درصد مؤثر و منبع آن برای نمایش در UI
+     * 
+     * @param int $tierIndex
+     * @return array ['percentage' => float, 'source' => string]
+     */
+    public function getEffectiveTierPercentageForUI(int $tierIndex): array
+    {
+        $supplierId = (int) Auth::user()->supplier->id;
+        $categoryId = $this->product->category_id;
+        
+        // 1. بررسی درصد اختصاصی دسته‌بندی
+        if ($categoryId) {
+            $categoryDiscount = DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->where('tier_index', $tierIndex)
+                ->where('is_active', true)
+                ->value('percentage_change');
+            
+            if ($categoryDiscount !== null) {
+                return [
+                    'percentage' => (float) $categoryDiscount,
+                    'source' => 'category'
+                ];
+            }
+        }
+        
+        // 2. استفاده از درصد پیشفرض
+        $defaultSetting = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId)
+            ->firstWhere('tier_index', $tierIndex);
+        
+        return [
+            'percentage' => $defaultSetting ? (float) $defaultSetting->percentage_change : 0,
+            'source' => 'default'
+        ];
     }
 
     /**

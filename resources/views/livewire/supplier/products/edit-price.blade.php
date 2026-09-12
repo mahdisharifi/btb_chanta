@@ -514,79 +514,140 @@
                                     درصد تغییر نسبت به کارتن (تیراژ مرجع):
                                 </h4>
                                 
+                                {{-- راهنمای تنظیمات --}}
+                                <div class="mb-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                                    <div class="flex items-start gap-3">
+                                        <x-heroicon-o-light-bulb class="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5"/>
+                                        <div class="flex-1 text-sm">
+                                            <p class="font-semibold text-purple-900 dark:text-purple-100 mb-2">
+                                                💡 نحوه استفاده از درصدهای تیراژ
+                                            </p>
+                                            <div class="text-purple-800 dark:text-purple-200 space-y-1 text-xs">
+                                                <p>
+                                                    <strong>پیشفرض:</strong> استفاده از درصدهای تعیین شده در تنظیمات (برای همه محصولات)
+                                                </p>
+                                                <p>
+                                                    <strong>درصد اختصاصی:</strong> تعیین درصد متفاوت فقط برای این محصول
+                                                </p>
+                                            </div>
+                                            <div class="mt-3">
+                                                <a href="{{ route('supplier.settings.tier-discounts') }}" 
+                                                   class="inline-flex items-center gap-2 text-xs font-medium text-purple-700 dark:text-purple-300 hover:text-purple-900 dark:hover:text-purple-100 bg-white dark:bg-purple-900/40 px-3 py-1.5 rounded-md border border-purple-300 dark:border-purple-700 hover:border-purple-400 dark:hover:border-purple-600 transition-colors">
+                                                    <x-heroicon-o-cog-6-tooth class="w-4 h-4"/>
+                                                    تنظیم درصدهای پیشفرض
+                                                    <x-heroicon-o-arrow-left class="w-3 h-3"/>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <div class="grid grid-cols-1 gap-3">
                                     {{-- ✅ نمایش کارتن (تیراژ 1) اول --}}
                                     @if(isset($quantityTiers[1]))
                                         @php $tier = $quantityTiers[1]; $tierIndex = 1; @endphp
-                                        <div class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20">
-                                            {{-- عنوان تیراژ --}}
-                                            <div class="flex-shrink-0 w-32">
-                                                <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    {{ $tier['name'] ?? 'نامشخص' }}
-                                                </span>
-                                                @if(isset($tier['min_quantity']))
-                                                    <span class="text-xs text-gray-500 dark:text-gray-400 block">
-                                                        حداقل {{ number_format($tier['min_quantity']) }}
+                                        <div class="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border-2 border-green-400 dark:border-green-600">
+                                            <div class="flex items-center gap-3">
+                                                {{-- عنوان تیراژ --}}
+                                                <div class="flex-shrink-0 w-32">
+                                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                        {{ $tier['name'] ?? 'نامشخص' }}
                                                     </span>
-                                                @endif
-                                            </div>
+                                                    @if(isset($tier['min_quantity']))
+                                                        <span class="text-xs text-gray-500 dark:text-gray-400 block">
+                                                            حداقل {{ number_format($tier['min_quantity']) }}
+                                                        </span>
+                                                    @endif
+                                                </div>
 
-                                            {{-- کارتن = تیراژ مرجع --}}
-                                            <div class="flex-1 flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/40 rounded-md border border-green-300 dark:border-green-700">
-                                                <x-heroicon-s-bookmark class="w-5 h-5 text-green-600 dark:text-green-400"/>
-                                                <span class="text-sm font-bold text-green-900 dark:text-green-100">
-                                                    تیراژ مرجع (0%)
-                                                </span>
+                                                {{-- کارتن = تیراژ مرجع --}}
+                                                <div class="flex-1 flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/40 rounded-md border border-green-300 dark:border-green-700">
+                                                    <x-heroicon-s-bookmark class="w-5 h-5 text-green-600 dark:text-green-400"/>
+                                                    <span class="text-sm font-bold text-green-900 dark:text-green-100">
+                                                        تیراژ مرجع (0%)
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     @endif
                                     
-                                    {{-- ✅ سپس سایر تیراژها --}}
+                                    {{-- ✅ سپس سایر تیراژها با Radio Buttons --}}
                                     @foreach($quantityTiers as $tierIndex => $tier)
                                         @if($tierIndex != 1)
-                                        <div class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                                            {{-- ✅ چک‌باکس فعال/غیرفعال --}}
-                                            <div class="flex-shrink-0">
-                                                <label class="relative inline-flex items-center cursor-pointer">
-                                                    <input type="checkbox" 
-                                                           wire:model.live="tierEnabled.{{ $tierIndex }}"
-                                                           class="sr-only peer">
-                                                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                                                </label>
+                                        @php
+                                            $mode = $tierPriceMode[$tierIndex] ?? 'default';
+                                            
+                                            // دریافت درصد مؤثر با اولویت‌بندی
+                                            $effectiveData = $this->getEffectiveTierPercentageForUI($tierIndex);
+                                            $defaultPercentage = $effectiveData['percentage'];
+                                            $percentageSource = $effectiveData['source'];
+                                            $sourceLabel = $percentageSource === 'category' ? 'از تنظیمات دسته‌بندی' : 'از تنظیمات عمومی';
+                                        @endphp
+                                        <div class="p-4 bg-white dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                                            {{-- عنوان تیراژ --}}
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div>
+                                                    <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                        {{ $tier['name'] ?? 'نامشخص' }}
+                                                    </span>
+                                                    @if(isset($tier['min_quantity']))
+                                                        <span class="text-xs text-gray-500 dark:text-gray-400 block mt-0.5">
+                                                            حداقل {{ number_format($tier['min_quantity']) }}
+                                                        </span>
+                                                    @endif
+                                                </div>
                                             </div>
                                             
-                                            {{-- عنوان تیراژ --}}
-                                            <div class="flex-shrink-0 w-32">
-                                                <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    {{ $tier['name'] ?? 'نامشخص' }}
-                                                </span>
-                                                @if(isset($tier['min_quantity']))
-                                                    <span class="text-xs text-gray-500 dark:text-gray-400 block">
-                                                        حداقل {{ number_format($tier['min_quantity']) }}
-                                                    </span>
+                                            {{-- Radio Buttons --}}
+                                            <div class="space-y-3">
+                                                <div class="flex items-center gap-4">
+                                                    <label class="flex items-center cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 p-2 rounded transition-colors">
+                                                        <input type="radio" 
+                                                               wire:model.live="tierPriceMode.{{ $tierIndex }}" 
+                                                               value="default"
+                                                               class="w-4 h-4 text-blue-600">
+                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">پیشفرض</span>
+                                                    </label>
+                                                    <label class="flex items-center cursor-pointer hover:bg-orange-50 dark:hover:bg-orange-900/20 p-2 rounded transition-colors">
+                                                        <input type="radio" 
+                                                               wire:model.live="tierPriceMode.{{ $tierIndex }}" 
+                                                               value="percentage"
+                                                               class="w-4 h-4 text-orange-600">
+                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">درصد اختصاصی</span>
+                                                    </label>
+                                                </div>
+                                                
+                                                {{-- نمایش بر اساس mode --}}
+                                                @if($mode === 'default')
+                                                    {{-- نمایش درصد پیشفرض --}}
+                                                    <div class="bg-blue-100 dark:bg-blue-900/40 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                                                        <div class="text-xs text-blue-600 dark:text-blue-400 mb-1">درصد پیشفرض:</div>
+                                                        <div class="flex items-center gap-2">
+                                                            <span class="text-lg font-bold text-blue-900 dark:text-blue-100">
+                                                                {{ number_format($defaultPercentage, 1) }}%
+                                                            </span>
+                                                            <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-1 rounded">{{ $sourceLabel }}</span>
+                                                        </div>
+                                                    </div>
+                                                @elseif($mode === 'percentage')
+                                                    {{-- Input درصد اختصاصی --}}
+                                                    <div class="space-y-3">
+                                                        <div class="flex items-center gap-2">
+                                                            <input type="number"
+                                                                   wire:model.live.debounce.500ms="tierPercentages.{{ $tierIndex }}"
+                                                                   placeholder="درصد (مثال: 5)"
+                                                                   step="0.01"
+                                                                   inputmode="decimal"
+                                                                   onwheel="this.blur()"
+                                                                   class="flex-1 max-w-xs px-4 py-2 text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-900 focus:border-orange-500 focus:ring-orange-500 rounded-md">
+                                                            <span class="text-xs text-gray-600 dark:text-gray-400">% تغییر</span>
+                                                        </div>
+                                                        <div class="text-xs text-gray-600 dark:text-gray-400">
+                                                            <span class="font-medium text-red-600">مثبت:</span> گران‌تر از مرجع | 
+                                                            <span class="font-medium text-green-600">منفی:</span> ارزان‌تر از مرجع
+                                                        </div>
+                                                    </div>
                                                 @endif
-                                            </div>
-
-                                            <div class="flex-1 flex items-center gap-3">
-                                                <div class="relative flex-1 max-w-xs">
-                                                    <input type="number" 
-                                                           wire:model.defer="tierPercentages.{{ $tierIndex }}"
-                                                           step="0.01"
-                                                           placeholder="0"
-                                                           class="block w-full px-4 py-2 pr-12 text-sm border-gray-300 dark:border-gray-700 dark:bg-gray-900 rounded-md focus:border-purple-500 focus:ring-purple-500"
-                                                           onwheel="this.blur()">
-                                                    <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400">%</span>
-                                                    </div>
-                                                </div>
-                                                <div class="text-xs text-gray-600 dark:text-gray-400">
-                                                    <div class="mb-0.5">
-                                                        <span class="font-medium text-red-600">مثبت:</span> گران‌تر
-                                                    </div>
-                                                    <div>
-                                                        <span class="font-medium text-green-600">منفی:</span> ارزان‌تر
-                                                    </div>
-                                                </div>
                                             </div>
                                         </div>
                                         <x-input-error :messages="$errors->get('tierPercentages.' . $tierIndex)" class="mt-1" />
@@ -603,44 +664,45 @@
                                                 📊 نمونه محاسبه (فرض: قیمت مرجع = 100,000 تومان):
                                             </p>
                                             <div class="space-y-1 text-amber-800 dark:text-amber-200 text-xs">
-                                                @if($referenceTierIndex !== null && $referenceTierIndex !== '')
-                                                    @foreach($quantityTiers as $tierIndex => $tier)
-                                                        @if($referenceTierIndex == $tierIndex)
-                                                            <div class="flex items-center gap-2">
-                                                                <span class="font-mono">•</span>
-                                                                <strong>{{ $tier['name'] }}</strong>: 100,000 تومان (مرجع)
-                                                            </div>
+                                                @foreach($quantityTiers as $tierIndex => $tier)
+                                                    @php
+                                                        $mode = $tierPriceMode[$tierIndex] ?? 'default';
+                                                        $percentage = (float)($tierPercentages[$tierIndex] ?? 0);
+                                                        
+                                                        if ($mode === 'default') {
+                                                            $percentage = $defaultPercentage;
+                                                        }
+                                                        
+                                                        if ($tierIndex == 1) {
+                                                            $percentage = 0;
+                                                        }
+                                                        
+                                                        $examplePrice = 100000 * (1 + $percentage / 100);
+                                                    @endphp
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-mono">•</span>
+                                                        <strong>{{ $tier['name'] }}</strong>: 
+                                                        @if($tierIndex == 1)
+                                                            <span class="text-gray-600 dark:text-gray-400">100,000 تومان (مرجع)</span>
+                                                        @elseif($percentage > 0)
+                                                            <span class="text-red-600 dark:text-red-400">+{{ number_format($percentage, 1) }}%</span> = 
+                                                            <span class="font-semibold">{{ number_format($examplePrice) }} تومان</span>
+                                                            <span class="text-red-500">(گران‌تر)</span>
+                                                        @elseif($percentage < 0)
+                                                            <span class="text-green-600 dark:text-green-400">{{ number_format($percentage, 1) }}%</span> = 
+                                                            <span class="font-semibold">{{ number_format($examplePrice) }} تومان</span>
+                                                            <span class="text-green-500">(ارزان‌تر)</span>
                                                         @else
-                                                            @php
-                                                                $percentage = (float)($tierPercentages[$tierIndex] ?? 0);
-                                                                $examplePrice = 100000 * (1 + $percentage / 100);
-                                                            @endphp
-                                                            <div class="flex items-center gap-2">
-                                                                <span class="font-mono">•</span>
-                                                                <strong>{{ $tier['name'] }}</strong>: 
-                                                                @if($percentage > 0)
-                                                                    <span class="text-red-600 dark:text-red-400">+{{ $percentage }}%</span> = 
-                                                                    <span class="font-semibold">{{ number_format($examplePrice) }} تومان</span>
-                                                                    <span class="text-red-500">(گران‌تر)</span>
-                                                                @elseif($percentage < 0)
-                                                                    <span class="text-green-600 dark:text-green-400">{{ $percentage }}%</span> = 
-                                                                    <span class="font-semibold">{{ number_format($examplePrice) }} تومان</span>
-                                                                    <span class="text-green-500">(ارزان‌تر)</span>
-                                                                @else
-                                                                    <span class="text-gray-600 dark:text-gray-400">0%</span> = 100,000 تومان
-                                                                @endif
-                                                            </div>
+                                                            <span class="text-gray-600 dark:text-gray-400">0%</span> = 100,000 تومان
                                                         @endif
-                                                    @endforeach
-                                                @else
-                                                    <p class="text-gray-500">ابتدا تیراژ مرجع را انتخاب کنید</p>
-                                                @endif
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {{-- دکمه محاسبه دستی --}}
+                                {{-- دکمه محاسبه --}}
                                 <div class="flex items-center justify-between pt-3 border-t border-indigo-200 dark:border-indigo-800">
                                     <p class="text-xs text-gray-600 dark:text-gray-400">
                                         محاسبه خودکار با تغییر قیمت تیراژ مرجع انجام می‌شود
@@ -669,6 +731,27 @@
                         <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
                             قیمت‌ها را بر اساس تیراژ و نوع پرداخت وارد کنید. برای فعال‌سازی قیمت چک، چک‌باکس مربوطه را علامت بزنید.
                         </p>
+                        
+                        {{-- راهنمای دوره‌های چکی --}}
+                        <div class="mt-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <div class="flex items-start gap-3">
+                                <x-heroicon-o-information-circle class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"/>
+                                <div class="flex-1 text-sm">
+                                    <p class="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                                        📋 مدیریت دوره‌های چکی
+                                    </p>
+                                    <p class="text-blue-800 dark:text-blue-200 mb-2">
+                                        می‌توانید دوره‌های چکی (30، 60، 90 روزه و...) و درصد افزایش هر دوره را در بخش تنظیمات مشخص کنید.
+                                    </p>
+                                    <a href="{{ route('supplier.settings.check-periods') }}" 
+                                       class="inline-flex items-center gap-2 text-xs font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 bg-white dark:bg-blue-900/40 px-3 py-1.5 rounded-md border border-blue-300 dark:border-blue-700 hover:border-blue-400 dark:hover:border-blue-600 transition-colors">
+                                        <x-heroicon-o-calendar-days class="w-4 h-4"/>
+                                        رفتن به تنظیمات دوره‌های چکی
+                                        <x-heroicon-o-arrow-left class="w-3 h-3"/>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     {{-- 📘 Info Box: توضیح تیراژها --}}

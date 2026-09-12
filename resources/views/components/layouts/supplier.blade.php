@@ -86,6 +86,12 @@
             <div class="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
                 <p class="px-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">تنظیمات</p>
                 
+                <a href="{{ route('supplier.settings.tier-discounts') }}"
+                   class="{{ request()->routeIs('supplier.settings.tier-discounts') || request()->routeIs('supplier.settings.category-tier-discounts') ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
+                    <x-heroicon-o-banknotes class="{{ request()->routeIs('supplier.settings.tier-discounts') || request()->routeIs('supplier.settings.category-tier-discounts') ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
+                    درصد تیراژ نقدی
+                </a>
+                
                 <a href="{{ route('supplier.settings.check-periods') }}"
                    class="{{ request()->routeIs('supplier.settings.check-periods') ? 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
                     <x-heroicon-o-calendar-days class="{{ request()->routeIs('supplier.settings.check-periods') ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
