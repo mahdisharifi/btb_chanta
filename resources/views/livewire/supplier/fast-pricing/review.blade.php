@@ -1,3 +1,61 @@
+@php
+    /**
+     * ✅ تابع helper برای رند کردن قیمت بدون query (استفاده از cache)
+     * 
+     * @param float $price
+     * @param array $roundingCache
+     * @return float
+     */
+    function roundPriceFromCache(float $price, array $roundingCache): float
+    {
+        // اولویت 1: رنج‌ها (جدید - با method و step)
+        foreach ($roundingCache['ranges'] as $range) {
+            $inRange = $price >= $range['min_price'] 
+                    && ($range['max_price'] === null || $price < $range['max_price']);
+            
+            if ($inRange) {
+                $step = $range['rounding_step'];
+                return match($range['rounding_method']) {
+                    'ceil' => ceil($price / $step) * $step,
+                    'floor' => floor($price / $step) * $step,
+                    'nearest' => round($price / $step) * $step,
+                    default => $price,
+                };
+            }
+        }
+        
+        // اولویت 2: نوع کلی (قدیمی - backward compatibility)
+        return roundByType($price, $roundingCache['type'] ?? 'nearest_1');
+    }
+
+    /**
+     * رند کردن بر اساس نوع (کپی از PriceRoundingHelper)
+     */
+    function roundByType(float $price, ?string $type): float
+    {
+        $type = $type ?? 'nearest_1';
+        return match($type) {
+            'none' => round($price, 2),
+            'nearest_1' => round($price, 0),
+            'nearest_5' => round($price / 5) * 5,
+            'nearest_10' => round($price / 10) * 10,
+            'nearest_50' => round($price / 50) * 50,
+            'nearest_100' => round($price / 100) * 100,
+            'nearest_500' => round($price / 500) * 500,
+            'nearest_1000' => round($price / 1000) * 1000,
+            'ceil_1' => ceil($price),
+            'ceil_10' => ceil($price / 10) * 10,
+            'ceil_100' => ceil($price / 100) * 100,
+            'ceil_1000' => ceil($price / 1000) * 1000,
+            'floor_1' => floor($price),
+            'floor_10' => floor($price / 10) * 10,
+            'floor_100' => floor($price / 100) * 100,
+            'floor_1000' => floor($price / 1000) * 1000,
+            default => round($price, 0),
+        };
+    }
+@endphp
+
 <div>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
@@ -152,6 +210,12 @@
                                     // قیمت قبلی
                                     $oldPrice = is_array($item->old_prices) ? ($item->old_prices[$key]['price'] ?? 0) : 0;
                                     $isDeactivated = ($newPrice === null || $newPrice === '' || (is_numeric($newPrice) && $newPrice <= 0));
+                                    
+                                    // ✅ رند کردن قیمت جدید (با cache)
+                                    $roundedNewPrice = $newPrice;
+                                    if (!$isDeactivated && $item->productSupplier) {
+                                        $roundedNewPrice = roundPriceFromCache($newPrice, $roundingCache);
+                                    }
                                     @endphp
 
                                     <div class="flex items-start justify-between bg-gray-50/80 p-2 rounded-lg text-xs">
@@ -160,7 +224,7 @@
                                             <span class="text-gray-500 text-[10px]">{{ $priceTypeName }}{{ $checkPeriodName }}</span>
                                         </div>
                                         <div class="flex items-center gap-2 rtl:space-x-reverse" dir="ltr">
-                                            @if($oldPrice && $oldPrice != $newPrice)
+                                            @if($oldPrice && $oldPrice != $roundedNewPrice)
                                             <span class="text-gray-400 line-through decoration-red-400/50">{{ number_format($oldPrice) }}</span>
                                             <x-heroicon-o-arrow-right class="w-3 h-3 text-gray-300"/>
                                             @endif
@@ -168,9 +232,18 @@
                                             @if($isDeactivated)
                                             <span class="font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">غیرفعال</span>
                                             @else
-                                            <span class="font-bold {{ $newPrice > $oldPrice ? 'text-blue-600' : 'text-green-600' }}">
-                                                {{ number_format($newPrice) }}
-                                            </span>
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="font-bold {{ $roundedNewPrice > $oldPrice ? 'text-blue-600' : 'text-green-600' }}">
+                                                    {{ number_format($roundedNewPrice) }}
+                                                </span>
+                                                @if($roundedNewPrice != $newPrice)
+                                                <span class="inline-flex items-center gap-0.5 text-[9px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full whitespace-nowrap" 
+                                                      title="قیمت اولیه: {{ number_format($newPrice) }} تومان → رند شده به {{ number_format($roundedNewPrice) }} تومان">
+                                                    <x-heroicon-o-calculator class="w-2.5 h-2.5" />
+                                                    <span>رند</span>
+                                                </span>
+                                                @endif
+                                            </div>
                                             @endif
                                         </div>
                                     </div>

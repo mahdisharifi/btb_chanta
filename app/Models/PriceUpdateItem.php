@@ -107,7 +107,7 @@ class PriceUpdateItem extends Model
      * 
      * @return bool
      */
-    public function hasChanges(): bool
+    public function hasAnyChanges(): bool
     {
         return !empty($this->getPriceChanges())
             || $this->old_stock !== $this->new_stock

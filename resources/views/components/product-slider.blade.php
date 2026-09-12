@@ -14,12 +14,6 @@
         scrollLeft: 0,
         isDown: false,
         dragThreshold: 8,
-        handleLinkClick(e) {
-            if (this.dragged) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        },
         startDrag(event) {
             this.isDown = true;
             this.dragged = false;
@@ -104,20 +98,21 @@
         @mouseleave="stopDrag()"
         @mouseup="stopDrag()"
         @mousemove="onDrag($event)"
+        @click="if (dragged) { $event.preventDefault(); $event.stopPropagation(); dragged = false; }"
         ondragstart="return false"
         class="product-slider-scroll flex cursor-grab gap-3 overflow-x-auto scroll-smooth px-4 pb-4 active:cursor-grabbing snap-x"
         style="-ms-overflow-style: none; -webkit-overflow-scrolling: touch; scrollbar-width: none;"
     >
         <style>
             .product-slider-scroll::-webkit-scrollbar { display: none; }
-            .product-slider-scroll * { -webkit-user-select: none; user-select: none; pointer-events: auto; }
+            .product-slider-scroll * { -webkit-user-select: none; user-select: none; }
+            .product-slider-scroll a { cursor: pointer; }
             .product-slider-scroll img { pointer-events: none; }
         </style>
 
         @foreach($products as $product)
         <div
             class="w-[calc(50%-0.375rem)] flex-shrink-0 snap-start sm:w-[calc(33.333%-0.67rem)] md:w-52"
-            @click="handleLinkClick($event)"
         >
             <x-product.card :product="$product" />
         </div>
