@@ -94,7 +94,7 @@ class ManageCategoryTierDiscounts extends Component
         return [
             'selectedCategoryId' => ['required', 'exists:categories,id'],
             'tierPercentages' => ['required', 'array', 'min:1'],
-            'tierPercentages.*' => ['required', 'numeric', 'min:-100', 'max:100'],
+            'tierPercentages.*' => ['nullable', 'numeric', 'min:-100', 'max:100'],
         ];
     }
     
@@ -114,6 +114,23 @@ class ManageCategoryTierDiscounts extends Component
     public function addCategory()
     {
         $this->validate();
+        
+        // بررسی: حداقل یک تیراژ باید مقدار داشته باشد
+        $hasValue = false;
+        foreach ($this->tierPercentages as $percentage) {
+            if ($percentage !== null && $percentage !== '') {
+                $hasValue = true;
+                break;
+            }
+        }
+        
+        if (!$hasValue) {
+            $this->dispatch('notify',
+                message: 'لطفاً حداقل برای یک تیراژ درصد تعیین کنید.',
+                type: 'error'
+            );
+            return;
+        }
         
         $supplierId = Auth::user()->supplier->id;
         $categoryId = (int)$this->selectedCategoryId;
@@ -183,9 +200,26 @@ class ManageCategoryTierDiscounts extends Component
     public function saveCategoryEdit()
     {
         $this->validate([
-            'tierPercentages' => ['required', 'array', 'min:1'],
-            'tierPercentages.*' => ['required', 'numeric', 'min:-100', 'max:100'],
+            'tierPercentages' => ['required', 'array'],
+            'tierPercentages.*' => ['nullable', 'numeric', 'min:-100', 'max:100'],
         ]);
+        
+        // بررسی: حداقل یک تیراژ باید مقدار داشته باشد
+        $hasValue = false;
+        foreach ($this->tierPercentages as $percentage) {
+            if ($percentage !== null && $percentage !== '') {
+                $hasValue = true;
+                break;
+            }
+        }
+        
+        if (!$hasValue) {
+            $this->dispatch('notify',
+                message: 'لطفاً حداقل برای یک تیراژ درصد تعیین کنید.',
+                type: 'error'
+            );
+            return;
+        }
         
         $supplierId = Auth::user()->supplier->id;
         $categoryId = $this->editingCategoryId;

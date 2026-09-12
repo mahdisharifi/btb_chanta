@@ -92,6 +92,12 @@
             </div>
 
             {{-- درصدهای 4 تیراژ --}}
+            <div class="mb-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                <p class="text-xs text-yellow-800 dark:text-yellow-200">
+                    <strong>نکته:</strong> تیراژ مرجع نمی‌تواند درصد داشته باشد. برای تیراژهایی که درصد تعیین نمی‌کنید، از تنظیمات پیشفرض استفاده می‌شود.
+                </p>
+            </div>
+            
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 @foreach(range(0, 3) as $tierIndex)
                 @php
@@ -102,18 +108,21 @@
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $tierName }}
                         @if($tierIndex === 1)
-                            <span class="text-xs text-gray-500">(مرجع)</span>
+                            <span class="text-xs text-red-500">(مرجع - نباید درصد داشته باشد)</span>
                         @endif
                     </label>
                     <div class="relative">
                         <input type="number" 
                                step="0.01"
                                wire:model="tierPercentages.{{ $tierIndex }}"
-                               placeholder="{{ number_format($defaultPercentage, 2) }}"
-                               class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                               placeholder="{{ $tierIndex === 1 ? '0' : number_format($defaultPercentage, 2) }}"
+                               @if($tierIndex === 1) disabled @endif
+                               class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 @if($tierIndex === 1) opacity-50 cursor-not-allowed @endif">
                         <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">%</span>
                     </div>
-                    <p class="mt-1 text-xs text-gray-500">پیشفرض: {{ number_format($defaultPercentage, 2) }}%</p>
+                    @if($tierIndex !== 1)
+                        <p class="mt-1 text-xs text-gray-500">پیشفرض: {{ number_format($defaultPercentage, 2) }}%</p>
+                    @endif
                     @error("tierPercentages.{$tierIndex}")
                         <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                     @enderror

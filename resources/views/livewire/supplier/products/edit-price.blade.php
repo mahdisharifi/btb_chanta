@@ -582,22 +582,46 @@
                                             $defaultPercentage = $effectiveData['percentage'];
                                             $percentageSource = $effectiveData['source'];
                                             $sourceLabel = $percentageSource === 'category' ? 'از تنظیمات دسته‌بندی' : 'از تنظیمات عمومی';
+                                            $isEnabled = $tierEnabled[$tierIndex] ?? true;
                                         @endphp
-                                        <div class="p-4 bg-white dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        <div class="p-4 bg-white dark:bg-gray-800/50 rounded-lg border" 
+                                             :class="{ 'border-gray-200 dark:border-gray-700': {{ $isEnabled ? 'true' : 'false' }}, 'border-gray-300 dark:border-gray-600 opacity-60': {{ $isEnabled ? 'false' : 'true' }} }">
                                             {{-- عنوان تیراژ --}}
                                             <div class="flex items-center justify-between mb-3">
-                                                <div>
-                                                    <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                                        {{ $tier['name'] ?? 'نامشخص' }}
-                                                    </span>
-                                                    @if(isset($tier['min_quantity']))
-                                                        <span class="text-xs text-gray-500 dark:text-gray-400 block mt-0.5">
-                                                            حداقل {{ number_format($tier['min_quantity']) }}
-                                                        </span>
-                                                    @endif
+                                                <div class="flex items-center gap-3 flex-1">
+                                                    {{-- Toggle فعال/غیرفعال --}}
+                                                    <div class="flex-shrink-0">
+                                                        <label class="relative inline-flex items-center cursor-pointer">
+                                                            <input type="checkbox" 
+                                                                   wire:model.live="tierEnabled.{{ $tierIndex }}"
+                                                                   class="sr-only peer">
+                                                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                                                        </label>
+                                                    </div>
+                                                    
+                                                    {{-- اطلاعات تیراژ --}}
+                                                    <div>
+                                                        <div class="flex items-center gap-2">
+                                                            <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                                {{ $tier['name'] ?? 'نامشخص' }}
+                                                            </span>
+                                                            @if($isEnabled)
+                                                                <span class="text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-medium">فعال</span>
+                                                            @else
+                                                                <span class="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full font-medium">غیرفعال</span>
+                                                            @endif
+                                                        </div>
+                                                        @if(isset($tier['min_quantity']))
+                                                            <span class="text-xs text-gray-500 dark:text-gray-400 block mt-0.5">
+                                                                حداقل {{ number_format($tier['min_quantity']) }}
+                                                            </span>
+                                                        @endif
+                                                    </div>
                                                 </div>
                                             </div>
                                             
+                                            {{-- محتوای تیراژ (فقط اگر فعال باشد) --}}
+                                            @if($isEnabled)
                                             {{-- Radio Buttons --}}
                                             <div class="space-y-3">
                                                 <div class="flex items-center gap-4">
@@ -649,6 +673,14 @@
                                                     </div>
                                                 @endif
                                             </div>
+                                            @else
+                                            {{-- پیام غیرفعال --}}
+                                            <div class="text-center py-4">
+                                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                                    این تیراژ غیرفعال است و در محاسبات لحاظ نمی‌شود.
+                                                </p>
+                                            </div>
+                                            @endif
                                         </div>
                                         <x-input-error :messages="$errors->get('tierPercentages.' . $tierIndex)" class="mt-1" />
                                         @endif
@@ -666,6 +698,7 @@
                                             <div class="space-y-1 text-amber-800 dark:text-amber-200 text-xs">
                                                 @foreach($quantityTiers as $tierIndex => $tier)
                                                     @php
+                                                        $isEnabled = $tierEnabled[$tierIndex] ?? true;
                                                         $mode = $tierPriceMode[$tierIndex] ?? 'default';
                                                         $percentage = (float)($tierPercentages[$tierIndex] ?? 0);
                                                         
@@ -682,7 +715,9 @@
                                                     <div class="flex items-center gap-2">
                                                         <span class="font-mono">•</span>
                                                         <strong>{{ $tier['name'] }}</strong>: 
-                                                        @if($tierIndex == 1)
+                                                        @if(!$isEnabled)
+                                                            <span class="text-gray-500 dark:text-gray-500 line-through">(غیرفعال)</span>
+                                                        @elseif($tierIndex == 1)
                                                             <span class="text-gray-600 dark:text-gray-400">100,000 تومان (مرجع)</span>
                                                         @elseif($percentage > 0)
                                                             <span class="text-red-600 dark:text-red-400">+{{ number_format($percentage, 1) }}%</span> = 

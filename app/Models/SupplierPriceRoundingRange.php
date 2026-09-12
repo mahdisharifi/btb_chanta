@@ -361,11 +361,18 @@ class SupplierPriceRoundingRange extends Model
     public function roundPrice(float $price): float
     {
         $step = $this->rounding_step;
+        
+        // محاسبه تقسیم
+        $division = $price / $step;
+        
+        // رُند کردن به 8 رقم اعشار برای جلوگیری از خطای دقت float
+        // مثال: 110.00000000001 -> 110.0
+        $division = round($division, 8);
 
         return match($this->rounding_method) {
-            'ceil' => ceil($price / $step) * $step,
-            'floor' => floor($price / $step) * $step,
-            'nearest' => round($price / $step) * $step,
+            'ceil' => ceil($division) * $step,
+            'floor' => floor($division) * $step,
+            'nearest' => round($division) * $step,
             default => $price,
         };
     }
