@@ -491,11 +491,18 @@
                             @foreach($displayPrices as $key => $priceData)
                             @php
                                 $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
+                                $warrantyPrice = is_array($priceData) ? ($priceData['warranty_price'] ?? 0) : 0;
                                 $tierIndex = is_array($priceData) ? ($priceData['tier_index'] ?? null) : null;
                                 $priceTypeId = is_array($priceData) ? ($priceData['price_type_id'] ?? null) : null;
                                 $checkPeriodLabel = is_array($priceData) ? ($priceData['check_period_label'] ?? null) : null;
                                 $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
                                 $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
+                                
+                                // ✅ محاسبه قیمت نهایی (با یا بدون گارانتی)
+                                $finalPrice = $priceValue;
+                                if ($includeWarranty && $warrantyPrice > 0) {
+                                    $finalPrice = $priceValue + $warrantyPrice;
+                                }
                                 
                                 // تولید label
                                 $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
@@ -510,32 +517,54 @@
                                     $label = "{$tierName} - {$priceTypeName}";
                                 }
                                 
-                                // اضافه کردن اطلاعات گارانتی
-                                if ($warrantyType === 'test') {
-                                    $label .= " (تست)";
-                                } elseif ($warrantyType === 'limited' && $warrantyDuration) {
-                                    $label .= " ({$warrantyDuration} ماه)";
-                                } elseif ($warrantyType === 'lifetime') {
-                                    $label .= " (مادام‌العمر)";
+                                // اضافه کردن توضیحات گارانتی به label (فقط اگر گارانتی فعال نباشد)
+                                $warrantyLabel = '';
+                                if (!$includeWarranty && $warrantyType) {
+                                    if ($warrantyType === 'test') {
+                                        $warrantyLabel = " (تست)";
+                                    } elseif ($warrantyType === 'limited' && $warrantyDuration) {
+                                        $warrantyLabel = " ({$warrantyDuration} ماه)";
+                                    } elseif ($warrantyType === 'lifetime') {
+                                        $warrantyLabel = " (مادام‌العمر)";
+                                    }
                                 }
                             @endphp
                             <div class="flex justify-between print:m-1 items-center px-3 py-[2px] overflow-hidden">
-                                    <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $label }}">
-                                        @if($priceValue)
-                                            {{ $label }}                                        
-                                        @else
-                                            <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
-                                        @endif
-                                    </span>
-                                <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $priceValue ? number_format($priceValue) : '-' }}">
-                                        @if($priceValue)
-                                            {{ number_format($priceValue) }}
-                                        @else
-                                            <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
-                                        @endif
-                                    </span>
+                                <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $label }}{{ $warrantyLabel }}">
+                                    {{ $label }}{{ $warrantyLabel }}
+                                </span>
+                                <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $finalPrice ? number_format($finalPrice) : '-' }}">
+                                    @if($finalPrice)
+                                        {{ number_format($finalPrice) }}
+                                    @else
+                                        <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
+                                    @endif
+                                </span>
                             </div>
                             @endforeach
+                            
+                            {{-- ✅ نمایش اطلاعات گارانتی (اگر فعال باشد و محصول گارانتی داشته باشد) --}}
+                            @if($includeWarranty && !empty($displayPrices))
+                                @php
+                                    // یافتن یک نمونه قیمت برای گرفتن اطلاعات گارانتی
+                                    $samplePrice = collect($displayPrices)->first(fn($p) => isset($p['warranty_type']) && $p['warranty_type']);
+                                @endphp
+                                @if($samplePrice && isset($samplePrice['warranty_type']))
+                                <div class="mt-2 pt-2 border-t border-gray-200 px-3">
+                                    <div class="text-[10px] text-gray-600 flex items-center gap-1">
+                                        <img src="{{ asset('images/icons/warranty-shield.png') }}" class="w-3 h-3" alt="گارانتی">
+                                        <span class="font-medium text-purple-700">گارانتی:</span>
+                                        @if($samplePrice['warranty_type'] === 'test')
+                                            تست
+                                        @elseif($samplePrice['warranty_type'] === 'limited')
+                                            {{ $samplePrice['warranty_duration'] ?? 0 }} ماه
+                                        @elseif($samplePrice['warranty_type'] === 'lifetime')
+                                            مادام‌العمر
+                                        @endif
+                                    </div>
+                                </div>
+                                @endif
+                            @endif
                         </div>
 
                     </div>

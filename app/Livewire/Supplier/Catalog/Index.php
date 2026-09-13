@@ -40,6 +40,7 @@ class Index extends Component
     public $selectedPrices = [];  // فرمت جدید: ['tier_index' => [price_type_ids]]
     public $selectedTiers = [];   // تیراژهای انتخاب شده: [0, 1, 2, 3]
     public $selectedCheckPeriods = []; // ✅ جدید: دوره‌های چک انتخاب شده برای هر تیراژ: ['tier_index' => [check_period_ids]]
+    public $includeWarranty = false; // ✅ نمایش قیمت‌های با گارانتی
     public $selectAllPrices = true;
     public $separateCategories = false;
     public $sortLevel1 = 'category';
@@ -149,7 +150,9 @@ class Index extends Component
     public function availablePriceTypes()
     {
         // ✅ استفاده از جدول price_types به جای enum
+        // ✅ فیلتر کردن نوع گارانتی (چون جداگانه نمایش می‌دهیم)
         return \App\Models\PriceType::active()
+            ->where('code', '!=', 'warranty') // ✅ حذف گارانتی از لیست
             ->orderBy('sort_order')
             ->pluck('name', 'id')
             ->toArray();
@@ -175,7 +178,7 @@ class Index extends Component
     #[Computed]
     public function availableCheckPeriods()
     {
-        // ✅ دریافت دوره‌های چک فعال برای supplier
+        // ✅ دریافت فقط دوره‌های چک فعال شده توسط تامین‌کننده
         if ($this->isAdmin) {
             // ادمین: دوره‌های global
             return \App\Models\CheckPeriod::active()
@@ -183,15 +186,11 @@ class Index extends Component
                 ->orderBy('days')
                 ->get();
         } else {
-            // تامین‌کننده: دوره‌های global + دوره‌های خودش
+            // تامین‌کننده: فقط دوره‌های فعال شده (is_enabled_for_supplier = true)
             $supplierId = Auth::user()->supplier->id;
-            return \App\Models\CheckPeriod::active()
-                ->where(function($q) use ($supplierId) {
-                    $q->whereNull('supplier_id')
-                      ->orWhere('supplier_id', $supplierId);
-                })
-                ->orderBy('days')
-                ->get();
+            return \App\Models\CheckPeriod::getActiveForSupplier($supplierId)
+                ->where('is_enabled_for_supplier', true)
+                ->values(); // بازنشانی کلیدهای collection
         }
     }
     
@@ -564,6 +563,7 @@ class Index extends Component
         // بارگذاری مشخصات محصول
         $this->globalAttribute = $settings['global_attribute'] ?? '';
         $this->showAttributeLabels = $settings['show_attribute_labels'] ?? true;
+        $this->includeWarranty = $settings['include_warranty'] ?? false; // ✅ بارگذاری نمایش گارانتی
         
         // بارگذاری مشخصات اختصاصی دسته‌بندی‌ها
         if (isset($settings['category_attributes']) && is_array($settings['category_attributes'])) {
@@ -671,6 +671,7 @@ class Index extends Component
             'sortLevel2' => 'required|string',
             'sortLevel2Dir' => 'required|in:asc,desc',
             'separateCategories' => 'boolean',
+            'includeWarranty' => 'boolean', // ✅ نمایش گارانتی
             'show_cover_page' => 'boolean',
             'cover_page_break' => 'boolean',
             'imageQuality' => 'required|string|in:sm,md,lg,original',
@@ -703,8 +704,9 @@ class Index extends Component
         $settings = [
             'description' => $this->description,
             'categories' => $this->selectAllCategories ? 'all' : $this->selectedCategories,
-            'prices' => $this->selectAllPrices ? 'all' : $this->selectedPrices,
-            'check_periods' => $this->selectedCheckPeriods, // ✅ ذخیره دوره‌های چک
+            'prices' => $this->selectAllPrices ? 'all' : (object)$this->selectedPrices, // ✅ تبدیل به object برای حفظ کلیدها
+            'check_periods' => (object)$this->selectedCheckPeriods, // ✅ ذخیره دوره‌های چک (object)
+            'include_warranty' => $this->includeWarranty, // ✅ نمایش گارانتی
             'sort_level1' => $this->sortLevel1,
             'sort_level1_dir' => $this->sortLevel1Dir,
             'sort_level2' => $this->sortLevel2,

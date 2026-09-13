@@ -324,6 +324,44 @@
                     {!! $product['attribute_value'] !!}
                 </div>
             @endif
+            
+            {{-- ✅ نمایش گارانتی زیر نام کالا --}}
+            @php
+                // بررسی آیا این محصول گارانتی دارد
+                $productHasWarranty = false;
+                $productWarrantyType = null;
+                $productWarrantyDuration = null;
+                
+                foreach ($priceColumns as $column) {
+                    $priceKey = $column['key'];
+                    $priceData = $product['prices'][$priceKey] ?? null;
+                    $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
+                    $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
+                    
+                    if ($warrantyType || $warrantyDuration) {
+                        $productHasWarranty = true;
+                        $productWarrantyType = $warrantyType;
+                        $productWarrantyDuration = $warrantyDuration;
+                        break;
+                    }
+                }
+            @endphp
+            
+            @if(($includeWarranty ?? false) && $productHasWarranty)
+                <div style="margin-top: 4px;">
+                    <img src="{{ public_path('images/icons/warranty-shield.png') }}" width="12" height="12" style="vertical-align: middle; margin-left: 4px;">
+                    <span style="font-size: 9px; color: #7c3aed; font-weight: bold;">
+                        گارانتی:
+                        @if($productWarrantyType === 'test')
+                            تست
+                        @elseif($productWarrantyType === 'limited' && $productWarrantyDuration)
+                            {{ $productWarrantyDuration }} ماه
+                        @elseif($productWarrantyType === 'lifetime')
+                            مادام‌العمر
+                        @endif
+                    </span>
+                </div>
+            @endif
         </td>
         @foreach($priceColumns as $column)
         <td style="font-size: 11px;">
@@ -332,25 +370,21 @@
                 $priceKey = $column['key'];
                 $priceData = $product['prices'][$priceKey] ?? null;
                 $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
+                $warrantyPrice = is_array($priceData) ? ($priceData['warranty_price'] ?? 0) : 0;
                 $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
                 $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
+                
+                // ✅ محاسبه قیمت نهایی (با یا بدون گارانتی)
+                $finalPrice = $priceValue;
+                if (($includeWarranty ?? false) && $warrantyPrice > 0) {
+                    $finalPrice = $priceValue + $warrantyPrice;
+                }
             @endphp
             
-            @if($priceValue && $priceValue > 0)
-                <div>{{ number_format($priceValue) }}</div>
-                @if($warrantyType || $warrantyDuration)
-                    <span style="display: block; font-size: 9px; color: #6b7280;">
-                        @if($warrantyType === 'test')
-                            (تست)
-                        @elseif($warrantyType === 'limited' && $warrantyDuration)
-                            ({{ $warrantyDuration }} ماه)
-                        @elseif($warrantyType === 'lifetime')
-                            (مادام‌العمر)
-                        @endif
-                    </span>
-                @endif
+            @if($finalPrice && $finalPrice > 0)
+                <div>{{ number_format($finalPrice) }}</div>
             @else
-            <span style="color: #9ca3af;">-</span>
+            <span style="color: #9ca3af;">---</span>
             @endif
         </td>
         @endforeach

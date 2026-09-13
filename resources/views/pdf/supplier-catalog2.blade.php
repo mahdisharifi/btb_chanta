@@ -287,7 +287,11 @@ $restChunks = array_slice($productChunks, 1);
     @if(count($firstChunk) > 0)
     <tr>
         @foreach($firstChunk as $product)
-        @include('pdf.partials.product-cell', ['product' => $product])
+        @include('pdf.partials.product-cell', [
+            'product' => $product,
+            'selectedPriceTypes' => $selectedPriceTypes,
+            'includeWarranty' => $includeWarranty ?? false,
+        ])
         @endforeach
 
         @for($i = count($firstChunk); $i < 4; $i++)
@@ -303,7 +307,11 @@ $restChunks = array_slice($productChunks, 1);
     @foreach($restChunks as $rowProducts)
     <tr>
         @foreach($rowProducts as $product)
-        @include('pdf.partials.product-cell', ['product' => $product])
+        @include('pdf.partials.product-cell', [
+            'product' => $product,
+            'selectedPriceTypes' => $selectedPriceTypes,
+            'includeWarranty' => $includeWarranty ?? false,
+        ])
         @endforeach
 
         @for($i = count($rowProducts); $i < 4; $i++)

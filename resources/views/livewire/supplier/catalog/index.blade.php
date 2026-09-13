@@ -446,6 +446,29 @@
                                 </div>
                                 @endif
                                 
+                                {{-- ✅ نمایش قیمت‌های با گارانتی --}}
+                                <div class="mt-3 p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
+                                    <div class="flex items-start gap-3">
+                                        <input type="checkbox" 
+                                               wire:model="includeWarranty" 
+                                               id="includeWarranty"
+                                               class="mt-1 rounded border-gray-300 text-purple-600 shadow-sm focus:ring-purple-500 w-5 h-5 cursor-pointer">
+                                        <div class="flex-1">
+                                            <label for="includeWarranty" class="font-bold text-purple-900 cursor-pointer flex items-center gap-2">
+                                                <x-heroicon-o-shield-check class="w-5 h-5 text-purple-600" />
+                                                نمایش قیمت‌های با گارانتی
+                                            </label>
+                                            <p class="text-xs text-purple-700 mt-2 leading-relaxed">
+                                                با فعال‌سازی این گزینه، قیمت محصولاتی که دارای گارانتی هستند به همراه 
+                                                هزینه گارانتی در کاتالوگ نمایش داده می‌شوند.
+                                                <br>
+                                                <span class="text-purple-600 font-medium">نکته:</span> 
+                                                هزینه گارانتی برای هر تیراژ و نوع قیمت ممکن است متفاوت باشد.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <x-input-error :messages="$errors->get('selectedPrices')" class="mt-2" />
                             </div>
 

@@ -26,6 +26,7 @@ class Preview extends Component
     public $groupedProducts = [];
     public $selectedPriceTypes = [];
     public $selectedCheckPeriods = []; // ✅ دوره‌های چک انتخاب شده
+    public $includeWarranty = false; // ✅ نمایش گارانتی
     public $separateCategories = false;
     public $showCoverPage = true;
     public $priceLabels = [];
@@ -99,12 +100,29 @@ class Preview extends Component
             $this->selectedPriceTypes = 'all';
         } elseif (is_array($selectedPrices)) {
             // بررسی ساختار: آیا ساختار جدید است یا قدیم؟
+            // ساختار قدیمی: [[1,3], [1,2,3], ...] - 4 عضو، همه آرایه
+            // ساختار جدید: {"0": [1,3], "1": [1,2,3], ...} - کلیدها نام دارند
+            
             $isNewStructure = false;
-            foreach ($selectedPrices as $key => $value) {
-                // ساختار جدید: کلید = tier_index (عدد), مقدار = آرایه از price_type_ids
-                if (is_numeric($key) && is_array($value)) {
+            
+            // روش 1: اگر کلیدها string باشند (از JSON)
+            $keys = array_keys($selectedPrices);
+            if (!empty($keys) && is_string($keys[0])) {
+                $isNewStructure = true;
+            }
+            
+            // روش 2: اگر تعداد عناصر کمتر یا بیشتر از 4 باشد (قدیمی همیشه 4 تا دارد)
+            if (!$isNewStructure && count($selectedPrices) !== 4) {
+                $isNewStructure = true;
+            }
+            
+            // روش 3: اگر کلیدها متوالی نباشند (0,1,2,3)
+            if (!$isNewStructure) {
+                $expectedKeys = [0, 1, 2, 3];
+                $actualKeys = array_keys($selectedPrices);
+                sort($actualKeys);
+                if ($actualKeys !== $expectedKeys) {
                     $isNewStructure = true;
-                    break;
                 }
             }
             
@@ -115,19 +133,25 @@ class Preview extends Component
                 // ✅ بارگذاری دوره‌های چک (اگر وجود داشته باشد)
                 $this->selectedCheckPeriods = $this->settings['check_periods'] ?? [];
             } else {
-                // ساختار قدیم: [price_type_ids] - برای backward compatibility
-                // تبدیل به ساختار جدید: همه تیراژها با این قیمت‌ها
-                $this->selectedPriceTypes = [
-                    0 => $selectedPrices,
-                    1 => $selectedPrices,
-                    2 => $selectedPrices,
-                    3 => $selectedPrices,
-                ];
+                // ساختار قدیم: [[price_type_ids], ...] - برای backward compatibility
+                // تبدیل به ساختار جدید: هر تیراژ با قیمت‌های خودش
+                $this->selectedPriceTypes = [];
+                foreach ($selectedPrices as $tierIndex => $priceTypeIds) {
+                    if (is_array($priceTypeIds)) {
+                        $this->selectedPriceTypes[$tierIndex] = $priceTypeIds;
+                    }
+                }
+                
+                // برای ساختار قدیمی، دوره‌های چک وجود ندارد
+                $this->selectedCheckPeriods = [];
             }
         } else {
             // مقدار نامعتبر - استفاده از پیشفرض
             $this->selectedPriceTypes = 'all';
         }
+        
+        // ✅ بارگذاری نمایش گارانتی
+        $this->includeWarranty = $this->settings['include_warranty'] ?? false;
 
         // بارگذاری داده‌ها برای preview (بدون progress)
         $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
@@ -322,12 +346,45 @@ class Preview extends Component
                             
                             // انتخاب کمترین قیمت برای این ترکیب (در صورت چند تامین‌کننده)
                             if (!isset($prices[$storeKey]) || $priceRecord->price < ($prices[$storeKey]['price'] ?? PHP_INT_MAX)) {
+                                // ✅ محاسبه قیمت گارانتی از product_supplier
+                                $warrantyPrice = 0;
+                                $warrantyType = null;
+                                $warrantyDuration = null;
+                                
+                                if ($ps->has_warranty && $ps->warranty_type !== 'none') {
+                                    $warrantyType = $ps->warranty_type_coverage; // test, limited, lifetime
+                                    $warrantyDuration = $ps->warranty_duration_days ? (int)($ps->warranty_duration_days / 30) : null; // تبدیل روز به ماه
+                                    
+                                    // محاسبه هزینه گارانتی
+                                    switch ($ps->warranty_type) {
+                                        case 'percentage':
+                                            // درصدی از قیمت نقدی
+                                            $warrantyPrice = (int)($priceRecord->price * ($ps->warranty_value / 100));
+                                            break;
+                                        case 'fixed':
+                                            // مبلغ ثابت برای همه تیراژها
+                                            $warrantyPrice = (int)$ps->warranty_value;
+                                            break;
+                                        case 'custom':
+                                            // ✅ مبلغ متفاوت برای هر تیراژ - باید از product_prices بخوانیم
+                                            // پیدا کردن price_type با code = warranty
+                                            $warrantyPriceType = \App\Models\PriceType::where('code', 'warranty')->first();
+                                            if ($warrantyPriceType) {
+                                                $warrantyKey = "{$tierIndex}_{$warrantyPriceType->id}_null";
+                                                $warrantyRecord = $pricesGrouped->get($warrantyKey)?->first();
+                                                $warrantyPrice = $warrantyRecord ? (int)$warrantyRecord->price : 0;
+                                            }
+                                            break;
+                                    }
+                                }
+                                
                                 $prices[$storeKey] = [
                                     'price' => (int)$priceRecord->price,
                                     'tier_index' => (int)$tierIndex,
                                     'price_type_id' => (int)$priceTypeId,
-                                    'warranty_type' => $priceRecord->warranty_type ?? null,
-                                    'warranty_duration' => $priceRecord->warranty_duration ?? null,
+                                    'warranty_type' => $warrantyType,
+                                    'warranty_duration' => $warrantyDuration,
+                                    'warranty_price' => $warrantyPrice,
                                 ];
                             }
                         }
@@ -339,20 +396,23 @@ class Preview extends Component
                             $selectedCheckPeriodsForTier = $this->selectedCheckPeriods[$tierIndex] ?? [];
                             
                             if (!empty($selectedCheckPeriodsForTier)) {
-                                // فقط دوره‌های انتخاب شده را بخوان
-                                $checkPeriods = \App\Models\CheckPeriod::whereIn('id', $selectedCheckPeriodsForTier)
+                                // ✅ فقط دوره‌های انتخاب شده و فعال شده توسط supplier را بخوان
+                                $activeSupplierPeriods = \App\Models\CheckPeriod::getActiveForSupplier($ps->supplier_id)
+                                    ->where('is_enabled_for_supplier', true)
+                                    ->pluck('id')
+                                    ->toArray();
+                                
+                                // تلاقی دوره‌های انتخاب شده با دوره‌های فعال
+                                $validPeriodIds = array_intersect($selectedCheckPeriodsForTier, $activeSupplierPeriods);
+                                
+                                $checkPeriods = \App\Models\CheckPeriod::whereIn('id', $validPeriodIds)
                                     ->active()
                                     ->orderBy('days')
                                     ->get();
                             } else {
-                                // اگر دوره‌ای انتخاب نشده، همه دوره‌های فعال را بخوان (backward compatibility)
-                                $checkPeriods = \App\Models\CheckPeriod::active()
-                                    ->where(function($q) use ($ps) {
-                                        $q->whereNull('supplier_id')
-                                          ->orWhere('supplier_id', $ps->supplier_id);
-                                    })
-                                    ->orderBy('days')
-                                    ->get();
+                                // اگر دوره‌ای انتخاب نشده، همه دوره‌های فعال شده توسط supplier را بخوان
+                                $checkPeriods = \App\Models\CheckPeriod::getActiveForSupplier($ps->supplier_id)
+                                    ->where('is_enabled_for_supplier', true);
                             }
                             
                             foreach ($checkPeriods as $period) {
@@ -364,13 +424,43 @@ class Preview extends Component
                                     $checkStoreKey = "{$tierIndex}_{$priceTypeId}_{$period->id}";
                                     
                                     if (!isset($prices[$checkStoreKey]) || $checkPriceRecord->price < ($prices[$checkStoreKey]['price'] ?? PHP_INT_MAX)) {
+                                        // ✅ محاسبه قیمت گارانتی از product_supplier
+                                        $warrantyPrice = 0;
+                                        $warrantyType = null;
+                                        $warrantyDuration = null;
+                                        
+                                        if ($ps->has_warranty && $ps->warranty_type !== 'none') {
+                                            $warrantyType = $ps->warranty_type_coverage;
+                                            $warrantyDuration = $ps->warranty_duration_days ? (int)($ps->warranty_duration_days / 30) : null;
+                                            
+                                            switch ($ps->warranty_type) {
+                                                case 'percentage':
+                                                    $warrantyPrice = (int)($checkPriceRecord->price * ($ps->warranty_value / 100));
+                                                    break;
+                                                case 'fixed':
+                                                    $warrantyPrice = (int)$ps->warranty_value;
+                                                    break;
+                                                case 'custom':
+                                                    $warrantyPriceType = \App\Models\PriceType::where('code', 'warranty')->first();
+                                                    if ($warrantyPriceType) {
+                                                        $warrantyKey = "{$tierIndex}_{$warrantyPriceType->id}_null";
+                                                        $warrantyRecord = $pricesGrouped->get($warrantyKey)?->first();
+                                                        $warrantyPrice = $warrantyRecord ? (int)$warrantyRecord->price : 0;
+                                                    }
+                                                    break;
+                                            }
+                                        }
+                                        
                                         $prices[$checkStoreKey] = [
                                             'price' => (int)$checkPriceRecord->price,
                                             'tier_index' => (int)$tierIndex,
                                             'price_type_id' => (int)$priceTypeId,
                                             'check_period_id' => (int)$period->id,
                                             'check_period_days' => (int)$period->days,
-                                            'check_period_label' => $period->display_label,
+                                            'check_period_label' => $period->display_label ?? $period->display_name,
+                                            'warranty_type' => $warrantyType,
+                                            'warranty_duration' => $warrantyDuration,
+                                            'warranty_price' => $warrantyPrice,
                                         ];
                                     }
                                 }
@@ -648,6 +738,7 @@ class Preview extends Component
             'globalAttribute'    => $this->settings['global_attribute'] ?? null,
             'coverTheme'         => $this->settings['cover_theme'] ?? 'default',
             'catalogFont'        => $this->settings['catalog_font'] ?? $this->settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir',
+            'includeWarranty'    => $this->includeWarranty ?? false, // ✅ نمایش قیمت با گارانتی
         ];
         
         $this->updateProgress(45, 'در حال آماده‌سازی قالب PDF...');
