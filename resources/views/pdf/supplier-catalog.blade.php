@@ -159,14 +159,139 @@
 @foreach($groupedProducts as $category => $products)
 <!--<div class="category-title">{{ $category }}</div>-->
 
+@php
+    // ✅ تعیین ستون‌های قیمت برای نمایش (با پشتیبانی از قیمت‌های چک)
+    $priceColumns = [];
+    
+    if ($selectedPriceTypes === 'all') {
+        // همه تیراژها با همه انواع قیمت
+        $allTiers = [
+            0 => 'زیرکارتن',
+            1 => 'کارتن',
+            2 => 'عمده',
+            3 => 'بار',
+        ];
+        $allPriceTypes = \App\Enums\PriceType::cases();
+        
+        foreach ($allTiers as $tierIndex => $tierName) {
+            foreach ($allPriceTypes as $priceType) {
+                // اگر نوع قیمت "چک" است، باید دوره‌های چک را هم نمایش دهیم
+                if ($priceType->value === 2) { // 2 = چک
+                    // یافتن همه قیمت‌های چک موجود در محصولات
+                    $checkPeriodsUsed = [];
+                    foreach ($products as $product) {
+                        foreach ($product['prices'] as $key => $priceData) {
+                            if (is_array($priceData) && isset($priceData['check_period_id'])) {
+                                $checkPeriodId = $priceData['check_period_id'];
+                                if (!isset($checkPeriodsUsed[$checkPeriodId])) {
+                                    $checkPeriodsUsed[$checkPeriodId] = [
+                                        'id' => $checkPeriodId,
+                                        'days' => $priceData['check_period_days'] ?? 0,
+                                        'label' => $priceData['check_period_label'] ?? "چک {$checkPeriodId}",
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                    
+                    // مرتب‌سازی بر اساس روز
+                    usort($checkPeriodsUsed, fn($a, $b) => $a['days'] <=> $b['days']);
+                    
+                    // ایجاد یک ستون برای هر دوره چک
+                    foreach ($checkPeriodsUsed as $period) {
+                        $priceColumns[] = [
+                            'key' => "{$tierIndex}_{$priceType->value}_{$period['id']}",
+                            'label' => "{$tierName} - {$period['label']}",
+                            'tier_index' => $tierIndex,
+                            'price_type_id' => $priceType->value,
+                            'check_period_id' => $period['id'],
+                        ];
+                    }
+                } else {
+                    // قیمت نقدی یا گارانتی
+                    $priceColumns[] = [
+                        'key' => "{$tierIndex}_{$priceType->value}",
+                        'label' => "{$tierName} - {$priceType->label()}",
+                        'tier_index' => $tierIndex,
+                        'price_type_id' => $priceType->value,
+                    ];
+                }
+            }
+        }
+    } elseif (is_array($selectedPriceTypes)) {
+        // ساختار: ['tier_index' => [price_type_ids]]
+        $tierNames = [
+            0 => 'زیرکارتن',
+            1 => 'کارتن', 
+            2 => 'عمده',
+            3 => 'بار',
+        ];
+        
+        foreach ($selectedPriceTypes as $tierIndex => $priceTypeIds) {
+            $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
+            
+            foreach ($priceTypeIds as $priceTypeId) {
+                $priceType = \App\Enums\PriceType::tryFrom($priceTypeId);
+                $priceTypeLabel = $priceType ? $priceType->label() : "قیمت {$priceTypeId}";
+                
+                // ✅ اگر نوع قیمت "چک" است، باید دوره‌های چک را هم نمایش دهیم
+                if ($priceTypeId === 2) { // 2 = چک
+                    // یافتن همه قیمت‌های چک موجود در محصولات برای این تیراژ
+                    $checkPeriodsUsed = [];
+                    foreach ($products as $product) {
+                        foreach ($product['prices'] as $key => $priceData) {
+                            if (is_array($priceData) 
+                                && isset($priceData['check_period_id'])
+                                && $priceData['tier_index'] == $tierIndex
+                                && $priceData['price_type_id'] == $priceTypeId
+                            ) {
+                                $checkPeriodId = $priceData['check_period_id'];
+                                if (!isset($checkPeriodsUsed[$checkPeriodId])) {
+                                    $checkPeriodsUsed[$checkPeriodId] = [
+                                        'id' => $checkPeriodId,
+                                        'days' => $priceData['check_period_days'] ?? 0,
+                                        'label' => $priceData['check_period_label'] ?? "چک {$checkPeriodId}",
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                    
+                    // مرتب‌سازی بر اساس روز
+                    usort($checkPeriodsUsed, fn($a, $b) => $a['days'] <=> $b['days']);
+                    
+                    // ایجاد یک ستون برای هر دوره چک
+                    foreach ($checkPeriodsUsed as $period) {
+                        $priceColumns[] = [
+                            'key' => "{$tierIndex}_{$priceTypeId}_{$period['id']}",
+                            'label' => "{$tierName} - {$period['label']}",
+                            'tier_index' => $tierIndex,
+                            'price_type_id' => $priceTypeId,
+                            'check_period_id' => $period['id'],
+                        ];
+                    }
+                } else {
+                    // قیمت نقدی یا گارانتی
+                    $priceColumns[] = [
+                        'key' => "{$tierIndex}_{$priceTypeId}",
+                        'label' => "{$tierName} - {$priceTypeLabel}",
+                        'tier_index' => $tierIndex,
+                        'price_type_id' => $priceTypeId,
+                    ];
+                }
+            }
+        }
+    }
+@endphp
+
 <table>
     <thead>
     <tr>
         <th style="width: 40px;">ردیف</th>
         <th style="width: 70px;">تصویر</th>
         <th>نام محصول</th>
-        @foreach($selectedPriceTypes as $type)
-        <th>{{ $priceLabels[$type] ?? $type }}</th>
+        @foreach($priceColumns as $column)
+        <th style="font-size: 10px;">{{ $column['label'] }}</th>
         @endforeach
     </tr>
     </thead>
@@ -200,18 +325,29 @@
                 </div>
             @endif
         </td>
-        @foreach($selectedPriceTypes as $type)
-        <td>
+        @foreach($priceColumns as $column)
+        <td style="font-size: 11px;">
             @php
-                $priceData = $product['prices'][$type] ?? null;
+                // ✅ کلید قیمت: tier_index + _ + price_type_id [+ _ + check_period_id]
+                $priceKey = $column['key'];
+                $priceData = $product['prices'][$priceKey] ?? null;
                 $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
-                $warrantyMonths = is_array($priceData) ? ($priceData['warranty_months'] ?? null) : null;
+                $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
+                $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
             @endphp
             
             @if($priceValue && $priceValue > 0)
-                {{ number_format($priceValue) }} تومان
-                @if($type === 'warranty' && $warrantyMonths)
-                    <span style="display: block; font-size: 10px; color: #6b7280;">({{ $warrantyMonths }} ماه)</span>
+                <div>{{ number_format($priceValue) }}</div>
+                @if($warrantyType || $warrantyDuration)
+                    <span style="display: block; font-size: 9px; color: #6b7280;">
+                        @if($warrantyType === 'test')
+                            (تست)
+                        @elseif($warrantyType === 'limited' && $warrantyDuration)
+                            ({{ $warrantyDuration }} ماه)
+                        @elseif($warrantyType === 'lifetime')
+                            (مادام‌العمر)
+                        @endif
+                    </span>
                 @endif
             @else
             <span style="color: #9ca3af;">-</span>

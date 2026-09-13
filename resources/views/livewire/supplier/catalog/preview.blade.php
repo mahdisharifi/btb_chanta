@@ -443,16 +443,80 @@
 
                         <!-- قیمت‌ها -->
                         <div class="w-full pb-2 print:pb-1 shrink-0">
-                            {{-- منطق پیچیده حذف شد، مستقیما روی آرایه اصلی کلاس حلقه میزنیم --}}
-                            @foreach($selectedPriceTypes as $priceType)
+                            {{-- ✅ پشتیبانی از ساختار جدید: ['tier_index' => [price_type_ids]] --}}
                             @php
-                                $priceData = $product['prices'][$priceType] ?? null;
-                                $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
-                                $warrantyMonths = is_array($priceData) ? ($priceData['warranty_months'] ?? null) : null;
+                                // تولید لیست قیمت‌ها برای نمایش
+                                $displayPrices = [];
                                 
-                                $label = $priceLabels[$priceType] ?? $priceType;
-                                if($priceType === 'warranty' && $warrantyMonths) {
-                                    $label .= " ({$warrantyMonths} ماه)";
+                                if ($selectedPriceTypes === 'all') {
+                                    // همه قیمت‌ها - نمایش همه کلیدهای موجود در prices
+                                    foreach ($product['prices'] as $key => $priceData) {
+                                        if (is_array($priceData) && ($priceData['price'] ?? 0) > 0) {
+                                            $displayPrices[$key] = $priceData;
+                                        }
+                                    }
+                                } elseif (is_array($selectedPriceTypes)) {
+                                    // ساختار جدید: ['tier_index' => [price_type_ids]]
+                                    $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
+                                    
+                                    foreach ($selectedPriceTypes as $tierIndex => $priceTypeIds) {
+                                        $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
+                                        
+                                        foreach ($priceTypeIds as $priceTypeId) {
+                                            // قیمت نقدی یا گارانتی
+                                            $key = "{$tierIndex}_{$priceTypeId}";
+                                            if (isset($product['prices'][$key])) {
+                                                $displayPrices[$key] = $product['prices'][$key];
+                                            }
+                                            
+                                            // قیمت‌های چک (اگر نوع = check)
+                                            $priceType = \App\Models\PriceType::find($priceTypeId);
+                                            if ($priceType && $priceType->code === 'check') {
+                                                // جستجو برای همه قیمت‌های چک این تیراژ
+                                                foreach ($product['prices'] as $priceKey => $priceData) {
+                                                    if (is_array($priceData) 
+                                                        && isset($priceData['check_period_id'])
+                                                        && $priceData['tier_index'] == $tierIndex
+                                                        && $priceData['price_type_id'] == $priceTypeId
+                                                    ) {
+                                                        $displayPrices[$priceKey] = $priceData;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            @endphp
+                            
+                            @foreach($displayPrices as $key => $priceData)
+                            @php
+                                $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
+                                $tierIndex = is_array($priceData) ? ($priceData['tier_index'] ?? null) : null;
+                                $priceTypeId = is_array($priceData) ? ($priceData['price_type_id'] ?? null) : null;
+                                $checkPeriodLabel = is_array($priceData) ? ($priceData['check_period_label'] ?? null) : null;
+                                $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
+                                $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
+                                
+                                // تولید label
+                                $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
+                                $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
+                                
+                                $priceTypeModel = $priceTypeId ? \App\Models\PriceType::find($priceTypeId) : null;
+                                $priceTypeName = $priceTypeModel ? $priceTypeModel->name : "قیمت {$priceTypeId}";
+                                
+                                if ($checkPeriodLabel) {
+                                    $label = "{$tierName} - {$checkPeriodLabel}";
+                                } else {
+                                    $label = "{$tierName} - {$priceTypeName}";
+                                }
+                                
+                                // اضافه کردن اطلاعات گارانتی
+                                if ($warrantyType === 'test') {
+                                    $label .= " (تست)";
+                                } elseif ($warrantyType === 'limited' && $warrantyDuration) {
+                                    $label .= " ({$warrantyDuration} ماه)";
+                                } elseif ($warrantyType === 'lifetime') {
+                                    $label .= " (مادام‌العمر)";
                                 }
                             @endphp
                             <div class="flex justify-between print:m-1 items-center px-3 py-[2px] overflow-hidden">
@@ -462,10 +526,6 @@
                                         @else
                                             <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
                                         @endif
-
-
-
-                                        
                                     </span>
                                 <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $priceValue ? number_format($priceValue) : '-' }}">
                                         @if($priceValue)

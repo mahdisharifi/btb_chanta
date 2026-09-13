@@ -310,45 +310,142 @@
                                 <x-input-error :messages="$errors->get('selectedCategories')" class="mt-2" />
                             </div>
 
-                            <!-- انتخاب نوع قیمت‌ها -->
+                            <!-- انتخاب تیراژها و قیمت‌ها -->
                             <div class="space-y-3 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                                 <h4 class="font-bold text-gray-800 flex items-center gap-2">
                                     <x-heroicon-o-currency-dollar class="w-5 h-5 text-gray-500" />
-                                    انتخاب قیمت‌ها برای نمایش
+                                    انتخاب تیراژها و قیمت‌ها برای نمایش
                                 </h4>
-
-                                <div class="flex items-center space-x-2 space-x-reverse mb-2">
-                                    <input type="checkbox" wire:model.live="selectAllPrices" id="selectAllPrices" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 w-4 h-4 cursor-pointer">
-                                    <label for="selectAllPrices" class="text-sm text-gray-700 font-medium cursor-pointer">همه قیمت‌ها</label>
-                                </div>
-
-                                <div x-data="{ open: false }" class="relative w-full md:w-2/3">
-                                    <button @click="open = !open" type="button" class="w-full bg-white border border-gray-300 rounded-lg shadow-sm pl-3 pr-4 py-2.5 text-right cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-shadow hover:shadow">
-                                        <span class="block truncate font-medium text-gray-700">
-                                            @if($selectAllPrices)
-                                                همه قیمت‌ها انتخاب شده است
-                                            @elseif(count($selectedPrices) === 0)
-                                                هیچ قیمتی انتخاب نشده
-                                            @else
-                                                <span class="text-blue-600 font-bold">{{ count($selectedPrices) }}</span> قیمت انتخاب شده
-                                            @endif
-                                        </span>
-                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                                            <x-heroicon-m-chevron-up-down class="h-5 w-5 text-gray-400" />
-                                        </span>
-                                    </button>
-
-                                    <div x-show="open" @click.away="open = false" x-transition class="absolute z-10 mt-1 w-full bg-white shadow-xl max-h-60 rounded-xl py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm custom-scrollbar" style="display: none;">
-                                        <div class="p-2 space-y-1">
-                                            @foreach($this->availablePriceTypes as $key => $label)
-                                            <label class="flex items-center p-2.5 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors group">
-                                                <input type="checkbox" wire:model.live="selectedPrices" value="{{ $key }}" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 mr-2 w-4 h-4">
-                                                <span class="mr-3 text-sm text-gray-700 group-hover:text-blue-700">{{ $label }}</span>
-                                            </label>
-                                            @endforeach
-                                        </div>
+                                
+                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                                    <div class="flex items-start gap-2">
+                                        <x-heroicon-s-information-circle class="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                                        <p class="text-xs text-blue-700">
+                                            برای هر تیراژ می‌توانید یک یا چند نوع قیمت (نقدی، 30 روزه، 60 روزه و...) انتخاب کنید. 
+                                            <strong>توجه:</strong> انتخاب تیراژهای بیشتر فضای بیشتری در کاتالوگ اشغال می‌کند.
+                                        </p>
                                     </div>
                                 </div>
+
+                                <div class="flex items-center space-x-2 space-x-reverse mb-3">
+                                    <input type="checkbox" wire:model.live="selectAllPrices" id="selectAllPrices" 
+                                           class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 w-4 h-4 cursor-pointer">
+                                    <label for="selectAllPrices" class="text-sm text-gray-700 font-medium cursor-pointer">
+                                        همه تیراژها و همه قیمت‌ها
+                                    </label>
+                                </div>
+
+                                @php
+                                    $tiers = $this->availableTiers;
+                                    $priceTypes = $this->availablePriceTypes;
+                                @endphp
+
+                                <div class="space-y-3">
+                                    @foreach($tiers as $tierIndex => $tierName)
+                                    @php
+                                        $tierSelected = in_array($tierIndex, $selectedTiers);
+                                        $tierPricesRaw = $selectedPrices[$tierIndex] ?? [];
+                                        $tierPrices = is_array($tierPricesRaw) ? $tierPricesRaw : [];
+                                    @endphp
+                                    
+                                    <div class="bg-white border-2 rounded-lg overflow-hidden transition-all {{ $tierSelected ? 'border-blue-300 shadow-sm' : 'border-gray-200' }}">
+                                        {{-- Header تیراژ --}}
+                                        <div class="p-3 bg-gray-50 border-b {{ $tierSelected ? 'bg-blue-50 border-blue-200' : 'border-gray-200' }}">
+                                            <label class="flex items-center cursor-pointer group">
+                                                <input type="checkbox" 
+                                                       wire:click="toggleTier({{ $tierIndex }})"
+                                                       {{ $tierSelected ? 'checked' : '' }}
+                                                       class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 w-5 h-5 cursor-pointer">
+                                                <div class="mr-3 flex-1 flex items-center justify-between">
+                                                    <div>
+                                                        <span class="text-sm font-bold {{ $tierSelected ? 'text-blue-900' : 'text-gray-700' }}">
+                                                            {{ $tierName }}
+                                                        </span>
+                                                        @if($tierIndex === 1)
+                                                            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full mr-2">مرجع</span>
+                                                        @endif
+                                                    </div>
+                                                    @if($tierSelected && count($tierPrices) > 0)
+                                                        <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+                                                            {{ count($tierPrices) }} قیمت
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </label>
+                                        </div>
+                                        
+                                        {{-- انواع قیمت برای این تیراژ --}}
+                                        @if($tierSelected)
+                                        <div class="p-3 space-y-2">
+                                            @foreach($priceTypes as $priceTypeId => $priceTypeLabel)
+                                            @php
+                                                $priceSelected = in_array($priceTypeId, $tierPrices);
+                                                $priceType = \App\Models\PriceType::find($priceTypeId);
+                                                $isCheckType = $priceType && $priceType->code === 'check';
+                                            @endphp
+                                            <div>
+                                                <label class="flex items-center p-2 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors group">
+                                                    <input type="checkbox" 
+                                                           wire:click="toggleTierPrice({{ $tierIndex }}, {{ $priceTypeId }})"
+                                                           {{ $priceSelected ? 'checked' : '' }}
+                                                           class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 mr-2 w-4 h-4">
+                                                    <span class="mr-2 text-sm {{ $priceSelected ? 'text-blue-700 font-medium' : 'text-gray-700' }}">
+                                                        {{ $priceTypeLabel }}
+                                                    </span>
+                                                    @if($isCheckType && $priceSelected)
+                                                        @php
+                                                            $selectedCheckPeriodsForTier = $selectedCheckPeriods[$tierIndex] ?? [];
+                                                            $checkPeriodsCount = count($selectedCheckPeriodsForTier);
+                                                        @endphp
+                                                        <span class="mr-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                                                            {{ $checkPeriodsCount }} دوره
+                                                        </span>
+                                                    @endif
+                                                </label>
+                                                
+                                                {{-- ✅ دوره‌های چک (اگر نوع قیمت "چک" انتخاب شده باشد) --}}
+                                                @if($isCheckType && $priceSelected)
+                                                <div class="mr-6 mt-1 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                                                    <div class="text-xs text-gray-600 mb-2 font-medium">دوره‌های چک:</div>
+                                                    <div class="space-y-1">
+                                                        @foreach($this->availableCheckPeriods as $checkPeriod)
+                                                        @php
+                                                            $checkPeriodSelected = in_array($checkPeriod->id, $selectedCheckPeriodsForTier);
+                                                        @endphp
+                                                        <label class="flex items-center p-1.5 hover:bg-white rounded cursor-pointer transition-colors">
+                                                            <input type="checkbox" 
+                                                                   wire:click="toggleCheckPeriod({{ $tierIndex }}, {{ $checkPeriod->id }})"
+                                                                   {{ $checkPeriodSelected ? 'checked' : '' }}
+                                                                   class="rounded border-gray-300 text-green-600 shadow-sm focus:ring-green-500 mr-2 w-3.5 h-3.5">
+                                                            <span class="text-xs {{ $checkPeriodSelected ? 'text-green-700 font-medium' : 'text-gray-600' }}">
+                                                                {{ $checkPeriod->display_label }}
+                                                            </span>
+                                                        </label>
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                                @endif
+                                            </div>
+                                            @endforeach
+                                        </div>
+                                        @endif
+                                    </div>
+                                    @endforeach
+                                </div>
+                                
+                                @if(count($selectedTiers) > 0)
+                                <div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <div class="flex items-start gap-2">
+                                        <x-heroicon-s-light-bulb class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                                        <p class="text-xs text-amber-700">
+                                            <strong>تعداد تیراژهای انتخاب شده:</strong> {{ count($selectedTiers) }} تیراژ
+                                            <br>
+                                            انتخاب بیشتر از 2 تیراژ ممکن است فضای محدود در کاتالوگ را پر کند و خوانایی را کاهش دهد.
+                                        </p>
+                                    </div>
+                                </div>
+                                @endif
+                                
                                 <x-input-error :messages="$errors->get('selectedPrices')" class="mt-2" />
                             </div>
 

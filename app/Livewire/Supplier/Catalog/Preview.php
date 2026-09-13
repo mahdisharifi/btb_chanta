@@ -25,6 +25,7 @@ class Preview extends Component
     public $settings = [];
     public $groupedProducts = [];
     public $selectedPriceTypes = [];
+    public $selectedCheckPeriods = []; // ✅ دوره‌های چک انتخاب شده
     public $separateCategories = false;
     public $showCoverPage = true;
     public $priceLabels = [];
@@ -92,10 +93,40 @@ class Preview extends Component
             ?? $this->settings['prices']
             ?? 'all';
 
-        $this->selectedPriceTypes = $selectedPrices;
-
-        if ($this->selectedPriceTypes === 'all' || empty($this->selectedPriceTypes)) {
-            $this->selectedPriceTypes = PriceType::values();
+        // پشتیبانی از ساختار جدید: ['tier_index' => [price_type_ids]]
+        if ($selectedPrices === 'all' || empty($selectedPrices)) {
+            // همه تیراژها با همه انواع قیمت
+            $this->selectedPriceTypes = 'all';
+        } elseif (is_array($selectedPrices)) {
+            // بررسی ساختار: آیا ساختار جدید است یا قدیم؟
+            $isNewStructure = false;
+            foreach ($selectedPrices as $key => $value) {
+                // ساختار جدید: کلید = tier_index (عدد), مقدار = آرایه از price_type_ids
+                if (is_numeric($key) && is_array($value)) {
+                    $isNewStructure = true;
+                    break;
+                }
+            }
+            
+            if ($isNewStructure) {
+                // ساختار جدید: ['tier_index' => [price_type_ids]]
+                $this->selectedPriceTypes = $selectedPrices;
+                
+                // ✅ بارگذاری دوره‌های چک (اگر وجود داشته باشد)
+                $this->selectedCheckPeriods = $this->settings['check_periods'] ?? [];
+            } else {
+                // ساختار قدیم: [price_type_ids] - برای backward compatibility
+                // تبدیل به ساختار جدید: همه تیراژها با این قیمت‌ها
+                $this->selectedPriceTypes = [
+                    0 => $selectedPrices,
+                    1 => $selectedPrices,
+                    2 => $selectedPrices,
+                    3 => $selectedPrices,
+                ];
+            }
+        } else {
+            // مقدار نامعتبر - استفاده از پیشفرض
+            $this->selectedPriceTypes = 'all';
         }
 
         // بارگذاری داده‌ها برای preview (بدون progress)
@@ -238,20 +269,113 @@ class Preview extends Component
 
             $catName = $product->category?->name ?? 'بدون دسته‌بندی';
 
-            // محاسبه کمترین قیمت برای هر نوع قیمت از بین همه تامین‌کنندگان
+            // محاسبه قیمت‌ها از price_matrix با ساختار جدید
             $prices = [];
             
+            // دریافت تیراژهای انتخاب شده
+            $selectedTiers = [];
+            $selectedPriceTypesByTier = [];
+            
+            if ($this->selectedPriceTypes === 'all') {
+                // همه تیراژها (0-3) با همه انواع قیمت
+                $selectedTiers = [0, 1, 2, 3];
+                $allPriceTypes = PriceType::values();
+                foreach ($selectedTiers as $tierIndex) {
+                    $selectedPriceTypesByTier[$tierIndex] = $allPriceTypes;
+                }
+            } elseif (is_array($this->selectedPriceTypes)) {
+                // ساختار: ['tier_index' => [price_type_ids]]
+                $selectedTiers = array_keys($this->selectedPriceTypes);
+                $selectedPriceTypesByTier = $this->selectedPriceTypes;
+            }
+            
+            // ✅ برای هر تامین‌کننده، قیمت‌های این محصول را از جدول product_prices بخوان
             foreach ($product->productSuppliers as $ps) {
-                foreach ($ps->prices as $p) {
-                    $key = $p->price_type instanceof \BackedEnum ? $p->price_type->value : $p->price_type;
-                    $priceValue = is_array($p->price) ? ($p->price['price'] ?? $p->price) : $p->price;
+                // دریافت قیمت‌های این product_supplier از relation
+                $productPrices = $ps->prices; // Collection از ProductPrice
+                
+                if ($productPrices->isEmpty()) {
+                    continue;
+                }
+                
+                // گروه‌بندی قیمت‌ها بر اساس tier_index و price_type_id
+                // کلید: "{tier_index}_{price_type_id}_{check_period_id}"
+                $pricesGrouped = $productPrices->groupBy(function($price) {
+                    return $price->tier_index . '_' . $price->price_type_id . '_' . ($price->check_period_id ?? 'null');
+                });
+                
+                // برای هر تیراژ انتخاب شده
+                foreach ($selectedTiers as $tierIndex) {
+                    // برای هر نوع قیمت انتخاب شده برای این تیراژ
+                    $priceTypesForThisTier = $selectedPriceTypesByTier[$tierIndex] ?? [];
                     
-                    // انتخاب کمترین قیمت
-                    if (!isset($prices[$key]) || $priceValue < ($prices[$key]['price'] ?? PHP_INT_MAX)) {
-                        $prices[$key] = [
-                            'price' => $priceValue,
-                            'warranty_months' => $p->warranty_months,
-                        ];
+                    foreach ($priceTypesForThisTier as $priceTypeId) {
+                        // کلید برای قیمت نقدی یا گارانتی (بدون check_period)
+                        $key = "{$tierIndex}_{$priceTypeId}_null";
+                        
+                        // یافتن قیمت در collection
+                        $priceRecord = $pricesGrouped->get($key)?->first();
+                        
+                        if ($priceRecord && $priceRecord->price > 0) {
+                            // کلید برای ذخیره در آرایه prices: tier_index + price_type_id
+                            $storeKey = "{$tierIndex}_{$priceTypeId}";
+                            
+                            // انتخاب کمترین قیمت برای این ترکیب (در صورت چند تامین‌کننده)
+                            if (!isset($prices[$storeKey]) || $priceRecord->price < ($prices[$storeKey]['price'] ?? PHP_INT_MAX)) {
+                                $prices[$storeKey] = [
+                                    'price' => (int)$priceRecord->price,
+                                    'tier_index' => (int)$tierIndex,
+                                    'price_type_id' => (int)$priceTypeId,
+                                    'warranty_type' => $priceRecord->warranty_type ?? null,
+                                    'warranty_duration' => $priceRecord->warranty_duration ?? null,
+                                ];
+                            }
+                        }
+                        
+                        // ✅ اگر نوع قیمت "چک" است، قیمت‌های چکی را هم بررسی کن
+                        $priceType = \App\Models\PriceType::find($priceTypeId);
+                        if ($priceType && $priceType->code === 'check') {
+                            // ✅ دریافت دوره‌های چک انتخاب شده برای این تیراژ
+                            $selectedCheckPeriodsForTier = $this->selectedCheckPeriods[$tierIndex] ?? [];
+                            
+                            if (!empty($selectedCheckPeriodsForTier)) {
+                                // فقط دوره‌های انتخاب شده را بخوان
+                                $checkPeriods = \App\Models\CheckPeriod::whereIn('id', $selectedCheckPeriodsForTier)
+                                    ->active()
+                                    ->orderBy('days')
+                                    ->get();
+                            } else {
+                                // اگر دوره‌ای انتخاب نشده، همه دوره‌های فعال را بخوان (backward compatibility)
+                                $checkPeriods = \App\Models\CheckPeriod::active()
+                                    ->where(function($q) use ($ps) {
+                                        $q->whereNull('supplier_id')
+                                          ->orWhere('supplier_id', $ps->supplier_id);
+                                    })
+                                    ->orderBy('days')
+                                    ->get();
+                            }
+                            
+                            foreach ($checkPeriods as $period) {
+                                $checkKey = "{$tierIndex}_{$priceTypeId}_{$period->id}";
+                                $checkPriceRecord = $pricesGrouped->get($checkKey)?->first();
+                                
+                                if ($checkPriceRecord && $checkPriceRecord->price > 0) {
+                                    // کلید برای ذخیره: tier_index + price_type_id + check_period_id
+                                    $checkStoreKey = "{$tierIndex}_{$priceTypeId}_{$period->id}";
+                                    
+                                    if (!isset($prices[$checkStoreKey]) || $checkPriceRecord->price < ($prices[$checkStoreKey]['price'] ?? PHP_INT_MAX)) {
+                                        $prices[$checkStoreKey] = [
+                                            'price' => (int)$checkPriceRecord->price,
+                                            'tier_index' => (int)$tierIndex,
+                                            'price_type_id' => (int)$priceTypeId,
+                                            'check_period_id' => (int)$period->id,
+                                            'check_period_days' => (int)$period->days,
+                                            'check_period_label' => $period->display_label,
+                                        ];
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

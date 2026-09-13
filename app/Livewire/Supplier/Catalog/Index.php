@@ -37,7 +37,9 @@ class Index extends Component
     public $categorySearch = '';
     public $selectedCategories = [];
     public $selectAllCategories = true;
-    public $selectedPrices = [];
+    public $selectedPrices = [];  // فرمت جدید: ['tier_index' => [price_type_ids]]
+    public $selectedTiers = [];   // تیراژهای انتخاب شده: [0, 1, 2, 3]
+    public $selectedCheckPeriods = []; // ✅ جدید: دوره‌های چک انتخاب شده برای هر تیراژ: ['tier_index' => [check_period_ids]]
     public $selectAllPrices = true;
     public $separateCategories = false;
     public $sortLevel1 = 'category';
@@ -146,11 +148,51 @@ class Index extends Component
     #[Computed]
     public function availablePriceTypes()
     {
-        $types = [];
-        foreach (PriceType::cases() as $case) {
-            $types[$case->value] = $case->label();
+        // ✅ استفاده از جدول price_types به جای enum
+        return \App\Models\PriceType::active()
+            ->orderBy('sort_order')
+            ->pluck('name', 'id')
+            ->toArray();
+    }
+    
+    #[Computed]
+    public function availableTiers()
+    {
+        // دریافت تیراژهای پیشفرض
+        $defaultTiers = [
+            0 => 'زیرکارتن',
+            1 => 'کارتن',
+            2 => 'عمده',
+            3 => 'بار',
+        ];
+        
+        // فعلاً فقط از تیراژهای پیشفرض استفاده می‌کنیم
+        // TODO: در آینده می‌توان تیراژهای سفارشی supplier را از جدول بخوانیم
+        
+        return $defaultTiers;
+    }
+    
+    #[Computed]
+    public function availableCheckPeriods()
+    {
+        // ✅ دریافت دوره‌های چک فعال برای supplier
+        if ($this->isAdmin) {
+            // ادمین: دوره‌های global
+            return \App\Models\CheckPeriod::active()
+                ->whereNull('supplier_id')
+                ->orderBy('days')
+                ->get();
+        } else {
+            // تامین‌کننده: دوره‌های global + دوره‌های خودش
+            $supplierId = Auth::user()->supplier->id;
+            return \App\Models\CheckPeriod::active()
+                ->where(function($q) use ($supplierId) {
+                    $q->whereNull('supplier_id')
+                      ->orWhere('supplier_id', $supplierId);
+                })
+                ->orderBy('days')
+                ->get();
         }
-        return $types;
     }
     
     #[Computed]
@@ -187,12 +229,22 @@ class Index extends Component
             'category' => 'دسته‌بندی',
         ];
 
+        // اضافه کردن فیلدهای مرتب‌سازی قیمت بر اساس تیراژ و نوع قیمت انتخاب شده
+        $tiers = $this->availableTiers;
         $priceTypes = $this->availablePriceTypes;
-        $activePriceKeys = $this->selectAllPrices ? array_keys($priceTypes) : $this->selectedPrices;
-
-        foreach ($activePriceKeys as $key) {
-            if (isset($priceTypes[$key])) {
-                $fields['price_' . $key] = $priceTypes[$key];
+        
+        // اطمینان از اینکه selectedTiers یک آرایه است
+        $selectedTiers = is_array($this->selectedTiers) ? $this->selectedTiers : [];
+        
+        foreach ($selectedTiers as $tierIndex) {
+            if (isset($this->selectedPrices[$tierIndex]) && is_array($this->selectedPrices[$tierIndex])) {
+                foreach ($this->selectedPrices[$tierIndex] as $priceTypeId) {
+                    $tierName = $tiers[$tierIndex] ?? "تیراژ {$tierIndex}";
+                    $priceTypeName = $priceTypes[$priceTypeId] ?? "قیمت {$priceTypeId}";
+                    
+                    $key = "price_{$tierIndex}_{$priceTypeId}";
+                    $fields[$key] = "{$tierName} - {$priceTypeName}";
+                }
             }
         }
 
@@ -220,8 +272,17 @@ class Index extends Component
     public function updatedSelectAllPrices($value)
     {
         if ($value) {
-            $this->selectedPrices = array_keys($this->availablePriceTypes);
+            // انتخاب همه: تمام تیراژها با تمام انواع قیمت
+            $this->selectedTiers = array_keys($this->availableTiers);
+            $priceTypeIds = array_keys($this->availablePriceTypes);
+            
+            $this->selectedPrices = [];
+            foreach ($this->selectedTiers as $tierIndex) {
+                $this->selectedPrices[$tierIndex] = $priceTypeIds;
+            }
         } else {
+            // لغو انتخاب همه
+            $this->selectedTiers = [];
             $this->selectedPrices = [];
         }
         $this->ensureValidSortFields();
@@ -229,8 +290,110 @@ class Index extends Component
 
     public function updatedSelectedPrices()
     {
-        $this->selectAllPrices = count($this->selectedPrices) === count($this->availablePriceTypes);
+        // بررسی آیا همه تیراژها و قیمت‌ها انتخاب شده‌اند
+        $allTiers = array_keys($this->availableTiers);
+        $allPriceTypes = array_keys($this->availablePriceTypes);
+        
+        $allSelected = true;
+        foreach ($allTiers as $tierIndex) {
+            if (!isset($this->selectedPrices[$tierIndex]) || 
+                count($this->selectedPrices[$tierIndex]) !== count($allPriceTypes)) {
+                $allSelected = false;
+                break;
+            }
+        }
+        
+        $this->selectAllPrices = $allSelected;
         $this->ensureValidSortFields();
+    }
+    
+    /**
+     * تغییر وضعیت انتخاب یک تیراژ
+     */
+    public function toggleTier($tierIndex)
+    {
+        if (in_array($tierIndex, $this->selectedTiers)) {
+            // حذف تیراژ
+            $this->selectedTiers = array_values(array_diff($this->selectedTiers, [$tierIndex]));
+            unset($this->selectedPrices[$tierIndex]);
+        } else {
+            // افزودن تیراژ با قیمت نقدی به صورت پیشفرض
+            $this->selectedTiers[] = $tierIndex;
+            $this->selectedPrices[$tierIndex] = [1]; // cash
+        }
+        
+        $this->updatedSelectedPrices();
+    }
+    
+    /**
+     * تغییر وضعیت انتخاب یک نوع قیمت برای یک تیراژ
+     */
+    public function toggleTierPrice($tierIndex, $priceTypeId)
+    {
+        if (!isset($this->selectedPrices[$tierIndex])) {
+            $this->selectedPrices[$tierIndex] = [];
+        }
+        
+        $key = array_search($priceTypeId, $this->selectedPrices[$tierIndex]);
+        if ($key !== false) {
+            // حذف نوع قیمت
+            unset($this->selectedPrices[$tierIndex][$key]);
+            $this->selectedPrices[$tierIndex] = array_values($this->selectedPrices[$tierIndex]);
+            
+            // ✅ اگر نوع قیمت "چک" بود، دوره‌های چک این تیراژ را هم پاک کن
+            $priceType = \App\Models\PriceType::find($priceTypeId);
+            if ($priceType && $priceType->code === 'check') {
+                unset($this->selectedCheckPeriods[$tierIndex]);
+            }
+            
+            // اگر تمام قیمت‌ها حذف شدند، تیراژ را هم حذف کن
+            if (empty($this->selectedPrices[$tierIndex])) {
+                unset($this->selectedPrices[$tierIndex]);
+                $this->selectedTiers = array_values(array_diff($this->selectedTiers, [$tierIndex]));
+            }
+        } else {
+            // افزودن نوع قیمت
+            $this->selectedPrices[$tierIndex][] = $priceTypeId;
+            
+            // ✅ اگر نوع قیمت "چک" است، همه دوره‌های چک را فعال کن (پیشفرض)
+            $priceType = \App\Models\PriceType::find($priceTypeId);
+            if ($priceType && $priceType->code === 'check') {
+                $this->selectedCheckPeriods[$tierIndex] = $this->availableCheckPeriods->pluck('id')->toArray();
+            }
+            
+            // اطمینان از اینکه تیراژ در selectedTiers هست
+            if (!in_array($tierIndex, $this->selectedTiers)) {
+                $this->selectedTiers[] = $tierIndex;
+            }
+        }
+        
+        $this->updatedSelectedPrices();
+    }
+    
+    /**
+     * ✅ جدید: Toggle کردن یک دوره چک برای یک تیراژ خاص
+     */
+    public function toggleCheckPeriod($tierIndex, $checkPeriodId)
+    {
+        if (!isset($this->selectedCheckPeriods[$tierIndex])) {
+            $this->selectedCheckPeriods[$tierIndex] = [];
+        }
+        
+        $key = array_search($checkPeriodId, $this->selectedCheckPeriods[$tierIndex]);
+        
+        if ($key !== false) {
+            // حذف
+            unset($this->selectedCheckPeriods[$tierIndex][$key]);
+            $this->selectedCheckPeriods[$tierIndex] = array_values($this->selectedCheckPeriods[$tierIndex]);
+        } else {
+            // اضافه
+            $this->selectedCheckPeriods[$tierIndex][] = $checkPeriodId;
+        }
+        
+        // اگر همه دوره‌ها حذف شدند، آرایه را پاک کن
+        if (empty($this->selectedCheckPeriods[$tierIndex])) {
+            unset($this->selectedCheckPeriods[$tierIndex]);
+        }
     }
 
     public function updatedSortLevel1($value)
@@ -412,13 +575,69 @@ class Index extends Component
         // بارگذاری شماره‌های تماس
         $this->contactPhones = $settings['contact_phones'] ?? [['label' => '', 'number' => '']];
 
-        // تنظیم قیمت‌ها
-        if (($settings['prices'] ?? 'all') === 'all') {
+        // تنظیم قیمت‌ها - با پشتیبانی backward compatibility
+        $pricesConfig = $settings['prices'] ?? 'all';
+        
+        if ($pricesConfig === 'all') {
             $this->selectAllPrices = true;
-            $this->selectedPrices = array_keys($this->availablePriceTypes);
+            // انتخاب همه تیراژها با همه انواع قیمت
+            $this->selectedTiers = array_keys($this->availableTiers);
+            $priceTypeIds = array_keys($this->availablePriceTypes);
+            $this->selectedPrices = [];
+            foreach ($this->selectedTiers as $tierIndex) {
+                $this->selectedPrices[$tierIndex] = $priceTypeIds;
+            }
+        } elseif (is_array($pricesConfig)) {
+            // بررسی ساختار: آیا ساختار جدید است یا قدیم؟
+            $isNewStructure = false;
+            foreach ($pricesConfig as $key => $value) {
+                // ساختار جدید: کلید = tier_index (عدد), مقدار = آرایه از price_type_ids
+                if (is_numeric($key) && is_array($value)) {
+                    $isNewStructure = true;
+                    break;
+                }
+            }
+            
+            if ($isNewStructure) {
+                // ساختار جدید: ['tier_index' => [price_type_ids]]
+                $this->selectAllPrices = false;
+                $this->selectedPrices = $pricesConfig;
+                $this->selectedTiers = array_keys($this->selectedPrices);
+                
+                // ✅ بارگذاری دوره‌های چک (اگر وجود داشته باشد)
+                $checkPeriodsConfig = $settings['check_periods'] ?? [];
+                if (is_array($checkPeriodsConfig) && !empty($checkPeriodsConfig)) {
+                    $this->selectedCheckPeriods = $checkPeriodsConfig;
+                } else {
+                    // اگر دوره‌های چک ذخیره نشده، همه را فعال کن (برای backward compatibility)
+                    $this->selectedCheckPeriods = [];
+                    $checkPriceTypeId = \App\Models\PriceType::where('code', 'check')->value('id');
+                    if ($checkPriceTypeId) {
+                        foreach ($this->selectedPrices as $tierIndex => $priceTypeIds) {
+                            if (in_array($checkPriceTypeId, $priceTypeIds)) {
+                                $this->selectedCheckPeriods[$tierIndex] = $this->availableCheckPeriods->pluck('id')->toArray();
+                            }
+                        }
+                    }
+                }
+            } else {
+                // ساختار قدیم: [price_type_ids] - تبدیل به ساختار جدید
+                // فقط تیراژ کارتن (مرجع) با این قیمت‌ها
+                $this->selectAllPrices = false;
+                $this->selectedTiers = [1]; // فقط کارتن
+                $this->selectedPrices = [
+                    1 => $pricesConfig, // کارتن با قیمت‌های انتخاب شده
+                ];
+            }
         } else {
-            $this->selectAllPrices = false;
-            $this->selectedPrices = $settings['prices'] ?? [];
+            // مقدار نامعتبر - استفاده از پیشفرض
+            $this->selectAllPrices = true;
+            $this->selectedTiers = array_keys($this->availableTiers);
+            $priceTypeIds = array_keys($this->availablePriceTypes);
+            $this->selectedPrices = [];
+            foreach ($this->selectedTiers as $tierIndex) {
+                $this->selectedPrices[$tierIndex] = $priceTypeIds;
+            }
         }
 
         // تنظیم دسته‌بندی‌ها
@@ -485,6 +704,7 @@ class Index extends Component
             'description' => $this->description,
             'categories' => $this->selectAllCategories ? 'all' : $this->selectedCategories,
             'prices' => $this->selectAllPrices ? 'all' : $this->selectedPrices,
+            'check_periods' => $this->selectedCheckPeriods, // ✅ ذخیره دوره‌های چک
             'sort_level1' => $this->sortLevel1,
             'sort_level1_dir' => $this->sortLevel1Dir,
             'sort_level2' => $this->sortLevel2,
@@ -618,7 +838,15 @@ class Index extends Component
         $this->selectedCategories = array_keys($availableCategories);
 
         $this->selectAllPrices = true;
-        $this->selectedPrices = array_keys($this->availablePriceTypes);
+        
+        // مقداردهی اولیه selectedTiers: همه تیراژها انتخاب شده
+        $this->selectedTiers = array_keys($this->availableTiers);
+        
+        // مقداردهی اولیه selectedPrices: برای هر تیراژ، فقط قیمت نقدی
+        $this->selectedPrices = [];
+        foreach ($this->selectedTiers as $tierIndex) {
+            $this->selectedPrices[$tierIndex] = [1]; // 1 = cash (نقدی)
+        }
 
         $this->sortLevel1 = 'category';
         $this->sortLevel1Dir = 'asc';
