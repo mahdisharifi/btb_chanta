@@ -275,9 +275,18 @@ class Import extends Component
                     $cellValue = $row[$colIndex] ?? null;
                     
                     if ($cellValue !== null && trim((string)$cellValue) !== '') {
-                        $cleanedVal = preg_replace('/[^\d]/', '', (string)$cellValue);
+                        // ✅ تبدیل به عدد صحیح (رند کردن اعشار)
+                        // اگر عدد اعشار باشد، رند می‌شود
+                        // اگر رشته با کاما باشد، پاکسازی می‌شود
+                        if (is_numeric($cellValue)) {
+                            // عدد اعشاری یا صحیح → رند کن
+                            $cleanedVal = (int)round((float)$cellValue);
+                        } else {
+                            // رشته → پاکسازی کاراکترهای غیر عددی
+                            $cleanedVal = (int)preg_replace('/[^\d]/', '', (string)$cellValue);
+                        }
                         
-                        if (is_numeric($cleanedVal) && $cleanedVal > 0) {
+                        if ($cleanedVal > 0) {
                             // ✅ بررسی اینکه این تیراژ فعال است یا نه
                             $tierIndex = $priceInfo['tier_index'];
                             if (!in_array($tierIndex, $activeTiers)) {
