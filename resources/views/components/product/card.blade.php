@@ -7,25 +7,12 @@
 @php
 use App\Helpers\PriceHelper;
 
+// ✅ استفاده از Service برای دریافت دسترسی‌ها
+$priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
 $user = auth()->user();
-$userRole = 'guest';
 
-if ($user) {
-if ($user->hasRole('super_admin')) {
-$userRole = 'super_admin';
-} elseif ($user->hasRole('supplier')) {
-$userRole = 'supplier';
-} elseif ($user->hasRole('retailer_premium')) {
-$userRole = 'retailer_premium';
-} elseif ($user->hasRole('retailer_basic')) {
-$userRole = 'retailer_basic';
-} else {
-$userRole = 'end_user';
-}
-}
-
-$canSeeSupplier = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium'], true);
-$canSeeWholesalePrice = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium'], true);
+$canSeeSupplier = $priceVisibilityService->canSeeSupplierInfo($user);
+$canSeeWholesalePrice = $priceVisibilityService->canSeeWholesalePrice($user);
 
 // اگر supplier مشخص شده (در صفحه supplier)، قیمت‌های آن supplier را نمایش بده
 $productSupplier = $supplier ?? ($product->relationLoaded('supplier') ? $product->supplier : null);

@@ -741,11 +741,13 @@ class ProductController extends Controller
 
     /**
      * آیا کاربر جاری دسترسی به مشاهده قیمت دارد؟
+     * 
+     * ✅ بازنویسی شده با استفاده از PriceVisibilityService
      */
     private function userCanSeePrice(): bool
     {
-        $role = $this->resolveUserRole();
-        return in_array($role, ['super_admin', 'supplier', 'retailer_premium', 'retailer_basic']);
+        $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+        return $priceVisibilityService->canFilterByPrice(Auth::user());
     }
 
     /**
@@ -1045,14 +1047,24 @@ class ProductController extends Controller
 
     /**
      * تعیین داده‌های قابل مشاهده بر اساس نقش کاربر
+     * 
+     * ✅ بازنویسی شده با استفاده از PriceVisibilityService
+     * این متد حالا از سرویس یکپارچه استفاده می‌کند و دیگر hard-coded نیست
      */
     private function resolveVisibleDataByRole(Product $product, string $userRole): array
     {
+        // استفاده از Service برای دریافت دسترسی‌ها
+        $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+        $user = Auth::user();
+
+        // ✅ دریافت داده‌های اولیه از Service
+        $visibilityData = $priceVisibilityService->getVisibleDataForProduct($product, $user);
+
         $data = [
-            'showSupplierInfo'    => false,
-            'showWholesalePrices' => false,
-            'showRetailPrice'     => true,
-            'canSetRetailPrice'   => false,
+            'showSupplierInfo'    => $visibilityData['showSupplierInfo'],
+            'showWholesalePrices' => $visibilityData['showWholesalePrice'],
+            'showRetailPrice'     => $visibilityData['showRetailPrice'],
+            'canSetRetailPrice'   => $visibilityData['canSetRetailPrice'],
             'supplierInfo'        => null,
             'wholesalePrices'     => collect(),
             'retailPrice'         => null,
@@ -1060,20 +1072,20 @@ class ProductController extends Controller
             'profitMargin'        => null,
         ];
 
-        // قیمت خرده‌فروشی (برای همه)
-        $lowestRetailPrice = $product->retailPrices
-            ->where('is_published', true)
-            ->sortBy('retail_price')
-            ->first();
+        // ─── قیمت خرده‌فروشی (برای کسانی که دسترسی دارند) ───
+        if ($data['showRetailPrice']) {
+            $lowestRetailPrice = $product->retailPrices
+                ->where('is_published', true)
+                ->sortBy('retail_price')
+                ->first();
 
-        $data['retailPrice'] = $lowestRetailPrice;
+            $data['retailPrice'] = $lowestRetailPrice;
+        }
 
-        switch ($userRole) {
-            case 'retailer_premium':
-                $data['showSupplierInfo']    = true;
-                $data['showWholesalePrices'] = true;
-                $data['canSetRetailPrice']   = true;
-
+        // ─── اطلاعات تامین‌کننده (اگر دسترسی دارد) ───
+        if ($data['showSupplierInfo'] && $product->supplier) {
+            // برای retailer_premium فقط اطلاعات عمومی
+            if ($userRole === 'retailer_premium') {
                 $data['supplierInfo'] = [
                     'company_name' => $product->supplier->company_name ?? null,
                     'brand_name'   => $product->supplier->brand_name ?? null,
@@ -1084,71 +1096,59 @@ class ProductController extends Controller
                     'email'        => $product->supplier->email ?? null,
                     'website'      => $product->supplier->website ?? null,
                 ];
+            } else {
+                // برای supplier و super_admin اطلاعات کامل
+                $data['supplierInfo'] = $product->supplier;
+            }
+        }
 
-                // ✅ جمع‌آوری قیمت‌ها از productSuppliers
-                $wholesalePrices = collect();
-                if ($product->relationLoaded('productSuppliers')) {
-                    foreach ($product->productSuppliers as $ps) {
-                        if ($ps->relationLoaded('prices')) {
-                            $wholesalePrices = $wholesalePrices->merge($ps->prices->where('is_active', true));
-                        }
+        // ─── قیمت‌های عمده (اگر دسترسی دارد) ───
+        if ($data['showWholesalePrices']) {
+            $wholesalePrices = collect();
+            
+            if ($product->relationLoaded('productSuppliers')) {
+                foreach ($product->productSuppliers as $ps) {
+                    if ($ps->relationLoaded('prices')) {
+                        $activePrices = $ps->prices->where('is_active', true);
+                        
+                        // ✅ فیلتر بر اساس انواع قیمت مجاز (اگر محدودیت وجود دارد)
+                        $filteredPrices = $priceVisibilityService->filterPricesByVisibility(
+                            $activePrices, 
+                            $user
+                        );
+                        
+                        $wholesalePrices = $wholesalePrices->merge($filteredPrices);
                     }
                 }
-                $data['wholesalePrices'] = $wholesalePrices;
+            }
+            
+            $data['wholesalePrices'] = $wholesalePrices;
+        }
 
-                // قیمت خرده‌فروشی خود کاربر
-                $myPrice = $product->retailPrices
-                    ->where('user_id', Auth::id())
-                    ->first();
+        // ─── قیمت خرده‌فروشی خود کاربر (برای کسانی که می‌توانند ثبت کنند) ───
+        if ($data['canSetRetailPrice'] && $user) {
+            $myPrice = $product->retailPrices
+                ->where('user_id', $user->id)
+                ->first();
 
-                $data['myRetailPrice'] = $myPrice;
+            $data['myRetailPrice'] = $myPrice;
 
-                // محاسبه حاشیه سود
-                if ($myPrice && $wholesalePrices->isNotEmpty()) {
-                    $lowestWholesale = $wholesalePrices->min('price');
-                    if ($lowestWholesale > 0) {
-                        $profitAmount     = $myPrice->retail_price - $lowestWholesale;
-                        $profitPercentage = round(($profitAmount / $lowestWholesale) * 100, 1);
-
-                        $data['profitMargin'] = [
-                            'wholesale_price'   => $lowestWholesale,
-                            'retail_price'      => $myPrice->retail_price,
-                            'profit_amount'     => $profitAmount,
-                            'profit_percentage' => $profitPercentage,
-                        ];
-                    }
-                }
-                break;
-
-            case 'retailer_basic':
-                $data['canSetRetailPrice'] = true;
-                $data['myRetailPrice'] = $product->retailPrices
-                    ->where('user_id', Auth::id())
-                    ->first();
-                break;
-
-            case 'supplier':
-            case 'super_admin':
-                $data['showSupplierInfo']    = true;
-                $data['showWholesalePrices'] = true;
-                $data['supplierInfo']        = $product->supplier;
+            // ─── محاسبه حاشیه سود (فقط برای retailer_premium) ───
+            if ($userRole === 'retailer_premium' && $myPrice && $data['wholesalePrices']->isNotEmpty()) {
+                $lowestWholesale = $data['wholesalePrices']->min('price');
                 
-                // ✅ جمع‌آوری قیمت‌ها از productSuppliers
-                $wholesalePrices = collect();
-                if ($product->relationLoaded('productSuppliers')) {
-                    foreach ($product->productSuppliers as $ps) {
-                        if ($ps->relationLoaded('prices')) {
-                            $wholesalePrices = $wholesalePrices->merge($ps->prices->where('is_active', true));
-                        }
-                    }
-                }
-                $data['wholesalePrices'] = $wholesalePrices;
-                break;
+                if ($lowestWholesale > 0) {
+                    $profitAmount     = $myPrice->retail_price - $lowestWholesale;
+                    $profitPercentage = round(($profitAmount / $lowestWholesale) * 100, 1);
 
-            case 'end_user':
-            case 'guest':
-            default:
-                break;
+                    $data['profitMargin'] = [
+                        'wholesale_price'   => $lowestWholesale,
+                        'retail_price'      => $myPrice->retail_price,
+                        'profit_amount'     => $profitAmount,
+                        'profit_percentage' => $profitPercentage,
+                    ];
+                }
+            }
         }
 
         return $data;

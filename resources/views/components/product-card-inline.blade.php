@@ -7,13 +7,16 @@
 --}}
 
 @php
-    // تشخیص نقش از متغیر والد
-    $userRole = $userRole ?? 'guest';
+    // ✅ استفاده از Service برای دریافت دسترسی‌ها
+    $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+    $user = auth()->user();
+    
+    $userRole = $userRole ?? $priceVisibilityService->getUserRole($user);
     $badge    = $badge ?? null;
 
-    $canSeePrices    = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium', 'retailer_basic']);
-    $canSeeWholesale = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium']);
-    $canSeeSupplier  = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium']);
+    $canSeePrices    = $priceVisibilityService->canSeeRetailPrice($user);
+    $canSeeWholesale = $priceVisibilityService->canSeeWholesalePrice($user);
+    $canSeeSupplier  = $priceVisibilityService->canSeeSupplierInfo($user);
 
     // تصویر اصلی
     $gallery  = $product->relationLoaded('galleries') ? $product->galleries->first() : null;

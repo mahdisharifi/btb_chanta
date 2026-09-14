@@ -818,10 +818,6 @@ class Import extends Component
             // پر کردن ستون‌های قیمت
             $colIndex = 7; // شروع از ستون G
             
-            // ✅ دریافت تنظیمات auto-calculate
-            $autoCalculate = $ps->auto_calculate_tiers ?? false;
-            $priceRounding = $ps->supplier->price_rounding_type ?? 'nearest_1';
-            
             // ✅ محاسبه درصدهای مؤثر با اولویت‌بندی
             // اولویت: 1. درصد اختصاصی محصول > 2. دسته‌بندی > 3. پیشفرض
             $productTierPercentages = $ps->tier_percentages;
@@ -835,7 +831,18 @@ class Import extends Component
                 $productTierPercentages ?? []
             );
             
+            // ✅ تعیین auto-calculate: 
+            // فقط اگر محصول صریحاً auto_calculate_tiers = true دارد → فرمول‌ها اعمال می‌شوند
+            // اگر false باشد، حتی اگر supplier تنظیمات داشته باشد، فرمول اعمال نمی‌شود
+            // این به کاربر اجازه می‌دهد که در edit-price تصمیم بگیرد آیا می‌خواهد از فرمول استفاده کند یا نه
+            //
+            // 💡 نکته: اگر می‌خواهید فرمول‌های خودکار اعمال شوند، در صفحه edit-price تیک "محاسبه خودکار تیراژها" را بزنید
+            $autoCalculate = $ps->auto_calculate_tiers ?? false;
+            
+            $priceRounding = $ps->supplier->price_rounding_type ?? 'nearest_1';
+            
             // ✅ شناسایی ستون‌های نقدی (برای مرجع فرمول)
+            // فقط تیراژهای فعال را ذخیره می‌کنیم
             $cashColumnMap = []; // [tier_index] => column_letter
             
             foreach ($priceHeaders as $ph) {
@@ -848,9 +855,9 @@ class Import extends Component
                 );
                 $priceValue = $priceMap[$key] ?? '';
                 
-                // ✅ اگر قیمت نقدی است، ستون را ذخیره کن
+                // ✅ اگر قیمت نقدی است و تیراژ فعال است، ستون را ذخیره کن
                 $priceType = $priceTypes->firstWhere('id', $ph['price_type_id']);
-                if ($priceType && $priceType->code === 'cash') {
+                if ($priceType && $priceType->code === 'cash' && in_array($ph['tier_index'], $activeTiers)) {
                     $cashColumnMap[$ph['tier_index']] = $colLetter;
                 }
                 
@@ -881,13 +888,31 @@ class Import extends Component
             $referenceCashColumn = $cashColumnMap[$referenceTierIndex] ?? null;
             
             // ✅ دریافت دوره‌های چکی فعال برای هر تیراژ (بررسی رکورد در دیتابیس)
+            // منطق: فقط دوره‌هایی که رکورد قیمت دارند، فعال هستند
+            // اگر رکوردی نباشد، دوره غیرفعال است (مگر اینکه محصول جدید باشد و تنظیمات supplier وجود داشته باشد)
             $enabledCheckPeriods = [];
+            $checkPercentageOverrides = []; // [tier_period] => percentage_override
+            $hasAnyCheckPrice = false;
+            
             foreach ($ps->prices as $price) {
-                if ($price->check_period_id !== null && $price->price > 0) {
-                    $key = $price->tier_index . '_' . $price->check_period_id;
-                    $enabledCheckPeriods[$key] = true;
+                if ($price->check_period_id !== null) {
+                    $hasAnyCheckPrice = true;
+                    if ($price->price > 0) {
+                        $key = $price->tier_index . '_' . $price->check_period_id;
+                        $enabledCheckPeriods[$key] = true;
+                        
+                        // ✅ ذخیره درصد اختصاصی اگر وجود دارد
+                        if ($price->percentage_override !== null) {
+                            $checkPercentageOverrides[$key] = (float)$price->percentage_override;
+                        }
+                    }
                 }
             }
+            
+            // ✅ تصمیم‌گیری: آیا باید همه دوره‌ها را فعال فرض کنیم؟
+            // فقط اگر: 1) محصول هیچ قیمت چکی ندارد، 2) و محصول جدید است (auto_calculate از قبل فعال نبوده)
+            // این منطق باعث می‌شود که کاربر بتواند در edit-price دوره‌های چک را غیرفعال کند
+            $shouldEnableAllCheckPeriods = false; // به صورت پیش‌فرض غیرفعال - کاربر باید صریحاً دوره‌ها را در edit-price فعال کند
             
             foreach ($priceHeaders as $ph) {
                 $colLetter = Coordinate::stringFromColumnIndex($colIndex);
@@ -959,7 +984,9 @@ class Import extends Component
                 elseif ($priceType && $priceType->code === 'check' && $checkPeriodId) {
                     // ✅ بررسی: آیا این دوره چک برای این تیراژ فعال است؟
                     $checkKey = $phTierIndex . '_' . $checkPeriodId;
-                    $isCheckPeriodEnabled = isset($enabledCheckPeriods[$checkKey]);
+                    
+                    // اگر محصول هیچ قیمت چکی نداشته باشد، تمام دوره‌ها فعال هستند (به شرط اینکه supplier آن دوره را داشته باشد)
+                    $isCheckPeriodEnabled = $shouldEnableAllCheckPeriods || isset($enabledCheckPeriods[$checkKey]);
                     
                     if (!$isCheckPeriodEnabled) {
                         // ✅ این دوره چک برای این تیراژ غیرفعال است
@@ -988,13 +1015,49 @@ class Import extends Component
                         // ✅ دوره فعال است و auto_calculate روشن است → فرمول بزن
                         $cashCol = $cashColumnMap[$phTierIndex];
                         
-                        // ✅ دریافت درصد اختصاصی این دوره چک از pivot
-                        $checkPeriod = $checkPeriods->firstWhere('id', $checkPeriodId);
-                        $checkPercentage = 0;
+                        // ✅ دریافت درصد با سلسله مراتب اولویت:
+                        // 1. درصد اختصاصی محصول (percentage_override در product_prices)
+                        // 2. درصد اختصاصی دسته‌بندی (category_check_period)
+                        // 3. درصد پیش‌فرض supplier (supplier_check_period)
+                        $checkKey = $phTierIndex . '_' . $checkPeriodId;
+                        $checkPercentage = null;
+                        $percentageSource = '';
                         
-                        if ($checkPeriod && $checkPeriod->suppliers->isNotEmpty()) {
-                            $pivotData = $checkPeriod->suppliers->first()->pivot;
-                            $checkPercentage = $pivotData->percentage_increase ?? 0;
+                        // اولویت 1: درصد اختصاصی محصول
+                        if (isset($checkPercentageOverrides[$checkKey])) {
+                            $checkPercentage = $checkPercentageOverrides[$checkKey];
+                            $percentageSource = 'اختصاصی محصول';
+                        }
+                        
+                        // اولویت 2: درصد اختصاصی دسته‌بندی
+                        if ($checkPercentage === null) {
+                            $categoryPercentage = DB::table('category_check_period')
+                                ->where('supplier_id', $ps->supplier_id)
+                                ->where('category_id', $ps->product->category_id ?? 0)
+                                ->where('check_period_id', $checkPeriodId)
+                                ->where('is_active', true)
+                                ->value('percentage_increase');
+                            
+                            if ($categoryPercentage !== null) {
+                                $checkPercentage = (float)$categoryPercentage;
+                                $percentageSource = 'دسته‌بندی';
+                            }
+                        }
+                        
+                        // اولویت 3: درصد پیش‌فرض supplier
+                        if ($checkPercentage === null) {
+                            $checkPeriod = $checkPeriods->firstWhere('id', $checkPeriodId);
+                            if ($checkPeriod && $checkPeriod->suppliers->isNotEmpty()) {
+                                $pivotData = $checkPeriod->suppliers->first()->pivot;
+                                $checkPercentage = (float)($pivotData->percentage_increase ?? 0);
+                                $percentageSource = 'پیش‌فرض supplier';
+                            }
+                        }
+                        
+                        // اگر هیچ درصدی پیدا نشد، پیش‌فرض 0
+                        if ($checkPercentage === null) {
+                            $checkPercentage = 0;
+                            $percentageSource = 'هیچ (پیش‌فرض 0%)';
                         }
                         
                         // ✅ فرمول: قیمت چک = قیمت نقدی همان تیراژ × (1 + درصد چک)
@@ -1009,12 +1072,13 @@ class Import extends Component
                     
                     $isAutoCalculated = true;
                     
-                    $periodName = $checkPeriod->display_label ?? '';
+                    $periodName = $checkPeriods->firstWhere('id', $checkPeriodId)->display_label ?? '';
                     
                     $formulaComment = sprintf(
-                        "🔒 قیمت خودکار (قفل شده)\n\n📊 محاسبه:\n  • قیمت نقدی این تیراژ\n  • + درصد دوره چک (%s): %s%%\n\n🎯 رند: عدد صحیح\n\n💡 فرمول: %s\n\n⚠️ این سلول قابل ویرایش نیست",
+                        "🔒 قیمت خودکار (قفل شده)\n\n📊 محاسبه:\n  • قیمت نقدی این تیراژ\n  • + درصد دوره چک (%s): %s%%\n  • منبع: %s\n\n🎯 رند: عدد صحیح\n\n💡 فرمول: %s\n\n⚠️ این سلول قابل ویرایش نیست",
                         $periodName,
                         number_format($checkPercentage, 1),
+                        $percentageSource,
                         $formula
                     );
                     }

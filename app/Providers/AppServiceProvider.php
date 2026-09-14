@@ -18,6 +18,8 @@ use App\Policies\SeoPagePolicy;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Blade;
+use App\Services\PriceVisibilityService;
 
 // ✅ Event & Listener
 use App\Events\CheckPercentageChanged;
@@ -66,5 +68,48 @@ class AppServiceProvider extends ServiceProvider
             CheckPercentageChanged::class,
             UpdateAffectedCheckPrices::class
         );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Register Blade Directives for Price Visibility
+        |--------------------------------------------------------------------------
+        */
+        $this->registerPriceVisibilityDirectives();
+    }
+
+    /**
+     * ثبت Blade Directives سفارشی برای کنترل نمایش قیمت‌ها
+     */
+    protected function registerPriceVisibilityDirectives(): void
+    {
+        // @canSeeRetailPrice
+        Blade::if('canSeeRetailPrice', function () {
+            return app(PriceVisibilityService::class)->canSeeRetailPrice(auth()->user());
+        });
+
+        // @canSeeWholesalePrice
+        Blade::if('canSeeWholesalePrice', function () {
+            return app(PriceVisibilityService::class)->canSeeWholesalePrice(auth()->user());
+        });
+
+        // @canSeeSupplierInfo
+        Blade::if('canSeeSupplierInfo', function () {
+            return app(PriceVisibilityService::class)->canSeeSupplierInfo(auth()->user());
+        });
+
+        // @canFilterByPrice
+        Blade::if('canFilterByPrice', function () {
+            return app(PriceVisibilityService::class)->canFilterByPrice(auth()->user());
+        });
+
+        // @canSetRetailPrice
+        Blade::if('canSetRetailPrice', function () {
+            return app(PriceVisibilityService::class)->canSetRetailPrice(auth()->user());
+        });
+
+        // @canSeeAnyPrice
+        Blade::if('canSeeAnyPrice', function () {
+            return app(PriceVisibilityService::class)->canSeeAnyPrice(auth()->user());
+        });
     }
 }
