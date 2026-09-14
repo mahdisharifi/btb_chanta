@@ -10,6 +10,7 @@ class SocialNetworkSeeder extends Seeder
     public function run(): void
     {
         $networks = [
+            // شبکه‌های اجتماعی بین‌المللی
             [
                 'name' => 'instagram',
                 'display_name' => 'اینستاگرام',
@@ -37,6 +38,73 @@ class SocialNetworkSeeder extends Seeder
                 'placeholder_example' => '989123456789',
                 'sort_order' => 3,
             ],
+            
+            // برنامه‌های ایرانی
+            [
+                'name' => 'bale',
+                'display_name' => 'بله',
+                'icon' => 'heroicon-o-chat-bubble-oval-left-ellipsis',
+                'base_url' => 'https://ble.ir/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@channel یا username',
+                'sort_order' => 10,
+            ],
+            [
+                'name' => 'rubika',
+                'display_name' => 'روبیکا',
+                'icon' => 'heroicon-o-chat-bubble-left',
+                'base_url' => 'https://rubika.ir/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@channel یا username',
+                'sort_order' => 11,
+            ],
+            [
+                'name' => 'shad',
+                'display_name' => 'شاد',
+                'icon' => 'heroicon-o-sun',
+                'base_url' => 'https://shad.ir/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@channel یا username',
+                'sort_order' => 12,
+            ],
+            [
+                'name' => 'eitaa',
+                'display_name' => 'ایتا',
+                'icon' => 'heroicon-o-device-phone-mobile',
+                'base_url' => 'https://eitaa.com/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@channel یا username',
+                'sort_order' => 13,
+            ],
+            [
+                'name' => 'gap',
+                'display_name' => 'گپ',
+                'icon' => 'heroicon-o-chat-bubble-bottom-center',
+                'base_url' => 'https://gap.im/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@channel یا username',
+                'sort_order' => 14,
+            ],
+            [
+                'name' => 'soroush',
+                'display_name' => 'سروش',
+                'icon' => 'heroicon-o-chat-bubble-oval-left',
+                'base_url' => 'https://soroush.ir/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@channel یا username',
+                'sort_order' => 15,
+            ],
+            [
+                'name' => 'igram',
+                'display_name' => 'آی‌گرام',
+                'icon' => 'heroicon-o-camera',
+                'base_url' => 'https://igram.ir/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{3,30}$',
+                'placeholder_example' => '@username یا username',
+                'sort_order' => 16,
+            ],
+            
+            // وب‌سایت و شبکه‌های دیگر
             [
                 'name' => 'website',
                 'display_name' => 'وب‌سایت',
@@ -44,7 +112,25 @@ class SocialNetworkSeeder extends Seeder
                 'base_url' => null,
                 'validation_pattern' => '^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=]*)$',
                 'placeholder_example' => 'https://example.com',
+                'sort_order' => 100,
+            ],
+            [
+                'name' => 'linkedin',
+                'display_name' => 'لینکدین',
+                'icon' => 'heroicon-o-briefcase',
+                'base_url' => 'https://linkedin.com/in/',
+                'validation_pattern' => '^[a-zA-Z0-9-]{3,100}$',
+                'placeholder_example' => 'username یا company-name',
                 'sort_order' => 4,
+            ],
+            [
+                'name' => 'twitter',
+                'display_name' => 'توییتر (X)',
+                'icon' => 'heroicon-o-at-symbol',
+                'base_url' => 'https://twitter.com/',
+                'validation_pattern' => '^@?[a-zA-Z0-9_]{1,15}$',
+                'placeholder_example' => '@username یا username',
+                'sort_order' => 5,
             ],
         ];
 

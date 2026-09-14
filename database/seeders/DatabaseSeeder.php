@@ -23,6 +23,9 @@ class DatabaseSeeder extends Seeder
             CountrySeeder::class,
             ProvinceSeeder::class,
             CitySeeder::class,
+            PriceTypeSeeder::class,       // انواع قیمت‌ها (نقدی، چکی، گارانتی)
+            CheckPeriodSeeder::class,     // دوره‌های پیشفرض چک
+            SocialNetworkSeeder::class,   // شبکه‌های اجتماعی
 
         ]);
 
