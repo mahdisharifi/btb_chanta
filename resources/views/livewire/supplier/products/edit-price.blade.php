@@ -658,7 +658,7 @@
                                                     <div class="space-y-3">
                                                         <div class="flex items-center gap-2">
                                                             <input type="number"
-                                                                   wire:model.live.debounce.500ms="tierPercentages.{{ $tierIndex }}"
+                                                                   wire:model.live.debounce.1500ms.blur="tierPercentages.{{ $tierIndex }}"
                                                                    placeholder="درصد (مثال: 5)"
                                                                    step="0.01"
                                                                    inputmode="decimal"
@@ -938,7 +938,7 @@
                                                     
                                                     <div class="relative max-w-xs">
                                                         <input type="number"
-                                                               wire:model.live="priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price"
+                                                               wire:model.live.debounce.1500ms.blur="priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price"
                                                                placeholder="قیمت نقدی"
                                                                inputmode="numeric"
                                                                onwheel="this.blur()"
@@ -1080,7 +1080,7 @@
                                                                     <div class="flex items-center gap-3">
                                                                         <div class="flex items-center gap-2">
                                                                             <input type="number"
-                                                                                   wire:model.live.debounce.500ms="checkPercentageOverride.{{ $tierIndex }}.{{ $period->id }}"
+                                                                                   wire:model.live.debounce.1500ms.blur="checkPercentageOverride.{{ $tierIndex }}.{{ $period->id }}"
                                                                                    placeholder="10"
                                                                                    step="0.01"
                                                                                    min="0"
@@ -1180,7 +1180,7 @@
                                                 @endif
                                             </label>
                                             <input type="number"
-                                                   wire:model.live="priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price"
+                                                   wire:model.live.debounce.1500ms.blur="priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price"
                                                    placeholder="قیمت نقدی"
                                                    inputmode="numeric"
                                                    onwheel="this.blur()"
@@ -1277,7 +1277,7 @@
                                                             {{-- Input درصد اختصاصی --}}
                                                             <div class="space-y-3">
                                                                 <input type="number"
-                                                                       wire:model.live.debounce.500ms="checkPercentageOverride.{{ $tierIndex }}.{{ $period->id }}"
+                                                                       wire:model.live.debounce.1500ms.blur="checkPercentageOverride.{{ $tierIndex }}.{{ $period->id }}"
                                                                        placeholder="درصد (مثال: 10)"
                                                                        inputmode="decimal"
                                                                        onwheel="this.blur()"
