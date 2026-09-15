@@ -135,10 +135,22 @@ class SocialNetworkSeeder extends Seeder
         ];
 
         foreach ($networks as $network) {
-            DB::table('social_networks')->insert(array_merge($network, [
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]));
+            $exists = DB::table('social_networks')
+                ->where('name', $network['name'])
+                ->exists();
+
+            if ($exists) {
+                DB::table('social_networks')
+                    ->where('name', $network['name'])
+                    ->update(array_merge($network, [
+                        'updated_at' => now(),
+                    ]));
+            } else {
+                DB::table('social_networks')->insert(array_merge($network, [
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]));
+            }
         }
     }
 }

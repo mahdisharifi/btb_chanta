@@ -1086,6 +1086,15 @@ class Create extends Component
     /**
      * ✅ تیراژبندی خودکار بر اساس تعداد در واحد بسته‌بندی
      * 
+     * منطق:
+     * - زیر کارتن:
+     *   - اگر تعداد در کارتن = 1 → غیرفعال
+     *   - اگر تعداد در کارتن = 2 → min=1, max=1
+     *   - اگر تعداد در کارتن > 2 → min=1, max=کارتن-1
+     * - کارتن: از کارتن تا کارتن×5
+     * - عمده: از کارتن×5+1 تا کارتن×15
+     * - بار: از کارتن×15+1 تا بینهایت
+     * 
      * @return array
      */
     protected function generateAutoTiers(): array
@@ -1099,10 +1108,10 @@ class Create extends Component
         $unitLabel = $this->getPackagingUnitLabel();
         
         // ═══════════════════════════════════════════════════════════
-        // ✅ ساختار جدید 4 تیراژی
+        // ✅ ساختار جدید 4 تیراژی با منطق بهبود یافته
         // ═══════════════════════════════════════════════════════════
         
-        // ✅ استثنا: اگر بسته‌بندی (کارتن/مرجع) = 1 عددی باشد
+        // ✅ حالت 1: اگر تعداد در کارتن = 1 باشد
         if ($qtyPerPack === 1) {
             return [
                 0 => [
@@ -1115,15 +1124,15 @@ class Create extends Component
                 1 => [
                     'name' => 'کارتن',
                     'min_quantity' => 1,
-                    'max_quantity' => 4,
-                    'description' => "1 تا 4 {$unitLabel}",
+                    'max_quantity' => 5,
+                    'description' => "1 تا 5 {$unitLabel}",
                     'is_active' => true,
                 ],
                 2 => [
                     'name' => 'عمده',
-                    'min_quantity' => 5,
+                    'min_quantity' => 6,
                     'max_quantity' => 15,
-                    'description' => "5 تا 15 {$unitLabel}",
+                    'description' => "6 تا 15 {$unitLabel}",
                     'is_active' => true,
                 ],
                 3 => [
@@ -1136,7 +1145,41 @@ class Create extends Component
             ];
         }
         
-        // ✅ حالت عادی (quantity_per_packaging >= 2)
+        // ✅ حالت 2: اگر تعداد در کارتن = 2 باشد
+        if ($qtyPerPack === 2) {
+            return [
+                0 => [
+                    'name' => 'زیر کارتن',
+                    'min_quantity' => 1,
+                    'max_quantity' => 1,
+                    'description' => "کمتر از یک {$unitLabel} (1 عدد)",
+                    'is_active' => true,
+                ],
+                1 => [
+                    'name' => 'کارتن',
+                    'min_quantity' => $qtyPerPack,
+                    'max_quantity' => $qtyPerPack * 5,
+                    'description' => "1 تا 5 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 5) . " عدد)",
+                    'is_active' => true,
+                ],
+                2 => [
+                    'name' => 'عمده',
+                    'min_quantity' => ($qtyPerPack * 5) + 1,
+                    'max_quantity' => $qtyPerPack * 15,
+                    'description' => "6 تا 15 {$unitLabel} (" . (($qtyPerPack * 5) + 1) . " تا " . ($qtyPerPack * 15) . " عدد)",
+                    'is_active' => true,
+                ],
+                3 => [
+                    'name' => 'بار',
+                    'min_quantity' => ($qtyPerPack * 15) + 1,
+                    'max_quantity' => null,
+                    'description' => "16 {$unitLabel} به بالا (" . (($qtyPerPack * 15) + 1) . " عدد به بالا)",
+                    'is_active' => true,
+                ],
+            ];
+        }
+        
+        // ✅ حالت 3: اگر تعداد در کارتن > 2 باشد
         return [
             0 => [
                 'name' => 'زیر کارتن',
@@ -1147,21 +1190,21 @@ class Create extends Component
             ],
             1 => [
                 'name' => 'کارتن',
-                'min_quantity' => $qtyPerPack, // max_قبلی + 1 = (qtyPerPack-1) + 1
-                'max_quantity' => $qtyPerPack * 4,
-                'description' => "1 تا 4 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 4) . " عدد)",
+                'min_quantity' => $qtyPerPack,
+                'max_quantity' => $qtyPerPack * 5,
+                'description' => "1 تا 5 {$unitLabel} ({$qtyPerPack} تا " . ($qtyPerPack * 5) . " عدد)",
                 'is_active' => true,
             ],
             2 => [
                 'name' => 'عمده',
-                'min_quantity' => ($qtyPerPack * 4) + 1, // max_قبلی + 1
+                'min_quantity' => ($qtyPerPack * 5) + 1,
                 'max_quantity' => $qtyPerPack * 15,
-                'description' => "5 تا 15 {$unitLabel} (" . (($qtyPerPack * 4) + 1) . " تا " . ($qtyPerPack * 15) . " عدد)",
+                'description' => "6 تا 15 {$unitLabel} (" . (($qtyPerPack * 5) + 1) . " تا " . ($qtyPerPack * 15) . " عدد)",
                 'is_active' => true,
             ],
             3 => [
                 'name' => 'بار',
-                'min_quantity' => ($qtyPerPack * 15) + 1, // max_قبلی + 1
+                'min_quantity' => ($qtyPerPack * 15) + 1,
                 'max_quantity' => null,
                 'description' => "16 {$unitLabel} به بالا (" . (($qtyPerPack * 15) + 1) . " عدد به بالا)",
                 'is_active' => true,
