@@ -183,7 +183,10 @@ class ProductGallery extends Model
                     : $version;
 
                 if ($path) {
-                    return asset('storage/' . $path);
+                    // ✅ بررسی وجود فایل فیزیکی
+                    if (Storage::disk(self::STORAGE_DISK)->exists($path)) {
+                        return asset('storage/' . $path);
+                    }
                 }
             }
         }

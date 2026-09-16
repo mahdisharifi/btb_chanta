@@ -22,16 +22,19 @@ $imageUrl = null;
 $imageAlt = $product->title ?? 'محصول';
 
 if ($product->relationLoaded('galleries') && $product->galleries->isNotEmpty()) {
-
-$primaryImage = $product->galleries->firstWhere('is_primary', true) ?? $product->galleries->first();
-if ($primaryImage) {
-$imageUrl = $product->primaryImage?->getVersionUrl('sm');
-$imageAlt = $primaryImage->alt_text ?: (($product->title ?? 'محصول') . ' - خرید از ' . config('app.name'));
-}
+    $primaryImage = $product->galleries->firstWhere('is_primary', true) ?? $product->galleries->first();
+    if ($primaryImage) {
+        $imageUrl = $primaryImage->getVersionUrl('sm');
+        // اگر URL نداشتیم، از placeholder استفاده کن
+        if (!$imageUrl) {
+            $imageUrl = asset('images/placeholders/product-default.svg');
+        }
+        $imageAlt = $primaryImage->alt_text ?: (($product->title ?? 'محصول') . ' - خرید از ' . config('app.name'));
+    }
 }
 
 if (!$imageUrl) {
-$imageUrl = asset('images/placeholders/product-default.svg');
+    $imageUrl = asset('images/placeholders/product-default.svg');
 }
 
 $retailPrice = null;
@@ -88,14 +91,20 @@ $categorySlug = $category?->slug;
 
 @if($view === 'list')
 <div class="group flex flex-row overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-200 hover:shadow-md">
-    <a href="{{ $productUrl }}" class="relative min-h-[170px] w-44 flex-shrink-0 overflow-hidden bg-gray-50 sm:w-52">
+    <a href="{{ $productUrl }}" class="relative min-h-[170px] w-44 flex-shrink-0 overflow-hidden bg-gray-50 sm:w-52" 
+       x-data="{
+           handleError(event) {
+               event.target.src = '{{ asset('images/placeholders/product-default.svg') }}';
+               event.target.onerror = null;
+           }
+       }">
         <img
             src="{{ $imageUrl }}"
             alt="{{ $imageAlt }}"
             title="{{ $product->title }}"
             class="h-full w-full object-contain p-3 transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
-            onerror="this.onerror=null; this.src='{{ asset('images/placeholders/product-default.svg') }}';"
+            x-on:error="handleError($event)"
         >
 
         @if($product->is_featured)
@@ -222,14 +231,20 @@ $categorySlug = $category?->slug;
 <div class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-300 hover:shadow-xl hover:-translate-y-1">
     
     {{-- Product Image با Overlay جذاب --}}
-    <a href="{{ $productUrl }}" class="relative aspect-square overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+    <a href="{{ $productUrl }}" class="relative aspect-square overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100"
+       x-data="{
+           handleError(event) {
+               event.target.src = '{{ asset('images/placeholders/product-default.svg') }}';
+               event.target.onerror = null;
+           }
+       }">
         <img
             src="{{ $imageUrl }}"
             alt="{{ $imageAlt }}"
             title="{{ $product->title }}"
             class="h-full w-full object-contain p-5 transition-all duration-500 group-hover:scale-110 group-hover:rotate-2"
             loading="lazy"
-            onerror="this.onerror=null; this.src='{{ asset('images/placeholders/product-default.svg') }}';"
+            x-on:error="handleError($event)"
         >
 
         {{-- Badge ویژه با انیمیشن --}}

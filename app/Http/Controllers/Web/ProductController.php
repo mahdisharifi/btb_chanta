@@ -323,6 +323,11 @@ class ProductController extends Controller
             ->orderBy('sort_order')
             ->get();
 
+        // ✅ فیلتر کردن تامین‌کنندگانی که حداقل یک قیمت فعال دارند
+        $productSuppliers = $productSuppliers->filter(function($ps) {
+            return $ps->prices->isNotEmpty();
+        })->values();
+
         // ✅ سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
         if ($productSuppliers->count() > 1) {
             $productSuppliers = $this->sortSuppliersByBestPrices($productSuppliers, $product);

@@ -295,14 +295,13 @@ $supplierId = $ps->supplier->id;
                                     @endphp
                                     
                                     <div 
-                                        class="transition-all duration-200"
+                                        class="transition-all duration-200 @if(!$hasWarrantyPrice && $cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @elseif(!$hasWarrantyPrice) text-gray-800 @endif"
                                         @if($hasWarrantyPrice)
                                             :class="{
                                                 'bg-purple-50 border border-purple-200 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 text-purple-800': showWithWarranty,
-                                                '@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @else text-gray-800 @endif': !showWithWarranty
+                                                'bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5': !showWithWarranty && {{ $cell['is_lowest'] ? 'true' : 'false' }},
+                                                'text-gray-800': !showWithWarranty && !{{ $cell['is_lowest'] ? 'true' : 'false' }}
                                             }"
-                                        @else
-                                            class="@if($cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @else text-gray-800 @endif"
                                         @endif
                                     >
                                         <span class="text-base sm:text-lg md:text-xl lg:text-2xl font-semibold tabular-nums leading-tight tracking-tight">
