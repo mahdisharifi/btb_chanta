@@ -589,6 +589,7 @@ class ProductController extends Controller
                     $q->select([
                         'id', 'product_id', 'file_path', 'file_type',
                         'alt_text', 'sort_order', 'is_primary',
+                        'versions', 'base_name', // 👈 اضافه شد برای getVersionUrl()
                     ])
                         ->where('file_type', 'image')
                         ->orderByDesc('is_primary')

@@ -307,7 +307,7 @@ class HomeController extends Controller
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
-                        'sort_order', 'is_primary',
+                        'sort_order', 'is_primary', 'file_type', 'versions', 'base_name',
                     ])
                         ->where('file_type', 'image')
                         ->orderByDesc('is_primary')
@@ -416,7 +416,7 @@ class HomeController extends Controller
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
-                        'sort_order', 'is_primary',
+                        'sort_order', 'is_primary', 'file_type', 'versions', 'base_name',
                     ])
                         ->where('file_type', 'image')
                         ->orderByDesc('is_primary')
