@@ -23,8 +23,10 @@
     <link rel="canonical" href="{{ $canonical ?? url()->current() }}">
 
     {{-- Favicon --}}
-    <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
+    <link rel="icon" type="image/png" href="{{ asset('favicon.jpg') }}">
 
+    {{-- SEO Section (for schema, custom meta, etc.) --}}
+    @yield('seo')
 
     {{-- Styles --}}
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -301,20 +303,7 @@
                 </div>
 
             </div>
-            <a referrerpolicy='origin' 
-               target='_blank' 
-               rel='noopener noreferrer'
-               href='https://trustseal.enamad.ir/?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t'
-               aria-label="نماد اعتماد الکترونیک - ساماندهی"
-               class="inline-block">
-                <img referrerpolicy='origin' 
-                     src='https://trustseal.enamad.ir/logo.aspx?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t' 
-                     alt='نماد اعتماد الکترونیک' 
-                     style='cursor:pointer' 
-                     width='120' 
-                     height='120'
-                     loading='lazy'>
-            </a>
+
         </div>
     </div>
 
@@ -345,7 +334,7 @@
     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
     </svg>
-
 </button>
+
 </body>
 </html>

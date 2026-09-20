@@ -10,11 +10,29 @@
     use Illuminate\Support\Str;
 @endphp
 
-{{-- JSON-LD Structured Data (Organization) --}}
+{{-- JSON-LD Structured Data (Organization + Breadcrumb) --}}
 @push('head')
 <script type="application/ld+json">
 {!! json_encode($jsonLd ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) !!}
 </script>
+@if(!empty($breadcrumbs))
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+        @foreach($breadcrumbs as $index => $crumb)
+        {
+            "@type": "ListItem",
+            "position": {{ $index + 1 }},
+            "name": "{{ $crumb['name'] }}",
+            "item": "{{ $crumb['url'] ?? url()->current() }}"
+        }{{ !$loop->last ? ',' : '' }}
+        @endforeach
+    ]
+}
+</script>
+@endif
 @endpush
 
 @section('content')

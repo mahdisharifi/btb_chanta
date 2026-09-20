@@ -45,36 +45,59 @@ $retailPrice = $product->retailPrices
 ->first();
 }
 
-$wholesalePrice = null;
+// ✅ بهبود یافته: نمایش ماتریس قیمت یا بهترین قیمت
+$wholesalePriceData = null;
+$priceMatrix = null;
+
 if ($canSeeWholesalePrice && $product->relationLoaded('productSuppliers')) {
     // جمع‌آوری تمام قیمت‌های فعال از productSuppliers
     $allPrices = collect();
+    $activeSuppliersCount = 0; // ✅ شمارش تامین‌کنندگان با قیمت فعال
     
     foreach ($product->productSuppliers as $ps) {
         if ($ps->relationLoaded('prices')) {
-            $allPrices = $allPrices->merge($ps->prices);
+            $activePrices = $ps->prices->where('is_active', true);
+            if ($activePrices->isNotEmpty()) {
+                $allPrices = $allPrices->merge($activePrices);
+                $activeSuppliersCount++; // ✅ افزایش شمارنده فقط اگر قیمت فعال دارد
+            }
         }
     }
     
     if ($allPrices->isNotEmpty()) {
         // اگر supplier مشخص شده، فقط قیمت‌های آن supplier را نمایش بده
         if ($supplier) {
-            $wholesalePrice = $allPrices
-                ->where('product_supplier_id', function($price) use ($product, $supplier) {
-                    return $product->productSuppliers
-                        ->where('supplier_id', $supplier->id)
-                        ->pluck('id')
-                        ->contains($price->product_supplier_id);
-                })
-                ->where('is_active', true)
-                ->sortBy('price')
-                ->first();
+            $supplierProductSupplierIds = $product->productSuppliers
+                ->where('supplier_id', $supplier->id)
+                ->pluck('id');
+                
+            $filteredPrices = $allPrices->filter(function($price) use ($supplierProductSupplierIds) {
+                return $supplierProductSupplierIds->contains($price->product_supplier_id);
+            });
+            
+            if ($filteredPrices->isNotEmpty()) {
+                $lowestPrice = $filteredPrices->min('price');
+                $highestPrice = $filteredPrices->max('price');
+                
+                $wholesalePriceData = [
+                    'lowest' => $lowestPrice,
+                    'highest' => $highestPrice,
+                    'has_range' => $lowestPrice != $highestPrice,
+                    'tiers_count' => $filteredPrices->pluck('tier_index')->unique()->count(),
+                ];
+            }
         } else {
-            // در غیر این صورت، کمترین قیمت را نمایش بده
-            $wholesalePrice = $allPrices
-                ->where('is_active', true)
-                ->sortBy('price')
-                ->first();
+            // محاسبه محدوده قیمت برای نمایش ماتریس
+            $lowestPrice = $allPrices->min('price');
+            $highestPrice = $allPrices->max('price');
+            
+            $wholesalePriceData = [
+                'lowest' => $lowestPrice,
+                'highest' => $highestPrice,
+                'has_range' => $lowestPrice != $highestPrice,
+                'tiers_count' => $allPrices->pluck('tier_index')->unique()->count(),
+                'suppliers_count' => $activeSuppliersCount, // ✅ استفاده از شمارنده صحیح
+            ];
         }
     }
 }
@@ -153,14 +176,25 @@ $categorySlug = $category?->slug;
                 </div>
                 @endif
 
-                @if($canSeeWholesalePrice && $wholesalePrice)
+                @if($canSeeWholesalePrice && $wholesalePriceData)
                 <div class="mt-0.5 flex items-center gap-1">
                     <x-heroicon-o-arrow-trending-up class="h-3 w-3 text-amber-600" />
                     <span class="text-xs font-semibold text-amber-700">
                         @if($supplier)
-                            قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePrice->price) }} تومان
+                            @if($wholesalePriceData['has_range'])
+                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }} تومان
+                            @else
+                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} تومان
+                            @endif
                         @else
-                            عمده: {{ PriceHelper::formatNumber($wholesalePrice->price) }} تومان
+                            @if($wholesalePriceData['has_range'])
+                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }} تومان
+                                @if($wholesalePriceData['tiers_count'] > 1)
+                                    <span class="text-[10px]">({{ $wholesalePriceData['tiers_count'] }} تیراژ)</span>
+                                @endif
+                            @else
+                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} تومان
+                            @endif
                         @endif
                     </span>
                 </div>
@@ -170,8 +204,11 @@ $categorySlug = $category?->slug;
                 </a>
                 @endif
 
-                @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePrice))
-                <span class="text-sm font-medium text-gray-400">تماس بگیرید</span>
+                @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
+                <div class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1">
+                    <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span class="text-xs font-semibold text-red-600">قیمت‌گذاری نشده</span>
+                </div>
                 @endif
             </div>
 
@@ -315,10 +352,10 @@ $categorySlug = $category?->slug;
             </div>
             @endif
 
-            {{-- Wholesale Price --}}
-            @if($canSeeWholesalePrice && $wholesalePrice)
+            {{-- Wholesale Price با ماتریس بهینه --}}
+            @if($canSeeWholesalePrice && $wholesalePriceData)
             <div class="rounded-xl bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-50 p-3 border border-amber-200 shadow-sm">
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between mb-1.5">
                     <div class="flex items-center gap-1.5">
                         <svg class="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                         <span class="text-[10px] font-bold text-amber-700">
@@ -329,19 +366,47 @@ $categorySlug = $category?->slug;
                             @endif
                         </span>
                     </div>
+                </div>
+                
+                @if($wholesalePriceData['has_range'])
+                    {{-- نمایش محدوده قیمت --}}
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-amber-600">از</span>
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-sm font-extrabold text-amber-700">
+                                {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+                            </span>
+                            <span class="text-[8px] text-amber-600">تومان</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-[9px] text-amber-600">تا</span>
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-sm font-extrabold text-amber-700">
+                                {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+                            </span>
+                            <span class="text-[8px] text-amber-600">تومان</span>
+                        </div>
+                    </div>
+                    
+                    {{-- اطلاعات اضافی ماتریس --}}
+                    @if(!$supplier && isset($wholesalePriceData['suppliers_count']))
+                    <div class="mt-2 pt-2 border-t border-amber-200 flex items-center justify-between text-[9px] text-amber-600">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                            {{ $wholesalePriceData['tiers_count'] }} تیراژ
+                        </span>
+                        <span>{{ $wholesalePriceData['suppliers_count'] }} تامین‌کننده</span>
+                    </div>
+                    @endif
+                @else
+                    {{-- قیمت واحد --}}
                     <div class="flex items-baseline gap-1">
                         <span class="text-base font-extrabold text-amber-700">
-                            {{ PriceHelper::formatNumber($wholesalePrice->price) }}
+                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
                         </span>
                         <span class="text-[9px] text-amber-600">تومان</span>
                     </div>
-                </div>
-                
-                @if($wholesalePrice->min_quantity > 1)
-                <div class="mt-1.5 flex items-center gap-1 text-[9px] text-amber-600">
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                    <span class="font-medium">حداقل {{ $wholesalePrice->min_quantity }} عدد</span>
-                </div>
                 @endif
             </div>
             @elseif(!$canSeeWholesalePrice && Route::has('register'))
@@ -353,11 +418,14 @@ $categorySlug = $category?->slug;
             </a>
             @endif
 
-            {{-- Contact for Price --}}
-            @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePrice))
-            <div class="flex items-center justify-center gap-2 rounded-xl bg-gray-50 p-3 text-gray-500">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
-                <span class="text-sm font-bold">تماس بگیرید</span>
+            {{-- Contact for Price - بهبود یافته --}}
+            @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
+            <div class="flex flex-col items-center justify-center gap-2 rounded-xl bg-red-50 border border-red-200 p-3">
+                <div class="flex items-center gap-2 text-red-600">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span class="text-sm font-bold">قیمت‌گذاری نشده</span>
+                </div>
+                <span class="text-[10px] text-red-500 text-center">این محصول در حال حاضر قیمت‌گذاری ندارد</span>
             </div>
             @endif
         </div>

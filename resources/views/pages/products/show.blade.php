@@ -16,14 +16,16 @@ use App\Helpers\PriceHelper;
 {{-- Meta Tags --}}
 <meta name="description" content="{{ $seo['description'] ?? '' }}">
 <meta name="keywords" content="{{ $seo['keywords'] ?? '' }}">
-<link rel="canonical" href="{{ $seo['canonical_url'] ?? url()->current() }}">
+
+{{-- ✅ Canonical URL: همیشه به URL بدون پارامتر اشاره می‌کند --}}
+<link rel="canonical" href="{{ $seo['canonical_url'] ?? route('products.show', ['product' => $product->slug]) }}">
 
 {{-- Open Graph --}}
 <meta property="og:title" content="{{ $seo['og_title'] ?? $product->title }}">
 <meta property="og:description" content="{{ $seo['og_description'] ?? '' }}">
 <meta property="og:image" content="{{ $seo['og_image'] ?? '' }}">
 <meta property="og:type" content="{{ $seo['og_type'] ?? 'product' }}">
-<meta property="og:url" content="{{ $seo['og_url'] ?? url()->current() }}">
+<meta property="og:url" content="{{ $seo['og_url'] ?? route('products.show', ['product' => $product->slug]) }}">
 
 {{-- Schema.org JSON-LD --}}
 @if(!empty($seo['schema']))
@@ -222,31 +224,75 @@ use App\Helpers\PriceHelper;
             @endif
             
             
-            {{-- ⚠️ هشدار: بدون تیراژ فعال --}}
+            {{-- ⚠️ هشدار: بدون قیمت‌گذاری فعال --}}
             @if(!$hasAnyActiveTier)
-                <div class="mb-4 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 shadow-md">
+                <div class="mb-6 bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-300 rounded-2xl p-6 shadow-xl">
                     <div class="flex items-start gap-4">
                         <div class="flex-shrink-0">
-                            <div class="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center">
-                                <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <div class="w-14 h-14 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg">
+                                <svg class="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                                 </svg>
                             </div>
                         </div>
                         <div class="flex-1">
-                            <h4 class="text-base sm:text-lg font-bold text-yellow-900 mb-2">
-                                🔒 این محصول در حال حاضر تیراژ فعالی ندارد
+                            <h4 class="text-lg sm:text-xl font-black text-red-900 mb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                محصول فاقد قیمت‌گذاری فعال است
                             </h4>
-                            <p class="text-sm text-yellow-800 leading-relaxed">
-                                تأمین‌کنندگان هنوز قیمتی برای تیراژهای این محصول ثبت نکرده‌اند. 
-                                لطفاً برای دریافت قیمت و سفارش، مستقیماً با تأمین‌کنندگان تماس بگیرید.
-                            </p>
+                            <div class="space-y-3">
+                                <p class="text-sm sm:text-base text-gray-700 leading-relaxed">
+                                    این محصول در حال حاضر قیمت‌گذاری فعالی ندارد. ممکن است دلایل زیر باشد:
+                                </p>
+                                <ul class="text-sm text-gray-700 space-y-2 mr-6">
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-red-500 font-bold mt-1">•</span>
+                                        <span>تامین‌کنندگان هنوز قیمتی برای این محصول ثبت نکرده‌اند</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-red-500 font-bold mt-1">•</span>
+                                        <span>محصول به صورت موقت ناموجود است</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-red-500 font-bold mt-1">•</span>
+                                        <span>محصول در حال بروزرسانی قیمت است</span>
+                                    </li>
+                                </ul>
+                                
+                                {{-- اطلاعات تماس --}}
+                                <div class="mt-4 bg-white rounded-xl p-4 border-2 border-red-200 shadow-sm">
+                                    <p class="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                                        برای دریافت قیمت و سفارش:
+                                    </p>
+                                    <div class="text-sm text-gray-700 space-y-1">
+                                        @if($canViewSupplierInfo && $productSuppliers->isNotEmpty())
+                                            <p>لطفاً با تامین‌کنندگان زیر تماس بگیرید:</p>
+                                            <div class="mt-2 space-y-2">
+                                                @foreach($productSuppliers as $ps)
+                                                    @if($ps->supplier)
+                                                    <div class="flex items-center gap-2 text-sm">
+                                                        <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                                        <span class="font-semibold">{{ $ps->supplier->company_name }}</span>
+                                                        @if($ps->supplier->mobile)
+                                                            <span class="text-gray-600">— {{ $ps->supplier->mobile }}</span>
+                                                        @endif
+                                                    </div>
+                                                    @endif
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <p>لطفاً از طریق پشتیبانی سایت اقدام کنید</p>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             @endif
             
-            @if($hasMatrixPricing && $hasAnyActiveTier)
+            @if($hasMatrixPricing && $hasAnyActiveTier && $hasMultipleSuppliers)
             
             {{-- 📘 Info Box: راهنمای تیراژها برای کاربران --}}
             <div class="mb-4 bg-gradient-to-l from-indigo-50 to-blue-50 border-r-4 border-indigo-500 rounded-lg p-4 shadow-sm">

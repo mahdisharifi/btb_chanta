@@ -73,6 +73,7 @@ class ProductGallery extends Model
         'alt_text',
         'sort_order',
         'is_primary',
+        'is_seo_image',     // ✅ جدید - تصویر ویژه برای SEO و Schema.org
         'file_size',
         'mime_type',
         'width',

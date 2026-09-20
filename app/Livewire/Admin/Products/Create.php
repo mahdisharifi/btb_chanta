@@ -35,6 +35,9 @@ class Create extends Component
     public $existingGalleries = [];
     public $galleriesToDelete = [];
     public $galleryOrder = [];
+    
+    // ✅ تصویر پیش‌نمایش SEO برای نمایش Real-time
+    public $seoPreviewImagePath = null;
 
 
     public $title;
@@ -162,6 +165,7 @@ class Create extends Component
                 'file_path'  => $g->file_path,
                 'file_type'  => $g->file_type ?? 'image',
                 'is_primary' => (bool) $g->is_primary,
+                'is_seo_image' => (bool) ($g->is_seo_image ?? false),
                 'mime_type'  => $g->mime_type,
                 'duration'   => $g->duration,
                 'full_url'   => $g->full_url,
@@ -175,6 +179,10 @@ class Create extends Component
             ->pluck('id')
             ->map(fn ($id) => (string) $id)
             ->toArray();
+        
+        // ✅ بروزرسانی تصویر پیش‌نمایش SEO
+        $this->updateSeoPreviewImage();
+        
         $this->loadCategoryAttributes();
         $this->populateSelectedFromProduct($product);
     }
@@ -431,6 +439,9 @@ class Create extends Component
             ->reject(fn ($g) => $g['id'] == $galleryId)
             ->values()
             ->toArray();
+        
+        // ✅ بروزرسانی تصویر پیش‌نمایش SEO
+        $this->updateSeoPreviewImage();
     }
     private function getUploadedImageDimensions($image): array
     {
@@ -550,6 +561,46 @@ class Create extends Component
         $this->existingGalleries = $videos->concat(collect($images))->values()->toArray();
 
         $this->galleryOrder = collect($images)->pluck('id')->map(fn($id) => (string)$id)->toArray();
+        
+        // ✅ بروزرسانی تصویر پیش‌نمایش SEO
+        $this->updateSeoPreviewImage();
+    }
+
+    /**
+     * تغییر وضعیت تصویر SEO
+     */
+    public function toggleSeoImage(int $galleryId): void
+    {
+        $images = collect($this->existingGalleries)
+            ->where('file_type', 'image')
+            ->values()
+            ->toArray();
+
+        // تنها یک تصویر می‌تواند is_seo_image باشد
+        $images = array_map(function ($g) use ($galleryId) {
+            $g['is_seo_image'] = ($g['id'] === $galleryId) ? !($g['is_seo_image'] ?? false) : false;
+            return $g;
+        }, $images);
+
+        $videos = collect($this->existingGalleries)->where('file_type', 'video')->values();
+        $this->existingGalleries = $videos->concat(collect($images))->values()->toArray();
+        
+        // ✅ بروزرسانی تصویر پیش‌نمایش SEO
+        $this->updateSeoPreviewImage();
+    }
+    
+    /**
+     * ✅ بروزرسانی تصویر پیش‌نمایش SEO
+     * اولویت: is_seo_image > is_primary > first image
+     */
+    protected function updateSeoPreviewImage(): void
+    {
+        $seoImage = collect($this->existingGalleries)
+            ->where('file_type', 'image')
+            ->sortByDesc(fn($g) => ($g['is_seo_image'] ?? false) ? 2 : (($g['is_primary'] ?? false) ? 1 : 0))
+            ->first();
+        
+        $this->seoPreviewImagePath = $seoImage['full_url'] ?? null;
     }
 
     public function save()
@@ -685,6 +736,7 @@ class Create extends Component
                     ->update([
                         'sort_order' => $index + 1,
                         'is_primary'  => $item['is_primary'],
+                        'is_seo_image' => $item['is_seo_image'] ?? false,
                     ]);
             }
         }

@@ -86,7 +86,31 @@ class CategoryController extends Controller
             ->whereIn('category_id', $categoryIds)
             ->where('is_active', true)
             ->where('status', 'active')
-            ->with(['category', 'supplier', 'galleries' => fn($q) => $q->where('is_primary', true)])
+            ->with([
+                'category:id,name,slug,parent_id',
+                'supplier:id,company_name,brand_name,logo_path,is_verified',
+                'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text', 'versions', 'base_name'])
+                    ->where('file_type', 'image')
+                    ->orderByDesc('is_primary')
+                    ->orderBy('sort_order')
+                    ->limit(1),
+                // ✅ اضافه شد: eager loading برای قیمت‌های عمده
+                'productSuppliers' => fn($q) => $q->where('is_active', true),
+                'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_until')
+                            ->orWhere('valid_until', '>=', now());
+                    })
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_from')
+                            ->orWhere('valid_from', '<=', now());
+                    }),
+                'productSuppliers.supplier:id,company_name,brand_name',
+                // ✅ اضافه شد: قیمت‌های خرده‌فروشی
+                'retailPrices' => fn($q) => $q->select(['id', 'product_id', 'user_id', 'retail_price', 'is_published'])
+                    ->where('is_published', true)
+                    ->orderBy('retail_price', 'asc'),
+            ])
             ->latest()
             ->paginate(16);
 

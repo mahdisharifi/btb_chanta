@@ -8,8 +8,13 @@
 ])
 
 <div
-    x-data="productSlider()"
-    x-init="init()"
+    x-data="{
+        dragged: false,
+        startX: 0,
+        scrollLeft: 0,
+        isDown: false,
+        dragThreshold: 8
+    }"
     class="w-full py-6 select-none"
 >
     <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -66,80 +71,26 @@
 
     <div
         x-ref="slider"
-        @mousedown="startDrag($event)"
-        @mouseleave="stopDrag()"
-        @mouseup="stopDrag()"
-        @mousemove="onDrag($event)"
+        @mousedown="isDown = true; dragged = false; startX = $event.pageX - $refs.slider.offsetLeft; scrollLeft = $refs.slider.scrollLeft"
+        @mouseleave="isDown = false"
+        @mouseup="isDown = false"
+        @mousemove="if (!isDown) return; $event.preventDefault(); const x = $event.pageX - $refs.slider.offsetLeft; const walk = x - startX; if (Math.abs(walk) > dragThreshold) dragged = true; $refs.slider.scrollLeft = scrollLeft - walk"
+        @click.away="dragged = false"
         ondragstart="return false"
         class="product-slider-scroll flex cursor-grab gap-3 overflow-x-auto scroll-smooth px-4 pb-4 active:cursor-grabbing snap-x"
         style="-ms-overflow-style: none; -webkit-overflow-scrolling: touch; scrollbar-width: none;"
     >
         <style>
             .product-slider-scroll::-webkit-scrollbar { display: none; }
-            .product-slider-scroll { -webkit-user-select: none; user-select: none; }
-            .product-slider-scroll a { 
-                cursor: pointer;
-                pointer-events: auto;
-            }
-            .product-slider-scroll img { pointer-events: none; }
         </style>
 
         @foreach($products as $product)
         <div
             class="w-[calc(50%-0.375rem)] flex-shrink-0 snap-start sm:w-[calc(33.333%-0.67rem)] md:w-52"
+            @click="if (dragged) { $event.preventDefault(); $event.stopImmediatePropagation(); }"
         >
             <x-product.card :product="$product" />
         </div>
         @endforeach
     </div>
 </div>
-
-<script>
-function productSlider() {
-    return {
-        dragged: false,
-        startX: 0,
-        scrollLeft: 0,
-        isDown: false,
-        dragThreshold: 8,
-        
-        init() {
-            // اضافه کردن event listener برای مدیریت کلیک روی لینک‌ها
-            this.$refs.slider.addEventListener('click', (e) => {
-                if (this.dragged) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
-                    this.dragged = false;
-                }
-            }, true); // capture phase - قبل از اینکه event به لینک برسد
-        },
-        
-        startDrag(event) {
-            this.isDown = true;
-            this.dragged = false;
-            this.startX = event.pageX - this.$refs.slider.offsetLeft;
-            this.scrollLeft = this.$refs.slider.scrollLeft;
-        },
-        
-        stopDrag() {
-            this.isDown = false;
-        },
-        
-        onDrag(event) {
-            if (!this.isDown) return;
-
-            event.preventDefault();
-
-            const currentX = event.pageX - this.$refs.slider.offsetLeft;
-            const distance = currentX - this.startX;
-
-            if (Math.abs(distance) > this.dragThreshold) {
-                this.dragged = true;
-            }
-
-            this.$refs.slider.scrollLeft = this.scrollLeft - distance;
-        }
-    }
-}
-</script>

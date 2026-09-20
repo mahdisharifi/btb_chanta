@@ -597,6 +597,9 @@ class ProductController extends Controller
                         ->limit(1);
                 },
                 // ✅ استفاده از ساختار جدید: productSuppliers با prices
+                'productSuppliers' => function ($q) {
+                    $q->where('is_active', true);
+                },
                 'productSuppliers.prices' => function ($q) {
                     $q->where('is_active', true)
                         ->where(function ($sub) {
@@ -1185,6 +1188,18 @@ class ProductController extends Controller
                         ->orderBy('retail_price')
                         ->limit(1),
                     'category:id,name,slug',
+                    // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                    'productSuppliers' => fn($q) => $q->where('is_active', true),
+                    'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_until')
+                                ->orWhere('valid_until', '>=', now());
+                        })
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_from')
+                                ->orWhere('valid_from', '<=', now());
+                        }),
+                    'productSuppliers.supplier:id,company_name,brand_name',
                 ])
                 ->inRandomOrder()
                 ->limit($limit)
@@ -1233,6 +1248,18 @@ class ProductController extends Controller
                     ->orderBy('retail_price')
                     ->limit(1),
                 'category:id,name,slug',
+                // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                'productSuppliers' => fn($q) => $q->where('is_active', true),
+                'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_until')
+                            ->orWhere('valid_until', '>=', now());
+                    })
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_from')
+                            ->orWhere('valid_from', '<=', now());
+                    }),
+                'productSuppliers.supplier:id,company_name,brand_name',
             ])
             ->get()
             ->sortBy(function ($product) use ($recentIds) {
@@ -1722,21 +1749,33 @@ private function getCategoryChain(Category $category): array
     // ══════════════════════════════════════════════════════════
 
     /**
-     * SEO برای صفحه محصول
+     * SEO برای صفحه محصول با Canonical URL صحیح
+     * ✅ پیش‌فرض: متمرکز بر عمده‌فروشی B2B
      */
     private function buildSeoData(Product $product, array $breadcrumbs): array
     {
         $categoryName = $product->category?->name ?? 'محصولات';
-        $siteName = config('app.name', 'فروشگاه B2B');
+        $siteName = config('app.name', 'عمده‌فروشی چن تا؟');
 
-        $primaryImage = $product->galleries?->where('is_primary', true)->first()
-            ?? $product->galleries?->first();
+        // ✅ اولویت تصویر SEO: is_seo_image > is_primary > اولین تصویر
+        $seoImage = $product->galleries?->where('is_seo_image', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('is_primary', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('file_type', 'image')->first();
 
-        $imageUrl = $primaryImage
-            ? asset('storage/' . $primaryImage->file_path)
-            : asset('images/default-product.jpg');
+        // ✅ استفاده از تصویر بهینه با fallback
+        $imageUrl = null;
+        if ($seoImage && method_exists($seoImage, 'getVersionUrl')) {
+            $imageUrl = $seoImage->getVersionUrl('md') ?: asset('storage/' . $seoImage->file_path);
+        } elseif ($seoImage) {
+            $imageUrl = asset('storage/' . $seoImage->file_path);
+        } else {
+            $imageUrl = asset('images/placeholders/product-default.svg');
+        }
 
-        // ✅ جمع‌آوری قیمت‌ها برای SEO
+        // استفاده از alt_text تصویر SEO (اگر موجود باشد)
+        $imageAlt = $seoImage?->alt_text ?: ($product->title . ' - عمده‌فروشی ' . $siteName);
+
+        // ✅ جمع‌آوری قیمت‌های عمده برای SEO
         $allPrices = collect();
         if ($product->relationLoaded('productSuppliers')) {
             foreach ($product->productSuppliers as $ps) {
@@ -1748,38 +1787,55 @@ private function getCategoryChain(Category $category): array
             }
         }
         
-        // ساخت متن قیمت برای description
+        // ✅ ساخت متن قیمت عمده برای description
         $priceText = '';
         if ($allPrices->isNotEmpty()) {
             $lowestPrice = $allPrices->min();
             $highestPrice = $allPrices->max();
             
             if ($lowestPrice == $highestPrice) {
-                $priceText = ' | قیمت: ' . number_format($lowestPrice) . ' تومان';
+                $priceText = ' | قیمت عمده: ' . number_format($lowestPrice) . ' تومان';
             } else {
-                $priceText = ' | قیمت: ' . number_format($lowestPrice) . ' تا ' . number_format($highestPrice) . ' تومان';
+                $priceText = ' | قیمت عمده از ' . number_format($lowestPrice) . ' تومان';
             }
         } else {
-            // fallback: قیمت خرده‌فروشی
+            // fallback: قیمت خرده‌فروشی (با تاکید بر عمده)
             $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
             if ($retailPrice) {
-                $priceText = ' | قیمت: ' . number_format($retailPrice->retail_price) . ' تومان';
+                $priceText = ' | قیمت از ' . number_format($retailPrice->retail_price) . ' تومان';
             }
         }
 
-        // توضیحات SEO با قیمت
-        $seoDescription = $product->seo_description
-            ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 140) . $priceText;
+        // ✅ توضیحات SEO با تمرکز بر عمده‌فروشی
+        if ($product->seo_description) {
+            $seoDescription = $product->seo_description;
+        } else {
+            $baseDescription = strip_tags($product->short_description ?? '');
+            if (empty($baseDescription)) {
+                // fallback: توضیحات خودکار با تمرکز B2B
+                $seoDescription = "خرید عمده {$product->title} با بهترین قیمت از {$siteName}. فروش عمده به صورت کارتن و پالت{$priceText}";
+            } else {
+                $seoDescription = mb_substr($baseDescription, 0, 100) . $priceText . ' | فروش عمده';
+            }
+        }
+
+        // ✅ Canonical URL: همیشه به URL بدون پارامتر اشاره می‌کند
+        $canonicalUrl = $product->seo_canonical_url ?? route('products.show', ['product' => $product->slug]);
+
+        // ✅ عنوان SEO با تمرکز بر عمده‌فروشی
+        $defaultTitle = $product->seo_title 
+            ?? "خرید عمده {$product->title} | {$categoryName} | {$siteName}";
+
+        // ✅ کلمات کلیدی با تمرکز B2B
+        $defaultKeywords = $product->seo_keywords
+            ?? "{$product->title} عمده,خرید عمده {$product->title},{$categoryName} عمده,قیمت عمده {$product->title},فروش کارتنی,فروش عمده";
 
         return [
-            'title'             => $product->seo_title
-                ?? $product->title . ' | ' . $categoryName . ' | ' . $siteName,
+            'title'             => $defaultTitle,
             'description'       => mb_substr($seoDescription, 0, 160),
-            'keywords'          => $product->seo_keywords
-                ?? $product->title . ',' . $categoryName . ',خرید عمده,قیمت عمده',
-            'canonical_url'     => $product->seo_canonical_url
-                ?? url('/products/' . $product->slug),
-            'og_title'          => $product->seo_title ?? $product->title ?? '',
+            'keywords'          => $defaultKeywords,
+            'canonical_url'     => $canonicalUrl,
+            'og_title'          => $product->seo_title ?? "خرید عمده {$product->title}",
             'og_description'    => mb_substr($seoDescription, 0, 200),
             'og_image'          => $imageUrl,
             'og_type'           => 'product',
@@ -1790,7 +1846,11 @@ private function getCategoryChain(Category $category): array
     }
 
     /**
-     * Schema.org Product JSON-LD
+     * ساخت Schema.org برای محصول با قیمت‌های عمده
+     * 
+     * @param Product $product
+     * @param array $breadcrumbs
+     * @return array
      */
     private function buildProductSchema(Product $product, array $breadcrumbs): array
     {
@@ -1798,20 +1858,31 @@ private function getCategoryChain(Category $category): array
             '@context'    => 'https://schema.org',
             '@type'       => 'Product',
             'name'        => $product->title ?? '',
-            'description' => strip_tags($product->short_description ?? ''),
+            'description' => strip_tags($product->short_description ?? 'خرید عمده ' . ($product->title ?? '')),
             'sku'         => $product->sku ?? '',
             'url'         => url('/products/' . $product->slug),
+            'productID'   => $product->sku ?? $product->id,
         ];
 
-        $primaryImage = $product->galleries?->where('is_primary', true)->first();
-        if ($primaryImage) {
-            $schema['image'] = asset('storage/' . $primaryImage->file_path);
+        // ✅ تصویر با اولویت SEO Image (نسخه sm برای سرعت بیشتر)
+        $seoImage = $product->galleries?->where('is_seo_image', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('is_primary', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('file_type', 'image')->first();
+            
+        if ($seoImage) {
+            if (method_exists($seoImage, 'getVersionUrl')) {
+                // استفاده از نسخه sm برای سرعت بیشتر در نتایج جستجو
+                $schema['image'] = $seoImage->getVersionUrl('sm') ?: $seoImage->getVersionUrl('md') ?: asset('storage/' . $seoImage->file_path);
+            } else {
+                $schema['image'] = asset('storage/' . $seoImage->file_path);
+            }
         }
 
         if ($product->category) {
             $schema['category'] = $product->category->name ?? '';
         }
 
+        // ✅ برند محصول
         if ($product->supplier) {
             $schema['brand'] = [
                 '@type' => 'Brand',
@@ -1819,15 +1890,19 @@ private function getCategoryChain(Category $category): array
             ];
         }
 
-        // ✅ بهبود SEO: اضافه کردن قیمت‌های عمده (AggregateOffer)
+        // ✅ جمع‌آوری قیمت‌های عمده از productSuppliers
         $allPrices = collect();
         
-        // جمع‌آوری قیمت‌های عمده از productSuppliers
+        // بررسی اینکه آیا relation productSuppliers لود شده
         if ($product->relationLoaded('productSuppliers')) {
             foreach ($product->productSuppliers as $ps) {
                 if ($ps->relationLoaded('prices')) {
                     $allPrices = $allPrices->merge(
                         $ps->prices->where('is_active', true)->pluck('price')
+                    );
+                } elseif ($ps->prices) {
+                    $allPrices = $allPrices->merge(
+                        $ps->prices->pluck('price')
                     );
                 }
             }
@@ -1835,8 +1910,8 @@ private function getCategoryChain(Category $category): array
         
         // اگر قیمت عمده داریم
         if ($allPrices->isNotEmpty()) {
-            $lowestPrice = $allPrices->min();
-            $highestPrice = $allPrices->max();
+            $lowestPrice = (float) $allPrices->min();
+            $highestPrice = (float) $allPrices->max();
             
             $schema['offers'] = [
                 '@type'         => 'AggregateOffer',
@@ -1849,6 +1924,19 @@ private function getCategoryChain(Category $category): array
                     : 'https://schema.org/OutOfStock',
                 'url'           => url('/products/' . $product->slug),
                 'priceValidUntil' => now()->addMonths(1)->format('Y-m-d'),
+                'businessFunction' => 'http://purl.org/goodrelations/v1#Sell',
+                'eligibleQuantity' => [
+                    '@type' => 'QuantitativeValue',
+                    'minValue' => 1,
+                    'unitText' => 'عدد'
+                ],
+                // ✅ اضافه کردن seller برای هر تأمین‌کننده
+                'seller' => $product->productSuppliers->map(function($ps) {
+                    return [
+                        '@type' => 'Organization',
+                        'name' => $ps->supplier->company_name ?? $ps->supplier->brand_name ?? 'تأمین‌کننده',
+                    ];
+                })->toArray(),
             ];
         } else {
             // fallback: قیمت خرده‌فروشی
@@ -1857,20 +1945,39 @@ private function getCategoryChain(Category $category): array
                 $schema['offers'] = [
                     '@type'         => 'Offer',
                     'priceCurrency' => 'IRR',
-                    'price'         => $retailPrice->retail_price ?? 0,
+                    'price'         => (float) $retailPrice->retail_price,
                     'availability'  => 'https://schema.org/InStock',
                     'url'           => url('/products/' . $product->slug),
                     'priceValidUntil' => now()->addMonths(1)->format('Y-m-d'),
                 ];
+            } else {
+                // ✅ اگر هیچ قیمتی نیست، حداقل یک placeholder بذاریم
+                $schema['offers'] = [
+                    '@type'         => 'AggregateOffer',
+                    'priceCurrency' => 'IRR',
+                    'lowPrice'      => 0,
+                    'highPrice'     => 0,
+                    'offerCount'    => 0,
+                    'availability'  => 'https://schema.org/OutOfStock',
+                    'url'           => url('/products/' . $product->slug),
+                ];
             }
         }
 
-        // ✅ اضافه کردن review rating (اگر در آینده پیاده شود)
-        // $schema['aggregateRating'] = [
-        //     '@type' => 'AggregateRating',
-        //     'ratingValue' => '4.5',
-        //     'reviewCount' => '10'
-        // ];
+        // ✅ اضافه کردن audience برای B2B
+        $schema['audience'] = [
+            '@type' => 'BusinessAudience',
+            'audienceType' => 'خرده‌فروشان و مشاغل'
+        ];
+
+        // ✅ اضافه کردن aggregateRating اگر نظرات داریم
+        if ($product->reviews_count ?? 0 > 0) {
+            $schema['aggregateRating'] = [
+                '@type' => 'AggregateRating',
+                'ratingValue' => $product->average_rating ?? 0,
+                'reviewCount' => $product->reviews_count ?? 0,
+            ];
+        }
 
         return $schema;
     }
@@ -1899,30 +2006,31 @@ private function getCategoryChain(Category $category): array
 
     /**
      * SEO برای صفحه لیست
+     * ✅ پیش‌فرض: متمرکز بر عمده‌فروشی B2B
      */
     private function buildIndexSeo(Request $request): array
     {
-        $title = 'محصولات';
-        $description = 'لیست محصولات فروشگاه — مشاهده و مقایسه انواع محصولات با قیمت‌های رقابتی';
+        $title = 'فروش عمده محصولات';
+        $description = 'خرید عمده محصولات با بهترین قیمت از عمده‌فروشی چن تا؟ — مشاهده و مقایسه قیمت‌های عمده‌فروشی انواع محصولات';
 
         if ($request->filled('q')) {
-            $title = "جستجوی «{$request->q}» در محصولات";
-            $description = "نتایج جستجوی «{$request->q}» در فروشگاه";
+            $title = "خرید عمده {$request->q}";
+            $description = "قیمت عمده {$request->q} — مقایسه قیمت‌های عمده‌فروشی {$request->q} از چندین تامین‌کننده";
         }
 
         if ($request->filled('category')) {
             $category = Category::where('slug', $request->category)->first();
             if ($category) {
-                $title = "محصولات {$category->name}";
+                $title = "خرید عمده {$category->name}";
                 $description = $category->seo_description
-                    ?: "مشاهده تمام محصولات دسته‌بندی {$category->name}";
+                    ?: "قیمت عمده {$category->name} — مشاهده و خرید عمده محصولات {$category->name} با بهترین قیمت";
             }
         }
 
         return [
-            'title'       => $title . ' — ' . config('app.name'),
+            'title'       => $title . ' | ' . config('app.name'),
             'description' => mb_substr($description, 0, 160),
-            'keywords'    => $request->get('q', 'محصولات, خرید عمده, فروشگاه B2B'),
+            'keywords'    => $request->get('q', 'خرید عمده, قیمت عمده, فروش عمده, عمده‌فروشی'),
             'canonical'   => $request->fullUrlWithQuery(
                 array_diff_key($request->query(), ['page' => null])
             ),
@@ -1945,17 +2053,18 @@ private function getCategoryChain(Category $category): array
 
     /**
      * SEO برای صفحه دسته‌بندی
+     * ✅ پیش‌فرض: متمرکز بر عمده‌فروشی B2B
      */
     private function buildCategorySeo(Category $category): array
     {
-        $title       = $category->seo_title ?: "محصولات {$category->name}";
+        $title       = $category->seo_title ?: "خرید عمده {$category->name}";
         $description = $category->seo_description
-            ?: "مشاهده و خرید عمده محصولات دسته‌بندی {$category->name}";
+            ?: "قیمت عمده {$category->name} — خرید عمده و فروش کارتنی محصولات {$category->name} با بهترین قیمت از عمده‌فروشی چن تا؟";
 
         return [
-            'title'       => $title . ' — ' . config('app.name'),
+            'title'       => $title . ' | ' . config('app.name'),
             'description' => mb_substr($description, 0, 160),
-            'keywords'    => $category->seo_keywords ?: $category->name,
+            'keywords'    => $category->seo_keywords ?: "{$category->name} عمده,خرید عمده {$category->name},قیمت عمده {$category->name},فروش کارتنی",
             'canonical'   => route('categories.show', ['category' => $category->slug]),
             'robots'      => 'index, follow',
             'og' => [

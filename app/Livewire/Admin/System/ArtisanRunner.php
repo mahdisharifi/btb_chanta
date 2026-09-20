@@ -12,16 +12,36 @@ class ArtisanRunner extends Component
 {
     public string $output = '';
 
-    // لیست مجاز دستورات (Whitelist) برای امنیت بیشتر
-    public array $commandList = [
-        'optimize:clear' => ['name' => 'پاکسازی کامل کش', 'icon' => 'o-trash', 'color' => 'bg-emerald-500'],
-        'cache:clear'    => ['name' => 'پاکسازی کش داده‌ها', 'icon' => 'o-circle-stack', 'color' => 'bg-teal-500'],
-        'view:clear'     => ['name' => 'پاکسازی کش ویوها', 'icon' => 'o-eye-slash', 'color' => 'bg-cyan-500'],
-        'route:clear'    => ['name' => 'پاکسازی کش روت‌ها', 'icon' => 'o-map', 'color' => 'bg-sky-500'],
-        'config:clear'   => ['name' => 'پاکسازی کش تنظیمات', 'icon' => 'o-cog-6-tooth', 'color' => 'bg-blue-500'], // تغییر به cog-6-tooth
-        'migrate'        => ['name' => 'اجرای مایگریشن‌ها', 'icon' => 'o-server-stack', 'color' => 'bg-indigo-600'], // تغییر از database به server-stack
-        'migrate:status' => ['name' => 'وضعیت مایگریشن‌ها', 'icon' => 'o-information-circle', 'color' => 'bg-violet-500'],
-    ];
+    /**
+     * لیست مجاز دستورات (Whitelist) برای امنیت بیشتر
+     */
+    public function getCommandListProperty(): array
+    {
+        return [
+            // 🧹 دستورات پاکسازی Cache
+            'optimize:clear' => ['name' => 'پاکسازی کامل کش', 'icon' => 'o-trash', 'color' => 'bg-emerald-500', 'group' => 'clear'],
+            'cache:clear'    => ['name' => 'پاکسازی کش داده‌ها', 'icon' => 'o-circle-stack', 'color' => 'bg-teal-500', 'group' => 'clear'],
+            'view:clear'     => ['name' => 'پاکسازی کش ویوها', 'icon' => 'o-eye-slash', 'color' => 'bg-cyan-500', 'group' => 'clear'],
+            'route:clear'    => ['name' => 'پاکسازی کش روت‌ها', 'icon' => 'o-map', 'color' => 'bg-sky-500', 'group' => 'clear'],
+            'config:clear'   => ['name' => 'پاکسازی کش تنظیمات', 'icon' => 'o-cog-6-tooth', 'color' => 'bg-blue-500', 'group' => 'clear'],
+            'event:clear'    => ['name' => 'پاکسازی کش رویدادها', 'icon' => 'o-bolt', 'color' => 'bg-purple-500', 'group' => 'clear'],
+            
+            // 🚀 دستورات بهینه‌سازی Production
+            'optimize'       => ['name' => 'بهینه‌سازی کامل (Cache همه چیز)', 'icon' => 'o-rocket-launch', 'color' => 'bg-green-600', 'group' => 'optimize'],
+            'config:cache'   => ['name' => 'Cache تنظیمات', 'icon' => 'o-cog-6-tooth', 'color' => 'bg-blue-600', 'group' => 'optimize'],
+            'route:cache'    => ['name' => 'Cache روت‌ها', 'icon' => 'o-map', 'color' => 'bg-sky-600', 'group' => 'optimize'],
+            'view:cache'     => ['name' => 'Cache ویوها', 'icon' => 'o-eye', 'color' => 'bg-cyan-600', 'group' => 'optimize'],
+            'event:cache'    => ['name' => 'Cache رویدادها', 'icon' => 'o-bolt', 'color' => 'bg-purple-600', 'group' => 'optimize'],
+            
+            // 🗄️ دستورات دیتابیس
+            'migrate'        => ['name' => 'اجرای مایگریشن‌ها', 'icon' => 'o-server-stack', 'color' => 'bg-indigo-600', 'group' => 'database'],
+            'migrate:status' => ['name' => 'وضعیت مایگریشن‌ها', 'icon' => 'o-information-circle', 'color' => 'bg-violet-500', 'group' => 'database'],
+            
+            // 📋 دستورات اطلاعاتی
+            'route:list'     => ['name' => 'لیست روت‌ها', 'icon' => 'o-list-bullet', 'color' => 'bg-gray-600', 'group' => 'info'],
+            'about'          => ['name' => 'اطلاعات محیط', 'icon' => 'o-information-circle', 'color' => 'bg-slate-600', 'group' => 'info'],
+        ];
+    }
 
 
     public function runCommand(string $command)

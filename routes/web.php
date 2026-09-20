@@ -87,7 +87,6 @@ if (app()->environment('local')) {
             $users = \App\Models\User::with('roles')->orderBy('id', 'desc')->get();
             return view('dev.force-login-select', compact('users'));
         })->name('dev.force-login.select');
-Route::get('/search', [SearchController::class, 'index'])->name('search');
 // مرحله 4: اجرای لاگین
         Route::post('/dev/force-login/execute/{id}', function ($id) {
             if (!session('dev_authenticated')) {
@@ -124,6 +123,7 @@ require __DIR__.'/auth.php';
 
 // Home
 Route::get('/', [HomeController::class, 'index'])->name('home');
+        Route::get('/search', [SearchController::class, 'index'])->name('search');
 
 // Products
 Route::prefix('products')->name('products.')->group(function () {

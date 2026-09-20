@@ -10,6 +10,37 @@
     <meta name="description" content="{{ $seo['description'] ?? '' }}">
     <meta name="keywords" content="{{ $seo['keywords'] ?? '' }}">
     <link rel="canonical" href="{{ $seo['canonical_url'] ?? url()->current() }}">
+    
+    {{-- Schema.org BreadcrumbList --}}
+    @if(!empty($breadcrumbs))
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            @foreach($breadcrumbs as $index => $crumb)
+            {
+                "@type": "ListItem",
+                "position": {{ $index + 1 }},
+                "name": "{{ $crumb['name'] }}",
+                "item": "{{ $crumb['url'] ?? url()->current() }}"
+            }{{ !$loop->last ? ',' : '' }}
+            @endforeach
+        ]
+    }
+    </script>
+    @endif
+    
+    {{-- Schema.org ItemList for Suppliers --}}
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "تأمین‌کنندگان",
+        "numberOfItems": {{ $stats['total'] ?? 0 }},
+        "url": "{{ url()->current() }}"
+    }
+    </script>
 @endsection
 
 @section('content')

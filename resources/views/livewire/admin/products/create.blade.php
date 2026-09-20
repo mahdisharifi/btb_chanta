@@ -655,10 +655,26 @@
                     تولید خودکار
                 </button>
             </div>
+            
+            {{-- راهنمای تصویر SEO --}}
+            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <div class="flex items-start gap-2">
+                    <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="flex-1 text-xs text-blue-900 dark:text-blue-100">
+                        <p class="font-semibold mb-1">💡 تصویر ویژه برای نتایج جستجوی Google</p>
+                        <p class="leading-relaxed">
+                            در بخش گالری تصاویر، روی آیکون 🔍 کلیک کنید تا آن تصویر در نتایج جستجوی Google نمایش داده شود.
+                            اگر تصویر SEO انتخاب نکنید، به صورت خودکار از تصویر اصلی استفاده می‌شود.
+                        </p>
+                    </div>
+                </div>
+            </div>
 
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان SEO</label>
-                <input type="text" wire:model="seo_title" maxlength="60"
+                <input type="text" wire:model.live="seo_title" maxlength="60"
                        class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm"
                        placeholder="حداکثر ۶۰ کاراکتر">
                 <p class="text-xs text-gray-400 mt-1">{{ mb_strlen($seo_title ?? '') }}/60</p>
@@ -667,7 +683,7 @@
 
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">توضیحات SEO</label>
-                <textarea wire:model="seo_description" rows="3" maxlength="160"
+                <textarea wire:model.live="seo_description" rows="3" maxlength="160"
                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm"
                           placeholder="حداکثر ۱۶۰ کاراکتر"></textarea>
                 <p class="text-xs text-gray-400 mt-1">{{ mb_strlen($seo_description ?? '') }}/160</p>
@@ -695,23 +711,137 @@
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">آدرس Canonical</label>
-                <input type="url" wire:model="seo_canonical_url" dir="ltr"
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-2">
+                    <span>آدرس Canonical (اختیاری)</span>
+                    <span class="relative group">
+                        <x-heroicon-o-information-circle class="w-4 h-4 text-gray-400 cursor-help" />
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 z-10">
+                            <div class="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl">
+                                <p class="font-semibold mb-1">💡 Canonical URL چیست؟</p>
+                                <p class="mb-2">URL اصلی و یکتا محصول برای جلوگیری از duplicate content در Google</p>
+                                <p class="text-amber-300 text-[10px]">⚠️ در صورت خالی گذاشتن، سیستم به صورت خودکار از URL محصول استفاده می‌کند</p>
+                                <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                            </div>
+                        </div>
+                    </span>
+                </label>
+                <input type="url" wire:model.live="seo_canonical_url" dir="ltr"
                        class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left"
-                       placeholder="https://...">
-                @error('seo_canonical_url')
-                <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
-                @if($seo_title || $seo_description)
-                <div class="mt-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                    <p class="text-xs text-gray-400 mb-2 font-medium">پیش‌نمایش گوگل</p>
-                    <p class="text-blue-600 text-sm font-medium truncate">{{ $seo_title ?: $title }}</p>
-                    <p class="text-green-700 dark:text-green-500 text-xs truncate">{{ $seo_canonical_url ?: url('/products/'.($slug??'')) }}</p>
-                    <p class="text-gray-600 dark:text-gray-400 text-xs mt-0.5 line-clamp-2">{{ $seo_description }}</p>
+                       placeholder="https://example.com/products/sample-product">
+                
+                {{-- نمایش Canonical پیش‌فرض --}}
+                <div class="mt-2 flex items-start gap-2 text-xs">
+                    <x-heroicon-o-check-circle class="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                    <div class="flex-1">
+                        <span class="text-gray-500 dark:text-gray-400">Canonical پیش‌فرض:</span>
+                        <code class="text-green-600 dark:text-green-400 font-mono bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded ml-1">
+                            {{ $seo_canonical_url ?: url('/products/'.($slug ?: 'product-slug')) }}
+                        </code>
+                    </div>
                 </div>
-                @endif
-
-
+                
+                @error('seo_canonical_url')
+                <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> 
+                @enderror
             </div>
+
+            {{-- پیش‌نمایش گوگل - بهبود یافته با تصویر --}}
+            @if($seo_title || $seo_description || $title)
+            <div class="mt-4 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-5 shadow-sm">
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-10 h-10 rounded-lg bg-white dark:bg-gray-700 flex items-center justify-center shadow-sm">
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-2h-2v2zm0-4h2V7h-2v6z" fill="currentColor" class="text-blue-600"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-bold text-gray-900 dark:text-white">پیش‌نمایش در نتایج جستجوی گوگل</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">این نمایش تقریبی است - Google ممکن است متن را کوتاه کند</p>
+                    </div>
+                </div>
+                
+                <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 shadow-sm">
+                    {{-- Layout دو ستونی: متن + تصویر --}}
+                    <div class="flex gap-4">
+                        {{-- ستون چپ: متن --}}
+                        <div class="flex-1 min-w-0">
+                            {{-- عنوان (Title) --}}
+                            <div class="mb-1">
+                                <h3 class="text-blue-600 dark:text-blue-400 text-lg font-medium hover:underline cursor-pointer line-clamp-1">
+                                    {{ $seo_title ?: ($title ?: 'عنوان محصول شما') }}
+                                </h3>
+                            </div>
+                            
+                            {{-- URL (Canonical) --}}
+                            <div class="mb-2 flex items-center gap-2">
+                                <span class="text-green-700 dark:text-green-500 text-sm font-medium">
+                                    {{ parse_url($seo_canonical_url ?: url('/products/'.($slug ?: 'product-slug')), PHP_URL_HOST) }}
+                                </span>
+                                <span class="text-gray-400">›</span>
+                                <span class="text-gray-600 dark:text-gray-400 text-xs truncate">
+                                    {{ $seo_canonical_url ?: url('/products/'.($slug ?: 'product-slug')) }}
+                                </span>
+                            </div>
+                            
+                            {{-- توضیحات (Description) --}}
+                            <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed line-clamp-2">
+                                {{ $seo_description ?: 'توضیحات محصول شما در اینجا نمایش داده می‌شود. این متن در نتایج جستجوی Google ظاهر می‌شود.' }}
+                            </p>
+                        </div>
+                        
+                        {{-- ستون راست: تصویر SEO --}}
+                        @php
+                            // محاسبه تصویر SEO: is_seo_image > is_primary > first image
+                            $seoImage = collect($existingGalleries ?? [])
+                                ->where('file_type', 'image')
+                                ->sortByDesc(fn($g) => ($g['is_seo_image'] ?? false) ? 2 : (($g['is_primary'] ?? false) ? 1 : 0))
+                                ->first();
+                        @endphp
+                        
+                        @if($seoImage)
+                        <div class="flex-shrink-0">
+                            <div class="w-28 h-28 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700">
+                                <img src="{{ $seoImage['full_url'] ?? '' }}" 
+                                     alt="تصویر SEO" 
+                                     class="w-full h-full object-cover"
+                                     loading="lazy"
+                                     wire:key="seo-preview-{{ $seoImage['id'] ?? 'default' }}">
+                            </div>
+                        </div>
+                        @endif
+                    </div>
+                </div>
+                
+                {{-- نکات سئو --}}
+                <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div class="flex items-center gap-2 text-xs {{ mb_strlen($seo_title ?: '') >= 50 && mb_strlen($seo_title ?: '') <= 60 ? 'text-green-600' : 'text-amber-600' }}">
+                        @if(mb_strlen($seo_title ?: '') >= 50 && mb_strlen($seo_title ?: '') <= 60)
+                            <x-heroicon-s-check-circle class="w-4 h-4" />
+                            <span>عنوان در محدوده ایده‌آل است</span>
+                        @elseif(mb_strlen($seo_title ?: '') > 60)
+                            <x-heroicon-s-exclamation-triangle class="w-4 h-4" />
+                            <span>عنوان خیلی طولانی است (Google کوتاه می‌کند)</span>
+                        @else
+                            <x-heroicon-s-exclamation-triangle class="w-4 h-4" />
+                            <span>عنوان کوتاه است (بهتر است 50-60 کاراکتر باشد)</span>
+                        @endif
+                    </div>
+                    
+                    <div class="flex items-center gap-2 text-xs {{ mb_strlen($seo_description ?: '') >= 120 && mb_strlen($seo_description ?: '') <= 160 ? 'text-green-600' : 'text-amber-600' }}">
+                        @if(mb_strlen($seo_description ?: '') >= 120 && mb_strlen($seo_description ?: '') <= 160)
+                            <x-heroicon-s-check-circle class="w-4 h-4" />
+                            <span>توضیحات در محدوده ایده‌آل است</span>
+                        @elseif(mb_strlen($seo_description ?: '') > 160)
+                            <x-heroicon-s-exclamation-triangle class="w-4 h-4" />
+                            <span>توضیحات خیلی طولانی است</span>
+                        @else
+                            <x-heroicon-s-exclamation-triangle class="w-4 h-4" />
+                            <span>توضیحات کوتاه است (بهتر است 120-160 کاراکتر باشد)</span>
+                        @endif
+                    </div>
+                </div>
+            </div>
+            @endif
         </div>
 
         <!-- تصاویر و ویدئوی محصول -->
@@ -760,12 +890,20 @@
                 @if(collect($existingGalleries)->where('file_type', 'image')->count() > 0)
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-3">
                     @foreach(collect($existingGalleries)->where('file_type', 'image')->values() as $index => $gallery)
-                    <div class="relative group rounded-lg overflow-hidden border-2 {{ $gallery['is_primary'] ? 'border-[#d4af37]' : 'border-white/10' }}">
+                    <div class="relative group rounded-lg overflow-hidden border-2 {{ $gallery['is_primary'] ? 'border-[#d4af37]' : ($gallery['is_seo_image'] ? 'border-blue-500' : 'border-white/10') }}">
                         <img src="{{ $gallery['full_url'] }}" class="w-full h-28 object-cover">
 
                         {{-- برچسب تصویر اصلی --}}
                         @if($gallery['is_primary'])
                         <span class="absolute top-1 right-1 text-xs bg-[#d4af37] text-black font-bold px-2 py-0.5 rounded">اصلی</span>
+                        @endif
+                        
+                        {{-- برچسب تصویر SEO --}}
+                        @if($gallery['is_seo_image'] ?? false)
+                        <span class="absolute top-1 {{ ($gallery['is_primary'] ?? false) ? 'right-12' : 'right-1' }} text-xs bg-blue-500 text-white font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            SEO
+                        </span>
                         @endif
 
                         <div class="absolute bottom-0 left-0 right-0 flex justify-between items-center p-1 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -787,14 +925,25 @@
                                 {{-- انتخاب به عنوان تصویر اصلی --}}
                                 @if(!$gallery['is_primary'])
                                 <button type="button" wire:click="setPrimaryGallery({{ $gallery['id'] }})"
-                                        class="p-1 rounded bg-[#d4af37]/80 hover:bg-[#d4af37]">
+                                        class="p-1 rounded bg-[#d4af37]/80 hover:bg-[#d4af37]"
+                                        title="تصویر اصلی">
                                     <x-heroicon-s-star class="w-3 h-3 text-black" />
                                 </button>
                                 @endif
+                                
+                                {{-- انتخاب به عنوان تصویر SEO --}}
+                                <button type="button" wire:click="toggleSeoImage({{ $gallery['id'] }})"
+                                        class="p-1 rounded {{ ($gallery['is_seo_image'] ?? false) ? 'bg-blue-500' : 'bg-blue-500/50 hover:bg-blue-500/80' }}"
+                                        title="تصویر ویژه برای Google (SEO)">
+                                    <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                    </svg>
+                                </button>
 
                                 {{-- حذف --}}
                                 <button type="button" wire:click="markGalleryForDeletion({{ $gallery['id'] }})"
-                                        class="p-1 rounded bg-red-500/80 hover:bg-red-500">
+                                        class="p-1 rounded bg-red-500/80 hover:bg-red-500"
+                                        title="حذف">
                                     <x-heroicon-s-trash class="w-3 h-3 text-white" />
                                 </button>
                             </div>
