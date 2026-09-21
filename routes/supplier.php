@@ -24,15 +24,6 @@ Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_ad
         // داشبورد
         Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
-        // ویرایش پروفایل تامین‌کننده (استفاده از همان کامپوننت ادمین)
-        Route::get('/profile/edit', function () {
-            $supplier = auth()->user()->supplier;
-            if (!$supplier) {
-                abort(404, 'شما پروفایل تامین‌کننده ندارید.');
-            }
-            return redirect()->route('admin.suppliers.edit', $supplier->id);
-        })->name('profile.edit');
-
         // مدیریت محصولات تامین‌کننده
         Route::get('/products', ProductIndex::class)->name('products.index');
 

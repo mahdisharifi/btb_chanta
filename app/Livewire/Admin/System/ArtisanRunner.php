@@ -79,6 +79,8 @@ class ArtisanRunner extends Component
 
     public function render()
     {
-        return view('livewire.admin.system.artisan-runner');
+        return view('livewire.admin.system.artisan-runner', [
+            'commandList' => $this->commandList,
+        ]);
     }
 }
