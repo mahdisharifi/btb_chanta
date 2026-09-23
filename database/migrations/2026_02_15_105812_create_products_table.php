@@ -40,7 +40,8 @@ return new class extends Migration
             $table->index(['status']);
             $table->index(['is_featured', 'is_active']);
             $table->index(['created_at']);
-            $table->fullText(['title', 'short_description']);
+            // FULLTEXT index moved to separate migration for server compatibility
+            // See: 2026_09_23_create_products_fulltext_index.php
         });
     }
 

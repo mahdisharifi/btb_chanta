@@ -261,7 +261,7 @@ class ProductController extends Controller
      * - استفاده از select برای محدود کردن ستون‌ها
      * - بهینه‌سازی محاسبات قیمت
      */
-    public function show(Product $product): \Illuminate\View\View
+    public function show(Product $product): \Illuminate\Http\Response
     {
         // ─── 1. اطمینان از فعال بودن محصول ───
         abort_unless(
@@ -286,7 +286,7 @@ class ProductController extends Controller
             // 👇 مشخصات فنی با ساختار EAV اضافه شد 👇
             'attributeValues.attribute',
             // 👇 فیلدهای file_type و alt_text به این بخش اضافه شدند 👇
-            'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text'])
+            'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text', 'versions', 'base_name', 'is_seo_image'])
                 ->orderByDesc('is_primary')
                 ->orderBy('sort_order'),
             // 🔴 DEPRECATED: ساختار قدیمی prices حذف شد - اکنون از productSuppliers.prices استفاده می‌شود
@@ -332,6 +332,9 @@ class ProductController extends Controller
         if ($productSuppliers->count() > 1) {
             $productSuppliers = $this->sortSuppliersByBestPrices($productSuppliers, $product);
         }
+
+        // ✅ مهم: قرار دادن productSuppliers لود شده در product برای استفاده در متدهای دیگر
+        $product->setRelation('productSuppliers', $productSuppliers);
 
         $hasMultipleSuppliers = $productSuppliers->count() > 1;
 
@@ -417,7 +420,7 @@ class ProductController extends Controller
         $seo = $this->buildSeoData($product, $breadcrumbs);
 
         // ─── 15. ارسال به View ───
-        return view('pages.products.show', [
+        return response()->view('pages.products.show', [
             'product'               => $product,
             'productSuppliers'      => $productSuppliers,
             'hasMultipleSuppliers'  => $hasMultipleSuppliers,
@@ -447,7 +450,9 @@ class ProductController extends Controller
             'myRetailPrice'         => $roleData['myRetailPrice'] ?? null,
             'profitMargin'          => $roleData['profitMargin'] ?? null,
             'canSetRetailPrice'     => $roleData['canSetRetailPrice'] ?? false,
-        ]);
+        ])
+        ->header('Cache-Control', 'max-age=1800, public, must-revalidate')
+        ->header('Expires', now()->addMinutes(30)->toRfc7231String());
     }
 
 
@@ -1915,7 +1920,7 @@ private function getCategoryChain(Category $category): array
             
             $schema['offers'] = [
                 '@type'         => 'AggregateOffer',
-                'priceCurrency' => 'IRR',
+                'priceCurrency' => 'IRT', // ✅ تومان ایران (نه ریال)
                 'lowPrice'      => $lowestPrice,
                 'highPrice'     => $highestPrice,
                 'offerCount'    => $allPrices->count(),
@@ -1923,7 +1928,7 @@ private function getCategoryChain(Category $category): array
                     ? 'https://schema.org/InStock' 
                     : 'https://schema.org/OutOfStock',
                 'url'           => url('/products/' . $product->slug),
-                'priceValidUntil' => now()->addMonths(1)->format('Y-m-d'),
+                'priceValidUntil' => now()->addDay()->format('Y-m-d'), // ✅ اعتبار 1 روز
                 'businessFunction' => 'http://purl.org/goodrelations/v1#Sell',
                 'eligibleQuantity' => [
                     '@type' => 'QuantitativeValue',
@@ -1944,17 +1949,17 @@ private function getCategoryChain(Category $category): array
             if ($retailPrice) {
                 $schema['offers'] = [
                     '@type'         => 'Offer',
-                    'priceCurrency' => 'IRR',
+                    'priceCurrency' => 'IRT', // ✅ تومان ایران (نه ریال)
                     'price'         => (float) $retailPrice->retail_price,
                     'availability'  => 'https://schema.org/InStock',
                     'url'           => url('/products/' . $product->slug),
-                    'priceValidUntil' => now()->addMonths(1)->format('Y-m-d'),
+                    'priceValidUntil' => now()->addDay()->format('Y-m-d'), // ✅ اعتبار 1 روز
                 ];
             } else {
                 // ✅ اگر هیچ قیمتی نیست، حداقل یک placeholder بذاریم
                 $schema['offers'] = [
                     '@type'         => 'AggregateOffer',
-                    'priceCurrency' => 'IRR',
+                    'priceCurrency' => 'IRT', // ✅ تومان ایران (نه ریال)
                     'lowPrice'      => 0,
                     'highPrice'     => 0,
                     'offerCount'    => 0,

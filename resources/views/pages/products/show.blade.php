@@ -23,9 +23,10 @@ use App\Helpers\PriceHelper;
 {{-- Open Graph --}}
 <meta property="og:title" content="{{ $seo['og_title'] ?? $product->title }}">
 <meta property="og:description" content="{{ $seo['og_description'] ?? '' }}">
-<meta property="og:image" content="{{ $seo['og_image'] ?? '' }}">
+<meta property="og:image" content="{{ $seo['og_image'] ?? asset('images/og-default.jpg') }}">
 <meta property="og:type" content="{{ $seo['og_type'] ?? 'product' }}">
 <meta property="og:url" content="{{ $seo['og_url'] ?? route('products.show', ['product' => $product->slug]) }}">
+<meta property="og:site_name" content="{{ config('app.name') }}">
 
 {{-- Schema.org JSON-LD --}}
 @if(!empty($seo['schema']))

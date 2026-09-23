@@ -18,28 +18,9 @@ use App\Services\OtpService;
 |--------------------------------------------------------------------------
 | Helper: ریدایرکت بر اساس نقش کاربر
 |--------------------------------------------------------------------------
-| جایگزین بلوک‌های تکراری role-based redirect در سراسر این فایل.
+| تابع redirectByRole در app/Helpers/AuthHelper.php تعریف شده است
+| و به صورت خودکار توسط composer لود می‌شود.
 */
-if (! function_exists('redirectByRole')) {
-    function redirectByRole(User $user)
-    {
-        if ($user->hasRole(UserRole::SUPER_ADMIN)) {
-            return redirect()->route('admin.dashboard');
-        }
-
-        if ($user->hasRole(UserRole::SUPPLIER)) {
-            return redirect()->route('supplier.dashboard');
-        }
-
-        if ($user->hasRole([UserRole::RETAILER_PREMIUM, UserRole::RETAILER_BASIC])) {
-            return redirect()->route('retailer.dashboard');
-        }
-        if ($user->hasRole(UserRole::END_USER)) {
-            return redirect()->route('user.role-selection');
-        }
-        return redirect()->route('home');
-    }
-}
 
 Route::middleware('guest')->group(function () {
     Route::get('/forgot-password-mobile', \App\Livewire\Pages\Auth\ForgotPasswordMobile::class)

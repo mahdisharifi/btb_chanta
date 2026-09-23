@@ -48,6 +48,7 @@
         "files": [
             "app/Helpers/PriceHelper.php",
             "app/Helpers/CategoryHelper.php",
+            "app/Helpers/AuthHelper.php",
             "vendor/morilog/jalali/src/helpers.php"
         ]
     },
