@@ -17,6 +17,8 @@
         body { font-family: 'Vazir', Tahoma, Arial, sans-serif; }
         [x-cloak] { display: none !important; }
     </style>
+
+    @stack('scripts')
 </head>
 <body class="bg-gray-50 text-gray-800 antialiased" x-data="{ sidebarOpen: false, profileOpen: false }">
 
@@ -189,5 +191,25 @@
 </div>
 @stack('scripts')
 @livewireScripts
+
+{{-- Lazy Load Mermaid فقط در صفحات ادمین --}}
+<script>
+    // تابع renderMermaid برای استفاده در Livewire
+    window.renderMermaid = async function(elementId, code) {
+        if (!code || !code.trim()) {
+            document.getElementById(elementId).innerHTML = '<p class="text-gray-400">کد فلوچارت خالی است</p>';
+            return;
+        }
+
+        try {
+            const mermaid = await window.loadMermaid();
+            const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), code);
+            document.getElementById(elementId).innerHTML = svg;
+        } catch (error) {
+            console.error('Mermaid render error:', error);
+            document.getElementById(elementId).innerHTML = '<p class="text-red-500">خطا در رندر فلوچارت: ' + error.message + '</p>';
+        }
+    };
+</script>
 </body>
 </html>

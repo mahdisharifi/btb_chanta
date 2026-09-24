@@ -34,6 +34,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }).mount();
     }
 });
-import mermaid from 'mermaid';
-mermaid.initialize({ startOnLoad: true, theme: 'default' });
-window.mermaid = mermaid; // برای استفاده در لایووایر
+// Mermaid به صورت lazy load فقط در صفحات مورد نیاز بارگذاری می‌شود
+// برای استفاده: window.loadMermaid().then(mermaid => { ... })
+window.loadMermaid = async function() {
+    if (!window.mermaid) {
+        const mermaid = await import('mermaid');
+        mermaid.default.initialize({ startOnLoad: false, theme: 'default' });
+        window.mermaid = mermaid.default;
+    }
+    return window.mermaid;
+};
