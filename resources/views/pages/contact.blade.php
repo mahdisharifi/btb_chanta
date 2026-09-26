@@ -7,7 +7,7 @@
             <div class="bg-white rounded-xl border border-gray-200 p-6">
                 <h2 class="text-lg font-semibold mb-4">اطلاعات تماس</h2>
                 <ul class="space-y-4 text-gray-600">
-                    <li class="flex items-center gap-3"><span>📞</span> 021-55915347</li>
+                    <!-- <li class="flex items-center gap-3"><span>📞</span> 021-55915347</li> -->
                     <li class="flex items-center gap-3"><span>📱</span> 09355921203</li>
                     <li class="flex items-center gap-3"><span>✉️</span> info@chanta.ir</li>
 <!--                    <li class="flex items-center gap-3"><span>📍</span> شهرری،میدان شهید غیبی،خیابان 8 متری انقلاب،کوچه شهید تمجیدی،پلاک 12</li>-->
