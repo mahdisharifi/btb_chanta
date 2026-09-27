@@ -279,7 +279,7 @@ $categorySlug = $category?->slug;
             src="{{ $imageUrl }}"
             alt="{{ $imageAlt }}"
             title="{{ $product->title }}"
-            class="h-full w-full object-contain p-5 transition-all duration-500 group-hover:scale-110 group-hover:rotate-2"
+            class="h-full w-full object-contain p-3 transition-all duration-500 group-hover:scale-110 group-hover:rotate-2"
             loading="lazy"
             x-on:error="handleError($event)"
         >
@@ -321,24 +321,16 @@ $categorySlug = $category?->slug;
 
         {{-- Product Title --}}
         <a href="{{ $productUrl }}" class="block flex-1">
-            <h3 class="mb-3 line-clamp-2 text-sm font-bold leading-relaxed text-gray-800 transition-colors group-hover:text-amber-600">
+            <h3 class="mb-2 line-clamp-2 text-sm font-bold leading-relaxed text-gray-800 transition-colors group-hover:text-amber-600">
                 {{ $product->title }}
             </h3>
         </a>
 
-        {{-- SKU --}}
-        @if($product->sku)
-        <div class="mb-3 flex items-center gap-1.5 text-[10px] text-gray-600">
-            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
-            <span class="font-medium">کد: {{ $product->sku }}</span>
-        </div>
-        @endif
-
         {{-- Divider --}}
-        <div class="border-t border-gray-100 my-3"></div>
+        <div class="border-t border-gray-100 mb-2"></div>
 
         {{-- Price Section با طراحی جذاب --}}
-        <div class="mt-auto space-y-2">
+        <div class="mt-auto space-y-1.5">
             {{-- Retail Price --}}
             @if($retailPrice)
             <div class="flex items-center justify-between">
@@ -354,10 +346,10 @@ $categorySlug = $category?->slug;
 
             {{-- Wholesale Price با ماتریس بهینه --}}
             @if($canSeeWholesalePrice && $wholesalePriceData)
-            <div class="rounded-xl bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-50 p-3 border border-amber-200 shadow-sm">
-                <div class="flex items-center justify-between mb-1.5">
-                    <div class="flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            <div class="rounded-xl bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-50 p-2.5 border border-amber-200 shadow-sm">
+                <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
                         <span class="text-[10px] font-bold text-amber-700">
                             @if($supplier)
                                 قیمت این تامین‌کننده
