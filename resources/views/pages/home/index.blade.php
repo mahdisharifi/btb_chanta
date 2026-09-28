@@ -14,10 +14,10 @@
         $heroImage = asset('storage/' .'images/home/hero-b2b.webp');
     @endphp
 
-    {{-- Hero Section - ارتفاع یک چهارم صفحه --}}
-    <section class="relative overflow-hidden bg-slate-950 min-h-[40vh] sm:min-h-[35vh] lg:min-h-[30vh] pt-16">
+    {{-- Hero Section - بهینه‌سازی شده برای موبایل --}}
+    <section class="relative overflow-hidden bg-slate-950 min-h-[45vh] sm:min-h-[40vh] lg:min-h-[35vh] pt-16">
         <div class="absolute inset-0">
-            <!-- تصویر Hero - بهینه‌سازی شده برای موبایل -->
+            <!-- تصویر Hero - بهینه‌سازی شده -->
             <img
                 src="{{ $heroImage }}"
                 alt="پلتفرم عمده فروشی چن تا؟"
@@ -28,22 +28,24 @@
                 loading="eager"
                 class="h-full w-full object-cover opacity-70"
             >
-            <!-- گرادینت بهینه‌شده برای کنتراست بهتر -->
+            <!-- گرادینت بهینه‌شده -->
             <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-slate-950/60"></div>
         </div>
 
-        <div class="relative z-10 h-full flex items-center">
-            <div class="container mx-auto px-4 py-8 md:py-12">
+        <div class="relative z-10 h-full flex items-center py-8 sm:py-10 lg:py-12">
+            <div class="container mx-auto px-4">
                 <div class="flex flex-col lg:flex-row items-center justify-between gap-6 lg:gap-12">
                     <div class="flex-1 text-white">
-                        <h1 class="text-3xl leading-tight font-black sm:text-4xl lg:text-5xl drop-shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
+                        <h1 class="text-2xl sm:text-3xl lg:text-4xl font-black leading-snug drop-shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
                             تجارت عمده <span class="text-amber-400">بدون واسطه</span>
-                            <span class="block mt-1 text-xl font-bold text-slate-200 md:text-2xl">پلتفرم B2B چن‌تا؟</span>
                         </h1>
+                        <p class="mt-2 text-base sm:text-lg lg:text-xl font-bold text-slate-200">
+                            پلتفرم B2B چن‌تا؟
+                        </p>
 
                         <div class="mt-6 flex flex-col sm:flex-row gap-3">
                             <a href="{{ route('products.index') }}" class="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]">
-                                <x-heroicon-o-shopping-bag class="h-4 w-4" />
+                                <x-heroicon-o-shopping-bag class="h-5 w-5" />
                                 مشاهده محصولات
                             </a>
 
@@ -54,21 +56,21 @@
                     </div>
 
                     {{-- کارت‌های ویژگی - فقط در دسکتاپ --}}
-                    <div class="hidden lg:flex gap-4">
-                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white backdrop-blur-xl shadow-xl transition hover:bg-white/10 w-48">
-                            <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 mb-3 border border-emerald-500/20">
-                                <x-heroicon-o-arrows-right-left class="h-6 w-6" />
+                    <div class="hidden lg:flex gap-3">
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white backdrop-blur-xl shadow-xl transition hover:bg-white/10 w-44">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 mb-3 border border-emerald-500/20">
+                                <x-heroicon-o-arrows-right-left class="h-5 w-5" />
                             </div>
-                            <h2 class="text-base font-bold">خرید بدون واسطه</h2>
-                            <p class="mt-1 text-xs text-slate-400 leading-5">ارتباط مستقیم تأمین‌کننده و کاسب</p>
+                            <h2 class="text-sm font-bold">خرید بدون واسطه</h2>
+                            <p class="mt-1.5 text-[11px] text-slate-400 leading-relaxed">ارتباط مستقیم تأمین‌کننده و کاسب</p>
                         </div>
 
-                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white backdrop-blur-xl shadow-xl transition hover:bg-white/10 w-48">
-                            <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 mb-3 border border-amber-500/20">
-                                <x-heroicon-o-magnifying-glass class="h-6 w-6" />
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white backdrop-blur-xl shadow-xl transition hover:bg-white/10 w-44">
+                            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 mb-3 border border-amber-500/20">
+                                <x-heroicon-o-magnifying-glass class="h-5 w-5" />
                             </div>
-                            <h2 class="text-base font-bold">جستجوی هوشمند</h2>
-                            <p class="mt-1 text-xs text-slate-400 leading-5">فیلترهای پیشرفته محصولات</p>
+                            <h2 class="text-sm font-bold">جستجوی هوشمند</h2>
+                            <p class="mt-1.5 text-[11px] text-slate-400 leading-relaxed">فیلترهای پیشرفته محصولات</p>
                         </div>
                     </div>
                 </div>
@@ -81,7 +83,7 @@
     {{-- ═══════════════ MAIN CONTENT WRAPPER ═════════════════ --}}
     {{-- ══════════════════════════════════════════════════════════ --}}
 
-    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-2 space-y-8">
 
 
 
@@ -140,7 +142,7 @@
             <div class="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory scrollbar-hide
                         lg:grid lg:grid-cols-4 lg:overflow-visible lg:pb-0">
                 @foreach($featuredProducts as $product)
-                    <div class="min-w-[260px] sm:min-w-[280px] lg:min-w-0 snap-start">
+                    <div class="w-[calc(40%-0.3rem)] lg:min-w-0 snap-start">
                         @include('components.product-card-inline', ['product' => $product, 'badge' => 'featured'])
                     </div>
                 @endforeach
@@ -301,73 +303,51 @@
         {{-- ═══════════ SECTION 11: WHY CHOOSE US ═══════════ --}}
         {{-- ═══════════════════════════════════════════════════ --}}
 
-        <section class="bg-white rounded-2xl border border-gray-100 p-8 sm:p-10">
-            <div class="text-center mb-8">
+        <section class="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
+            <div class="text-center mb-6">
                 <h2 class="text-xl sm:text-2xl font-extrabold text-gray-800">چرا {{ config('app.name') }}؟</h2>
-                <p class="text-sm text-gray-500 mt-2 max-w-xl mx-auto">بستری امن و حرفه‌ای برای تجارت عمده</p>
+                <p class="text-sm text-gray-500 mt-1.5 max-w-xl mx-auto">بستری امن و حرفه‌ای برای تجارت عمده</p>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-blue-50 rounded-2xl flex items-center justify-center group-hover:bg-blue-100 transition">
-                        <svg class="w-7 h-7 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-blue-50 rounded-xl flex items-center justify-center group-hover:bg-blue-100 transition">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">تأمین‌کنندگان تأییدشده</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">تأمین‌کنندگان تأییدشده</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">تمامی تأمین‌کنندگان پس از احراز هویت تأیید می‌شوند</p>
                 </div>
 
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-emerald-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition">
-                        <svg class="w-7 h-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-emerald-50 rounded-xl flex items-center justify-center group-hover:bg-emerald-100 transition">
+                        <svg class="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">قیمت‌های رقابتی</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">قیمت‌های رقابتی</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">مقایسه قیمت از چندین تأمین‌کننده</p>
                 </div>
 
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-purple-50 rounded-2xl flex items-center justify-center group-hover:bg-purple-100 transition">
-                        <svg class="w-7 h-7 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-purple-50 rounded-xl flex items-center justify-center group-hover:bg-purple-100 transition">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">سریع و آسان</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">سریع و آسان</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">فرایند سفارش ساده و پیگیری آسان</p>
                 </div>
 
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-amber-50 rounded-2xl flex items-center justify-center group-hover:bg-amber-100 transition">
-                        <svg class="w-7 h-7 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-amber-50 rounded-xl flex items-center justify-center group-hover:bg-amber-100 transition">
+                        <svg class="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">پشتیبانی ۲۴/۷</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">پشتیبانی ۲۴/۷</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">تیم پشتیبانی در تمام ساعات آماده پاسخگویی</p>
-                </div>
-            </div>
-        </section>
-        {{-- B2B VALUE PROPOSITION --}}
-        <section class="py-16">
-            <div class="container mx-auto px-4">
-                <div class="grid md:grid-cols-3 gap-8">
-                    <div class="p-6 text-center">
-                        <x-heroicon-s-truck class="w-12 h-12 text-blue-600 mx-auto mb-4" />
-                        <h3 class="font-bold text-lg">حذف واسطه‌ها</h3>
-                        <p class="text-gray-600 mt-2">خرید مستقیم از تأمین‌کنندگان دست‌اول، حذف دلالان و افزایش حاشیه سود.</p>
-                    </div>
-                    <div class="p-6 text-center">
-                        <x-heroicon-s-banknotes class="w-12 h-12 text-emerald-600 mx-auto mb-4" />
-                        <h3 class="font-bold text-lg">قیمت‌های رقابتی</h3>
-                        <p class="text-gray-600 mt-2">مشاهده شفاف قیمت‌های عمده‌فروشی برای صاحبان کسب‌وکار.</p>
-                    </div>
-                    <div class="p-6 text-center">
-                        <x-heroicon-s-shield-check class="w-12 h-12 text-orange-600 mx-auto mb-4" />
-                        <h3 class="font-bold text-lg">تأمین‌کنندگان معتبر</h3>
-                        <p class="text-gray-600 mt-2">همکاری با مجموعه‌های تأییدشده و معتبر در سراسر کشور.</p>
-                    </div>
                 </div>
             </div>
         </section>

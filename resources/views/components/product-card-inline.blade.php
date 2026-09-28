@@ -117,13 +117,13 @@
 
         {{-- Category Badge --}}
         @if($product->category)
-            <span class="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full self-start mb-2 truncate max-w-full">
+            <span class="text-[10px] sm:text-[11px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full self-start mb-2 truncate max-w-full">
                 {{ $product->category->name }}
             </span>
         @endif
 
         {{-- Title --}}
-        <h3 class="font-bold text-gray-800 text-sm leading-snug line-clamp-2 group-hover:text-blue-600 transition flex-1 mb-2">
+        <h3 class="font-bold text-gray-800 text-xs sm:text-sm leading-snug line-clamp-2 group-hover:text-blue-600 transition flex-1 mb-2">
             {{ $product->title }}
         </h3>
 
@@ -150,13 +150,13 @@
             @if($canSeeWholesale && $lowestWholesale)
                 <div class="flex items-baseline justify-between flex-wrap gap-1">
                     <div>
-                        <span class="text-base sm:text-lg font-black text-blue-600 tracking-tight">
+                        <span class="text-sm sm:text-base font-black text-blue-600 tracking-tight">
                             {{ number_format($lowestWholesale) }}
                         </span>
-                        <span class="text-[10px] text-gray-400 font-medium mr-0.5">تومان</span>
+                        <span class="text-[10px] sm:text-xs text-gray-400 font-medium mr-0.5">تومان</span>
                     </div>
                     @if($highestWholesale && $highestWholesale != $lowestWholesale)
-                        <span class="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+                        <span class="text-[10px] sm:text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
                             تا {{ number_format($highestWholesale) }}
                         </span>
                     @endif
@@ -176,10 +176,10 @@
             {{-- Case 2: خرده --}}
             @elseif($canSeePrices && $retailPrice)
                 <div>
-                    <span class="text-base sm:text-lg font-black text-emerald-600 tracking-tight">
+                    <span class="text-xs sm:text-base font-black text-emerald-600 tracking-tight">
                         {{ number_format($retailPrice) }}
                     </span>
-                    <span class="text-[10px] text-gray-400 font-medium mr-0.5">تومان</span>
+                    <span class="text-[10px] sm:text-xs text-gray-400 font-medium mr-0.5">تومان</span>
                 </div>
 
             {{-- Case 3: مهمان --}}
@@ -189,7 +189,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                     </svg>
-                    <span class="text-[11px]">برای مشاهده قیمت وارد شوید</span>
+                    <span class="text-[10px] sm:text-xs">برای مشاهده قیمت وارد شوید</span>
                 </div>
 
             {{-- Case 4: بدون قیمت --}}
