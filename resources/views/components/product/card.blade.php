@@ -168,11 +168,10 @@ $categorySlug = $category?->slug;
         <div class="mt-3 flex items-end justify-between border-t border-gray-50 pt-3">
             <div>
                 @if($retailPrice)
-                <div class="flex items-center gap-1">
-                            <span class="text-lg font-extrabold text-emerald-600">
-                                {{ PriceHelper::formatNumber($retailPrice->retail_price) }}
-                            </span>
-                    <span class="text-[10px] text-gray-400">تومان</span>
+                <div class="flex items-baseline gap-0.5">
+                    <span class="text-lg font-extrabold text-emerald-600">
+                        {{ PriceHelper::formatNumber($retailPrice->retail_price) }}
+                    </span>
                 </div>
                 @endif
 
@@ -182,18 +181,18 @@ $categorySlug = $category?->slug;
                     <span class="text-xs font-semibold text-amber-700">
                         @if($supplier)
                             @if($wholesalePriceData['has_range'])
-                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }} تومان
+                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
                             @else
-                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} تومان
+                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
                             @endif
                         @else
                             @if($wholesalePriceData['has_range'])
-                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }} تومان
+                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
                                 @if($wholesalePriceData['tiers_count'] > 1)
                                     <span class="text-[10px]">({{ $wholesalePriceData['tiers_count'] }} تیراژ)</span>
                                 @endif
                             @else
-                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} تومان
+                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
                             @endif
                         @endif
                     </span>
@@ -206,8 +205,8 @@ $categorySlug = $category?->slug;
 
                 @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
                 <div class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1">
-                    <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span class="text-xs font-semibold text-red-600">قیمت‌گذاری نشده</span>
+                    <svg class="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span class="text-xs font-bold text-red-600">قیمت‌گذاری نشده</span>
                 </div>
                 @endif
             </div>
@@ -335,69 +334,34 @@ $categorySlug = $category?->slug;
             @if($retailPrice)
             <div class="flex items-center justify-between">
                 <span class="text-[10px] sm:text-xs font-medium text-gray-400">قیمت خرده‌فروشی</span>
-                <div class="flex items-baseline gap-1">
+                <div class="flex items-baseline gap-0.5">
                     <span class="text-sm sm:text-base font-extrabold bg-gradient-to-l from-emerald-600 to-green-600 bg-clip-text text-transparent">
                         {{ PriceHelper::formatNumber($retailPrice->retail_price) }}
                     </span>
-                    <span class="text-[10px] sm:text-xs text-gray-400">تومان</span>
                 </div>
             </div>
             @endif
 
-            {{-- Wholesale Price با ماتریس بهینه --}}
+            {{-- Wholesale Price با طراحی مینیمال --}}
             @if($canSeeWholesalePrice && $wholesalePriceData)
-            <div class="rounded-xl bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-50 p-2.5 border border-amber-200 shadow-sm">
-                <div class="flex items-center justify-between mb-1">
-                    <div class="flex items-center gap-1">
-                        <svg class="w-3.5 h-3.5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
-                        <span class="text-[10px] font-bold text-amber-700">
-                            @if($supplier)
-                                قیمت این تامین‌کننده
-                            @else
-                                قیمت عمده
-                            @endif
-                        </span>
-                    </div>
-                </div>
-                
+            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200">
                 @if($wholesalePriceData['has_range'])
-                    {{-- نمایش محدوده قیمت --}}
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-[9px] sm:text-[10px] text-amber-600">از</span>
-                        <div class="flex items-baseline gap-1">
-                            <span class="text-xs sm:text-sm font-extrabold text-amber-700">
-                                {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
-                            </span>
-                            <span class="text-[8px] sm:text-[9px] text-amber-600">تومان</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-[9px] sm:text-[10px] text-amber-600">تا</span>
-                        <div class="flex items-baseline gap-1">
-                            <span class="text-xs sm:text-sm font-extrabold text-amber-700">
-                                {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
-                            </span>
-                            <span class="text-[8px] sm:text-[9px] text-amber-600">تومان</span>
-                        </div>
-                    </div>
-                    
-                    {{-- اطلاعات اضافی ماتریس --}}
-                    @if(!$supplier && isset($wholesalePriceData['suppliers_count']))
-                    <div class="mt-2 pt-2 border-t border-amber-200 flex items-center justify-between text-[9px] text-amber-600">
-                        <span class="flex items-center gap-1">
-                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-                            {{ $wholesalePriceData['tiers_count'] }} تیراژ
+                    {{-- نمایش محدوده قیمت در یک خط --}}
+                    <div class="flex items-baseline justify-center gap-1 flex-wrap">
+                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
                         </span>
-                        <span>{{ $wholesalePriceData['suppliers_count'] }} تامین‌کننده</span>
+                        <span class="text-[9px] text-amber-600">تا</span>
+                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+                            {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+                        </span>
                     </div>
-                    @endif
                 @else
                     {{-- قیمت واحد --}}
-                    <div class="flex items-baseline gap-1">
+                    <div class="flex items-baseline justify-center gap-0.5">
                         <span class="text-sm sm:text-base font-extrabold text-amber-700">
                             {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
                         </span>
-                        <span class="text-[9px] sm:text-xs text-amber-600">تومان</span>
                     </div>
                 @endif
             </div>
@@ -410,14 +374,11 @@ $categorySlug = $category?->slug;
             </a>
             @endif
 
-            {{-- Contact for Price - بهبود یافته --}}
+            {{-- Contact for Price - بهبود یافته (Updated: 2026-09-26) --}}
             @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
-            <div class="flex flex-col items-center justify-center gap-2 rounded-xl bg-red-50 border border-red-200 p-3">
-                <div class="flex items-center gap-2 text-red-600">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span class="text-sm font-bold">قیمت‌گذاری نشده</span>
-                </div>
-                
+            <div class="flex items-center justify-center gap-1.5 rounded-xl bg-red-50 border border-red-200 px-3 py-2">
+                <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <span class="text-xs sm:text-sm font-bold text-red-600">قیمت‌گذاری نشده</span>
             </div>
             @endif
         </div>
@@ -427,3 +388,4 @@ $categorySlug = $category?->slug;
     <div class="absolute inset-0 rounded-2xl border-2 border-amber-400 opacity-0 transition-opacity duration-300 group-hover:opacity-100 pointer-events-none"></div>
 </div>
 @endif
+

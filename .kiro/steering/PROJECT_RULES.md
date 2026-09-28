@@ -245,6 +245,43 @@ Jalalian::now()->format('Y-m-d')
 <x-heroicon-s-home />
 ```
 
+### Encoding فایل‌ها (الزامی)
+**همه فایل‌های پروژه باید با UTF-8 بدون BOM ذخیره شوند:**
+
+#### چرا BOM مشکل‌ساز است؟
+- **BOM (Byte Order Mark)** یک کاراکتر نامرئی `EF BB BF` در ابتدای فایل است
+- در Blade templates به صورت `&#xFEFF;` در HTML رندر می‌شود
+- باعث مشکلات Layout، فاصله‌های اضافی، و خرابی Grid می‌شود
+- در PHP headers می‌تواند خطای "headers already sent" ایجاد کند
+
+#### بررسی و رفع BOM
+**بررسی وجود BOM:**
+```powershell
+Get-Content "path/to/file.blade.php" -Encoding Byte | Select-Object -First 3 | ForEach-Object { "{0:X2}" -f $_ }
+# اگر خروجی EF BB BF باشد → فایل BOM دارد
+```
+
+**حذف BOM از فایل:**
+```powershell
+$content = Get-Content "path/to/file.blade.php" -Raw
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$PWD/path/to/file.blade.php", $content, $utf8NoBom)
+```
+
+**تنظیم Editor:**
+- **VS Code:** فایل را باز کن → در نوار پایین روی "UTF-8 with BOM" کلیک کن → "Save with Encoding" → "UTF-8" را انتخاب کن
+- **PhpStorm:** Settings → Editor → File Encodings → تیک "Transparent native-to-ascii conversion" را بردار
+- **Notepad++:** Encoding → "Encode in UTF-8 without BOM"
+
+#### چک‌لیست Encoding
+- [ ] تمام فایل‌های `.blade.php` باید UTF-8 بدون BOM باشند
+- [ ] تمام فایل‌های `.php` باید UTF-8 بدون BOM باشند
+- [ ] تمام فایل‌های `.js`, `.css`, `.vue` باید UTF-8 بدون BOM باشند
+- [ ] بعد از ایجاد/ویرایش فایل‌های Blade حتماً بررسی کن
+- [ ] بعد از رفع BOM حتماً `php artisan view:clear` اجرا کن
+
+**قانون طلایی:** قبل از commit، فایل‌های تغییر یافته را برای BOM بررسی کن!
+
 ## راهنمای کاربر در صفحات (User Guide)
 
 ### فلسفه راهنمای کاربر
@@ -430,5 +467,5 @@ Jalalian::now()->format('Y-m-d')
 ---
 
 **تاریخ ایجاد:** 2026-08-02  
-**آخرین بروزرسانی:** 2026-08-27  
+**آخرین بروزرسانی:** 2026-09-26  
 **وضعیت:** فعال

@@ -149,15 +149,15 @@
             {{-- Case 1: عمده --}}
             @if($canSeeWholesale && $lowestWholesale)
                 <div class="flex items-baseline justify-between flex-wrap gap-1">
-                    <div>
+                    <div class="">
                         <span class="text-sm sm:text-base font-black text-blue-600 tracking-tight">
                             {{ number_format($lowestWholesale) }}
                         </span>
-                        <span class="text-[10px] sm:text-xs text-gray-400 font-medium mr-0.5">تومان</span>
+                        <span class="text-[10px] sm:text-xs font-bold text-blue-600">ت</span>
                     </div>
                     @if($highestWholesale && $highestWholesale != $lowestWholesale)
                         <span class="text-[10px] sm:text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
-                            تا {{ number_format($highestWholesale) }}
+                            تا {{ number_format($highestWholesale) }} ت
                         </span>
                     @endif
                 </div>
@@ -165,7 +165,7 @@
                 @if($retailPrice && $retailPrice > $lowestWholesale)
                     <div class="flex items-center gap-2 mt-1">
                         <span class="text-[11px] text-gray-400 line-through decoration-red-400">
-                            {{ number_format($retailPrice) }}
+                            {{ number_format($retailPrice) }} ت
                         </span>
                         <span class="text-[10px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">
                             {{ $discount }}% تخفیف عمده
@@ -175,11 +175,11 @@
 
             {{-- Case 2: خرده --}}
             @elseif($canSeePrices && $retailPrice)
-                <div>
+                <div class="">
                     <span class="text-xs sm:text-base font-black text-emerald-600 tracking-tight">
                         {{ number_format($retailPrice) }}
                     </span>
-                    <span class="text-[10px] sm:text-xs text-gray-400 font-medium mr-0.5">تومان</span>
+                    <span class="text-[10px] sm:text-xs font-bold text-emerald-600">ت</span>
                 </div>
 
             {{-- Case 3: مهمان --}}
@@ -194,8 +194,14 @@
 
             {{-- Case 4: بدون قیمت --}}
             @else
-                <span class="text-xs text-gray-300 italic">قیمت‌گذاری نشده</span>
+                <div class="flex items-center justify-center gap-1 rounded-lg bg-red-50 border border-red-200 px-2 py-1">
+                    <svg class="w-3 h-3 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span class="text-xs font-semibold text-red-600">قیمت‌گذاری نشده</span>
+                </div>
             @endif
         </div>
     </div>
 </a>
+

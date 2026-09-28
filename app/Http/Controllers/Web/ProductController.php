@@ -1918,11 +1918,15 @@ private function getCategoryChain(Category $category): array
             $lowestPrice = (float) $allPrices->min();
             $highestPrice = (float) $allPrices->max();
             
+            // ✅ تبدیل تومان به ریال برای ISO 4217 (IRR)
+            $lowestPriceRial = $lowestPrice * 10;
+            $highestPriceRial = $highestPrice * 10;
+            
             $schema['offers'] = [
                 '@type'         => 'AggregateOffer',
-                'priceCurrency' => 'IRT', // ✅ تومان ایران (نه ریال)
-                'lowPrice'      => $lowestPrice,
-                'highPrice'     => $highestPrice,
+                'priceCurrency' => 'IRR', // ✅ ریال ایران (کد رسمی ISO 4217)
+                'lowPrice'      => $lowestPriceRial,
+                'highPrice'     => $highestPriceRial,
                 'offerCount'    => $allPrices->count(),
                 'availability'  => $product->status === \App\Enums\ProductStatus::ACTIVE 
                     ? 'https://schema.org/InStock' 
@@ -1947,10 +1951,13 @@ private function getCategoryChain(Category $category): array
             // fallback: قیمت خرده‌فروشی
             $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
             if ($retailPrice) {
+                // ✅ تبدیل تومان به ریال برای ISO 4217 (IRR)
+                $retailPriceRial = (float) $retailPrice->retail_price * 10;
+                
                 $schema['offers'] = [
                     '@type'         => 'Offer',
-                    'priceCurrency' => 'IRT', // ✅ تومان ایران (نه ریال)
-                    'price'         => (float) $retailPrice->retail_price,
+                    'priceCurrency' => 'IRR', // ✅ ریال ایران (کد رسمی ISO 4217)
+                    'price'         => $retailPriceRial,
                     'availability'  => 'https://schema.org/InStock',
                     'url'           => url('/products/' . $product->slug),
                     'priceValidUntil' => now()->addDay()->format('Y-m-d'), // ✅ اعتبار 1 روز
@@ -1959,7 +1966,7 @@ private function getCategoryChain(Category $category): array
                 // ✅ اگر هیچ قیمتی نیست، حداقل یک placeholder بذاریم
                 $schema['offers'] = [
                     '@type'         => 'AggregateOffer',
-                    'priceCurrency' => 'IRT', // ✅ تومان ایران (نه ریال)
+                    'priceCurrency' => 'IRR', // ✅ ریال ایران (کد رسمی ISO 4217)
                     'lowPrice'      => 0,
                     'highPrice'     => 0,
                     'offerCount'    => 0,
