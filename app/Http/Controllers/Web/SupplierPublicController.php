@@ -53,10 +53,20 @@ class SupplierPublicController extends Controller
 
         $query = Supplier::query()
             ->where('is_active', true)
-            ->withCount([
-                'products as products_count' => fn($q) => $q
+            ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
+            ->addSelect([
+                'total_products_count' => Product::selectRaw('COUNT(DISTINCT products.id)')
                     ->where('products.is_active', true)
-                    ->where('products.status', ProductStatus::ACTIVE),
+                    ->where('products.status', ProductStatus::ACTIVE)
+                    ->where(function ($q) {
+                        $q->whereColumn('products.supplier_id', 'suppliers.id')
+                          ->orWhereIn('products.id', function ($sub) {
+                              $sub->select('product_supplier.product_id')
+                                  ->from('product_supplier')
+                                  ->whereColumn('product_supplier.supplier_id', 'suppliers.id')
+                                  ->where('product_supplier.is_active', true);
+                          });
+                    }),
             ]);
 
         // ─── فیلتر جستجو ───
@@ -84,7 +94,7 @@ class SupplierPublicController extends Controller
             'newest'        => $query->orderByDesc('created_at'),
             'name_asc'      => $query->orderBy('company_name'),
             'name_desc'     => $query->orderByDesc('company_name'),
-            'most_products' => $query->orderByDesc('products_count'),
+            'most_products' => $query->orderByDesc('total_products_count'),
             'verified_first'=> $query->orderByDesc('is_verified')->orderByDesc('created_at'),
             default         => $query->orderByDesc('created_at'),
         };
@@ -95,6 +105,7 @@ class SupplierPublicController extends Controller
         // ─── داده‌های جانبی ───
         $provinces = Cache::remember('web:suppliers:provinces', self::CACHE_TTL_LONG, function () {
             return Supplier::where('is_active', true)
+                ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                 ->whereNotNull('province')
                 ->select('province')
                 ->distinct()
@@ -102,17 +113,52 @@ class SupplierPublicController extends Controller
                 ->pluck('province');
         });
 
+        // ─── شهرها بر اساس استان انتخاب شده ───
+        $cities = collect();
+        if ($request->filled('province')) {
+            $cities = Cache::remember(
+                'web:suppliers:cities:' . $request->province, 
+                self::CACHE_TTL_LONG, 
+                function () use ($request) {
+                    return Supplier::where('is_active', true)
+                        ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
+                        ->where('province', $request->province)
+                        ->whereNotNull('city')
+                        ->select('city')
+                        ->distinct()
+                        ->orderBy('city')
+                        ->pluck('city');
+                }
+            );
+        }
+
         $stats = Cache::remember('web:suppliers:stats', self::CACHE_TTL_MEDIUM, function () {
+            $totalProducts = Product::where('is_active', true)
+                ->where('status', ProductStatus::ACTIVE)
+                ->distinct('id')
+                ->count('id');
+            
             return [
-                'total'    => Supplier::where('is_active', true)->count(),
-                'verified' => Supplier::where('is_active', true)->where('is_verified', true)->count(),
-                'cities'   => Supplier::where('is_active', true)->whereNotNull('city')->distinct('city')->count('city'),
+                'total'          => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
+                    ->count(),
+                'verified'       => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
+                    ->where('is_verified', true)
+                    ->count(),
+                'cities'         => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
+                    ->whereNotNull('city')
+                    ->distinct('city')
+                    ->count('city'),
+                'total_products' => $totalProducts,
             ];
         });
 
         return view('pages.suppliers.index', [
             'suppliers'   => $suppliers,
             'provinces'   => $provinces,
+            'cities'      => $cities,
             'stats'       => $stats,
             'searchQuery' => $request->get('q', ''),
             'sortBy'      => $sort,
@@ -196,14 +242,60 @@ class SupplierPublicController extends Controller
             }
         }
 
+        // ─── فیلتر جستجو ───
+        if ($request->filled('q')) {
+            $searchTerm = '%' . $request->q . '%';
+            $productsQuery->where(function ($q) use ($searchTerm) {
+                $q->where('title', 'LIKE', $searchTerm)
+                  ->orWhere('sku', 'LIKE', $searchTerm);
+            });
+        }
+
+        // ─── فیلتر قیمت ───
+        if ($request->filled('min_price') || $request->filled('max_price')) {
+            $minPrice = $request->get('min_price');
+            $maxPrice = $request->get('max_price');
+            
+            $productsQuery->whereHas('productSuppliers.prices', function ($q) use ($minPrice, $maxPrice, $supplier) {
+                $q->where('is_active', true)
+                  ->where('product_supplier_id', function ($sub) use ($supplier) {
+                      $sub->select('id')
+                          ->from('product_supplier')
+                          ->whereColumn('product_supplier_id', 'product_supplier.id')
+                          ->where('supplier_id', $supplier->id);
+                  });
+                
+                if ($minPrice) {
+                    $q->where('price', '>=', (float) $minPrice);
+                }
+                if ($maxPrice) {
+                    $q->where('price', '<=', (float) $maxPrice);
+                }
+            });
+        }
+
+        // ─── فیلتر وضعیت ───
+        if ($request->featured == '1') {
+            $productsQuery->where('is_featured', true);
+        }
+        if ($request->in_stock == '1') {
+            $productsQuery->whereHas('productSuppliers', function ($q) use ($supplier) {
+                $q->where('supplier_id', $supplier->id)
+                  ->where('is_active', true)
+                  ->whereHas('prices', function ($sub) {
+                      $sub->where('is_active', true);
+                  });
+            });
+        }
+
         // ─── مرتب‌سازی ───
         $sort = $request->get('sort', 'latest');
         $productsQuery = match ($sort) {
             'latest'      => $productsQuery->orderByDesc('created_at'),
             'oldest'      => $productsQuery->orderBy('created_at'),
             'popular'     => $productsQuery->orderByDesc('view_count'),
-            'price_low'   => $productsQuery->orderByRaw('(SELECT MIN(retail_price) FROM retail_prices WHERE retail_prices.product_id = products.id AND is_published = 1) ASC'),
-            'price_high'  => $productsQuery->orderByRaw('(SELECT MIN(retail_price) FROM retail_prices WHERE retail_prices.product_id = products.id AND is_published = 1) DESC'),
+            'price_low'   => $productsQuery->orderByRaw('(SELECT MIN(price) FROM product_prices WHERE product_prices.product_supplier_id IN (SELECT id FROM product_supplier WHERE product_supplier.product_id = products.id AND supplier_id = ' . $supplier->id . ') AND is_active = 1) ASC'),
+            'price_high'  => $productsQuery->orderByRaw('(SELECT MIN(price) FROM product_prices WHERE product_prices.product_supplier_id IN (SELECT id FROM product_supplier WHERE product_supplier.product_id = products.id AND supplier_id = ' . $supplier->id . ') AND is_active = 1) DESC'),
             'name_asc'    => $productsQuery->orderBy('title'),
             default       => $productsQuery->orderByDesc('created_at'),
         };
@@ -250,6 +342,7 @@ class SupplierPublicController extends Controller
             "web:supplier:{$supplier->id}:stats",
             self::CACHE_TTL_SHORT,
             function () use ($supplier) {
+                // ✅ اصلاح شده: شامل هر دو مسیر supplier_id مستقیم + pivot
                 // یک کوئری برای آمار محصولات
                 $stats = DB::table('products')
                     ->where(function ($q) use ($supplier) {
@@ -263,6 +356,7 @@ class SupplierPublicController extends Controller
                           });
                     })
                     ->where('is_active', true)
+                    ->where('status', ProductStatus::ACTIVE->value)
                     ->whereNull('deleted_at')
                     ->selectRaw("
                         COUNT(DISTINCT id) as total_products,
@@ -272,6 +366,7 @@ class SupplierPublicController extends Controller
                     ")
                     ->first();
 
+                // ✅ دریافت ID محصولات یکتا برای محاسبه قیمت
                 $productIds = DB::table('products')
                     ->where(function ($q) use ($supplier) {
                         $q->where('supplier_id', $supplier->id)
@@ -284,13 +379,17 @@ class SupplierPublicController extends Controller
                           });
                     })
                     ->where('is_active', true)
+                    ->where('status', ProductStatus::ACTIVE->value)
                     ->whereNull('deleted_at')
                     ->pluck('id');
 
+                // ✅ محاسبه قیمت از جدول product_supplier.prices
                 $priceStats = DB::table('product_prices')
-                    ->whereIn('product_id', $productIds)
-                    ->where('is_active', true)
-                    ->selectRaw('MIN(price) as min_price, MAX(price) as max_price, AVG(price) as avg_price')
+                    ->join('product_supplier', 'product_prices.product_supplier_id', '=', 'product_supplier.id')
+                    ->where('product_supplier.supplier_id', $supplier->id)
+                    ->where('product_prices.is_active', true)
+                    ->whereIn('product_prices.product_id', $productIds)
+                    ->selectRaw('MIN(product_prices.price) as min_price, MAX(product_prices.price) as max_price, AVG(product_prices.price) as avg_price')
                     ->first();
 
                 return [
@@ -361,7 +460,16 @@ class SupplierPublicController extends Controller
             'canViewContact'     => $canViewContact,
             'socialNetworks'     => $socialNetworks,
             'sortBy'             => $sort,
+            'sortOptions'        => [
+                'latest'      => 'جدیدترین',
+                'oldest'      => 'قدیمی‌ترین',
+                'popular'     => 'محبوب‌ترین',
+                'price_low'   => 'ارزان‌ترین',
+                'price_high'  => 'گران‌ترین',
+                'name_asc'    => 'نام (الف-ی)',
+            ],
             'perPage'            => $perPage,
+            'perPageOptions'     => self::ALLOWED_PER_PAGE,
             'searchQuery'        => $request->get('q', ''),
             'seo'                => $seo,
             'jsonLd'             => $jsonLd,

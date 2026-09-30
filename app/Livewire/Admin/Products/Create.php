@@ -1130,6 +1130,96 @@ class Create extends Component
         ]);
     }
 
+    /**
+     * تولید پرامپت هوش مصنوعی بر اساس اطلاعات محصول
+     * 
+     * @return string
+     */
+    public function generateAIPrompt(): string
+    {
+        // جمع‌آوری اطلاعات محصول
+        $productName = $this->title ?: '[نام محصول]';
+        $categoryName = $this->selectedCategoryName ?: '[دسته‌بندی]';
+        $brand = $this->brand ?: 'نامشخص';
+        
+        // جمع‌آوری ویژگی‌های انتخاب شده
+        $attributesList = [];
+        if (!empty($this->selectedAttributeValues)) {
+            $valueIds = collect($this->selectedAttributeValues)->flatten()->filter()->all();
+            if (!empty($valueIds)) {
+                $attributes = \App\Models\AttributeValue::with('attribute')
+                    ->whereIn('id', $valueIds)
+                    ->get()
+                    ->groupBy('attribute.name');
+                
+                foreach ($attributes as $attrName => $values) {
+                    $valuesList = $values->pluck('value')->implode('، ');
+                    $attributesList[] = "- {$attrName}: {$valuesList}";
+                }
+            }
+        }
+        
+        $attributesText = !empty($attributesList) 
+            ? implode("\n", $attributesList) 
+            : '- هنوز ویژگی‌ای تعیین نشده است';
+        
+        // تعداد در بسته‌بندی
+        $packagingInfo = $this->quantity_per_packaging > 1 
+            ? "{$this->quantity_per_packaging} عدد در هر {$this->getPackagingUnitLabel()}" 
+            : "تکی";
+        
+        // ساخت پرامپت نهایی
+        $prompt = <<<PROMPT
+شما یک متخصص بازاریابی محتوا و سئو هستید. من یک محصول عمده‌فروشی دارم که می‌خواهم برای سایت‌ام توضیحات جذاب و بهینه شده برای موتورهای جستجو بنویسید.
+
+**اطلاعات محصول:**
+- نام محصول: {$productName}
+- دسته‌بندی: {$categoryName}
+- برند: {$brand}
+- بسته‌بندی: {$packagingInfo}
+
+**ویژگی‌های محصول:**
+{$attributesText}
+
+**وظیفه شما:**
+1. یک **توضیحات کوتاه** (2-3 جمله، حداکثر 200 کاراکتر) بنویسید که:
+   - خلاصه‌ای جذاب و مختصر از محصول باشد
+   - مناسب نمایش در کارت محصول و لیست‌ها
+   - شامل مهم‌ترین ویژگی‌های محصول
+   - بدون استفاده از emoji
+
+2. یک **توضیحات تخصصی کامل** (8-12 جمله) بنویسید که:
+   - توضیحات جامع و تخصصی درباره محصول
+   - شامل تمام ویژگی‌های محصول
+   - مزایا و کاربردهای محصول
+   - مناسب برای خریداران عمده و فروشندگان
+   - بهینه شده برای SEO با استفاده طبیعی از کلمات کلیدی
+   - ساختار خوانا با پاراگراف‌بندی مناسب
+   - بدون استفاده از emoji
+
+**نکات مهم:**
+- متن‌ها باید به زبان فارسی رسمی و روان نوشته شوند
+- از کلمات کلیدی مرتبط با محصول استفاده کنید (برای SEO)
+- لحن متن باید حرفه‌ای و مناسب یک سایت B2B باشد
+- تمرکز بر مزایای محصول برای خریداران عمده (فروشگاه‌ها، مغازه‌ها)
+- اطلاعات دقیق و صادقانه (بدون اغراق)
+- از عبارات کلیشه‌ای مثل "محصولی بی‌نظیر" یا "بهترین محصول" استفاده نکنید
+
+**فرمت خروجی:**
+لطفاً پاسخ را به این شکل ارائه دهید:
+
+---
+**توضیحات کوتاه:**
+[متن توضیحات کوتاه]
+
+**توضیحات تخصصی:**
+[متن توضیحات کامل]
+---
+PROMPT;
+
+        return trim($prompt);
+    }
+
     public function render()
     {
         return view('livewire.admin.products.create');

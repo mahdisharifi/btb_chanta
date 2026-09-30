@@ -109,5 +109,9 @@ Route::middleware(['auth', 'role:super_admin'])
         Route::get('/settings/price-visibility', \App\Livewire\Admin\Settings\ManagePriceVisibility::class)
             ->name('settings.price-visibility');
 
+        // مدیریت اسلایدر اصلی
+        Route::get('/sliders', \App\Livewire\Admin\SliderManagement::class)
+            ->name('sliders.index');
+
     });
 

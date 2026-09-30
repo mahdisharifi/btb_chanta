@@ -171,18 +171,6 @@
                     @error('is_active') <span class="text-red-500 text-xs ml-2">{{ $message }}</span> @enderror
                 </div>
             </div>
-
-            <div class="mt-6">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">توضیحات کوتاه</label>
-                <textarea wire:model="short_description" rows="2" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm"></textarea>
-                @error('short_description') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-            </div>
-
-            <div class="mt-6">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">توضیحات کامل</label>
-                <textarea wire:model="full_description" rows="5" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm"></textarea>
-                @error('full_description') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-            </div>
         </div>
 
         <!-- بخش واحد بسته‌بندی و تیراژبندی خودکار -->
@@ -840,6 +828,141 @@
                         @endif
                     </div>
                 </div>
+            </div>
+            @endif
+        </div>
+
+        <!-- بخش تولید توضیحات با هوش مصنوعی -->
+        <div class="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-lg shadow-sm border-2 border-purple-200 dark:border-purple-800">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <x-heroicon-o-sparkles class="w-6 h-6 text-purple-600"/>
+                    تولید توضیحات با هوش مصنوعی
+                </h2>
+                <span class="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-3 py-1 rounded-full font-medium">
+                    AI-Powered
+                </span>
+            </div>
+
+            <!-- راهنمای استفاده -->
+            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                <div class="flex items-start gap-3">
+                    <x-heroicon-o-information-circle class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"/>
+                    <div class="text-sm text-blue-900 dark:text-blue-100 space-y-2">
+                        <p class="font-semibold">📌 نحوه استفاده:</p>
+                        <ol class="list-decimal list-inside space-y-1 mr-2">
+                            <li>مشخصات محصول را در بخش‌های بالا تکمیل کنید</li>
+                            <li>روی دکمه "کپی پرامپت" کلیک کنید</li>
+                            <li>پرامپت در کلیپبورد ذخیره می‌شود</li>
+                            <li>به ChatGPT یا هوش مصنوعی دلخواه خود بروید و پرامپت را Paste کنید</li>
+                            <li>توضیحات تولید شده را در فیلدهای زیر وارد کنید</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- دکمه کپی پرامپت -->
+            <div class="mb-6"
+                 x-data="{
+                     copied: false,
+                     async copyPrompt() {
+                         try {
+                             const prompt = await $wire.generateAIPrompt();
+                             await navigator.clipboard.writeText(prompt);
+                             this.copied = true;
+                             setTimeout(() => this.copied = false, 3000);
+                         } catch (error) {
+                             console.error('خطا در کپی کردن:', error);
+                             alert('خطا در کپی کردن پرامپت. لطفاً دوباره تلاش کنید.');
+                         }
+                     }
+                 }">
+                <button type="button" 
+                        @click="copyPrompt()"
+                        class="w-full py-4 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-3 group">
+                    <svg x-show="!copied" class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                    <svg x-show="copied" x-cloak class="w-6 h-6 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span x-text="copied ? 'کپی شد! ✓' : '📋 کپی پرامپت هوش مصنوعی'"></span>
+                </button>
+                
+                <p class="text-xs text-center text-gray-500 dark:text-gray-400 mt-2">
+                    پرامپت شامل تمام مشخصات، دسته‌بندی، و ویژگی‌های محصول است
+                </p>
+            </div>
+
+            <!-- فیلد توضیحات کوتاه -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    <x-heroicon-o-document-text class="w-5 h-5 text-indigo-600"/>
+                    توضیحات کوتاه
+                    <span class="text-xs text-gray-500">(خلاصه محصول - 2-3 جمله)</span>
+                </label>
+                <textarea wire:model="short_description" 
+                          rows="3" 
+                          placeholder="خلاصه‌ای از محصول که در کارت‌ها و لیست‌ها نمایش داده می‌شود..."
+                          class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-purple-500 focus:ring-purple-500 rounded-lg shadow-sm text-sm"></textarea>
+                <div class="flex items-center justify-between mt-1">
+                    <span class="text-xs text-gray-500">
+                        💡 نکته: این متن در کارت محصول و لیست‌ها نمایش داده می‌شود
+                    </span>
+                    <span class="text-xs {{ mb_strlen($short_description ?? '') > 200 ? 'text-red-600' : 'text-gray-400' }}">
+                        {{ mb_strlen($short_description ?? '') }}/200 کاراکتر
+                    </span>
+                </div>
+                @error('short_description') 
+                    <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> 
+                @enderror
+            </div>
+
+            <!-- فیلد توضیحات کامل -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                    <x-heroicon-o-document-duplicate class="w-5 h-5 text-indigo-600"/>
+                    توضیحات تخصصی کامل
+                    <span class="text-xs text-gray-500">(توضیحات جامع محصول)</span>
+                </label>
+                <textarea wire:model="full_description" 
+                          rows="8" 
+                          placeholder="توضیحات کامل و تخصصی محصول شامل ویژگی‌ها، کاربردها، مزایا و..."
+                          class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-purple-500 focus:ring-purple-500 rounded-lg shadow-sm text-sm"></textarea>
+                <div class="flex items-center justify-between mt-1">
+                    <span class="text-xs text-gray-500">
+                        💡 نکته: این متن در صفحه جزئیات محصول نمایش داده می‌شود
+                    </span>
+                    <span class="text-xs text-gray-400">
+                        {{ mb_strlen($full_description ?? '') }} کاراکتر
+                    </span>
+                </div>
+                @error('full_description') 
+                    <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> 
+                @enderror
+            </div>
+
+            <!-- نمونه خروجی (اگر توضیحات پر شده) -->
+            @if(!empty($short_description) || !empty($full_description))
+            <div class="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <p class="text-sm font-semibold text-green-800 dark:text-green-300 mb-2 flex items-center gap-2">
+                    <x-heroicon-s-check-circle class="w-5 h-5"/>
+                    پیش‌نمایش توضیحات
+                </p>
+                @if(!empty($short_description))
+                <div class="mb-3">
+                    <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">توضیحات کوتاه:</p>
+                    <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ $short_description }}</p>
+                </div>
+                @endif
+                @if(!empty($full_description))
+                <div>
+                    <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">توضیحات کامل:</p>
+                    <div class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed max-h-40 overflow-y-auto">
+                        {!! nl2br(e($full_description)) !!}
+                    </div>
+                </div>
+                @endif
             </div>
             @endif
         </div>

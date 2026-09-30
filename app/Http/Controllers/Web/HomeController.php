@@ -115,6 +115,7 @@ class HomeController extends Controller
                     'link_text',
                     'link_target',
                     'bg_color',
+                    'bg_gradient',
                     'text_color',
                     'overlay_color',
                     'text_position',
@@ -314,17 +315,20 @@ class HomeController extends Controller
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                // ✅ استفاده از ساختار جدید: productSuppliers با prices
-                'productSuppliers.prices' => function ($q) {
-                    $q->where('is_active', true)
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
-                        })
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_from')
-                                ->orWhere('valid_from', '<=', now());
-                        });
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices (فقط فعال)
+                'productSuppliers' => function ($q) {
+                    $q->where('is_active', true) // ✅ فقط productSuppliers فعال
+                      ->with(['prices' => function ($q) {
+                          $q->where('is_active', true)
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_until')
+                                      ->orWhere('valid_until', '>=', now());
+                              })
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_from')
+                                      ->orWhere('valid_from', '<=', now());
+                              });
+                      }]);
                 },
                 'productSuppliers.supplier:id,company_name,brand_name',
                 'retailPrices' => function ($q) {
@@ -343,6 +347,7 @@ class HomeController extends Controller
         return Cache::remember('home:suppliers:top', self::CACHE_TTL_LONG, function () {
             return Supplier::query()
                 ->where('is_active', true)
+                ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                 ->where('is_verified', true)
                 ->select([
                     'id', 'user_id', 'company_name', 'brand_name',
@@ -371,10 +376,12 @@ class HomeController extends Controller
                 'total_categories' => Category::where('is_active', true)->count(),
 
                 'total_suppliers' => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->where('is_verified', true)
                     ->count(),
 
                 'total_brands' => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->where('is_verified', true)
                     ->whereNotNull('brand_name')
                     ->distinct('brand_name')
@@ -423,17 +430,20 @@ class HomeController extends Controller
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                // ✅ استفاده از ساختار جدید: productSuppliers با prices
-                'productSuppliers.prices' => function ($q) {
-                    $q->where('is_active', true)
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
-                        })
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_from')
-                                ->orWhere('valid_from', '<=', now());
-                        });
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices (فقط فعال)
+                'productSuppliers' => function ($q) {
+                    $q->where('is_active', true) // ✅ فقط productSuppliers فعال
+                      ->with(['prices' => function ($q) {
+                          $q->where('is_active', true)
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_until')
+                                      ->orWhere('valid_until', '>=', now());
+                              })
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_from')
+                                      ->orWhere('valid_from', '<=', now());
+                              });
+                      }]);
                 },
                 'productSuppliers.supplier:id,company_name,brand_name',
                 'retailPrices' => function ($q) {

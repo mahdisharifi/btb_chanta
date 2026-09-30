@@ -245,6 +245,103 @@ Jalalian::now()->format('Y-m-d')
 <x-heroicon-s-home />
 ```
 
+### SEO و Schema.org (الزامی)
+
+**مشکل رایج: خطای Blade Parser با `@` در JSON-LD**
+
+#### مشکل
+وقتی از `@push` یا `@section` برای Schema.org استفاده می‌کنیم، کاراکتر `@` در `"@context"` و `"@type"` باعث خطای Blade Parser می‌شود:
+```
+ParseError: syntax error, unexpected end of file, expecting "elseif" or "else" or "endif"
+```
+
+#### ❌ اشتباه
+```blade
+@push('head')
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList"
+}
+</script>
+@endpush
+```
+
+#### ✅ صحیح - راه‌حل 1: Escape کردن `@` با `@@`
+```blade
+@push('head')
+<script type="application/ld+json">
+{
+    "@@context": "https://schema.org",
+    "@@type": "BreadcrumbList",
+    "itemListElement": [
+        {
+            "@@type": "ListItem",
+            "position": 1,
+            "name": "خانه"
+        }
+    ]
+}
+</script>
+@endpush
+```
+
+#### ✅ صحیح - راه‌حل 2: قرار دادن `@if` خارج از `@push`
+```blade
+@isset($breadcrumbs)
+    @if(!empty($breadcrumbs))
+        @push('head')
+        <script type="application/ld+json">
+        {
+            "@@context": "https://schema.org",
+            "@@type": "BreadcrumbList",
+            "itemListElement": [
+                @foreach($breadcrumbs as $index => $crumb)
+                {
+                    "@@type": "ListItem",
+                    "position": {{ $index + 1 }},
+                    "name": "{{ $crumb['name'] }}"
+                }{{ !$loop->last ? ',' : '' }}
+                @endforeach
+            ]
+        }
+        </script>
+        @endpush
+    @endif
+@endisset
+```
+
+#### ✅ صحیح - راه‌حل 3: استفاده از `json_encode()`
+```blade
+@push('head')
+<script type="application/ld+json">
+{!! json_encode([
+    '@context' => 'https://schema.org',
+    '@type' => 'BreadcrumbList',
+    'itemListElement' => $breadcrumbs->map(fn($crumb, $index) => [
+        '@type' => 'ListItem',
+        'position' => $index + 1,
+        'name' => $crumb['name'],
+        'item' => $crumb['url'] ?? url()->current()
+    ])->toArray()
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) !!}
+</script>
+@endpush
+```
+
+#### قوانین Schema.org در Blade
+1. **همیشه `@` را در JSON-LD با `@@` escape کن**
+2. **`@if` را خارج از `@push` قرار بده**
+3. **برای داده‌های پیچیده از `json_encode()` استفاده کن**
+4. **بعد از تغییرات حتماً `php artisan view:clear` اجرا کن**
+
+#### چک‌لیست SEO
+- [ ] همه `"@context"` به `"@@context"` تبدیل شده
+- [ ] همه `"@type"` به `"@@type"` تبدیل شده
+- [ ] `@if` خارج از `@push` قرار دارد
+- [ ] Schema.org با [Google Rich Results Test](https://search.google.com/test/rich-results) تست شده
+- [ ] بعد از تغییرات `php artisan view:clear` اجرا شده
+
 ### Encoding فایل‌ها (الزامی)
 **همه فایل‌های پروژه باید با UTF-8 بدون BOM ذخیره شوند:**
 
@@ -467,5 +564,5 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 ---
 
 **تاریخ ایجاد:** 2026-08-02  
-**آخرین بروزرسانی:** 2026-09-26  
+**آخرین بروزرسانی:** 2026-09-26 (اضافه شد: قاعده SEO و Schema.org)  
 **وضعیت:** فعال

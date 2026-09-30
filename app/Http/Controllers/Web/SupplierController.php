@@ -63,7 +63,11 @@ class SupplierProfileController extends Controller
     public function index(Request $request)
     {
         $query = Supplier::where('is_active', true)
-            ->whereNotNull('company_name');
+            ->whereNotNull('company_name')
+            ->withCount(['products as products_count' => function ($q) {
+                $q->wherePivot('is_active', true)
+                  ->where('products.status', 'active');
+            }]);
 
         // جستجو
         if ($search = $request->get('q')) {
@@ -82,19 +86,39 @@ class SupplierProfileController extends Controller
         // مرتب‌سازی
         $sortBy = $request->get('sort', 'newest');
         switch ($sortBy) {
-            case 'products':
-                $query->withCount('products')->orderByDesc('products_count');
+            case 'most_products':
+                $query->orderByDesc('products_count');
                 break;
-            case 'name':
+            case 'name_asc':
                 $query->orderBy('company_name');
+                break;
+            case 'verified_first':
+                $query->orderByDesc('is_verified')->latest();
                 break;
             default:
                 $query->latest();
         }
 
-        $suppliers = $query->paginate(12);
+        $suppliers = $query->paginate(12)->withQueryString();
 
-        return view('pages.suppliers.index', compact('suppliers', 'sortBy'));
+        // آمار کلی
+        $stats = [
+            'total' => Supplier::where('is_active', true)->count(),
+            'verified' => Supplier::where('is_active', true)->where('is_verified', true)->count(),
+            'cities' => Supplier::where('is_active', true)->distinct('city')->count('city'),
+        ];
+
+        // لیست استان‌ها
+        $provinces = Supplier::where('is_active', true)
+            ->whereNotNull('province')
+            ->distinct()
+            ->pluck('province')
+            ->sort()
+            ->values();
+
+        $searchQuery = $request->get('q', '');
+
+        return view('pages.suppliers.index', compact('suppliers', 'sortBy', 'stats', 'provinces', 'searchQuery'));
     }
 
     /**
@@ -127,32 +151,46 @@ class SupplierProfileController extends Controller
     private function getSupplierStats(int $supplierId): array
     {
         $stats = DB::table('products')
-            ->where('supplier_id', $supplierId)
-            ->where('status', 'published')
+            ->join('product_supplier', 'products.id', '=', 'product_supplier.product_id')
+            ->where('product_supplier.supplier_id', $supplierId)
+            ->where('product_supplier.is_active', true)
+            ->where('products.status', 'active')
             ->selectRaw('
-                COUNT(*) as total_products,
-                COUNT(DISTINCT category_id) as total_categories,
-                COALESCE(SUM(view_count), 0) as total_views,
-                COALESCE(MIN(min_order_quantity), 1) as min_moq,
-                COALESCE(MIN(price), 0) as min_price,
-                COALESCE(MAX(price), 0) as max_price
+                COUNT(DISTINCT products.id) as total_products,
+                COUNT(DISTINCT products.category_id) as total_categories,
+                COALESCE(SUM(products.view_count), 0) as total_views
             ')
             ->first();
 
         $featuredCount = DB::table('products')
-            ->where('supplier_id', $supplierId)
-            ->where('status', 'published')
-            ->where('is_featured', true)
+            ->join('product_supplier', 'products.id', '=', 'product_supplier.product_id')
+            ->where('product_supplier.supplier_id', $supplierId)
+            ->where('product_supplier.is_active', true)
+            ->where('products.status', 'active')
+            ->where('products.is_featured', true)
             ->count();
+
+        // محاسبه بازه قیمت از quantity_tiers
+        $priceRange = DB::table('quantity_tiers')
+            ->join('products', 'quantity_tiers.product_id', '=', 'products.id')
+            ->join('product_supplier', 'products.id', '=', 'product_supplier.product_id')
+            ->where('product_supplier.supplier_id', $supplierId)
+            ->where('product_supplier.is_active', true)
+            ->where('products.status', 'active')
+            ->where('quantity_tiers.is_active', true)
+            ->selectRaw('
+                COALESCE(MIN(quantity_tiers.price), 0) as min_price,
+                COALESCE(MAX(quantity_tiers.price), 0) as max_price
+            ')
+            ->first();
 
         return [
             'total_products' => $stats->total_products ?? 0,
             'total_categories' => $stats->total_categories ?? 0,
             'total_views' => $stats->total_views ?? 0,
             'featured_count' => $featuredCount,
-            'min_price' => $stats->min_price ?? 0,
-            'max_price' => $stats->max_price ?? 0,
-            'min_moq' => $stats->min_moq ?? 1,
+            'min_price' => $priceRange->min_price ?? 0,
+            'max_price' => $priceRange->max_price ?? 0,
         ];
     }
 
@@ -162,12 +200,18 @@ class SupplierProfileController extends Controller
     private function getSupplierCategories(int $supplierId)
     {
         return Category::whereHas('products', function ($q) use ($supplierId) {
-                $q->where('supplier_id', $supplierId)
-                  ->where('status', 'published');
+                $q->whereHas('suppliers', function ($sq) use ($supplierId) {
+                    $sq->where('suppliers.id', $supplierId)
+                       ->wherePivot('is_active', true);
+                })
+                ->where('products.status', 'active');
             })
             ->withCount(['products' => function ($q) use ($supplierId) {
-                $q->where('supplier_id', $supplierId)
-                  ->where('status', 'published');
+                $q->whereHas('suppliers', function ($sq) use ($supplierId) {
+                    $sq->where('suppliers.id', $supplierId)
+                       ->wherePivot('is_active', true);
+                })
+                ->where('products.status', 'active');
             }])
             ->orderBy('products_count', 'desc')
             ->get();
@@ -178,9 +222,14 @@ class SupplierProfileController extends Controller
      */
     private function getProducts(int $supplierId, Request $request)
     {
-        $query = Product::where('supplier_id', $supplierId)
-            ->where('status', 'published')
-            ->with(['category', 'images']);
+        $query = Product::whereHas('suppliers', function ($q) use ($supplierId) {
+                $q->where('suppliers.id', $supplierId)
+                  ->wherePivot('is_active', true);
+            })
+            ->where('status', 'active')
+            ->with(['category', 'images', 'quantityTiers' => function($q) {
+                $q->where('is_active', true)->orderBy('min_quantity');
+            }]);
 
         // فیلتر دسته‌بندی
         if ($categorySlug = $request->get('category')) {
@@ -190,9 +239,23 @@ class SupplierProfileController extends Controller
         // جستجو در محصولات
         if ($search = $request->get('q')) {
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('name_en', 'like', "%{$search}%")
-                  ->orWhere('sku', 'like', "%{$search}%");
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%")
+                  ->orWhere('short_description', 'like', "%{$search}%");
+            });
+        }
+
+        // فیلتر قیمت (از تیراژها)
+        if ($minPrice = $request->get('min_price')) {
+            $query->whereHas('quantityTiers', function($q) use ($minPrice) {
+                $q->where('price', '>=', (int)$minPrice)
+                  ->where('is_active', true);
+            });
+        }
+        if ($maxPrice = $request->get('max_price')) {
+            $query->whereHas('quantityTiers', function($q) use ($maxPrice) {
+                $q->where('price', '<=', (int)$maxPrice)
+                  ->where('is_active', true);
             });
         }
 
@@ -200,16 +263,24 @@ class SupplierProfileController extends Controller
         $sortBy = $request->get('sort', 'latest');
         switch ($sortBy) {
             case 'price_low':
-                $query->orderBy('price', 'asc');
+                $query->join('quantity_tiers', 'products.id', '=', 'quantity_tiers.product_id')
+                    ->where('quantity_tiers.is_active', true)
+                    ->select('products.*', DB::raw('MIN(quantity_tiers.price) as min_price'))
+                    ->groupBy('products.id')
+                    ->orderBy('min_price', 'asc');
                 break;
             case 'price_high':
-                $query->orderBy('price', 'desc');
+                $query->join('quantity_tiers', 'products.id', '=', 'quantity_tiers.product_id')
+                    ->where('quantity_tiers.is_active', true)
+                    ->select('products.*', DB::raw('MAX(quantity_tiers.price) as max_price'))
+                    ->groupBy('products.id')
+                    ->orderBy('max_price', 'desc');
                 break;
             case 'popular':
                 $query->orderByDesc('view_count');
                 break;
             case 'name_asc':
-                $query->orderBy('name');
+                $query->orderBy('title');
                 break;
             default:
                 $query->latest();

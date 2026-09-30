@@ -25,6 +25,9 @@ use App\Services\PriceVisibilityService;
 use App\Events\CheckPercentageChanged;
 use App\Listeners\UpdateAffectedCheckPrices;
 
+// ✅ Observers
+use App\Observers\SupplierObserver;
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -68,6 +71,13 @@ class AppServiceProvider extends ServiceProvider
             CheckPercentageChanged::class,
             UpdateAffectedCheckPrices::class
         );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Register Observers
+        |--------------------------------------------------------------------------
+        */
+        Supplier::observe(SupplierObserver::class);
 
         /*
         |--------------------------------------------------------------------------

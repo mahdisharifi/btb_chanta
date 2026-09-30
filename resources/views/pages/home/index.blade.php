@@ -8,76 +8,10 @@
 @endphp
 @section('content')
 <div class="min-h-screen bg-gray-50">
-    {{-- HEADER + HERO SECTION --}}
-
-    @php
-        $heroImage = asset('storage/' .'images/home/hero-b2b.webp');
-    @endphp
-
-    {{-- Hero Section - بهینه‌سازی شده برای موبایل --}}
-    <section class="relative overflow-hidden bg-slate-950 min-h-[45vh] sm:min-h-[40vh] lg:min-h-[35vh] pt-16">
-        <div class="absolute inset-0">
-            <!-- تصویر Hero - بهینه‌سازی شده -->
-            <img
-                src="{{ $heroImage }}"
-                alt="پلتفرم عمده فروشی چن تا؟"
-                width="1920"
-                height="1080"
-                fetchpriority="high"
-                decoding="async"
-                loading="eager"
-                class="h-full w-full object-cover opacity-70"
-            >
-            <!-- گرادینت بهینه‌شده -->
-            <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-slate-950/60"></div>
-        </div>
-
-        <div class="relative z-10 h-full flex items-center py-8 sm:py-10 lg:py-12">
-            <div class="container mx-auto px-4">
-                <div class="flex flex-col lg:flex-row items-center justify-between gap-6 lg:gap-12">
-                    <div class="flex-1 text-white">
-                        <h1 class="text-2xl sm:text-3xl lg:text-4xl font-black leading-snug drop-shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
-                            تجارت عمده <span class="text-amber-400">بدون واسطه</span>
-                        </h1>
-                        <p class="mt-2 text-base sm:text-lg lg:text-xl font-bold text-slate-200">
-                            پلتفرم B2B چن‌تا؟
-                        </p>
-
-                        <div class="mt-6 flex flex-col sm:flex-row gap-3">
-                            <a href="{{ route('products.index') }}" class="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]">
-                                <x-heroicon-o-shopping-bag class="h-5 w-5" />
-                                مشاهده محصولات
-                            </a>
-
-                            <a href="{{ route('register') }}" class="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3 text-sm font-bold text-white backdrop-blur-md transition hover:bg-white/10">
-                                عضویت تأمین‌کننده
-                            </a>
-                        </div>
-                    </div>
-
-                    {{-- کارت‌های ویژگی - فقط در دسکتاپ --}}
-                    <div class="hidden lg:flex gap-3">
-                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white backdrop-blur-xl shadow-xl transition hover:bg-white/10 w-44">
-                            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 mb-3 border border-emerald-500/20">
-                                <x-heroicon-o-arrows-right-left class="h-5 w-5" />
-                            </div>
-                            <h2 class="text-sm font-bold">خرید بدون واسطه</h2>
-                            <p class="mt-1.5 text-[11px] text-slate-400 leading-relaxed">ارتباط مستقیم تأمین‌کننده و کاسب</p>
-                        </div>
-
-                        <div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white backdrop-blur-xl shadow-xl transition hover:bg-white/10 w-44">
-                            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 mb-3 border border-amber-500/20">
-                                <x-heroicon-o-magnifying-glass class="h-5 w-5" />
-                            </div>
-                            <h2 class="text-sm font-bold">جستجوی هوشمند</h2>
-                            <p class="mt-1.5 text-[11px] text-slate-400 leading-relaxed">فیلترهای پیشرفته محصولات</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
+    {{-- ═══════════════════════════════════════════════════════════
+         اسلایدر اصلی سایت (Main Site Slider)
+         ═══════════════════════════════════════════════════════════ --}}
+    <x-hero-slider :sliders="$sliders" />
 
     {{-- ══════════════════════════════════════════════════════════ --}}
     {{-- ═══════════════ MAIN CONTENT WRAPPER ═════════════════ --}}
@@ -271,7 +205,7 @@
                                 @endif
                             </div>
                             <h3 class="text-sm font-bold text-gray-700 group-hover:text-purple-700 transition mb-1 line-clamp-1">
-                                {{ $supplier->company_name ?: $supplier->brand_name  }}
+                                {{ $supplier->brand_name ?: $supplier->company_name }}
                             </h3>
                             @if($supplier->city || $supplier->province)
                                 <p class="text-[11px] text-gray-400 mb-2">

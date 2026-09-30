@@ -923,20 +923,50 @@ use App\Helpers\PriceHelper;
                                 class="w-full bg-gradient-to-l from-blue-50 via-white to-blue-50 px-2 py-2 border-b border-gray-100 cursor-pointer transition-colors hover:from-blue-100/50">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
-                                    {{-- لوگو --}}
-                                    @if($ps->supplier && $ps->supplier->logo_path)
-                                    <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
-                                         alt="{{ $ps->supplier->company_name ?? '' }}"
-                                         class="w-12 h-12 rounded-xl object-cover border-2 border-blue-100 shadow-sm">
+                                    {{-- لوگو + لینک به فروشگاه تأمین‌کننده --}}
+                                    @if($ps->supplier && $ps->supplier->slug)
+                                    <a href="{{ route('suppliers.show', $ps->supplier->slug) }}"
+                                       class="relative group/supplier shrink-0"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       title="مشاهده فروشگاه {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
+                                       onclick="event.stopPropagation()">
+                                        @if($ps->supplier->logo_path)
+                                        <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
+                                             alt="{{ $ps->supplier->company_name ?? '' }}"
+                                             class="w-12 h-12 rounded-xl object-cover border-2 border-blue-100 shadow-sm group-hover/supplier:border-blue-400 group-hover/supplier:ring-2 group-hover/supplier:ring-blue-200 transition-all">
+                                        @else
+                                        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-600 font-bold text-lg shadow-sm group-hover/supplier:from-blue-200 group-hover/supplier:to-blue-300 group-hover/supplier:ring-2 group-hover/supplier:ring-blue-200 transition-all">
+                                            {{ mb_substr($ps->supplier->company_name ?? '?', 0, 1) }}
+                                        </div>
+                                        @endif
+                                        {{-- Badge نمایش در hover --}}
+                                        <span class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center opacity-0 group-hover/supplier:opacity-100 scale-75 group-hover/supplier:scale-100 transition-all shadow-md">
+                                            <x-heroicon-o-arrow-top-right-on-square class="w-3 h-3 text-white" />
+                                        </span>
+                                    </a>
                                     @else
-                                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-600 font-bold text-lg shadow-sm">
+                                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-600 font-bold text-lg shadow-sm shrink-0">
                                         {{ mb_substr($ps->supplier->company_name ?? '?', 0, 1) }}
                                     </div>
                                     @endif
 
-                                    <div class="text-right">
+                                    <div class="text-right min-w-0 flex-1">
                                         <div class="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
-                                            {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}
+                                            {{-- لینک نام شرکت به فروشگاه تأمین‌کننده --}}
+                                            @if($ps->supplier && $ps->supplier->slug)
+                                            <a href="{{ route('suppliers.show', $ps->supplier->slug) }}"
+                                               class="inline-flex items-center gap-1 hover:text-blue-600 transition-colors border-b-2 border-transparent hover:border-blue-300 cursor-pointer group/supplier-name"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               title="مشاهده فروشگاه {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
+                                               onclick="event.stopPropagation()">
+                                                <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}</span>
+                                                <x-heroicon-o-arrow-top-right-on-square class="w-3.5 h-3.5 text-gray-400 group-hover/supplier-name:text-blue-500 transition-colors" />
+                                            </a>
+                                            @else
+                                            <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}</span>
+                                            @endif
                                             @if($ps->supplier && $ps->supplier->is_verified)
                                             <span class="inline-flex items-center gap-1 text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
                                                                         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>

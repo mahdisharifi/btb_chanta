@@ -50,12 +50,13 @@ $wholesalePriceData = null;
 $priceMatrix = null;
 
 if ($canSeeWholesalePrice && $product->relationLoaded('productSuppliers')) {
-    // جمع‌آوری تمام قیمت‌های فعال از productSuppliers
+    // جمع‌آوری تمام قیمت‌های فعال از productSuppliers فعال
     $allPrices = collect();
     $activeSuppliersCount = 0; // ✅ شمارش تامین‌کنندگان با قیمت فعال
     
     foreach ($product->productSuppliers as $ps) {
-        if ($ps->relationLoaded('prices')) {
+        // ✅ فقط productSuppliers فعال را در نظر بگیر
+        if ($ps->is_active && $ps->relationLoaded('prices')) {
             $activePrices = $ps->prices->where('is_active', true);
             if ($activePrices->isNotEmpty()) {
                 $allPrices = $allPrices->merge($activePrices);

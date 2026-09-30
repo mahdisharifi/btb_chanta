@@ -37,6 +37,10 @@ class ArtisanRunner extends Component
             'migrate'        => ['name' => 'اجرای مایگریشن‌ها', 'icon' => 'o-server-stack', 'color' => 'bg-indigo-600', 'group' => 'database'],
             'migrate:status' => ['name' => 'وضعیت مایگریشن‌ها', 'icon' => 'o-information-circle', 'color' => 'bg-violet-500', 'group' => 'database'],
             
+            // 🌱 دستورات Seeder
+            'db:seed'                    => ['name' => 'اجرای همه Seederها', 'icon' => 'o-beaker', 'color' => 'bg-amber-600', 'group' => 'seeder'],
+            'db:seed --class=MainSliderSeeder' => ['name' => 'اجرای MainSliderSeeder', 'icon' => 'o-photo', 'color' => 'bg-orange-500', 'group' => 'seeder'],
+            
             // 📋 دستورات اطلاعاتی
             'route:list'     => ['name' => 'لیست روت‌ها', 'icon' => 'o-list-bullet', 'color' => 'bg-gray-600', 'group' => 'info'],
             'about'          => ['name' => 'اطلاعات محیط', 'icon' => 'o-information-circle', 'color' => 'bg-slate-600', 'group' => 'info'],

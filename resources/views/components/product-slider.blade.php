@@ -86,7 +86,7 @@
 
         @foreach($products as $product)
         <div
-            class="w-[calc(40%-0.3rem)] flex-shrink-0 snap-start sm:w-[calc(33.333%-0.67rem)] md:w-52"
+            class="w-[calc(50%-0.375rem)] flex-shrink-0 snap-start sm:w-[calc(33.333%-0.67rem)] md:w-52"
         >
             <x-product.card :product="$product" />
         </div>

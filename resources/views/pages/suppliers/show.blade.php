@@ -1,8 +1,3 @@
-{{-- ═══════════════════════════════════════════════════════════════
-     صفحه پروفایل تأمین‌کننده — suppliers/show.blade.php
-     Mobile-first, تمام اطلاعات تأمین‌کننده
-     ═══════════════════════════════════════════════════════════════ --}}
-
 @extends('layouts.app')
 
 @php
@@ -10,37 +5,45 @@
     use Illuminate\Support\Str;
 @endphp
 
-{{-- JSON-LD Structured Data (Organization + Breadcrumb) --}}
+{{-- JSON-LD Structured Data (Organization) --}}
 @push('head')
 <script type="application/ld+json">
 {!! json_encode($jsonLd ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) !!}
 </script>
-@if(!empty($breadcrumbs))
-<script type="application/ld+json">
-{
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-        @foreach($breadcrumbs as $index => $crumb)
-        {
-            "@type": "ListItem",
-            "position": {{ $index + 1 }},
-            "name": "{{ $crumb['name'] }}",
-            "item": "{{ $crumb['url'] ?? url()->current() }}"
-        }{{ !$loop->last ? ',' : '' }}
-        @endforeach
-    ]
-}
-</script>
-@endif
 @endpush
 
-@section('content')
-<div class="min-h-screen bg-gray-50">
-    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
+{{-- JSON-LD Structured Data (Breadcrumb) --}}
+@isset($breadcrumbs)
+    @if(!empty($breadcrumbs))
+        @push('head')
+        <script type="application/ld+json">
+        {
+            "@@context": "https://schema.org",
+            "@@type": "BreadcrumbList",
+            "itemListElement": [
+                @foreach($breadcrumbs as $index => $crumb)
+                {
+                    "@@type": "ListItem",
+                    "position": {{ $index + 1 }},
+                    "name": "{{ $crumb['name'] }}",
+                    "item": "{{ $crumb['url'] ?? url()->current() }}"
+                }{{ !$loop->last ? ',' : '' }}
+                @endforeach
+            ]
+        }
+        </script>
+        @endpush
+    @endif
+@endisset
 
-        {{-- ═══════ BREADCRUMB ═══════ --}}
-        @if(!empty($breadcrumbs))
+@section('content')
+<div class="min-h-screen bg-gray-50"
+     x-data="supplierProductFilters()"
+     @category-changed.window="refreshFilters($event.detail.categorySlug)">
+
+    {{-- ═══════ BREADCRUMB ═══════ --}}
+    @if(!empty($breadcrumbs))
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
             <nav class="mb-4 sm:mb-6" aria-label="Breadcrumb">
                 <ol class="flex items-center flex-wrap gap-1 text-xs sm:text-sm text-gray-500">
                     @foreach($breadcrumbs as $index => $crumb)
@@ -59,9 +62,11 @@
                     @endforeach
                 </ol>
             </nav>
-        @endif
+        </div>
+    @endif
 
-        {{-- ═══════ SUPPLIER HEADER CARD ═══════ --}}
+    {{-- ═══════ SUPPLIER HEADER CARD ═══════ --}}
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div class="bg-white rounded-2xl sm:rounded-3xl border border-gray-200 overflow-hidden shadow-sm mb-6">
             {{-- Banner --}}
             <div class="h-24 sm:h-32 bg-gradient-to-l from-blue-500 via-indigo-500 to-purple-600 relative">
@@ -284,97 +289,346 @@
                 </div>
             @endif
         </div>
+    </div>
 
-        {{-- ═══════ CATEGORIES FILTER BAR (بالای صفحه) ═══════ --}}
-        <div class="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 mb-6 shadow-sm">
-            <div class="flex items-center gap-3 mb-3">
-                <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md">
-                    <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
-                </div>
-                <div>
-                    <h3 class="font-bold text-gray-800 text-sm sm:text-base">دسته‌بندی محصولات</h3>
-                    <p class="text-xs text-gray-400">انتخاب دسته‌بندی برای مشاهده محصولات</p>
-                </div>
-            </div>
-
-            {{-- Categories Chips --}}
-            <div class="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide">
-                <a href="{{ route('suppliers.show', $supplier->slug) }}"
-                   class="shrink-0 group relative px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 {{ !request('category') ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200' }}">
-                    <span class="relative z-10 flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
-                        همه محصولات
-                        <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold {{ !request('category') ? 'bg-white/20' : 'bg-gray-200 text-gray-600' }}">
-                            {{ $supplierStats['total_products'] ?? 0 }}
-                        </span>
+    {{-- ═══════ PRODUCTS SECTION WITH SIDEBAR ═══════ --}}
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-8">
+        
+        {{-- Mobile Filter Button --}}
+        <div class="lg:hidden mb-4">
+            <button @click="showMobileFilter = true"
+                    class="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition">
+                <svg class="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                </svg>
+                فیلترها
+                @if(request('category') || request('q') || request('min_price') || request('max_price'))
+                    <span class="bg-blue-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                        {{ collect([request('category'), request('q'), request('min_price'), request('max_price')])->filter()->count() }}
                     </span>
-                </a>
-                
-                @foreach($supplierCategories as $cat)
-                    <a href="{{ route('suppliers.show', ['slug' => $supplier->slug, 'category' => $cat->slug]) }}"
-                       class="shrink-0 group relative px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 {{ request('category') == $cat->slug ? 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30 scale-105' : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200' }}">
-                        <span class="relative z-10 flex items-center gap-2">
-                            @if($cat->icon)
-                                <span class="text-base">{{ $cat->icon }}</span>
-                            @endif
-                            {{ $cat->name }}
-                            <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold {{ request('category') == $cat->slug ? 'bg-white/20' : 'bg-gray-200 text-gray-600' }}">
-                                {{ $cat->products_count }}
-                            </span>
-                        </span>
-                    </a>
-                @endforeach
-            </div>
-
-            {{-- Price Range Info --}}
-            @if(($supplierStats['min_price'] ?? 0) > 0)
-                <div class="mt-4 pt-4 border-t border-gray-100 flex items-center gap-4 flex-wrap">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        <span class="text-xs text-gray-500">بازه قیمت:</span>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs">
-                        <span class="font-bold text-emerald-600">{{ PriceHelper::formatNumber($supplierStats['min_price']) }}</span>
-                        <span class="text-gray-400">تا</span>
-                        <span class="font-bold text-rose-600">{{ PriceHelper::formatNumber($supplierStats['max_price']) }}</span>
-                        <span class="text-gray-400">تومان</span>
-                    </div>
-                </div>
-            @endif
+                @endif
+            </button>
         </div>
 
-        {{-- ═══════ PRODUCTS SECTION ═══════ --}}
-        <div>
-                {{-- Sort Bar --}}
-                <div class="flex items-center justify-between mb-4 sm:mb-6 gap-3">
-                    <p class="text-xs sm:text-sm text-gray-500">
-                        <span class="font-bold text-gray-700">{{ number_format($products->total()) }}</span> محصول
-                    </p>
-                    <form method="GET" class="flex items-center gap-2">
-                        @if(request('category'))
-                            <input type="hidden" name="category" value="{{ request('category') }}">
-                        @endif
-                        @if(request('q'))
-                            <input type="hidden" name="q" value="{{ request('q') }}">
-                        @endif
-                        @if(request('per_page'))
-                            <input type="hidden" name="per_page" value="{{ request('per_page') }}">
-                        @endif
-                        <select name="sort" onchange="this.form.submit()"
-                                class="border border-gray-200 rounded-lg px-2 sm:px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 bg-white">
-                            <option value="latest"   {{ $sortBy == 'latest'   ? 'selected' : '' }}>جدیدترین</option>
-                            <option value="popular"  {{ $sortBy == 'popular'  ? 'selected' : '' }}>محبوب‌ترین</option>
-                            <option value="price_low" {{ $sortBy == 'price_low' ? 'selected' : '' }}>ارزان‌ترین</option>
-                            <option value="price_high" {{ $sortBy == 'price_high' ? 'selected' : '' }}>گران‌ترین</option>
-                            <option value="name_asc" {{ $sortBy == 'name_asc' ? 'selected' : '' }}>نام (الف-ی)</option>
-                        </select>
-                    </form>
+        {{-- Mobile Filter Overlay --}}
+        <div x-show="showMobileFilter"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0"
+             @click="showMobileFilter = false"
+             class="fixed inset-0 bg-black/40 z-40 lg:hidden"
+             style="display: none;">
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+            
+            {{-- ═══════════ SIDEBAR FILTERS ═══════════ --}}
+            <aside :class="showMobileFilter ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'"
+                   class="fixed top-0 right-0 h-full w-[320px] bg-white z-50 overflow-y-auto shadow-2xl transition-transform duration-300
+                          lg:static lg:w-[280px] lg:min-w-[280px] lg:h-auto lg:shadow-none lg:z-auto lg:rounded-2xl lg:border lg:border-gray-100">
+
+                {{-- Mobile Header --}}
+                <div class="flex items-center justify-between p-4 border-b border-gray-100 lg:hidden">
+                    <h2 class="font-bold text-gray-800 text-base">فیلترها</h2>
+                    <button @click="showMobileFilter = false" class="p-1 hover:bg-gray-100 rounded-lg transition">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
                 </div>
 
+                <div class="p-4 lg:p-5 space-y-5">
+                    
+                    {{-- ─── Search in Products ─── --}}
+                    <div>
+                        <form action="{{ route('suppliers.show', $supplier->slug) }}" method="GET">
+                            @if(request('category'))
+                                <input type="hidden" name="category" value="{{ request('category') }}">
+                            @endif
+                            
+                            <div class="relative">
+                                <input type="text" name="q" value="{{ $searchQuery }}"
+                                       placeholder="جستجو در محصولات {{ $supplier->brand_name ?? $supplier->company_name }}..."
+                                       class="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50 transition placeholder:text-gray-400">
+                                <button type="submit" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-500 transition">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    {{-- ─── Category Filter (Accordion) ─── --}}
+                    <div x-data="{ open: true }">
+                        <button @click="open = !open" class="w-full flex items-center justify-between py-2">
+                            <h3 class="font-bold text-gray-800 text-sm flex items-center gap-2">
+                                <svg class="w-4.5 h-4.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                                دسته‌بندی
+                            </h3>
+                            <svg class="w-4 h-4 text-gray-400 transition-transform" :class="{ 'rotate-180': open }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+
+                        <div x-show="open" x-collapse class="mt-1 space-y-0.5">
+                            {{-- All Products --}}
+                            <a href="{{ route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except(['category', 'page']))) }}"
+                               class="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all
+                                      {{ !request('category') ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'text-gray-600 hover:bg-gray-50' }}">
+                                <span>همه محصولات</span>
+                                <span class="text-[11px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full min-w-[22px] text-center {{ !request('category') ? 'bg-blue-100 text-blue-600' : '' }}">
+                                    {{ $supplierStats['total_products'] ?? 0 }}
+                                </span>
+                            </a>
+
+                            @foreach($supplierCategories as $cat)
+                                <a href="{{ route('suppliers.show', ['slug' => $supplier->slug, 'category' => $cat->slug]) }}"
+                                   class="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-all
+                                          {{ request('category') == $cat->slug ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50' }}">
+                                    <span class="flex items-center gap-1.5">
+                                        @if($cat->icon)
+                                            <i class="{{ $cat->icon }} text-sm opacity-60"></i>
+                                        @endif
+                                        {{ $cat->name }}
+                                    </span>
+                                    <span class="text-[10px] text-gray-400">{{ $cat->products_count }}</span>
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-100">
+
+                    {{-- ─── Price Range Filter ─── --}}
+                    @if(($supplierStats['min_price'] ?? 0) > 0)
+                    <div x-data="{
+                        open: {{ (request('min_price') || request('max_price')) ? 'true' : 'false' }},
+                        minPrice: '{{ request('min_price', '') }}',
+                        maxPrice: '{{ request('max_price', '') }}',
+                    }">
+                        <button @click="open = !open" class="w-full flex items-center justify-between py-2">
+                            <h3 class="font-bold text-gray-800 text-sm flex items-center gap-2">
+                                <svg class="w-4.5 h-4.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                محدوده قیمت
+                            </h3>
+                            <svg class="w-4 h-4 text-gray-400 transition-transform" :class="{ 'rotate-180': open }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+
+                        <div x-show="open" x-collapse class="mt-2">
+                            <form action="{{ route('suppliers.show', $supplier->slug) }}" method="GET">
+                                @foreach(request()->except(['min_price', 'max_price', 'page']) as $key => $value)
+                                    <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                                @endforeach
+
+                                <div class="space-y-3">
+                                    {{-- Quick Price Ranges --}}
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @php
+                                            $quickRanges = [
+                                                ['label' => 'تا ۱ میلیون', 'min' => null, 'max' => 1000000],
+                                                ['label' => '۱ تا ۵ میلیون', 'min' => 1000000, 'max' => 5000000],
+                                                ['label' => '۵ تا ۲۰ میلیون', 'min' => 5000000, 'max' => 20000000],
+                                                ['label' => '۲۰ تا ۵۰ میلیون', 'min' => 20000000, 'max' => 50000000],
+                                                ['label' => 'بالای ۵۰ میلیون', 'min' => 50000000, 'max' => null],
+                                            ];
+                                        @endphp
+                                        @foreach($quickRanges as $range)
+                                            @php
+                                                $isActive = (request('min_price') == $range['min'] && request('max_price') == $range['max']);
+                                                $rangeParams = array_merge(
+                                                    request()->except(['min_price', 'max_price', 'page']),
+                                                    array_filter(['min_price' => $range['min'], 'max_price' => $range['max']])
+                                                );
+                                            @endphp
+                                            <a href="{{ route('suppliers.show', array_merge(['slug' => $supplier->slug], $rangeParams)) }}"
+                                               class="text-[11px] px-2 py-1 rounded-full border transition
+                                                      {{ $isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100' }}">
+                                                {{ $range['label'] }}
+                                            </a>
+                                        @endforeach
+                                    </div>
+
+                                    {{-- Custom Range Inputs --}}
+                                    <div class="flex items-center gap-2">
+                                        <div class="flex-1">
+                                            <input type="number" name="min_price" x-model="minPrice"
+                                                   placeholder="از (تومان)"
+                                                   class="w-full text-xs border-gray-200 rounded-lg py-2 px-2.5 focus:ring-emerald-500 focus:border-emerald-500 text-center placeholder:text-gray-400"
+                                                   min="0" step="10000"
+                                                   onwheel="this.blur()">
+                                        </div>
+                                        <span class="text-gray-300 text-sm">—</span>
+                                        <div class="flex-1">
+                                            <input type="number" name="max_price" x-model="maxPrice"
+                                                   placeholder="تا (تومان)"
+                                                   class="w-full text-xs border-gray-200 rounded-lg py-2 px-2.5 focus:ring-emerald-500 focus:border-emerald-500 text-center placeholder:text-gray-400"
+                                                   min="0" step="10000"
+                                                   onwheel="this.blur()">
+                                        </div>
+                                    </div>
+
+                                    <button type="submit"
+                                            class="w-full text-xs font-medium bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600 transition flex items-center justify-center gap-1.5">
+                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+                                        اعمال فیلتر قیمت
+                                    </button>
+                                </div>
+                            </form>
+
+                            @if(request('min_price') || request('max_price'))
+                                <a href="{{ route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except(['min_price', 'max_price', 'page']))) }}"
+                                   class="block text-center text-[11px] text-red-500 hover:text-red-700 mt-2 transition">
+                                    ✕ حذف فیلتر قیمت
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-100">
+                    @endif
+
+                    {{-- ─── Status Filters ─── --}}
+                    <div x-data="{ open: {{ (request('featured') || request('in_stock')) ? 'true' : 'false' }} }">
+                        <button @click="open = !open" class="w-full flex items-center justify-between py-2">
+                            <h3 class="font-bold text-gray-800 text-sm flex items-center gap-2">
+                                <svg class="w-4.5 h-4.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                                وضعیت محصول
+                            </h3>
+                            <svg class="w-4 h-4 text-gray-400 transition-transform" :class="{ 'rotate-180': open }" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+
+                        <div x-show="open" x-collapse class="mt-1 space-y-1">
+                            {{-- Featured --}}
+                            @php $isFeatured = request('featured') == '1'; @endphp
+                            <a href="{{ $isFeatured
+                                ? route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except(['featured', 'page'])))
+                                : route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except('page'), ['featured' => '1']))
+                            }}"
+                               class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all
+                                      {{ $isFeatured ? 'bg-amber-50 text-amber-700 font-semibold border border-amber-200' : 'text-gray-600 hover:bg-gray-50' }}">
+                                @if($isFeatured)
+                                    <svg class="w-4 h-4 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                                @else
+                                    <span class="w-4 h-4 border-2 border-gray-300 rounded shrink-0"></span>
+                                @endif
+                                <span>⭐ فقط محصولات ویژه</span>
+                            </a>
+
+                            {{-- In Stock --}}
+                            @php $inStock = request('in_stock') == '1'; @endphp
+                            <a href="{{ $inStock
+                                ? route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except(['in_stock', 'page'])))
+                                : route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except('page'), ['in_stock' => '1']))
+                            }}"
+                               class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all
+                                      {{ $inStock ? 'bg-green-50 text-green-700 font-semibold border border-green-200' : 'text-gray-600 hover:bg-gray-50' }}">
+                                @if($inStock)
+                                    <svg class="w-4 h-4 text-green-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                                @else
+                                    <span class="w-4 h-4 border-2 border-gray-300 rounded shrink-0"></span>
+                                @endif
+                                <span>📦 فقط موجود</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    {{-- ─── Clear All Filters ─── --}}
+                    @if(request('category') || request('q') || request('min_price') || request('max_price') || request('featured') || request('in_stock'))
+                        <div class="pt-2 border-t border-gray-100">
+                            <a href="{{ route('suppliers.show', $supplier->slug) }}"
+                               class="block w-full text-center text-sm font-medium text-red-500 bg-red-50 py-2.5 rounded-xl hover:bg-red-100 transition">
+                                🗑️ حذف همه فیلترها
+                            </a>
+                        </div>
+                    @endif
+
+                </div>
+            </aside>
+
+            {{-- ═══════════ MAIN CONTENT ═══════════ --}}
+            <div class="flex-1 min-w-0">
+
+                {{-- ─── Header Bar ─── --}}
+                <div class="bg-white rounded-xl border border-gray-100 px-4 py-3 mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-extrabold text-gray-800">
+                            @if(request('category') && $supplierCategories->where('slug', request('category'))->first())
+                                {{ $supplierCategories->where('slug', request('category'))->first()->name }}
+                            @else
+                                محصولات {{ $supplier->brand_name ?? $supplier->company_name }}
+                            @endif
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-0.5">
+                            {{ number_format($products->total()) }} محصول یافت شد
+                        </p>
+                    </div>
+
+                    <div class="flex items-center gap-3 flex-wrap">
+                        {{-- Sort Dropdown --}}
+                        <div class="flex items-center gap-2" x-data="{ sortOpen: false }">
+                            <label class="text-xs text-gray-500 whitespace-nowrap hidden sm:inline">مرتب‌سازی:</label>
+                            <div class="relative">
+                                <button @click="sortOpen = !sortOpen" @click.away="sortOpen = false"
+                                        class="flex items-center gap-2 text-xs border border-gray-200 rounded-lg py-2 px-3 bg-gray-50 font-medium text-gray-700 hover:bg-gray-100 transition min-w-[130px]">
+                                    <span>{{ $sortOptions[$sortBy] ?? 'جدیدترین' }}</span>
+                                    <svg class="w-3.5 h-3.5 text-gray-400 mr-auto transition-transform" :class="{ 'rotate-180': sortOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </button>
+
+                                <div x-show="sortOpen"
+                                     x-transition:enter="transition ease-out duration-150"
+                                     x-transition:enter-start="opacity-0 scale-95 -translate-y-1"
+                                     x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+                                     x-transition:leave="transition ease-in duration-100"
+                                     x-transition:leave-start="opacity-100 scale-100"
+                                     x-transition:leave-end="opacity-0 scale-95"
+                                     class="absolute top-full left-0 mt-1.5 w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-30"
+                                     style="display: none;">
+                                    @foreach($sortOptions as $sortKey => $sortLabel)
+                                        <a href="{{ route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except(['sort', 'page']), ['sort' => $sortKey])) }}"
+                                           class="block px-4 py-2 text-xs transition-colors
+                                                  {{ $sortBy === $sortKey ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50' }}">
+                                            @if($sortBy === $sortKey)
+                                                <span class="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full ml-1.5"></span>
+                                            @endif
+                                            {{ $sortLabel }}
+                                        </a>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Per Page Dropdown --}}
+                        <div class="flex items-center gap-2" x-data="{ ppOpen: false }">
+                            <label class="text-xs text-gray-500 whitespace-nowrap hidden sm:inline">تعداد:</label>
+                            <div class="relative">
+                                <button @click="ppOpen = !ppOpen" @click.away="ppOpen = false"
+                                        class="flex items-center gap-2 text-xs border border-gray-200 rounded-lg py-2 px-3 bg-gray-50 font-medium text-gray-700 hover:bg-gray-100 transition">
+                                    <span>{{ $perPage }} تا</span>
+                                    <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="{ 'rotate-180': ppOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </button>
+
+                                <div x-show="ppOpen"
+                                     x-transition
+                                     class="absolute top-full left-0 mt-1.5 w-24 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-30"
+                                     style="display: none;">
+                                    @foreach($perPageOptions as $ppOption)
+                                        <a href="{{ route('suppliers.show', array_merge(['slug' => $supplier->slug], request()->except(['per_page', 'page']), ['per_page' => $ppOption])) }}"
+                                           class="block px-4 py-2 text-xs text-center transition-colors
+                                                  {{ $perPage == $ppOption ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50' }}">
+                                            {{ $ppOption }} تا
+                                        </a>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- ─── Products Grid ─── --}}
                 @if($products->isNotEmpty())
-                    {{-- Products Grid با طراحی بهبود یافته --}}
-                    {{-- موبایل: 1 ستون | تبلت: 2 ستون | دسکتاپ: 3 ستون (2 ستون بیشتر از موبایل) --}}
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                    <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                         @foreach($products as $product)
                             <x-product.card :product="$product" :supplier="$supplier" />
                         @endforeach
@@ -384,17 +638,32 @@
                     <div class="mt-8">
                         {{ $products->links() }}
                     </div>
+
+                    {{-- Results Info --}}
+                    <p class="text-center text-xs text-gray-400 mt-3">
+                        نمایش {{ $products->firstItem() }} تا {{ $products->lastItem() }} از {{ number_format($products->total()) }} محصول
+                    </p>
                 @else
-                    <div class="bg-white rounded-2xl border border-gray-200 p-8 sm:p-16 text-center">
-                        <svg class="w-12 h-12 sm:w-16 sm:h-16 mx-auto text-gray-200 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                        </svg>
-                        <h3 class="text-base sm:text-lg font-bold text-gray-600 mb-2">محصولی یافت نشد</h3>
-                        <p class="text-gray-400 text-xs sm:text-sm">این تأمین‌کننده هنوز محصولی در این دسته‌بندی ثبت نکرده است</p>
+                    {{-- Empty State --}}
+                    <div class="bg-white rounded-2xl border border-gray-200 p-16 text-center">
+                        <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                            <svg class="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-600 mb-2">محصولی یافت نشد!</h3>
+                        <p class="text-sm text-gray-400 mb-6 max-w-sm mx-auto">با تغییر فیلترها یا جستجوی دیگری دوباره امتحان کنید.</p>
+                        @if(request('category') || request('q') || request('min_price') || request('max_price'))
+                            <a href="{{ route('suppliers.show', $supplier->slug) }}"
+                               class="inline-flex items-center gap-2 bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-600 transition">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                بازنشانی فیلترها
+                            </a>
+                        @endif
                     </div>
                 @endif
+            </div>
         </div>
-
     </div>
 </div>
 
@@ -404,3 +673,24 @@
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
 @endsection
+
+@push('scripts')
+<script>
+function supplierProductFilters() {
+    return {
+        showMobileFilter: false,
+
+        init() {
+            this.$watch('showMobileFilter', (val) => {
+                document.body.style.overflow = val ? 'hidden' : '';
+            });
+        },
+
+        refreshFilters(categorySlug) {
+            // اگر نیاز به بروزرسانی فیلترها بر اساس category باشد
+            // فعلاً نیاز نیست چون با لینک کار می‌کنیم
+        },
+    }
+}
+</script>
+@endpush
