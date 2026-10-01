@@ -5,7 +5,26 @@
 
 @php
     $canSeePrices = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium', 'retailer_basic']);
+    
+    // ✅ Preload تصاویر حیاتی برای بهبود LCP
+    $preloadImages = [];
+    if ($featuredProducts->isNotEmpty()) {
+        $firstProduct = $featuredProducts->first();
+        if ($firstProduct->relationLoaded('galleries') && $firstProduct->galleries->isNotEmpty()) {
+            $primaryImage = $firstProduct->galleries->firstWhere('is_primary', true) ?? $firstProduct->galleries->first();
+            if ($primaryImage && $primaryImage->getVersionUrl('sm')) {
+                $preloadImages[] = $primaryImage->getVersionUrl('sm');
+            }
+        }
+    }
 @endphp
+
+{{-- Preload تصاویر حیاتی --}}
+@push('head')
+    @foreach($preloadImages as $imageUrl)
+        <link rel="preload" href="{{ $imageUrl }}" as="image">
+    @endforeach
+@endpush
 @section('content')
 <div class="min-h-screen bg-gray-50">
     {{-- ═══════════════════════════════════════════════════════════

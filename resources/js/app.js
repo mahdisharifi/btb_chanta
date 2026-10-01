@@ -2,6 +2,9 @@ import './bootstrap';
 import '@splidejs/splide/css';
 import Splide from '@splidejs/splide';
 
+// ✅ Import slider utilities (shared components)
+import './components/slider-utils.js';
+
 // تعریف global برای استفاده در Blade
 window.Splide = Splide;
 

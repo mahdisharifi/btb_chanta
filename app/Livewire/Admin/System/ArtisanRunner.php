@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 class ArtisanRunner extends Component
 {
     public string $output = '';
+    public string $seederClass = ''; // نام کلاس seeder
 
     /**
      * لیست مجاز دستورات (Whitelist) برای امنیت بیشتر
@@ -36,10 +37,6 @@ class ArtisanRunner extends Component
             // 🗄️ دستورات دیتابیس
             'migrate'        => ['name' => 'اجرای مایگریشن‌ها', 'icon' => 'o-server-stack', 'color' => 'bg-indigo-600', 'group' => 'database'],
             'migrate:status' => ['name' => 'وضعیت مایگریشن‌ها', 'icon' => 'o-information-circle', 'color' => 'bg-violet-500', 'group' => 'database'],
-            
-            // 🌱 دستورات Seeder
-            'db:seed'                    => ['name' => 'اجرای همه Seederها', 'icon' => 'o-beaker', 'color' => 'bg-amber-600', 'group' => 'seeder'],
-            'db:seed --class=MainSliderSeeder' => ['name' => 'اجرای MainSliderSeeder', 'icon' => 'o-photo', 'color' => 'bg-orange-500', 'group' => 'seeder'],
             
             // 📋 دستورات اطلاعاتی
             'route:list'     => ['name' => 'لیست روت‌ها', 'icon' => 'o-list-bullet', 'color' => 'bg-gray-600', 'group' => 'info'],
@@ -73,6 +70,46 @@ class ArtisanRunner extends Component
 
         } catch (\Exception $e) {
             $this->output .= "[خطا] اجرای دستور با مشکل مواجه شد:\n" . $e->getMessage() . "\n";
+        }
+    }
+
+    /**
+     * اجرای Seeder سفارشی
+     */
+    public function runSeeder()
+    {
+        // بررسی دسترسی
+        if (! auth()->user()->isAdmin()) {
+            abort(403, 'شما دسترسی لازم برای اجرای این دستور را ندارید.');
+        }
+
+        // اعتبارسنجی ورودی
+        $seederClass = trim($this->seederClass);
+        
+        if (empty($seederClass)) {
+            $this->output = "> خطا: نام کلاس Seeder را وارد کنید.\n";
+            return;
+        }
+
+        // بررسی معتبر بودن نام کلاس (فقط حروف، اعداد و backslash)
+        if (!preg_match('/^[a-zA-Z0-9\\\\]+$/', $seederClass)) {
+            $this->output = "> خطا: نام کلاس نامعتبر است. فقط حروف، اعداد و \\ مجاز هستند.\n";
+            return;
+        }
+
+        $command = "db:seed --class={$seederClass}";
+        
+        $this->output = "> در حال اجرای دستور: php artisan {$command} ...\n\n";
+
+        try {
+            Artisan::call($command);
+            $result = Artisan::output();
+            $this->output .= $result ?: "Seeder با موفقیت اجرا شد.\n";
+            
+            // پاک کردن فیلد بعد از اجرای موفق
+            $this->seederClass = '';
+        } catch (\Exception $e) {
+            $this->output .= "[خطا] اجرای Seeder با مشکل مواجه شد:\n" . $e->getMessage() . "\n";
         }
     }
 

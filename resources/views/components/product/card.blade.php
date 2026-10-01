@@ -265,7 +265,27 @@ $categorySlug = $category?->slug;
      GRID VIEW - کارت محصول بهبود یافته
      طراحی شده با همکاری کارشناسان گرافیک، فرانت‌اند و UX
      ═══════════════════════════════════════════════════════════ --}}
-<div class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-300 hover:shadow-xl hover:-translate-y-1">
+<div class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-300 hover:shadow-xl hover:-translate-y-1"
+     x-data="{ imageLoaded: false }"
+     x-init="$nextTick(() => { imageLoaded = true; })">
+    
+    {{-- Skeleton Loading --}}
+    <div x-show="!imageLoaded" 
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="absolute inset-0 z-10 bg-white">
+        <div class="animate-pulse h-full flex flex-col">
+            <div class="aspect-square bg-gray-200"></div>
+            <div class="flex-1 p-3 space-y-2">
+                <div class="h-3 bg-gray-200 rounded w-1/2"></div>
+                <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                <div class="h-3 bg-gray-200 rounded w-1/3"></div>
+                <div class="flex-1"></div>
+                <div class="h-10 bg-gray-200 rounded-lg"></div>
+            </div>
+        </div>
+    </div>
     
     {{-- Product Image با Overlay جذاب --}}
     <a href="{{ $productUrl }}" class="relative aspect-square overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100"
@@ -279,9 +299,13 @@ $categorySlug = $category?->slug;
             src="{{ $imageUrl }}"
             alt="{{ $imageAlt }}"
             title="{{ $product->title }}"
+            width="208"
+            height="208"
             class="h-full w-full object-contain p-3 transition-all duration-500 group-hover:scale-110 group-hover:rotate-2"
             loading="lazy"
+            decoding="async"
             x-on:error="handleError($event)"
+            @load="imageLoaded = true"
         >
 
         {{-- Badge ویژه با انیمیشن --}}

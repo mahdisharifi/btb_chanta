@@ -148,6 +148,59 @@
                 </div>
             </x-admin.card>
 
+            <!-- 🌱 اجرای Seeder سفارشی -->
+            <x-admin.card>
+                <x-slot name="header">
+                    <div class="flex items-center gap-2">
+                        <x-heroicon-o-beaker class="w-5 h-5 text-amber-600" />
+                        <h3 class="font-semibold text-gray-800 dark:text-gray-200">اجرای Seeder</h3>
+                    </div>
+                </x-slot>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            نام کلاس Seeder
+                        </label>
+                        <input
+                            type="text"
+                            wire:model="seederClass"
+                            placeholder="مثال: MainSliderSeeder"
+                            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 dark:bg-gray-700 dark:text-white text-sm font-mono"
+                            dir="ltr"
+                        />
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            فقط نام کلاس را وارد کنید (بدون مسیر)
+                        </p>
+                    </div>
+
+                    <button
+                        wire:click="runSeeder"
+                        wire:loading.attr="disabled"
+                        wire:target="runSeeder"
+                        class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg shadow transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        <x-heroicon-o-play class="w-4 h-4" />
+                        <span>اجرای Seeder</span>
+                        
+                        <!-- Loading Spinner -->
+                        <svg wire:loading wire:target="runSeeder" class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+
+                    <div class="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                        <p class="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2 leading-relaxed">
+                            <x-heroicon-o-light-bulb class="w-4 h-4 shrink-0 mt-0.5" />
+                            <span>
+                                <strong>نمونه:</strong> MainSliderSeeder, UserSeeder, ProductSeeder
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </x-admin.card>
+
             <!-- 📋 دستورات اطلاعاتی -->
             <x-admin.card>
                 <x-slot name="header">

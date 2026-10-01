@@ -168,76 +168,7 @@
 @endif
 
 @push('scripts')
-<script>
-function mainSlider(totalSlides) {
-    return {
-        current: 0,
-        total: totalSlides,
-        paused: false,
-        progress: 0,
-        progressInterval: null,
-        autoPlayDuration: 5000, // 5 ثانیه
-
-        init() {
-            if (this.total > 1) {
-                this.startAutoPlay();
-            }
-        },
-
-        startAutoPlay() {
-            this.progress = 0;
-            const step = 100 / (this.autoPlayDuration / 50);
-
-            this.progressInterval = setInterval(() => {
-                if (!this.paused) {
-                    this.progress += step;
-                    if (this.progress >= 100) {
-                        this.next();
-                    }
-                }
-            }, 50);
-        },
-
-        stopAutoPlay() {
-            if (this.progressInterval) {
-                clearInterval(this.progressInterval);
-                this.progressInterval = null;
-            }
-        },
-
-        resetProgress() {
-            this.stopAutoPlay();
-            this.progress = 0;
-            this.startAutoPlay();
-        },
-
-        next() {
-            this.current = (this.current + 1) % this.total;
-            this.resetProgress();
-        },
-
-        prev() {
-            this.current = (this.current - 1 + this.total) % this.total;
-            this.resetProgress();
-        },
-
-        goTo(index) {
-            if (index !== this.current) {
-                this.current = index;
-                this.resetProgress();
-            }
-        },
-
-        pause() {
-            this.paused = true;
-        },
-
-        resume() {
-            this.paused = false;
-        }
-    };
-}
-</script>
+{{-- JavaScript در فایل slider-utils.js قرار دارد --}}
 @endpush
 
 @push('styles')
