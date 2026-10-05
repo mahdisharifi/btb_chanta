@@ -91,10 +91,22 @@ class Index extends Component
 
         // تعریف هدرها
         $headers = [
-            'شناسه', 'عنوان محصول', 'کد کالا', 'دسته‌بندی',
+            'شناسه', 'عنوان محصول', 'کد کالا', 'تأمین‌کنندگان قیمت‌گذار', 'دسته‌بندی',
             'وضعیت نمایش', 'وضعیت کالا', 'تعداد ویژگی', 'میانگین دسته',
             'نیاز به تکمیل', 'وضعیت SEO'
         ];
+
+        // تأمین‌کنندگانی که برای هر کالا حداقل یک قیمت ثبت کرده‌اند، به‌صورت JSON در یک ستون نمایش داده می‌شوند.
+        $pricedSuppliers = function (Product $product): string {
+            return $product->productSuppliers
+                ->filter(fn ($productSupplier) => $productSupplier->supplier !== null)
+                ->map(fn ($productSupplier) => [
+                    'id' => (int) $productSupplier->supplier->id,
+                    'name' => (string) ($productSupplier->supplier->brand_name ?: $productSupplier->supplier->company_name),
+                ])
+                ->values()
+                ->toJson(JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        };
 
         if ($isMainAdmin) {
             $headers[] = 'آخرین بروزرسانی ویژگی';
@@ -106,7 +118,14 @@ class Index extends Component
         $writer = SimpleExcelWriter::create($filePath)->addHeader($headers);
 
         $this->getFilteredQuery()
-            ->with(['category'])
+            ->with([
+                'category',
+                'productSuppliers' => function ($query) {
+                    $query->has('prices')
+                        ->select(['id', 'product_id', 'supplier_id'])
+                        ->with('supplier:id,company_name,brand_name');
+                },
+            ])
             ->leftJoin(\DB::raw('(
                 SELECT
                     product_id,
@@ -117,7 +136,7 @@ class Index extends Component
             ) as attr_stats'), 'products.id', '=', 'attr_stats.product_id')
             ->select('products.*', 'attr_stats.attributes_count', 'attr_stats.last_attribute_update')
             ->lazy(100)
-            ->each(function ($product) use ($writer, $categoryAverages, $isMainAdmin) {
+            ->each(function ($product) use ($writer, $categoryAverages, $isMainAdmin, $pricedSuppliers) {
                 // وضعیت
                 $statusLabel = 'نامشخص';
                 if ($product->status instanceof ProductStatus) {
@@ -151,6 +170,7 @@ class Index extends Component
                     $product->id,
                     $product->title,
                     $product->sku ?? '-',
+                    $pricedSuppliers($product),
                     $product->category?->name ?? 'بدون دسته',
                     $product->is_active ? 'فعال' : 'غیرفعال',
                     $statusLabel,
