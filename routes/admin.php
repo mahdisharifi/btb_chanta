@@ -100,7 +100,9 @@ Route::middleware(['auth', 'role:super_admin'])
             Route::get('/create', Form::class)->name('create');
             Route::get('/{flowchart}/edit', Form::class)->name('edit');
         });
-        Route::get('/system/terminal', ArtisanRunner::class)->name('system.terminal');
+        if (app()->environment('local')) {
+            Route::get('/system/terminal', ArtisanRunner::class)->name('system.terminal');
+        }
 
 
         Route::get('/geography', GeographyManager::class)->name('geography.index');

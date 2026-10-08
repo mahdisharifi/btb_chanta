@@ -230,4 +230,9 @@ class Supplier extends Model
             ->orderBy('sort_order', 'asc')
             ->orderBy('tier_index', 'asc');
     }
+
+    public function completionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class);
+    }
 }

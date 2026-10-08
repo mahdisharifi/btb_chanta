@@ -44,7 +44,11 @@ class Edit extends Component
     public function mount(Product $product)
     {
         $user = auth()->user();
-        $supplierId = $user->supplierProfile->id ?? $user->supplier->id;
+        $supplierId = $user->supplier?->id;
+
+        if ($supplierId === null) {
+            abort(403, 'پروفایل تأمین‌کننده معتبر نیست.');
+        }
 
         // بررسی‌های امنیتی
         if ($product->supplier_id !== $supplierId) {
@@ -68,7 +72,7 @@ class Edit extends Component
         $this->sku = $product->sku;
         $this->is_active = $product->is_active;
         $this->short_description = $product->short_description;
-        $this->full_description = $product->description;
+        $this->full_description = $product->full_description;
 
         if ($this->category_id) {
             $category = Category::find($this->category_id);
@@ -178,6 +182,7 @@ class Edit extends Component
         if ($gallery) {
             Storage::disk('public')->delete($gallery->file_path);
             $gallery->delete();
+            $this->product->markContentUpdated();
             $this->existing_gallery_images = $this->product->galleries()->where('is_primary', false)->orderBy('sort_order')->get();
         }
     }
@@ -185,7 +190,11 @@ class Edit extends Component
     public function save()
     {
         $user = auth()->user();
-        $supplierId = $user->supplierProfile->id ?? $user->supplier->id;
+        $supplierId = $user->supplier?->id;
+
+        if ($supplierId === null) {
+            abort(403, 'پروفایل تأمین‌کننده معتبر نیست.');
+        }
 
         // بررسی‌های امنیتی در زمان ذخیره (استفاده از مقایسه صحیح Enum)
         if ($this->product->supplier_id !== $supplierId ||
@@ -218,7 +227,7 @@ class Edit extends Component
             'sku' => $this->sku,
             'is_active' => $this->is_active,
             'short_description' => $this->short_description,
-            'description' => $this->full_description,
+            'full_description' => $this->full_description,
         ]);
 
         // اتصال ویژگی‌ها
@@ -251,6 +260,8 @@ class Edit extends Component
                 ]);
             }
         }
+
+        $this->product->markContentUpdated();
 
         session()->flash('success', 'اطلاعات محصول با موفقیت بروزرسانی شد.');
 

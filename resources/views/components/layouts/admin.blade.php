@@ -91,6 +91,22 @@
         </a>
         @endforeach
 
+        @if(auth()->user()?->can('outsourcing.view_all_tasks') || auth()->user()?->can('outsourcing.manage_commission_rules') || auth()->user()?->can('outsourcing.view_all_commissions'))
+            <div class="mt-5 border-t border-gray-200 pt-4">
+                <p class="mb-2 px-3 text-xs font-semibold tracking-wide text-gray-400">برون‌سپاری محتوا</p>
+                @can('outsourcing.view_all_tasks')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.dashboard') }}">داشبورد برون‌سپاری</x-admin-sidebar-link>
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.tasks.index') }}">مدیریت تسک‌ها</x-admin-sidebar-link>
+                @endcan
+                @can('outsourcing.manage_commission_rules')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.commission-rules') }}">قوانین پورسانت</x-admin-sidebar-link>
+                @endcan
+                @can('outsourcing.view_all_commissions')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.commissions') }}">مدیریت پورسانت‌ها</x-admin-sidebar-link>
+                @endcan
+            </div>
+        @endif
+
         {{-- لینک اطلاعات فروشگاه برای ادمین --}}
         @if($supplierEditLink)
         <a href="{{ route($supplierEditLink['route'], $supplierEditLink['params']) }}"

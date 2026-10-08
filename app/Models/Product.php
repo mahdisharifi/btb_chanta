@@ -42,6 +42,7 @@ class Product extends Model
         'seo_keywords',
         'seo_canonical_url',
         'legacy_id',
+        'allows_outsourcing_correction',
     ];
 
     protected $casts = [
@@ -53,7 +54,20 @@ class Product extends Model
         'is_featured'    => 'boolean',
         'status'         => ProductStatus::class,
         'view_count'     => 'integer',
+        'content_version' => 'integer',
+        'content_updated_at' => 'datetime',
+        'allows_outsourcing_correction' => 'boolean',
     ];
+
+    public function completionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class);
+    }
+
+    public function completionAudits(): HasMany
+    {
+        return $this->hasMany(ProductCompletionAudit::class);
+    }
 
     public function getRouteKeyName(): string
     {
@@ -520,5 +534,16 @@ class Product extends Model
         $contentUnit = $unitContents[$this->packaging_unit_type] ?? 'عدد';
 
         return "{$quantity} {$contentUnit} در {$unitLabel}";
+    }
+
+    /**
+     * Mark a direct admin/supplier content mutation for optimistic concurrency.
+     */
+    public function markContentUpdated(): void
+    {
+        $this->forceFill([
+            'content_version' => (int) $this->content_version + 1,
+            'content_updated_at' => now(),
+        ])->saveQuietly();
     }
 }

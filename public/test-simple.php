@@ -1,4 +1,10 @@
 <?php
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit('Not Found');
+}
 /**
  * تست ساده برای بررسی مشکل
  * آدرس: https://new.chanta.ir/test-simple.php

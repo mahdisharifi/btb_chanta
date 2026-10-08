@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ config('app.name') }} - تکمیل محتوای محصول</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @livewireStyles
+    <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 antialiased">
+<header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <a href="{{ route('dashboard') }}" class="flex items-center gap-2 font-bold text-indigo-700">
+            <x-heroicon-o-clipboard-document-check class="h-6 w-6" />
+            <span>سامانه تکمیل محتوا</span>
+        </a>
+        <nav class="flex flex-wrap items-center gap-2 text-sm">
+            @can('outsourcing.view_tasks')
+                @if(auth()->user()?->hasRole('reviewer'))
+                    <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('reviewer.outsourcing.tasks.index') }}">بررسی‌ها</a>
+                @else
+                    <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('outsourcer.tasks.index') }}">تسک‌های من</a>
+                @endif
+            @endcan
+            @can('outsourcing.view_reviewed_commissions')
+                <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('reviewer.outsourcing.commissions.index') }}">پورسانت‌های بررسی‌شده</a>
+            @endcan
+            @can('outsourcing.view_own_commissions')
+                <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('outsourcer.commissions.index') }}">پورسانت من</a>
+            @endcan
+            <form method="POST" action="{{ route('logout') }}">@csrf<button class="rounded-lg px-3 py-2 text-red-600 hover:bg-red-50">خروج</button></form>
+        </nav>
+    </div>
+</header>
+<main class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">{{ $slot }}</main>
+@livewireScripts
+</body>
+</html>

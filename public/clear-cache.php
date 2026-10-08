@@ -1,4 +1,10 @@
 <?php
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit('Not Found');
+}
 /**
  * پاکسازی کش برای رفع مشکل نمایش محتوای ادمین به کاربران مهمان
  * آدرس: https://new.chanta.ir/clear-cache.php

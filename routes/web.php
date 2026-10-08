@@ -171,6 +171,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         return match(true) {
             $user->hasRole('super_admin') => redirect()->route('admin.dashboard'),
+            $user->hasRole('admin') => redirect()->route('admin.outsourcing.dashboard'),
+            $user->hasRole('outsourcer') => redirect()->route('outsourcer.tasks.index'),
+            $user->hasRole('reviewer') => redirect()->route('reviewer.outsourcing.tasks.index'),
+            $user->hasRole('finance_manager') => redirect()->route('admin.outsourcing.commissions'),
             $user->hasRole('supplier') || $user->hasRole('regular_supplier') => redirect()->route('supplier.dashboard'),
             $user->hasRole('retailer_premium') || $user->hasRole('retailer_basic')
             => redirect()->route('retailer.dashboard'),

@@ -139,6 +139,21 @@ class ProductGallery extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function sourcedCompletionMedia(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductCompletionMedia::class, 'source_product_gallery_id');
+    }
+
+    public function publishedCompletionMedia(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductCompletionMedia::class, 'published_product_gallery_id');
+    }
+
+    public function completionSubmissionItems(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductCompletionSubmissionMedia::class, 'product_gallery_id');
+    }
+
     // ══════════════════════════════════════════════════════════
     //  ACCESSORS ✅ اضافه شده
     // ══════════════════════════════════════════════════════════

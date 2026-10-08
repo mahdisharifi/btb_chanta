@@ -6,12 +6,14 @@ use App\Traits\GeneratesPersianSlug;
 use App\Models\ProductGallery;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Gate;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\AttributeValue;
 use App\Enums\ProductStatus;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 use Illuminate\Validation\Rule;
@@ -28,6 +30,7 @@ class Create extends Component
     public $brand = null;
 
     // شناسه محصول در حالت ویرایش (null یعنی حالت ایجاد)
+    #[Locked]
     public $productId = null;
     public bool $isEdit = false;
 
@@ -97,10 +100,12 @@ class Create extends Component
 
         // اگر مدل محصول از طریق Route Model Binding تزریق شده باشد → حالت ویرایش
         if ($product && $product->exists) {
+            Gate::authorize('update', $product);
             $this->isEdit = true;
             $this->productId = $product->id;
             $this->fillFromProduct($product);
         } else {
+            Gate::authorize('create', Product::class);
             // حالت ایجاد
             $this->status = ProductStatus::DRAFT->value;
             $this->sku = 'محصول-' . strtoupper(Str::random(8));
@@ -525,12 +530,9 @@ class Create extends Component
 // 2. متد کمکی جدید — حذف فایل اصلی + تمام variantها
     private function deleteGalleryWithVariants(ProductGallery $gallery): void
     {
-        $filename = pathinfo($gallery->file_path, PATHINFO_FILENAME);
-        Storage::disk('public')->delete([
-            $gallery->file_path,
-            "products/gallery/md/{$filename}.webp",
-            "products/gallery/sm/{$filename}.webp",
-            "products/gallery/pdf/{$filename}.jpg",
+        app(ProductImageService::class)->deleteProcessed([
+            'file_path' => $gallery->file_path,
+            'versions' => $gallery->versions ?? [],
         ]);
         $gallery->delete();
     }
@@ -605,6 +607,12 @@ class Create extends Component
 
     public function save()
     {
+        if ($this->isEdit) {
+            Gate::authorize('update', Product::query()->findOrFail((int) $this->productId));
+        } else {
+            Gate::authorize('create', Product::class);
+        }
+
         $rules = [
             'seo_title'         => 'nullable|string|max:60',
             'seo_description'   => 'nullable|string|max:160',
@@ -629,6 +637,7 @@ class Create extends Component
             'primary_image' => 'nullable|image|max:2048',
             'gallery_images.*' => 'nullable|image|max:2048',
             'product_video' => 'nullable|file|mimes:mp4,webm,ogg,mov|max:51200',
+            'video_poster' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'selectedAttributeValues' => 'array',
             
             // ✅ واحد بسته‌بندی
@@ -847,6 +856,10 @@ class Create extends Component
                 'alt_text'   => 'ویدئو محصول ' . $this->title,
                 'sort_order' => 0, // ویدئو معمولاً در ابتدای گالری نمایش داده می‌شود
             ]);
+        }
+
+        if ($this->isEdit) {
+            $product->markContentUpdated();
         }
 
         $this->dispatch('notify', [

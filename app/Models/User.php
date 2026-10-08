@@ -124,7 +124,10 @@ class User extends Authenticatable
 
     public function isAdmin(): bool
     {
-        return $this->hasRole(UserRole::SUPER_ADMIN->value);
+        return $this->hasAnyRole([
+            UserRole::SUPER_ADMIN->value,
+            UserRole::ADMIN->value,
+        ]);
     }
 
     public function isSupplier(): bool
@@ -245,6 +248,43 @@ class User extends Authenticatable
         return $this->supplier->verification_status === 'approved';
     }
 
+    public function createdCompletionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class, 'created_by');
+    }
 
+    public function assignedCompletionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class, 'assigned_to');
+    }
 
+    public function reviewedCompletionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class, 'reviewer_id');
+    }
+
+    public function completionSubmissions(): HasMany
+    {
+        return $this->hasMany(ProductCompletionSubmission::class, 'submitted_by');
+    }
+
+    public function requestedCompletionRevisions(): HasMany
+    {
+        return $this->hasMany(ProductCompletionRevision::class, 'requested_by');
+    }
+
+    public function completionMediaUploads(): HasMany
+    {
+        return $this->hasMany(ProductCompletionMedia::class, 'uploaded_by');
+    }
+
+    public function completionCommissions(): HasMany
+    {
+        return $this->hasMany(ProductCompletionCommission::class);
+    }
+
+    public function completionAudits(): HasMany
+    {
+        return $this->hasMany(ProductCompletionAudit::class);
+    }
 }

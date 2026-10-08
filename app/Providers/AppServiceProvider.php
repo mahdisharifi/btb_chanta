@@ -3,30 +3,36 @@
 namespace App\Providers;
 
 use App\Enums\UserRole;
-use App\Models\User;              // ✅ اضافه شد
-use App\Models\Product;
-use App\Models\Supplier;
-use App\Models\Category;
-use App\Models\RetailPrice;
-use App\Models\SeoPage;
-use App\Policies\UserPolicy;      // ✅ قبلاً بود — اکنون استفاده می‌شود
-use App\Policies\ProductPolicy;
-use App\Policies\SupplierPolicy;
-use App\Policies\CategoryPolicy;
-use App\Policies\RetailPricePolicy;
-use App\Policies\SeoPagePolicy;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Blade;
-use App\Services\PriceVisibilityService;
-
-// ✅ Event & Listener
 use App\Events\CheckPercentageChanged;
 use App\Listeners\UpdateAffectedCheckPrices;
-
-// ✅ Observers
+use App\Models\Category;
+use App\Models\CommissionRule;
+use App\Models\Product;
+use App\Models\ProductCompletionCommission;
+use App\Models\ProductCompletionMedia;
+use App\Models\ProductCompletionSubmission;
+use App\Models\ProductCompletionTask;
+use App\Models\RetailPrice;
+use App\Models\SeoPage;
+use App\Models\Supplier;
+use App\Models\User;
 use App\Observers\SupplierObserver;
+use App\Policies\CategoryPolicy;
+use App\Policies\CommissionRulePolicy;
+use App\Policies\ProductCompletionCommissionPolicy;
+use App\Policies\ProductCompletionMediaPolicy;
+use App\Policies\ProductCompletionSubmissionPolicy;
+use App\Policies\ProductCompletionTaskPolicy;
+use App\Policies\ProductPolicy;
+use App\Policies\RetailPricePolicy;
+use App\Policies\SeoPagePolicy;
+use App\Policies\SupplierPolicy;
+use App\Policies\UserPolicy;
+use App\Services\PriceVisibilityService;
+use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -47,7 +53,12 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Category::class, CategoryPolicy::class);
         Gate::policy(RetailPrice::class, RetailPricePolicy::class);
         Gate::policy(SeoPage::class, SeoPagePolicy::class);
-        Gate::policy(User::class, UserPolicy::class);   // ✅ اضافه شد
+        Gate::policy(User::class, UserPolicy::class);
+        Gate::policy(ProductCompletionTask::class, ProductCompletionTaskPolicy::class);
+        Gate::policy(ProductCompletionSubmission::class, ProductCompletionSubmissionPolicy::class);
+        Gate::policy(ProductCompletionMedia::class, ProductCompletionMediaPolicy::class);
+        Gate::policy(ProductCompletionCommission::class, ProductCompletionCommissionPolicy::class);
+        Gate::policy(CommissionRule::class, CommissionRulePolicy::class);
 
         /*
         |--------------------------------------------------------------------------
