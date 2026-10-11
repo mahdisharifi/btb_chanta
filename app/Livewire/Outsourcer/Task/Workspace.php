@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Outsourcer\Task;
 
+use App\Exceptions\ProductCompletionDraftVersionConflictException;
 use App\Models\Attribute;
 use App\Models\ProductCompletionMedia;
 use App\Models\ProductCompletionTask;
@@ -13,6 +14,7 @@ use App\Services\ProductCompletionSubmissionService;
 use App\Services\ProductCompletionTaskService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -28,6 +30,11 @@ class Workspace extends Component
 
     public array $draft = [];
     public int $draftVersion = 0;
+    public string $specificationsText = '';
+
+    /** @var array<int, string> */
+    public array $newAttributeValues = [];
+
     public $upload = null;
 
     public function mount(ProductCompletionTask $task): void
@@ -54,21 +61,60 @@ class Workspace extends Component
 
     public function saveDraft(ProductCompletionDraftService $service): void
     {
-        $task = $service->save(auth()->user(), $this->task(), $this->draft, $this->draftVersion);
-        $this->syncDraft($task);
-        $this->dispatch('notify', message: 'پیش‌نویس ذخیره شد.', type: 'success');
+        try {
+            $this->syncSpecificationsToDraft();
+            $task = $service->save(auth()->user(), $this->task(), $this->draft, $this->draftVersion);
+            $this->syncDraft($task);
+            $this->dispatch('notify', message: 'پیش‌نویس ذخیره شد.', type: 'success');
+        } catch (ValidationException $e) {
+            $this->dispatch('notify', message: 'ذخیره پیش‌نویس انجام نشد: '.$this->validationErrorSummary($e), type: 'error');
+        } catch (ProductCompletionDraftVersionConflictException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+        }
     }
 
     public function submit(ProductCompletionSubmissionService $service): void
     {
-        $submission = $service->submit(
-            auth()->user(),
-            $this->task(),
-            $this->draftVersion,
-            (string) Str::uuid(),
-        );
-        $this->syncDraft($submission->task()->firstOrFail());
-        $this->dispatch('notify', message: 'نسخه برای بررسی ارسال شد.', type: 'success');
+        try {
+            $this->syncSpecificationsToDraft();
+            $submission = $service->submit(
+                auth()->user(),
+                $this->task(),
+                $this->draftVersion,
+                (string) Str::uuid(),
+            );
+            $this->syncDraft($submission->task()->firstOrFail());
+            $this->dispatch('notify', message: 'نسخه برای بررسی ارسال شد.', type: 'success');
+        } catch (ValidationException $e) {
+            $errors = $e->errors();
+            // نقشه‌برداری فیلدهای nested به نام‌های فارسی
+            $fieldLabels = [
+                'title'             => 'عنوان',
+                'short_description' => 'توضیحات کوتاه',
+                'full_description'  => 'توضیحات کامل',
+                'specifications'    => 'مشخصات فنی',
+                'attributes'        => 'ویژگی‌ها',
+                'seo.title'         => 'عنوان SEO',
+                'seo.description'   => 'توضیحات SEO',
+                'seo.keywords'      => 'کلمات کلیدی SEO',
+                'gallery'           => 'تصاویر',
+                'draft_version'     => 'نسخه پیش‌نویس',
+                'idempotency_token' => 'شناسه ارسال',
+                'submission'        => 'ارسال',
+                'commissionRuleId'  => 'قانون پورسانت',
+            ];
+
+            $messages = [];
+            foreach ($errors as $field => $fieldErrors) {
+                $label = $fieldLabels[$field] ?? $field;
+                foreach ($fieldErrors as $error) {
+                    $messages[] = "({$label}): {$error}";
+                }
+            }
+
+            $summary = implode(' | ', $messages);
+            $this->dispatch('notify', message: 'ارسال انجام نشد: '.$summary, type: 'error');
+        }
     }
 
     public function uploadMedia(
@@ -119,13 +165,72 @@ class Workspace extends Component
     public function toggleAttribute(int $attributeId, int $valueId, bool $multiple): void
     {
         $attributes = collect($this->draft['attributes'] ?? [])->keyBy('attribute_id');
-        $selection = $attributes->get($attributeId, ['attribute_id' => $attributeId, 'value_ids' => []]);
+        $selection = $attributes->get($attributeId, [
+            'attribute_id' => $attributeId,
+            'value_ids' => [],
+            'proposed_values' => [],
+        ]);
         $values = array_map('intval', $selection['value_ids'] ?? []);
         $selection['value_ids'] = $multiple
             ? (in_array($valueId, $values, true)
                 ? array_values(array_diff($values, [$valueId]))
                 : array_values(array_unique([...$values, $valueId])))
             : [$valueId];
+
+        if (! $multiple) {
+            $selection['proposed_values'] = [];
+        }
+
+        $attributes->put($attributeId, $selection);
+        $this->draft['attributes'] = $attributes->values()->all();
+    }
+
+    public function addProposedAttributeValue(int $attributeId, bool $multiple): void
+    {
+        $value = trim((string) ($this->newAttributeValues[$attributeId] ?? ''));
+        $maxLength = (int) config('product_completion.validation.attribute_proposed_value_max', 255);
+
+        if ($value === '' || mb_strlen($value) > $maxLength || preg_match('/[\x00-\x1F\x7F]/u', $value) === 1) {
+            throw ValidationException::withMessages([
+                "newAttributeValues.{$attributeId}" => 'مقدار جدید ویژگی معتبر نیست.',
+            ]);
+        }
+
+        $attributes = collect($this->draft['attributes'] ?? [])->keyBy('attribute_id');
+        $selection = $attributes->get($attributeId, [
+            'attribute_id' => $attributeId,
+            'value_ids' => [],
+            'proposed_values' => [],
+        ]);
+        $proposedValues = array_values(array_unique([
+            ...($selection['proposed_values'] ?? []),
+            $value,
+        ]));
+
+        $selection['proposed_values'] = $multiple ? $proposedValues : [$value];
+
+        if (! $multiple) {
+            $selection['value_ids'] = [];
+        }
+
+        $attributes->put($attributeId, $selection);
+        $this->draft['attributes'] = $attributes->values()->all();
+        $this->newAttributeValues[$attributeId] = '';
+    }
+
+    public function removeProposedAttributeValue(int $attributeId, string $value): void
+    {
+        $attributes = collect($this->draft['attributes'] ?? [])->keyBy('attribute_id');
+        $selection = $attributes->get($attributeId);
+
+        if ($selection === null) {
+            return;
+        }
+
+        $selection['proposed_values'] = array_values(array_filter(
+            $selection['proposed_values'] ?? [],
+            static fn (string $proposedValue): bool => $proposedValue !== $value,
+        ));
         $attributes->put($attributeId, $selection);
         $this->draft['attributes'] = $attributes->values()->all();
     }
@@ -136,9 +241,20 @@ class Workspace extends Component
         $categoryId = (int) data_get($task->initial_snapshot_json, 'category_id');
         $attributes = data_get($task->scope_json, 'attributes', false)
             ? Attribute::query()
-                ->whereHas('categories', fn ($query) => $query->whereKey($categoryId))
+                ->join('attribute_category', function ($join) use ($categoryId): void {
+                    $join->on('attribute_category.attribute_id', '=', 'attributes.id')
+                        ->where('attribute_category.category_id', '=', $categoryId);
+                })
                 ->with('values:id,attribute_id,value')
-                ->select(['id', 'name', 'is_multiple'])
+                ->select([
+                    'attributes.id',
+                    'attributes.name',
+                    'attributes.is_multiple',
+                    'attribute_category.display_order',
+                    'attribute_category.is_required',
+                ])
+                ->orderBy('attribute_category.display_order')
+                ->orderBy('attributes.id')
                 ->get()
             : collect();
         $media = ProductCompletionMedia::query()
@@ -163,5 +279,60 @@ class Workspace extends Component
         $task->refresh();
         $this->draft = $task->current_draft_json ?? [];
         $this->draftVersion = $task->draft_version;
+        $this->specificationsText = $this->formatSpecificationsForEditing(
+            data_get($this->draft, 'specifications', [])
+        );
+    }
+
+    private function syncSpecificationsToDraft(): void
+    {
+        $specifications = [];
+        $lines = preg_split('/\R/u', $this->specificationsText) ?: [];
+
+        foreach ($lines as $lineNumber => $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = preg_split('/\s*[:：]\s*/u', $line, 2);
+
+            if ($parts === false || count($parts) !== 2 || trim($parts[0]) === '') {
+                throw ValidationException::withMessages([
+                    'specifications' => 'هر مشخصه فنی را در یک خط و با فرمت «نام: مقدار» وارد کنید. خط '.($lineNumber + 1).' نامعتبر است.',
+                ]);
+            }
+
+            $key = trim($parts[0]);
+            $value = trim($parts[1]);
+
+            if (array_key_exists($key, $specifications)) {
+                throw ValidationException::withMessages([
+                    'specifications' => 'نام مشخصه «'.$key.'» بیش از یک‌بار وارد شده است.',
+                ]);
+            }
+
+            $specifications[$key] = $value;
+        }
+
+        $this->draft['specifications'] = $specifications;
+    }
+
+    private function formatSpecificationsForEditing(mixed $specifications): string
+    {
+        if (! is_array($specifications)) {
+            return '';
+        }
+
+        $lines = [];
+
+        foreach ($specifications as $key => $value) {
+            if (is_string($key) && (is_scalar($value) || $value === null)) {
+                $lines[] = trim($key).': '.trim((string) $value);
+            }
+        }
+
+        return implode(PHP_EOL, $lines);
     }
 }

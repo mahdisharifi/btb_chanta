@@ -70,12 +70,22 @@ class ProductCompletionPublisher
 
     private function syncAttributes(Product $product, array $attributes): void
     {
-        $valueIds = collect($attributes)
-            ->flatMap(static fn (array $attribute): array => $attribute['value_ids'])
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
+        $valueIds = [];
+
+        foreach ($attributes as $attribute) {
+            $attributeId = (int) $attribute['attribute_id'];
+            $valueIds = [...$valueIds, ...array_map('intval', $attribute['value_ids'] ?? [])];
+
+            foreach ($attribute['proposed_values'] ?? [] as $proposedValue) {
+                $value = AttributeValue::query()->firstOrCreate([
+                    'attribute_id' => $attributeId,
+                    'value' => $proposedValue,
+                ]);
+                $valueIds[] = (int) $value->getKey();
+            }
+        }
+
+        $valueIds = array_values(array_unique($valueIds));
         $valueTexts = AttributeValue::query()
             ->whereIn('id', $valueIds)
             ->pluck('value', 'id');

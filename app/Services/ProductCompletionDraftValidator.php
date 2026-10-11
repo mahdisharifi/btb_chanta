@@ -37,7 +37,7 @@ class ProductCompletionDraftValidator
         $this->validateSpecificationKeys($validated['specifications'] ?? []);
 
         return ProductCompletionDraftData::fromValidated(
-            $this->canonicalize($task, $validated)
+            $this->canonicalize($task, $validated, $forSubmission)
         );
     }
 
@@ -74,7 +74,7 @@ class ProductCompletionDraftValidator
             ],
             'specifications' => [
                 Rule::requiredIf($forSubmission && $this->scopeAllows($task, 'specifications')),
-                'sometimes',
+                'nullable',
                 'array',
                 'max:'.(int) $validation['specifications_max_items'],
             ],
@@ -90,42 +90,31 @@ class ProductCompletionDraftValidator
                 'array',
                 'max:'.(int) $validation['attributes_max'],
             ],
-            'attributes.*' => ['required', 'array:attribute_id,value_ids'],
+            'attributes.*' => ['required', 'array:attribute_id,value_ids,proposed_values'],
             'attributes.*.attribute_id' => ['required', 'integer', 'min:1', 'distinct'],
             'attributes.*.value_ids' => [
-                'required',
+                'present',
                 'array',
                 'max:'.(int) $validation['attribute_values_max'],
             ],
             'attributes.*.value_ids.*' => ['integer', 'min:1', 'distinct'],
-            'seo' => ['sometimes', 'array:title,description,keywords,canonical_url'],
-            'seo.title' => [
-                Rule::requiredIf($forSubmission && $this->nestedScopeAllows($task, 'seo.title')),
+            'attributes.*.proposed_values' => [
                 'nullable',
+                'array',
+                'max:'.(int) ($validation['attribute_proposed_values_max'] ?? 10),
+            ],
+            'attributes.*.proposed_values.*' => [
+                'required',
                 'string',
-                'max:'.(int) $validation['seo_title_max'],
+                'max:'.(int) ($validation['attribute_proposed_value_max'] ?? 255),
                 $this->withoutControlCharacters(),
             ],
-            'seo.description' => [
-                Rule::requiredIf($forSubmission && $this->nestedScopeAllows($task, 'seo.description')),
-                'nullable',
-                'string',
-                'max:'.(int) $validation['seo_description_max'],
-                $this->withoutControlCharacters(),
-            ],
-            'seo.keywords' => [
-                'nullable',
-                'string',
-                'max:'.(int) $validation['seo_keywords_max'],
-                $this->withoutControlCharacters(),
-            ],
-            'seo.canonical_url' => ['nullable', 'url:http,https', 'max:255'],
             // Detailed media manifest validation belongs to ProductCompletionMediaService.
             'gallery' => ['sometimes', 'array'],
         ];
     }
 
-    private function canonicalize(ProductCompletionTask $task, array $validated): array
+    private function canonicalize(ProductCompletionTask $task, array $validated, bool $forSubmission): array
     {
         $validation = config('product_completion.validation');
         $canonical = [
@@ -155,50 +144,20 @@ class ProductCompletionDraftValidator
             );
         }
 
-        if (array_key_exists('specifications', $validated)) {
+        if (isset($validated['specifications']) && is_array($validated['specifications'])) {
             $canonical['specifications'] = $this->sanitizer->specifications($validated['specifications']);
         }
 
         if (array_key_exists('attributes', $validated)) {
-            $canonical['attributes'] = $this->attributeValidator->validate($task, $validated['attributes']);
-        }
-
-        if (array_key_exists('seo', $validated)) {
-            $canonical['seo'] = $this->canonicalSeo($validated['seo'], $validation);
+            $canonical['attributes'] = $this->attributeValidator->validate(
+                $task,
+                $validated['attributes'],
+                $forSubmission,
+            );
         }
 
         if (array_key_exists('gallery', $validated)) {
             $canonical['gallery'] = $validated['gallery'];
-        }
-
-        return $canonical;
-    }
-
-    private function canonicalSeo(array $seo, array $validation): array
-    {
-        $canonical = [];
-
-        if (array_key_exists('title', $seo)) {
-            $canonical['title'] = $this->sanitizer->plainText(
-                $seo['title'],
-                (int) $validation['seo_title_max']
-            );
-        }
-
-        if (array_key_exists('description', $seo)) {
-            $canonical['description'] = $this->sanitizer->plainText(
-                $seo['description'],
-                (int) $validation['seo_description_max'],
-                true
-            );
-        }
-
-        if (array_key_exists('keywords', $seo)) {
-            $canonical['keywords'] = $this->sanitizer->keywords($seo['keywords']);
-        }
-
-        if (array_key_exists('canonical_url', $seo)) {
-            $canonical['canonical_url'] = $seo['canonical_url'];
         }
 
         return $canonical;
@@ -255,11 +214,6 @@ class ProductCompletionDraftValidator
         return $scope === true || is_array($scope);
     }
 
-    private function nestedScopeAllows(ProductCompletionTask $task, string $key): bool
-    {
-        return data_get($task->scope_json, $key, false) === true;
-    }
-
     private function messages(): array
     {
         return [
@@ -278,12 +232,9 @@ class ProductCompletionDraftValidator
             'attributes.*.attribute_id.distinct' => 'یک ویژگی نباید دوبار ارسال شود.',
             'attributes.*.value_ids.array' => 'مقادیر ویژگی باید به‌صورت آرایه ارسال شوند.',
             'attributes.*.value_ids.*.integer' => 'شناسه مقدار ویژگی نامعتبر است.',
-            'seo.title.required' => 'عنوان سئو الزامی است.',
-            'seo.title.max' => 'عنوان سئو نباید بیشتر از :max کاراکتر باشد.',
-            'seo.description.required' => 'توضیحات سئو الزامی است.',
-            'seo.description.max' => 'توضیحات سئو نباید بیشتر از :max کاراکتر باشد.',
-            'seo.keywords.max' => 'کلمات کلیدی سئو نباید بیشتر از :max کاراکتر باشد.',
-            'seo.canonical_url.url' => 'آدرس canonical معتبر نیست.',
+            'attributes.*.proposed_values.array' => 'مقادیر پیشنهادی ویژگی باید به‌صورت فهرست ارسال شوند.',
+            'attributes.*.proposed_values.*.required' => 'مقدار پیشنهادی ویژگی نمی‌تواند خالی باشد.',
+            'attributes.*.proposed_values.*.max' => 'مقدار پیشنهادی ویژگی نباید بیشتر از :max کاراکتر باشد.',
         ];
     }
 }

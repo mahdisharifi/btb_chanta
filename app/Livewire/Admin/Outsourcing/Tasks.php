@@ -40,7 +40,6 @@ class Tasks extends Component
         'specifications' => 'مشخصات فنی',
         'attributes' => 'ویژگی‌ها',
         'gallery' => 'گالری تصاویر',
-        'seo' => 'اطلاعات سئو',
     ];
 
     public function mount(): void
@@ -69,7 +68,12 @@ class Tasks extends Component
             'commissionRuleId' => ['required', 'integer', 'exists:commission_rules,id'],
             'taskType' => ['required', Rule::enum(ProductCompletionTaskType::class)],
             'dueDays' => ['required', 'integer', 'min:1', 'max:90'],
-            'correctionScope' => ['nullable', 'array', 'required_if:taskType,correction', 'min:1'],
+            'correctionScope' => array_filter([
+                'nullable',
+                'array',
+                Rule::requiredIf(fn () => $this->taskType === ProductCompletionTaskType::CORRECTION->value),
+                $this->taskType === ProductCompletionTaskType::CORRECTION->value ? 'min:1' : null,
+            ]),
             'correctionScope.*' => ['string', Rule::in(array_keys($this->correctionScopeOptions))],
         ], [
             'productId.required' => 'انتخاب محصول الزامی است.',
@@ -77,7 +81,7 @@ class Tasks extends Component
             'taskType.required' => 'انتخاب نوع تسک الزامی است.',
             'dueDays.min' => 'مهلت باید حداقل یک روز باشد.',
             'dueDays.max' => 'مهلت نمی‌تواند بیشتر از نود روز باشد.',
-            'correctionScope.required_if' => 'برای تسک اصلاح محتوا حداقل یک بخش را انتخاب کنید.',
+            'correctionScope.required' => 'برای تسک اصلاح محتوا حداقل یک بخش را انتخاب کنید.',
             'correctionScope.min' => 'برای تسک اصلاح محتوا حداقل یک بخش را انتخاب کنید.',
             'correctionScope.*.in' => 'بخش انتخاب‌شده برای اصلاح معتبر نیست.',
         ]);
@@ -126,19 +130,6 @@ class Tasks extends Component
                         'select_primary' => true,
                         'select_seo' => true,
                         'propose_removal' => true,
-                    ]
-                    : false;
-
-                continue;
-            }
-
-            if ($field === 'seo') {
-                $scope[$field] = isset($selected[$field])
-                    ? [
-                        'title' => true,
-                        'description' => true,
-                        'keywords' => true,
-                        'canonical_url' => true,
                     ]
                     : false;
 

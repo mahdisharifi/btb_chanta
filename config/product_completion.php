@@ -172,6 +172,8 @@ return [
         'seo_keywords_max' => 255,
         'attributes_max' => 100,
         'attribute_values_max' => 50,
+        'attribute_proposed_values_max' => 10,
+        'attribute_proposed_value_max' => 255,
     ],
 
     'media' => [

@@ -57,14 +57,6 @@ class ProductCompletionScopeGuard
 
                 continue;
             }
-
-            if ($root === 'seo' && count($segments) > 1) {
-                $seoField = $segments[1];
-
-                if (data_get($scope, $seoField, false) !== true) {
-                    $violations[] = $path;
-                }
-            }
         }
 
         if ($violations !== []) {

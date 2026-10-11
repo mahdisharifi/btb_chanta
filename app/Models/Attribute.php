@@ -31,7 +31,10 @@ class Attribute extends Model
 
     public function categories()
     {
-        return $this->belongsToMany(Category::class);
+        return $this->belongsToMany(Category::class)
+            ->withPivot(['display_order', 'is_required'])
+            ->orderByPivot('display_order')
+            ->orderBy('categories.id');
     }
 
     public function products()

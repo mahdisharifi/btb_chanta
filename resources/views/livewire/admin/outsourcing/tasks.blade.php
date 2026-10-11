@@ -4,12 +4,15 @@
     <form wire:submit="createTask" class="mb-6 grid gap-4 rounded-xl border bg-white p-4 md:grid-cols-5">
         <div>
             <label for="outsourcing-task-product" class="mb-1.5 block text-sm font-medium text-slate-700">محصول</label>
-            <select id="outsourcing-task-product" wire:model="productId" class="w-full rounded-lg border-slate-300">
-                <option value="">انتخاب محصول</option>
+            <input id="outsourcing-task-product-search" type="search" list="outsourcing-task-product-list" autocomplete="off" placeholder="جست‌وجوی محصول..." class="w-full rounded-lg border-slate-300" wire:model.live.debounce.300ms="productId">
+            <datalist id="outsourcing-task-product-list">
                 @foreach($products as $product)
                     <option value="{{ $product->id }}">{{ $product->title }}</option>
                 @endforeach
-            </select>
+            </datalist>
+            @if($productId)
+                <p class="mt-1 text-xs text-slate-500">محصول انتخاب‌شده: {{ $products->firstWhere('id', $productId)?->title ?? '—' }}</p>
+            @endif
         </div>
 
         <div>

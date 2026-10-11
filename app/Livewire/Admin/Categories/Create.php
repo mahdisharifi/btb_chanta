@@ -41,6 +41,10 @@ class Create extends Component
     public $seo_description;
     public $seo_keywords;
     public $selectedAttributes = [];
+
+    /** @var array<int, array{display_order: int, is_required: bool}> */
+    public array $attributeSettings = [];
+
     public bool $isLeafNode = true;
     public bool $autoGenerateSeo = false;
     public string $seoTemplate = 'commercial';
@@ -152,7 +156,16 @@ class Create extends Component
             $this->seo_title = $category->seo_title;
             $this->seo_description = $category->seo_description;
             $this->seo_keywords = $category->seo_keywords;
-            $this->selectedAttributes = $category->attributes()->pluck('attributes.id')->toArray();
+            $categoryAttributes = $category->attributes()->get();
+            $this->selectedAttributes = $categoryAttributes->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $this->attributeSettings = $categoryAttributes
+                ->mapWithKeys(static fn (Attribute $attribute): array => [
+                    $attribute->id => [
+                        'display_order' => (int) $attribute->pivot->display_order,
+                        'is_required' => (bool) $attribute->pivot->is_required,
+                    ],
+                ])
+                ->all();
 
             $this->isLeafNode = $category->children()->doesntExist();
         }
@@ -235,6 +248,9 @@ class Create extends Component
             'seo_keywords' => ['nullable', 'string', 'max:255'],
             'selectedAttributes' => ['nullable', 'array'],
             'selectedAttributes.*' => ['integer', 'exists:attributes,id'],
+            'attributeSettings' => ['nullable', 'array'],
+            'attributeSettings.*.display_order' => ['required', 'integer', 'min:0', 'max:99999'],
+            'attributeSettings.*.is_required' => ['required', 'boolean'],
             'autoGenerateSeo' => ['boolean'],
             'seoTemplate' => ['required', 'string', Rule::in(['standard', 'commercial', 'technical'])],
 
@@ -278,6 +294,14 @@ class Create extends Component
 
         if (! in_array($attributeId, $this->selectedAttributes, true)) {
             $this->selectedAttributes[] = $attributeId;
+            $lastDisplayOrder = collect($this->attributeSettings)
+                ->pluck('display_order')
+                ->map(static fn (mixed $order): int => (int) $order)
+                ->max() ?? 0;
+            $this->attributeSettings[$attributeId] = [
+                'display_order' => $lastDisplayOrder + 1,
+                'is_required' => false,
+            ];
         }
 
         $this->resetErrorBag('attribute_remove');
@@ -300,6 +324,7 @@ class Create extends Component
             $this->selectedAttributes,
             fn ($id) => (int) $id !== $attributeId
         ));
+        unset($this->attributeSettings[$attributeId]);
 
         $this->resetErrorBag('attribute_error');
     }
@@ -389,7 +414,17 @@ class Create extends Component
                     }
                 }
 
-                $category->attributes()->sync($selectedAttributeIds->all());
+                $syncData = [];
+
+                foreach ($selectedAttributeIds as $attributeId) {
+                    $settings = $validated['attributeSettings'][$attributeId] ?? $this->attributeSettings[$attributeId] ?? [];
+                    $syncData[$attributeId] = [
+                        'display_order' => (int) ($settings['display_order'] ?? 0),
+                        'is_required' => (bool) ($settings['is_required'] ?? false),
+                    ];
+                }
+
+                $category->attributes()->sync($syncData);
             } else {
                 $category->attributes()->sync([]);
             }

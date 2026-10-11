@@ -474,7 +474,10 @@ class Category extends Model
 
     public function attributes()
     {
-        return $this->belongsToMany(Attribute::class);
+        return $this->belongsToMany(Attribute::class)
+            ->withPivot(['display_order', 'is_required'])
+            ->orderByPivot('display_order')
+            ->orderBy('attributes.id');
     }
 
     /**
