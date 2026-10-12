@@ -31,10 +31,8 @@
                 'title' => 'عنوان محصول',
                 'short_description' => 'توضیح کوتاه',
                 'full_description' => 'توضیحات کامل',
-                'specifications' => 'مشخصات فنی',
                 'attributes' => 'ویژگی‌ها',
                 'gallery' => 'گالری تصاویر',
-                'seo' => 'اطلاعات سئو',
                 'category_context' => 'دسته‌بندی محصول',
                 'supplier_context' => 'تأمین‌کننده محصول',
             ];
@@ -130,6 +128,27 @@
         </section>
 
         <aside class="space-y-4">
+            @can('extendDeadline', $task)
+                <form wire:submit="extendDeadline" class="rounded-xl border border-amber-200 bg-white p-4">
+                    <h2 class="mb-2 font-bold">تمدید مهلت تسک</h2>
+                    <p class="mb-3 text-sm text-slate-600">مهلت فعلی: <bdi>{{ $task->due_at ? \Morilog\Jalali\CalendarUtils::convertNumbers(jdate($task->due_at->copy()->timezone(config('app.timezone')))->format('Y/m/d H:i')) : 'بدون مهلت' }}</bdi> (به وقت تهران). برای ادامه اصلاح پس از پایان مهلت، تاریخ جدید را ثبت کنید.</p>
+                    <label class="block text-sm">تاریخ و ساعت جدید (شمسی)
+                        <input type="text" wire:model="newDueAt" dir="ltr" placeholder="1405/07/20 18:00" aria-describedby="deadline-format-help" class="mt-1 w-full rounded-lg border-slate-300" required>
+                    </label>
+                    <p id="deadline-format-help" class="mt-1 text-xs text-slate-500">سال/ماه/روز و ساعت به وقت تهران؛ نمونه: <bdi>۱۴۰۵/۰۷/۲۰ ۱۸:۰۰</bdi></p>
+                    @error('newDueAt')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                    <button wire:loading.attr="disabled" wire:target="extendDeadline" class="mt-3 w-full rounded-lg bg-amber-600 py-2 text-white disabled:opacity-60">ثبت مهلت جدید</button>
+                </form>
+            @endcan
+            <section class="rounded-xl border bg-white p-4" aria-label="وضعیت انتشار">
+                <h2 class="mb-2 font-bold">وضعیت انتشار</h2>
+                <p class="font-semibold {{ $task->published_at ? 'text-emerald-700' : 'text-slate-600' }}">{{ $task->published_at ? 'منتشر شده' : 'منتشر نشده' }}</p>
+                @if($task->published_at)
+                    <p class="mt-2 text-sm text-slate-600">تاریخ انتشار: <bdi>{{ \Morilog\Jalali\CalendarUtils::convertNumbers(jdate($task->published_at)->format('Y/m/d H:i')) }}</bdi></p>
+                @endif
+                <p class="mt-2 text-sm text-slate-600">وضعیت فعلی تسک: {{ $task->status->label() }}</p>
+            </section>
+            @if($task->status === \App\Enums\ProductCompletionTaskStatus::DRAFT && $task->published_at === null && $task->assigned_to === null)
             @can('publishTask', $task)
                 <form wire:submit="publish" class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <h2 class="mb-2 font-bold text-emerald-900">انتشار برای کارشناسان</h2>
@@ -137,6 +156,8 @@
                     <button wire:loading.attr="disabled" wire:target="publish" class="w-full rounded-lg bg-emerald-600 py-2 text-white disabled:opacity-60">انتشار Task</button>
                 </form>
             @endcan
+
+            @endif
 
             @can('assignTask', $task)
                 <form wire:submit="assign" class="rounded-xl border bg-white p-4">

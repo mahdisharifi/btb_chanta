@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Livewire\Admin\Outsourcing;
 
 use App\Enums\ProductCompletionCommissionStatus;
+use App\Enums\ProductCompletionSubmissionStatus;
+use App\Enums\ProductCompletionTaskStatus;
 use App\Models\ProductCompletionCommission;
+use App\Models\ProductCompletionTask;
 use App\Services\ProductCompletionCommissionService;
+use App\Services\ProductCompletionFinalizationService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -28,6 +33,29 @@ class Commissions extends Component
     public function mount(): void
     {
         Gate::authorize('viewAny', ProductCompletionCommission::class);
+    }
+
+    public function updatedStatus(): void
+    {
+        $this->resetPage();
+        $this->resetPage('approvedTasksPage');
+    }
+
+    public function calculate(string $publicId, ProductCompletionFinalizationService $service): void
+    {
+        Gate::authorize('outsourcing.view_all_commissions');
+        Gate::authorize('outsourcing.approve_commission');
+        $task = ProductCompletionTask::query()->where('public_id', $publicId)->firstOrFail();
+
+        if ($task->status !== ProductCompletionTaskStatus::APPROVED
+            || $task->lastSubmission?->status !== ProductCompletionSubmissionStatus::APPROVED) {
+            throw ValidationException::withMessages([
+                'task' => 'فقط تسک تأییدشده بازبین قابل آماده‌سازی برای بررسی مالی است.',
+            ]);
+        }
+
+        $service->finalize($task);
+        $this->dispatch('notify', message: 'پورسانت محاسبه شد و آماده بررسی مالی است.', type: 'success');
     }
 
     public function adjust(string $publicId, ProductCompletionCommissionService $service): void
@@ -72,6 +100,7 @@ class Commissions extends Component
 
         return view('livewire.admin.outsourcing.commissions', [
             'commissions' => ProductCompletionCommission::query()
+                ->whereHas('task')
                 ->with([
                     'user:id,name',
                     'task:id,public_id,product_id,reviewer_id,commission_rate_percentage',
@@ -80,13 +109,21 @@ class Commissions extends Component
                 ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
                 ->latest('id')
                 ->paginate(20),
+            'approvedTasks' => ProductCompletionTask::query()
+                ->with(['product:id,title', 'assignee:id,name', 'reviewer:id,name'])
+                ->where('status', ProductCompletionTaskStatus::APPROVED)
+                ->whereHas('lastSubmission', fn ($query) => $query->where('status', ProductCompletionSubmissionStatus::APPROVED))
+                ->whereDoesntHave('commission')
+                ->when(! in_array($this->status, ['', ProductCompletionCommissionStatus::PENDING->value], true), fn ($query) => $query->whereRaw('1 = 0'))
+                ->latest('id')
+                ->paginate(20, ['*'], 'approvedTasksPage'),
             'statuses' => ProductCompletionCommissionStatus::options(),
         ]);
     }
 
     private function commission(string $publicId): ProductCompletionCommission
     {
-        $commission = ProductCompletionCommission::query()->where('public_id', $publicId)->firstOrFail();
+        $commission = ProductCompletionCommission::query()->whereHas('task')->where('public_id', $publicId)->firstOrFail();
         Gate::authorize('viewCommission', $commission);
 
         return $commission;

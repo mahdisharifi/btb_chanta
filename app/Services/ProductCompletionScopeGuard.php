@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\ProductCompletionTask;
 use App\Models\User;
+use App\Support\ProductCompletionPayload;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -21,6 +22,7 @@ class ProductCompletionScopeGuard
      */
     public function filter(ProductCompletionTask $task, array $payload, ?User $actor = null): array
     {
+        $payload = ProductCompletionPayload::withoutExcludedFields($payload);
         $violations = [];
         $paths = $this->collectPaths($payload);
         $neverAllowed = array_map(

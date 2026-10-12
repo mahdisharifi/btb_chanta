@@ -574,7 +574,7 @@
                                     x-show="search.length > 0"
                                     x-transition
                                     wire:click="saveNewAttributeValue({{ $attribute->id }})"
-                                    x-on:click="setTimeout(() => { search = ''; }, 100)"
+                                    wire:loading.attr="disabled"
                                     class="px-4 py-2 bg-[#d4af37] text-black rounded-lg text-sm font-medium hover:bg-[#c49d2f] transition-colors flex items-center gap-1 whitespace-nowrap">
                                 <x-heroicon-o-plus class="w-4 h-4" />
                                 افزودن

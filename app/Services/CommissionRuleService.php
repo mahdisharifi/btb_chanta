@@ -31,7 +31,7 @@ class CommissionRuleService
 
         $validated = Validator::make($input, [
             'name' => ['required', 'string', 'max:255', 'regex:/^[\p{L}\p{N}\s\x{200C}_-]+$/u'],
-            'task_type' => ['required', Rule::enum(ProductCompletionTaskType::class)],
+            'task_type' => ['required', Rule::enum(ProductCompletionTaskType::class), Rule::notIn([ProductCompletionTaskType::SEO->value])],
             'calculation_type' => ['required', Rule::enum(CommissionCalculationType::class)],
             'revision_policy' => ['required', Rule::enum(ProductCompletionRevisionPolicy::class)],
             'base_amount' => ['required', 'regex:/^\d{1,12}(?:\.\d{1,2})?$/'],

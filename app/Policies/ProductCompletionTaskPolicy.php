@@ -117,7 +117,7 @@ class ProductCompletionTaskPolicy
     {
         return $user->can('outsourcing.update_content')
             && $this->updateDraft($user, $task)
-            && $this->scopeAllows($task, 'title', 'short_description', 'full_description', 'specifications');
+            && $this->scopeAllows($task, 'title', 'short_description', 'full_description');
     }
 
     public function updateAttributes(User $user, ProductCompletionTask $task): bool
@@ -136,9 +136,7 @@ class ProductCompletionTaskPolicy
 
     public function manageSeo(User $user, ProductCompletionTask $task): bool
     {
-        return $user->can('outsourcing.manage_seo')
-            && $this->updateDraft($user, $task)
-            && $this->scopeAllows($task, 'seo');
+        return false;
     }
 
     public function submitTask(User $user, ProductCompletionTask $task): bool

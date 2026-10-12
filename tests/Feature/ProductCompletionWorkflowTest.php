@@ -39,6 +39,7 @@ class ProductCompletionWorkflowTest extends TestCase
         $this->assertSame(ProductCompletionTaskStatus::IN_PROGRESS, $task->status);
 
         $draft = $task->current_draft_json;
+        $draft['specifications'] = ['Material' => 'Plastic'];
         $draft['title'] = 'عنوان امن و تکمیل شده';
         $task = $draftService->save($outsourcer, $task, $draft, 0);
 

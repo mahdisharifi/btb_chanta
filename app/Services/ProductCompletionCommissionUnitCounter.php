@@ -99,7 +99,7 @@ class ProductCompletionCommissionUnitCounter
         return $changed;
     }
 
-    /** @return array<int, array<int, int>> */
+    /** @return array<int, array{value_ids: array<int, int>, proposed_values: array<int, string>}> */
     private function attributesById(array $payload): array
     {
         $attributes = [];
@@ -120,7 +120,11 @@ class ProductCompletionCommissionUnitCounter
                 (array) ($attribute['value_ids'] ?? [])
             )));
             sort($valueIds);
-            $attributes[(int) $attributeId] = $valueIds;
+            $proposals = array_values(array_unique(array_map('trim', (array) ($attribute['proposed_values'] ?? []))));
+            sort($proposals);
+            if ($valueIds !== [] || $proposals !== []) {
+                $attributes[(int) $attributeId] = ['value_ids' => $valueIds, 'proposed_values' => $proposals];
+            }
         }
 
         ksort($attributes);

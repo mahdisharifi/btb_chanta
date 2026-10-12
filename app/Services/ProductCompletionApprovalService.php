@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Data\ProductCompletionConflictResult;
 use App\Enums\ProductCompletionSubmissionStatus;
 use App\Enums\ProductCompletionTaskStatus;
-use App\Enums\ProductCompletionTaskType;
 use App\Exceptions\ProductCompletionConflictException;
 use App\Models\Product;
 use App\Models\ProductCompletionSubmission;
@@ -24,6 +23,7 @@ class ProductCompletionApprovalService
         private readonly ProductCompletionPublisher $publisher,
         private readonly ProductCompletionInputSanitizer $sanitizer,
         private readonly ProductCompletionAuditService $auditService,
+        private readonly ProductCompletionCommissionCalculator $commissionCalculator,
     ) {
     }
 
@@ -63,19 +63,11 @@ class ProductCompletionApprovalService
                 Gate::forUser($actor)->authorize('outsourcing.approve_full_correction_rate');
             }
 
-            if ($approveFullRate && $task->task_type !== ProductCompletionTaskType::CORRECTION) {
-                throw ValidationException::withMessages([
-                    'approveFullRate' => 'تأیید نرخ کامل فقط برای Task اصلاح محصول مجاز است.',
-                ]);
-            }
-
-            $isCorrectionTask = $task->task_type === ProductCompletionTaskType::CORRECTION;
-            $hasPersistedFullRateApproval = $isCorrectionTask
-                && $task->full_rate_approved_by !== null
+            $hasPersistedFullRateApproval = $task->full_rate_approved_by !== null
                 && $task->full_rate_approved_at !== null
                 && filled($task->full_rate_approval_reason);
 
-            if ($isCorrectionTask && $approveFullRate) {
+            if ($approveFullRate) {
                 $task->forceFill([
                     'commission_rate_percentage' => '100.00',
                     'full_rate_approved_by' => $actor->getKey(),
@@ -107,16 +99,15 @@ class ProductCompletionApprovalService
             $task->forceFill([
                 'reviewer_id' => $task->reviewer_id ?? $actor->getKey(),
                 'status' => ProductCompletionTaskStatus::APPROVED,
-                'commission_rate_percentage' => $isCorrectionTask
-                    ? (($approveFullRate || $hasPersistedFullRateApproval) ? '100.00' : '30.00')
-                    : '100.00',
-                'full_rate_approved_by' => $isCorrectionTask && ($approveFullRate || $hasPersistedFullRateApproval)
+                'commission_content_snapshot_json' => $task->commission_content_snapshot_json ?? $task->initial_snapshot_json,
+                'commission_rate_percentage' => $this->commissionCalculator->calculate($task, $lockedSubmission)['breakdown']['task_rate_percentage'],
+                'full_rate_approved_by' => ($approveFullRate || $hasPersistedFullRateApproval)
                     ? ($task->full_rate_approved_by ?? $actor->getKey())
                     : null,
-                'full_rate_approved_at' => $isCorrectionTask && ($approveFullRate || $hasPersistedFullRateApproval)
+                'full_rate_approved_at' => ($approveFullRate || $hasPersistedFullRateApproval)
                     ? ($task->full_rate_approved_at ?? now())
                     : null,
-                'full_rate_approval_reason' => $isCorrectionTask && ($approveFullRate || $hasPersistedFullRateApproval)
+                'full_rate_approval_reason' => ($approveFullRate || $hasPersistedFullRateApproval)
                     ? ($task->full_rate_approval_reason ?? $reviewNote)
                     : null,
                 'approved_at' => now(),

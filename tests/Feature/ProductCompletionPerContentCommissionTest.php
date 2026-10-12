@@ -96,11 +96,11 @@ class ProductCompletionPerContentCommissionTest extends TestCase
 
         $calculated = app(ProductCompletionCommissionCalculator::class)->calculate($task, $resolved);
 
-        // Base: image cap 1 × 5000 + 2 attributes × 2000 + one description × 10000 = 19000.
-        $this->assertSame('19000.00', $calculated['base_amount']);
+        // New image: 5000; corrected attribute: 600; new attribute: 2000; corrected description pair: 3000.
+        $this->assertSame('10600.00', $calculated['base_amount']);
         // Revision: 30% of the same 19000 changed units = 5700.
         $this->assertSame('5700.00', $calculated['revision_amount']);
-        $this->assertSame('24700.00', $calculated['total_amount']);
+        $this->assertSame('16300.00', $calculated['total_amount']);
         $this->assertSame(1, $calculated['breakdown']['base_units']['image']['payable_units']);
         $this->assertSame(2, $calculated['breakdown']['base_units']['attribute']['payable_units']);
         $this->assertSame(1, $calculated['breakdown']['base_units']['description']['payable_units']);
@@ -115,6 +115,13 @@ class ProductCompletionPerContentCommissionTest extends TestCase
         $reviewer = User::factory()->create()->assignRole(UserRole::REVIEWER->value);
         $task = ProductCompletionTask::factory()->inProgress($outsourcer)->create([
             'reviewer_id' => $reviewer->getKey(),
+            'current_draft_json' => [
+                'schema_version' => 1,
+                'title' => 'Valid product title',
+                'short_description' => 'Valid short description',
+                'full_description' => 'Valid full description',
+                'specifications' => ['Material' => 'Plastic'],
+            ],
             'commission_rate_percentage' => '100.00',
             'commission_rule_snapshot_json' => [
                 'pricing_schema_version' => 2,
@@ -157,7 +164,7 @@ class ProductCompletionPerContentCommissionTest extends TestCase
     }
 
     #[Test]
-    public function legacy_schema_keeps_the_existing_fixed_amount_calculation(): void
+    public function legacy_schema_rates_the_fixed_amount_against_the_initial_snapshot(): void
     {
         $task = ProductCompletionTask::factory()->create([
             'active_product_id' => null,
@@ -177,7 +184,8 @@ class ProductCompletionPerContentCommissionTest extends TestCase
 
         $calculated = app(ProductCompletionCommissionCalculator::class)->calculate($task, $submission);
 
-        $this->assertSame('500000.00', $calculated['base_amount']);
-        $this->assertSame('500000.00', $calculated['total_amount']);
+        // All submitted descriptions and the title replace pre-existing values in the factory snapshot.
+        $this->assertSame('150000.00', $calculated['base_amount']);
+        $this->assertSame('150000.00', $calculated['total_amount']);
     }
 }

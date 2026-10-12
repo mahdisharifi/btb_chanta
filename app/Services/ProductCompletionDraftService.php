@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Exceptions\ProductCompletionDraftVersionConflictException;
 use App\Models\ProductCompletionTask;
 use App\Models\User;
+use App\Support\ProductCompletionPayload;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -70,13 +71,8 @@ class ProductCompletionDraftService
 
     private function mergeDraft(array $current, array $incoming): array
     {
+        $current = ProductCompletionPayload::withoutExcludedFields($current);
         foreach ($incoming as $field => $value) {
-            if ($field === 'seo' && is_array($value)) {
-                $current[$field] = array_replace($current[$field] ?? [], $value);
-
-                continue;
-            }
-
             $current[$field] = $value;
         }
 

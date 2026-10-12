@@ -35,6 +35,10 @@ enum ProductCompletionTaskType: string
         $options = [];
 
         foreach (self::cases() as $case) {
+            if ($case === self::SEO) {
+                continue;
+            }
+
             $options[$case->value] = $case->label();
         }
 

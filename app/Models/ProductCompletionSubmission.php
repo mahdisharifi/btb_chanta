@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ProductCompletionPayloadCast;
+
 use App\Enums\ProductCompletionSubmissionStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -53,9 +55,9 @@ class ProductCompletionSubmission extends Model
         return [
             'version_no' => 'integer',
             'draft_version' => 'integer',
-            'payload_json' => 'array',
-            'diff_json' => 'array',
-            'media_manifest_json' => 'array',
+            'payload_json' => ProductCompletionPayloadCast::class,
+            'diff_json' => ProductCompletionPayloadCast::class,
+            'media_manifest_json' => ProductCompletionPayloadCast::class,
             'base_product_version' => 'integer',
             'status' => ProductCompletionSubmissionStatus::class,
             'reviewed_at' => 'datetime',

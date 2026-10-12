@@ -37,7 +37,6 @@ class Tasks extends Component
         'title' => 'عنوان محصول',
         'short_description' => 'توضیح کوتاه',
         'full_description' => 'توضیحات کامل',
-        'specifications' => 'مشخصات فنی',
         'attributes' => 'ویژگی‌ها',
         'gallery' => 'گالری تصاویر',
     ];
@@ -128,7 +127,6 @@ class Tasks extends Component
                         'add' => true,
                         'reorder' => true,
                         'select_primary' => true,
-                        'select_seo' => true,
                         'propose_removal' => true,
                     ]
                     : false;

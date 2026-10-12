@@ -6,6 +6,8 @@ namespace App\Services;
 
 use App\Data\ProductCompletionConflictResult;
 use App\Models\Product;
+use App\Models\AttributeValue;
+use App\Support\ProductCompletionPayload;
 use App\Models\ProductCompletionTask;
 
 class ProductCompletionConflictService
@@ -19,6 +21,7 @@ class ProductCompletionConflictService
         Product $currentProduct,
         array $submittedPayload,
     ): ProductCompletionConflictResult {
+        $submittedPayload = ProductCompletionPayload::withoutExcludedFields($submittedPayload);
         $baseSnapshot = $task->initial_snapshot_json;
         $base = $this->snapshotService->draftFromSnapshot($baseSnapshot);
         $currentSnapshot = $this->snapshotService->build($currentProduct, $task->scope_json);
@@ -59,19 +62,19 @@ class ProductCompletionConflictService
             $currentValue = $current[$field] ?? null;
             $submittedValue = $submittedPayload[$field] ?? null;
 
-            if ($this->same($currentValue, $baseValue)) {
+            if ($this->same($currentValue, $baseValue, $field)) {
                 $merged[$field] = $submittedValue;
 
                 continue;
             }
 
-            if ($this->same($submittedValue, $baseValue)) {
+            if ($this->same($submittedValue, $baseValue, $field)) {
                 $merged[$field] = $currentValue;
 
                 continue;
             }
 
-            if ($this->same($currentValue, $submittedValue)) {
+            if ($this->same($currentValue, $submittedValue, $field)) {
                 $merged[$field] = $currentValue;
 
                 continue;
@@ -92,9 +95,42 @@ class ProductCompletionConflictService
         );
     }
 
-    private function same(mixed $left, mixed $right): bool
+    private function same(mixed $left, mixed $right, string $field): bool
     {
+        if ($field === 'attributes') {
+            $left = $this->normalizedAttributes($left);
+            $right = $this->normalizedAttributes($right);
+        }
         return $this->canonicalJson($left) === $this->canonicalJson($right);
+    }
+
+    private function normalizedAttributes(mixed $selections): array
+    {
+        $normalized = [];
+        foreach (is_array($selections) ? $selections : [] as $selection) {
+            $attributeId = (int) $selection['attribute_id'];
+            $ids = array_map('intval', $selection['value_ids'] ?? []);
+            $proposed = $selection['proposed_values'] ?? [];
+            $existing = $proposed === [] ? collect() : AttributeValue::query()
+                ->where('attribute_id', $attributeId)->whereIn('value', $proposed)->pluck('id', 'value');
+            $unpublished = [];
+            foreach ($proposed as $value) {
+                if ($existing->has($value)) {
+                    $ids[] = (int) $existing->get($value);
+                } else {
+                    $unpublished[] = $value;
+                }
+            }
+            $ids = array_values(array_unique($ids));
+            sort($ids);
+            $unpublished = array_values(array_unique($unpublished));
+            sort($unpublished);
+            if ($ids !== [] || $unpublished !== []) {
+                $normalized[$attributeId] = ['value_ids' => $ids, 'proposed_values' => $unpublished];
+            }
+        }
+        ksort($normalized);
+        return $normalized;
     }
 
     private function canonicalJson(mixed $value): string

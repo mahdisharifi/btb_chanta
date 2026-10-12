@@ -9,6 +9,7 @@ use App\Enums\ProductCompletionRevisionPolicy;
 use App\Enums\ProductCompletionTaskType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
@@ -76,6 +77,7 @@ class CommissionRule extends Model
 
     protected static function booted(): void
     {
+        static::addGlobalScope('withoutExcludedFields', static fn (Builder $query) => $query->where($query->getModel()->qualifyColumn('task_type'), '!=', ProductCompletionTaskType::SEO->value));
         static::creating(function (self $rule): void {
             $rule->public_id ??= (string) Str::ulid();
         });

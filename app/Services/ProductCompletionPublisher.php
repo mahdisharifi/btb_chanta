@@ -27,25 +27,9 @@ class ProductCompletionPublisher
         $content = $this->validator->validate($task, $payload, $actor, true)->toArray();
         $updates = [];
 
-        foreach (['title', 'short_description', 'full_description', 'specifications'] as $field) {
+        foreach (['title', 'short_description', 'full_description'] as $field) {
             if ($this->scopeAllows($task, $field) && array_key_exists($field, $content)) {
                 $updates[$field] = $content[$field];
-            }
-        }
-
-        if ($this->scopeAllows($task, 'seo') && array_key_exists('seo', $content)) {
-            $seoMapping = [
-                'title' => 'seo_title',
-                'description' => 'seo_description',
-                'keywords' => 'seo_keywords',
-                'canonical_url' => 'seo_canonical_url',
-            ];
-
-            foreach ($seoMapping as $source => $target) {
-                if (data_get($task->scope_json, "seo.{$source}", false) === true
-                    && array_key_exists($source, $content['seo'])) {
-                    $updates[$target] = $content['seo'][$source];
-                }
             }
         }
 

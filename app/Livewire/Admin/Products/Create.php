@@ -11,6 +11,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\AttributeValue;
+use App\Support\AttributeValueIdentity;
 use App\Enums\ProductStatus;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -331,6 +332,7 @@ class Create extends Component
 
     public function saveNewAttributeValue($attributeId)
     {
+        $this->resetValidation('newAttributeValues.'.$attributeId);
         $value = trim($this->newAttributeValues[$attributeId] ?? '');
 
         if (empty($value)) {
@@ -341,21 +343,17 @@ class Create extends Component
             return;
         }
 
-        $existing = AttributeValue::where('attribute_id', $attributeId)
-            ->where('value', $value)
-            ->first();
+        if (AttributeValueIdentity::exists((int) $attributeId, $value)) {
+            $this->addError('newAttributeValues.'.$attributeId, 'این مقدار از قبل وجود دارد؛ آن را از فهرست مقادیر انتخاب کنید.');
 
-        if ($existing) {
-            $newValueId = $existing->id;
-            $isNew = false;
-        } else {
-            $newValue = AttributeValue::create([
-                'attribute_id' => $attributeId,
-                'value' => $value
-            ]);
-            $newValueId = $newValue->id;
-            $isNew = true;
+            return;
         }
+
+        $newValue = AttributeValue::create([
+            'attribute_id' => $attributeId,
+            'value' => $value
+        ]);
+        $newValueId = $newValue->id;
 
         // بروزرسانی لیست مقادیر
         $this->loadCategoryAttributes();
@@ -375,10 +373,9 @@ class Create extends Component
         }
 
         $this->newAttributeValues[$attributeId] = '';
+        $this->dispatch('attribute-value-added', attributeId: (int) $attributeId);
         
-        $message = $isNew 
-            ? "مقدار «{$value}» با موفقیت اضافه و انتخاب شد"
-            : "مقدار «{$value}» از قبل وجود داشت و انتخاب شد";
+        $message = "مقدار «{$value}» با موفقیت اضافه و انتخاب شد";
         
         $this->dispatch('notify', [
             'message' => $message,

@@ -10,6 +10,10 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:60,1')
         ->name('outsourcing.media.preview');
 
+    Route::get('/outsourcing/tasks/{task}/gallery/{gallery}/preview', [ProductCompletionMediaController::class, 'gallery'])
+        ->middleware('throttle:60,1')
+        ->name('outsourcing.gallery.preview');
+
     Route::prefix('outsourcer')->name('outsourcer.')->group(function (): void {
         Route::get('/tasks', App\Livewire\Outsourcer\Task\Index::class)
             ->middleware('permission:outsourcing.view_tasks')

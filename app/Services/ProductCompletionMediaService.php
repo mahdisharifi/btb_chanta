@@ -16,6 +16,7 @@ use App\Models\ProductCompletionSubmissionMedia;
 use App\Models\ProductCompletionTask;
 use App\Models\ProductGallery;
 use App\Models\User;
+use App\Support\ProductCompletionPayload;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -173,7 +174,6 @@ class ProductCompletionMediaService
                 'action' => $item['action'],
                 'sort_order' => $item['sort_order'],
                 'is_primary' => $item['is_primary'],
-                'is_seo_image' => $item['is_seo_image'],
                 'title' => $item['title'],
                 'alt_text' => $item['alt_text'],
                 'review_status' => 'pending',
@@ -441,10 +441,10 @@ class ProductCompletionMediaService
         $errors = [];
         $allowedKeys = [
             'media_public_id', 'product_gallery_id', 'action', 'sort_order',
-            'is_primary', 'is_seo_image', 'title', 'alt_text',
+            'is_primary', 'title', 'alt_text',
         ];
 
-        foreach (array_values($items) as $index => $item) {
+        foreach (array_values(ProductCompletionPayload::withoutExcludedFields($items)) as $index => $item) {
             if (! is_array($item) || array_diff(array_keys($item), $allowedKeys) !== []) {
                 $errors["gallery.items.{$index}"] = 'ساختار اطلاعات تصویر نامعتبر است.';
                 continue;
@@ -476,6 +476,7 @@ class ProductCompletionMediaService
                     ->whereIn('status', [
                         ProductCompletionMediaStatus::TEMPORARY,
                         ProductCompletionMediaStatus::UNDER_REVIEW,
+                        ProductCompletionMediaStatus::ACCEPTED,
                     ])
                     ->first();
 
@@ -497,7 +498,6 @@ class ProductCompletionMediaService
 
             $requestedOrder = $action === 'remove' ? null : (int) ($item['sort_order'] ?? 0);
             $requestedPrimary = $action !== 'remove' && (bool) ($item['is_primary'] ?? false);
-            $requestedSeo = $action !== 'remove' && (bool) ($item['is_seo_image'] ?? false);
 
             if ($action === 'keep' && $gallery !== null) {
                 if ($requestedOrder !== (int) $gallery->sort_order && ! ($galleryScope['reorder'] ?? false)) {
@@ -508,19 +508,10 @@ class ProductCompletionMediaService
                     && ! ($galleryScope['select_primary'] ?? false)) {
                     $errors["gallery.items.{$index}.is_primary"] = 'تغییر تصویر اصلی خارج از محدوده تسک است.';
                 }
-
-                if ($requestedSeo !== (bool) $gallery->is_seo_image
-                    && ! ($galleryScope['select_seo'] ?? false)) {
-                    $errors["gallery.items.{$index}.is_seo_image"] = 'تغییر تصویر سئو خارج از محدوده تسک است.';
-                }
             }
 
             if ($action === 'add' && $requestedPrimary && ! ($galleryScope['select_primary'] ?? false)) {
                 $errors["gallery.items.{$index}.is_primary"] = 'انتخاب تصویر اصلی خارج از محدوده تسک است.';
-            }
-
-            if ($action === 'add' && $requestedSeo && ! ($galleryScope['select_seo'] ?? false)) {
-                $errors["gallery.items.{$index}.is_seo_image"] = 'انتخاب تصویر سئو خارج از محدوده تسک است.';
             }
 
             $normalizedItem = [
@@ -529,7 +520,6 @@ class ProductCompletionMediaService
                 'action' => $action,
                 'sort_order' => $requestedOrder,
                 'is_primary' => $requestedPrimary,
-                'is_seo_image' => $requestedSeo,
                 'title' => $this->sanitizer->plainText($item['title'] ?? null, 255),
                 'alt_text' => $this->sanitizer->plainText($item['alt_text'] ?? null, 255),
             ];
@@ -555,10 +545,6 @@ class ProductCompletionMediaService
             $errors['gallery.is_primary'] = 'دقیقاً یک تصویر اصلی باید انتخاب شود.';
         }
 
-        if (count(array_filter($finalItems, static fn (array $item): bool => $item['is_seo_image'])) > 1) {
-            $errors['gallery.is_seo_image'] = 'حداکثر یک تصویر سئو قابل انتخاب است.';
-        }
-
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
@@ -574,7 +560,6 @@ class ProductCompletionMediaService
         $items = $submission->mediaItems()->with(['media', 'productGallery'])->get();
         $product->galleries()->where('file_type', 'image')->update([
             'is_primary' => false,
-            'is_seo_image' => false,
         ]);
 
         foreach ($items as $item) {
@@ -587,7 +572,6 @@ class ProductCompletionMediaService
                 $item->productGallery?->update([
                     'sort_order' => $item->sort_order,
                     'is_primary' => $item->is_primary,
-                    'is_seo_image' => $item->is_seo_image,
                     'title' => $item->title,
                     'alt_text' => $item->alt_text,
                 ]);
@@ -608,7 +592,6 @@ class ProductCompletionMediaService
                 'alt_text' => $item->alt_text,
                 'sort_order' => $item->sort_order,
                 'is_primary' => $item->is_primary,
-                'is_seo_image' => $item->is_seo_image,
                 'file_size' => $media->file_size,
                 'mime_type' => 'image/webp',
                 'width' => $media->width,

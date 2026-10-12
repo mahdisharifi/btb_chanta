@@ -28,7 +28,7 @@
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h2 class="font-bold">{{ $commission->task?->product?->title }}</h2>
-                        <p class="mt-1 text-sm text-slate-500">پیمانکار: {{ $commission->user?->name }} · نرخ Task: {{ $commission->task?->commission_rate_percentage }}٪</p>
+                        <p class="mt-1 text-sm text-slate-500">پیمانکار: {{ $commission->user?->name }} · میانگین نرخ محتوا: {{ $commission->task?->commission_rate_percentage }}٪</p>
                     </div>
                     <div class="text-left">
                         <p class="font-bold text-emerald-700">{{ number_format((float) $commission->total_amount) }} {{ $commission->currency }}</p>

@@ -81,6 +81,7 @@ class ProductCompletionCommissionService
             ]);
 
             $lockedTask->forceFill([
+                'commission_rate_percentage' => $breakdown['task_rate_percentage'],
                 'status' => ProductCompletionTaskStatus::COMPLETED,
                 'active_product_id' => null,
                 'completed_at' => now(),

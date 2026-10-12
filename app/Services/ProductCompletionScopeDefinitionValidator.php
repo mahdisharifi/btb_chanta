@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\ProductCompletionTaskType;
+use App\Support\ProductCompletionPayload;
 use Illuminate\Validation\ValidationException;
 
 class ProductCompletionScopeDefinitionValidator
 {
     public function resolve(ProductCompletionTaskType $taskType, ?array $scope = null): array
     {
+        if ($taskType === ProductCompletionTaskType::SEO) {
+            throw ValidationException::withMessages(['task_type' => 'این نوع فعالیت در فرایند برون‌سپاری پشتیبانی نمی‌شود.']);
+        }
+
         $scope ??= config("product_completion.scope_presets.{$taskType->value}");
 
         if (! is_array($scope)) {
@@ -19,6 +24,7 @@ class ProductCompletionScopeDefinitionValidator
             ]);
         }
 
+        $scope = ProductCompletionPayload::withoutExcludedFields($scope);
         $schema = config('product_completion.scope_presets.full_completion', []);
         $violations = [];
 

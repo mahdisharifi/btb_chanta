@@ -17,6 +17,7 @@ class ProductCompletionCommissionCalculator
 {
     public function __construct(
         private readonly ProductCompletionCommissionUnitCounter $unitCounter,
+        private readonly ProductCompletionCommissionChangeClassifier $changeClassifier,
     ) {
     }
 
@@ -59,17 +60,17 @@ class ProductCompletionCommissionCalculator
         string|int|float $adjustment,
     ): array {
         $scale = (int) config('product_completion.commission.decimal_scale', 2);
-        $baseUnits = $this->unitCounter->compare(
-            $task->initial_snapshot_json ?? [],
-            $submission->payload_json ?? [],
-        );
-        $basePricing = $this->priceUnits($snapshot, $baseUnits, $scale);
+        $rates = $this->contentRates($task, $submission);
+        $baseUnits = [];
+        foreach (CommissionContentType::cases() as $contentType) {
+            $baseUnits[$contentType->value] = array_keys($rates[$contentType->value] ?? []);
+            sort($baseUnits[$contentType->value]);
+        }
+        $basePricing = $this->priceUnits($snapshot, $baseUnits, $scale, $rates);
         $revisionPricing = $this->priceRevisions($task, $snapshot, $scale);
-        $rawBaseMinor = $basePricing['total_minor'];
-        $taskRateBasisPoints = $this->percentageToBasisPoints(
-            $task->commission_rate_percentage ?? '100.00'
-        );
-        $baseMinor = $this->percentageOf($rawBaseMinor, $taskRateBasisPoints);
+        $rawBaseMinor = $basePricing['raw_total_minor'];
+        $baseMinor = $basePricing['total_minor'];
+        $taskRateBasisPoints = $this->effectiveRate($baseMinor, $rawBaseMinor);
         $revisionMinor = $revisionPricing['total_minor'];
         $bonusMinor = $this->toMinor($bonus, $scale);
         $penaltyMinor = $this->toMinor($penalty, $scale);
@@ -104,6 +105,8 @@ class ProductCompletionCommissionCalculator
                 'approved_item_count' => $basePricing['payable_unit_count'],
                 'base_units' => $basePricing['breakdown'],
                 'base_unit_keys' => $baseUnits,
+                'rate_source' => 'initial_content_snapshot',
+                'content_rates' => $rates,
                 'revision_count' => $revisionPricing['revision_count'],
                 'revisions' => $revisionPricing['breakdown'],
             ],
@@ -126,19 +129,27 @@ class ProductCompletionCommissionCalculator
             (string) ($snapshot['calculation_type'] ?? CommissionCalculationType::PER_TASK->value)
         );
         $revisionCount = $this->commissionableRevisionCount($task, $revisionPolicy);
-        $approvedItemCount = $calculationType === CommissionCalculationType::PER_FIELD_GROUP
-            ? count($submission->diff_json ?? [])
-            : 0;
-        $taskRateBasisPoints = $this->percentageToBasisPoints(
-            $task->commission_rate_percentage ?? '100.00'
-        );
+        $rates = $this->contentRates($task, $submission);
+        $ratedUnits = array_merge(...array_values($rates));
+        $approvedItemCount = $calculationType === CommissionCalculationType::PER_FIELD_GROUP ? count($ratedUnits) : 0;
+        // A fixed task fee is full-rate for completion work; a task with only corrections gets correction rate.
+        $fixedBaseRate = $ratedUnits === [] || in_array('100.00', array_column($ratedUnits, 'rate_percentage'), true) ? 10000 : 3000;
         $rawBaseMinor = $this->toMinor($snapshot['base_amount'] ?? '0', $scale);
         $rawApprovedItemsMinor = $this->toMinor(
             $snapshot['per_approved_item_amount'] ?? '0',
             $scale
         ) * $approvedItemCount;
-        $baseMinor = $this->percentageOf($rawBaseMinor, $taskRateBasisPoints);
-        $approvedItemsMinor = $this->percentageOf($rawApprovedItemsMinor, $taskRateBasisPoints);
+        $baseMinor = $this->percentageOf($rawBaseMinor, $fixedBaseRate);
+        $approvedItemsMinor = 0;
+        if ($calculationType === CommissionCalculationType::PER_FIELD_GROUP) {
+            foreach ($ratedUnits as $unit) {
+                $approvedItemsMinor += $this->percentageOf(
+                    $this->toMinor($snapshot['per_approved_item_amount'] ?? '0', $scale),
+                    $this->percentageToBasisPoints($unit['rate_percentage']),
+                );
+            }
+        }
+        $taskRateBasisPoints = $this->effectiveRate($baseMinor + $approvedItemsMinor, $rawBaseMinor + $rawApprovedItemsMinor);
         $revisionMinor = $this->toMinor($snapshot['per_revision_amount'] ?? '0', $scale) * $revisionCount;
         $bonusMinor = $this->toMinor($bonus, $scale);
         $penaltyMinor = $this->toMinor($penalty, $scale);
@@ -171,17 +182,21 @@ class ProductCompletionCommissionCalculator
                 'commissionable_revision_count' => $revisionCount,
                 'approved_item_count' => $approvedItemCount,
                 'approved_items_amount' => $this->fromMinor($approvedItemsMinor, $scale),
+                'rate_source' => 'initial_content_snapshot',
+                'fixed_base_rate_percentage' => $this->basisPointsToPercentage($fixedBaseRate),
+                'content_rates' => $rates,
             ],
         ];
     }
 
     /**
      * @param array<string, array<int, string>> $units
-     * @return array{total_minor: int, payable_unit_count: int, breakdown: array<string, array<string, int|string|bool>>}
+     * @return array{total_minor: int, raw_total_minor: int, payable_unit_count: int, breakdown: array<string, array<string, mixed>>}
      */
-    private function priceUnits(array $snapshot, array $units, int $scale): array
+    private function priceUnits(array $snapshot, array $units, int $scale, array $rates = []): array
     {
         $totalMinor = 0;
+        $rawTotalMinor = 0;
         $payableUnitCount = 0;
         $breakdown = [];
         $seenTypes = [];
@@ -205,7 +220,23 @@ class ProductCompletionCommissionCalculator
             $unitAmountMinor = $enabled
                 ? $this->toMinor($item['unit_amount'] ?? '0', $scale)
                 : 0;
-            $amountMinor = $unitAmountMinor * $payableUnits;
+            $keys = $units[$contentType->value] ?? [];
+            // When a cap applies, pay new content first, then corrections in stable key order.
+            usort($keys, function (string $left, string $right) use ($rates, $contentType): int {
+                $leftRate = $rates[$contentType->value][$left]['rate_percentage'] ?? '100.00';
+                $rightRate = $rates[$contentType->value][$right]['rate_percentage'] ?? '100.00';
+
+                return ($this->percentageToBasisPoints($rightRate) <=> $this->percentageToBasisPoints($leftRate)) ?: strcmp($left, $right);
+            });
+            $pricedUnits = [];
+            $amountMinor = 0;
+            foreach (array_slice($keys, 0, $payableUnits) as $key) {
+                $unit = $rates[$contentType->value][$key] ?? ['key' => $key, 'kind' => 'new', 'rate_percentage' => '100.00'];
+                $amount = $this->percentageOf($unitAmountMinor, $this->percentageToBasisPoints($unit['rate_percentage']));
+                $amountMinor += $amount;
+                $pricedUnits[] = $unit + ['amount' => $this->fromMinor($amount, $scale)];
+            }
+            $rawTotalMinor += $unitAmountMinor * $payableUnits;
             $totalMinor += $amountMinor;
             $payableUnitCount += $payableUnits;
             $breakdown[$contentType->value] = [
@@ -215,14 +246,41 @@ class ProductCompletionCommissionCalculator
                 'payable_units' => $payableUnits,
                 'unit_amount' => $this->fromMinor($unitAmountMinor, $scale),
                 'amount' => $this->fromMinor($amountMinor, $scale),
+                'priced_units' => $pricedUnits,
             ];
         }
 
         return [
             'total_minor' => $totalMinor,
+            'raw_total_minor' => $rawTotalMinor,
             'payable_unit_count' => $payableUnitCount,
             'breakdown' => $breakdown,
         ];
+    }
+
+    /** @return array<string, array<string, array<string, mixed>>> */
+    private function contentRates(ProductCompletionTask $task, ProductCompletionSubmission $submission): array
+    {
+        $rates = $this->changeClassifier->units(
+            $task->commission_content_snapshot_json ?? $task->initial_snapshot_json ?? [],
+            $submission->payload_json ?? [],
+        );
+        if ($task->full_rate_approved_by !== null && $task->full_rate_approved_at !== null && filled($task->full_rate_approval_reason)) {
+            foreach ($rates as &$units) {
+                foreach ($units as &$unit) {
+                    $unit['rate_percentage'] = '100.00';
+                }
+                unset($unit);
+            }
+            unset($units);
+        }
+
+        return $rates;
+    }
+
+    private function effectiveRate(int $paidMinor, int $fullMinor): int
+    {
+        return $fullMinor === 0 ? 10000 : intdiv(($paidMinor * 10000) + intdiv($fullMinor, 2), $fullMinor);
     }
 
     /** @return array{total_minor: int, revision_count: int, breakdown: array<int, array<string, mixed>>} */

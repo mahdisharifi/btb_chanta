@@ -38,9 +38,11 @@ class Dashboard extends Component
                 ->where('due_at', '<', now())
                 ->count(),
             'payableAmount' => ProductCompletionCommission::query()
+                ->whereHas('task')
                 ->where('status', ProductCompletionCommissionStatus::PAYABLE)
                 ->sum('total_amount'),
             'paidAmount' => ProductCompletionCommission::query()
+                ->whereHas('task')
                 ->where('status', ProductCompletionCommissionStatus::PAID)
                 ->sum('total_amount'),
         ]);

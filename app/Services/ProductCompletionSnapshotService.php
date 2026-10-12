@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Product;
+use App\Support\ProductCompletionPayload;
 
 class ProductCompletionSnapshotService
 {
@@ -17,7 +18,7 @@ class ProductCompletionSnapshotService
             'category_id' => (int) $product->category_id,
         ];
 
-        foreach (['title', 'short_description', 'full_description', 'specifications'] as $field) {
+        foreach (['title', 'short_description', 'full_description'] as $field) {
             if ($this->enabled($scope, $field)) {
                 $snapshot[$field] = $product->{$field};
             }
@@ -45,7 +46,6 @@ class ProductCompletionSnapshotService
                         'id',
                         'sort_order',
                         'is_primary',
-                        'is_seo_image',
                         'title',
                         'alt_text',
                     ])
@@ -56,16 +56,11 @@ class ProductCompletionSnapshotService
                         'action' => 'keep',
                         'sort_order' => (int) $gallery->sort_order,
                         'is_primary' => (bool) $gallery->is_primary,
-                        'is_seo_image' => (bool) $gallery->is_seo_image,
                         'title' => $gallery->title,
                         'alt_text' => $gallery->alt_text,
                     ])
                     ->all(),
             ];
-        }
-
-        if ($this->enabled($scope, 'seo')) {
-            $snapshot['seo'] = $this->seoSnapshot($product, (array) $scope['seo']);
         }
 
         return $snapshot;
@@ -74,28 +69,9 @@ class ProductCompletionSnapshotService
     public function draftFromSnapshot(array $snapshot): array
     {
         return array_intersect_key(
-            $snapshot,
+            ProductCompletionPayload::withoutExcludedFields($snapshot),
             array_flip(config('product_completion.draft_fields', []))
         );
-    }
-
-    private function seoSnapshot(Product $product, array $scope): array
-    {
-        $mapping = [
-            'title' => 'seo_title',
-            'description' => 'seo_description',
-            'keywords' => 'seo_keywords',
-            'canonical_url' => 'seo_canonical_url',
-        ];
-        $seo = [];
-
-        foreach ($mapping as $scopeKey => $productField) {
-            if (($scope[$scopeKey] ?? false) === true) {
-                $seo[$scopeKey] = $product->{$productField};
-            }
-        }
-
-        return $seo;
     }
 
     private function enabled(array $scope, string $key): bool

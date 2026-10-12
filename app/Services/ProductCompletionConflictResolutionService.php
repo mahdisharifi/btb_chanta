@@ -25,6 +25,7 @@ class ProductCompletionConflictResolutionService
 {
     public function __construct(
         private readonly ProductCompletionConflictService $conflictService,
+        private readonly ProductCompletionSnapshotService $snapshotService,
         private readonly ProductCompletionInputSanitizer $sanitizer,
         private readonly ProductCompletionAuditService $auditService,
     ) {
@@ -163,6 +164,15 @@ class ProductCompletionConflictResolutionService
                 ]);
             }
 
+            $product = Product::query()->lockForUpdate()->findOrFail($lockedTask->product_id);
+            $conflict = $this->conflictService->detect($lockedTask, $product, $submission->payload_json);
+            $draft = $conflict->mergedPayload;
+            foreach ($conflict->conflicts as $field => $details) {
+                if (array_key_exists($field, $submission->payload_json)) {
+                    $draft[$field] = $submission->payload_json[$field];
+                }
+            }
+
             $revisionNo = $lockedTask->revision_count + 1;
             $revision = ProductCompletionRevision::query()->create([
                 'task_id' => $lockedTask->getKey(),
@@ -188,6 +198,16 @@ class ProductCompletionConflictResolutionService
             $lockedTask->forceFill([
                 'status' => ProductCompletionTaskStatus::CHANGES_REQUESTED,
                 'revision_count' => $revisionNo,
+                'initial_snapshot_json' => $this->snapshotService->build($product, $lockedTask->scope_json),
+                'commission_content_snapshot_json' => $lockedTask->commission_content_snapshot_json ?? $lockedTask->initial_snapshot_json,
+                'product_version_at_assignment' => $product->content_version,
+                'product_updated_at_assignment' => $product->updated_at,
+                'current_draft_json' => $draft,
+                'draft_version' => $lockedTask->draft_version + 1,
+                'approved_at' => null,
+                'content_applied_at' => null,
+                'applied_product_version' => null,
+                'media_published_at' => null,
                 'conflict_json' => null,
                 'last_error' => null,
                 'lock_version' => $lockedTask->lock_version + 1,

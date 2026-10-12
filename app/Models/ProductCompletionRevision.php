@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ProductCompletionPayloadCast;
+
 use App\Enums\ProductCompletionRevisionClassification;
 use App\Enums\ProductCompletionRevisionStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -42,7 +44,7 @@ class ProductCompletionRevision extends Model
             'classification' => ProductCompletionRevisionClassification::class,
             'status' => ProductCompletionRevisionStatus::class,
             'is_commissionable' => 'boolean',
-            'requested_fields_json' => 'array',
+            'requested_fields_json' => ProductCompletionPayloadCast::class,
             'pricing_schema_version' => 'integer',
             'changed_units_json' => 'array',
             'changed_unit_count' => 'integer',

@@ -102,6 +102,7 @@ class ProductCompletionTaskService
                 'scope_schema_version' => (int) config('product_completion.schema_version', 1),
                 'scope_json' => $scope,
                 'initial_snapshot_json' => $snapshot,
+                'commission_content_snapshot_json' => $snapshot,
                 'current_draft_json' => $this->snapshotService->draftFromSnapshot($snapshot),
                 'draft_version' => 0,
                 'lock_version' => 0,
@@ -113,9 +114,7 @@ class ProductCompletionTaskService
                 'currency' => $lockedRule->currency,
                 'revision_limit' => $revisionLimit,
                 'revision_count' => 0,
-                'commission_rate_percentage' => $taskType === ProductCompletionTaskType::CORRECTION
-                    ? (string) config('product_completion.commission.default_correction_task_percentage', '30.00')
-                    : '100.00',
+                'commission_rate_percentage' => '100.00',
                 'due_at' => $dueAt,
             ]);
 
@@ -143,9 +142,20 @@ class ProductCompletionTaskService
     {
         Gate::forUser($actor)->authorize('publishTask', $task);
 
-        return $this->transition($actor, $task, ProductCompletionTaskStatus::AVAILABLE, [
-            'published_at' => now(),
-        ], 'task_published', 'publishTask');
+        return DB::transaction(function () use ($actor, $task): ProductCompletionTask {
+            $locked = $this->lockTask($task);
+            Gate::forUser($actor)->authorize('publishTask', $locked);
+            if ($locked->status !== ProductCompletionTaskStatus::DRAFT
+                || $locked->published_at !== null || $locked->assigned_to !== null) {
+                throw ValidationException::withMessages([
+                    'task' => 'فقط پیش‌نویس منتشرنشده و بدون پیمانکار قابل انتشار است.',
+                ]);
+            }
+
+            return $this->transition($actor, $locked, ProductCompletionTaskStatus::AVAILABLE, [
+                'published_at' => now(),
+            ], 'task_published', 'publishTask');
+        }, 3);
     }
 
     public function assign(

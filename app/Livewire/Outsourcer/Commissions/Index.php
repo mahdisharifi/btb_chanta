@@ -24,6 +24,7 @@ class Index extends Component
     {
         return view('livewire.outsourcer.commissions.index', [
             'commissions' => ProductCompletionCommission::query()
+                ->whereHas('task')
                 ->where('user_id', auth()->id())
                 ->with(['task:id,public_id,product_id', 'task.product:id,title'])
                 ->latest('id')

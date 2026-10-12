@@ -34,7 +34,6 @@ class ProductCompletionDraftValidator
             $this->messages()
         )->validate();
 
-        $this->validateSpecificationKeys($validated['specifications'] ?? []);
 
         return ProductCompletionDraftData::fromValidated(
             $this->canonicalize($task, $validated, $forSubmission)
@@ -72,21 +71,8 @@ class ProductCompletionDraftValidator
                 'max:'.(int) $validation['full_description_max'],
                 $this->withoutControlCharacters(),
             ],
-            'specifications' => [
-                Rule::requiredIf($forSubmission && $this->scopeAllows($task, 'specifications')),
-                'nullable',
-                'array',
-                'max:'.(int) $validation['specifications_max_items'],
-            ],
-            'specifications.*' => [
-                'nullable',
-                'string',
-                'max:'.(int) $validation['specification_value_max'],
-                $this->withoutControlCharacters(),
-            ],
             'attributes' => [
-                Rule::requiredIf($forSubmission && $this->scopeAllows($task, 'attributes')),
-                'sometimes',
+                Rule::when($forSubmission && $this->scopeAllows($task, 'attributes'), ['present']),
                 'array',
                 'max:'.(int) $validation['attributes_max'],
             ],
@@ -144,10 +130,6 @@ class ProductCompletionDraftValidator
             );
         }
 
-        if (isset($validated['specifications']) && is_array($validated['specifications'])) {
-            $canonical['specifications'] = $this->sanitizer->specifications($validated['specifications']);
-        }
-
         if (array_key_exists('attributes', $validated)) {
             $canonical['attributes'] = $this->attributeValidator->validate(
                 $task,
@@ -161,28 +143,6 @@ class ProductCompletionDraftValidator
         }
 
         return $canonical;
-    }
-
-    private function validateSpecificationKeys(array $specifications): void
-    {
-        $maxLength = (int) config('product_completion.validation.specification_key_max', 100);
-        $errors = [];
-
-        foreach (array_keys($specifications) as $key) {
-            if (! is_string($key) || trim($key) === '' || mb_strlen($key) > $maxLength) {
-                $errors['specifications'] = 'نام مشخصه فنی خالی یا طولانی‌تر از حد مجاز است.';
-                break;
-            }
-
-            if (preg_match('/[\x00-\x1F\x7F]/u', $key) === 1) {
-                $errors['specifications'] = 'نام مشخصه فنی شامل کاراکتر غیرمجاز است.';
-                break;
-            }
-        }
-
-        if ($errors !== []) {
-            throw ValidationException::withMessages($errors);
-        }
     }
 
     private function validTitleCharacters(): Closure
@@ -223,8 +183,6 @@ class ProductCompletionDraftValidator
             'short_description.max' => 'توضیحات کوتاه نباید بیشتر از :max کاراکتر باشد.',
             'full_description.required' => 'توضیحات کامل الزامی است.',
             'full_description.max' => 'توضیحات کامل نباید بیشتر از :max کاراکتر باشد.',
-            'specifications.required' => 'مشخصات فنی الزامی است.',
-            'specifications.array' => 'ساختار مشخصات فنی نامعتبر است.',
             'attributes.required' => 'ویژگی‌های محصول الزامی است.',
             'attributes.array' => 'ساختار ویژگی‌های محصول نامعتبر است.',
             'attributes.*.attribute_id.required' => 'شناسه ویژگی الزامی است.',

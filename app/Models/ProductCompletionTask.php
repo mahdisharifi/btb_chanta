@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\ProductCompletionPayloadCast;
+
 use App\Enums\ProductCompletionReviewMode;
 use App\Enums\ProductCompletionTaskStatus;
 use App\Enums\ProductCompletionTaskType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -41,6 +44,7 @@ class ProductCompletionTask extends Model
         'scope_schema_version',
         'scope_json',
         'initial_snapshot_json',
+        'commission_content_snapshot_json',
         'current_draft_json',
         'draft_version',
         'lock_version',
@@ -83,9 +87,10 @@ class ProductCompletionTask extends Model
             'status' => ProductCompletionTaskStatus::class,
             'review_mode' => ProductCompletionReviewMode::class,
             'scope_schema_version' => 'integer',
-            'scope_json' => 'array',
-            'initial_snapshot_json' => 'array',
-            'current_draft_json' => 'array',
+            'scope_json' => ProductCompletionPayloadCast::class,
+            'initial_snapshot_json' => ProductCompletionPayloadCast::class,
+            'commission_content_snapshot_json' => ProductCompletionPayloadCast::class,
+            'current_draft_json' => ProductCompletionPayloadCast::class,
             'draft_version' => 'integer',
             'lock_version' => 'integer',
             'product_version_at_assignment' => 'integer',
@@ -111,12 +116,13 @@ class ProductCompletionTask extends Model
             'applied_product_version' => 'integer',
             'content_applied_at' => 'datetime',
             'media_published_at' => 'datetime',
-            'conflict_json' => 'array',
+            'conflict_json' => ProductCompletionPayloadCast::class,
         ];
     }
 
     protected static function booted(): void
     {
+        static::addGlobalScope('withoutExcludedFields', static fn (Builder $query) => $query->where($query->getModel()->qualifyColumn('task_type'), '!=', ProductCompletionTaskType::SEO->value));
         static::creating(function (self $task): void {
             $task->public_id ??= (string) Str::ulid();
         });
@@ -126,6 +132,9 @@ class ProductCompletionTask extends Model
                 if ($task->isDirty($field)) {
                     throw new LogicException("Product completion commission field [{$field}] is immutable after task creation.");
                 }
+            }
+            if ($task->getRawOriginal('commission_content_snapshot_json') !== null && $task->isDirty('commission_content_snapshot_json')) {
+                throw new LogicException('The original content snapshot used for commission pricing is immutable.');
             }
         });
     }

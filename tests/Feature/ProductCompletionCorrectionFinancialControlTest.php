@@ -32,7 +32,7 @@ class ProductCompletionCorrectionFinancialControlTest extends TestCase
     }
 
     #[Test]
-    public function correction_task_uses_thirty_percent_and_can_be_promoted_to_full_rate(): void
+    public function correction_of_existing_content_uses_thirty_percent_and_a_recorded_exception_can_use_full_rate(): void
     {
         $task = ProductCompletionTask::factory()->create([
             'active_product_id' => null,
@@ -62,7 +62,8 @@ class ProductCompletionCorrectionFinancialControlTest extends TestCase
 
         $this->assertSame('3000.00', $calculator->calculate($task, $submission)['base_amount']);
 
-        $task->forceFill(['commission_rate_percentage' => '100.00']);
+        $task->forceFill(['commission_rate_percentage' => '100.00', 'full_rate_approved_by' => 1,
+            'full_rate_approved_at' => now(), 'full_rate_approval_reason' => 'Approved full-rate exception.']);
 
         $this->assertSame('10000.00', $calculator->calculate($task, $submission)['base_amount']);
     }
