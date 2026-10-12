@@ -327,26 +327,42 @@ class Create extends Component
     public function refreshAttributes()
     {
         $this->loadCategoryAttributes();
+        $this->dispatch('attribute-values-refreshed', attributes: collect($this->categoryAttributes)->map(fn ($attribute) => [
+            'id' => $attribute->id,
+            'values' => $attribute->values->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])->values()->all(),
+        ])->values()->all());
         $this->dispatch('notify', ['message' => 'ویژگی‌ها بروزرسانی شدند', 'type' => 'success']);
     }
 
-    public function saveNewAttributeValue($attributeId)
+    public function saveNewAttributeValue($attributeId, ?string $submittedValue = null)
     {
+        if ($submittedValue !== null) {
+            $this->newAttributeValues[$attributeId] = $submittedValue;
+        }
         $this->resetValidation('newAttributeValues.'.$attributeId);
         $value = trim($this->newAttributeValues[$attributeId] ?? '');
+
+        if (!collect($this->categoryAttributes)->contains('id', (int) $attributeId)) {
+            return ['status' => 'error', 'message' => 'این ویژگی متعلق به دسته‌بندی محصول نیست.'];
+        }
 
         if (empty($value)) {
             $this->dispatch('notify', [
                 'message' => 'لطفاً مقداری وارد کنید',
                 'type' => 'error'
             ]);
-            return;
+            return ['status' => 'error', 'message' => 'مقدار جدید را وارد کنید.'];
         }
 
         if (AttributeValueIdentity::exists((int) $attributeId, $value)) {
             $this->addError('newAttributeValues.'.$attributeId, 'این مقدار از قبل وجود دارد؛ آن را از فهرست مقادیر انتخاب کنید.');
+            $this->dispatch('attribute-value-duplicate', attributeId: (int) $attributeId, value: $value);
 
-            return;
+            return [
+                'status' => 'duplicate',
+                'message' => 'این مقدار از قبل وجود دارد؛ آن را از فهرست مقادیر انتخاب کنید.',
+                'values' => AttributeValue::where('attribute_id', $attributeId)->get(['id', 'value'])->toArray(),
+            ];
         }
 
         $newValue = AttributeValue::create([
@@ -381,6 +397,7 @@ class Create extends Component
             'message' => $message,
             'type' => 'success'
         ]);
+        return ['status' => 'added', 'option' => ['id' => $newValueId, 'value' => $value]];
     }
     
     /**
@@ -527,11 +544,24 @@ class Create extends Component
 // 2. متد کمکی جدید — حذف فایل اصلی + تمام variantها
     private function deleteGalleryWithVariants(ProductGallery $gallery): void
     {
-        app(ProductImageService::class)->deleteProcessed([
+        $metadata = [
             'file_path' => $gallery->file_path,
             'versions' => $gallery->versions ?? [],
-        ]);
+        ];
         $gallery->delete();
+        $this->deleteUnreferencedImageFiles($gallery->product, $metadata);
+    }
+
+    private function deleteUnreferencedImageFiles(Product $product, array $metadata): void
+    {
+        $referencedPaths = $product->galleries()->get()->flatMap(fn ($gallery) => [
+            $gallery->file_path,
+            ...collect($gallery->versions ?? [])->map(fn ($version) => is_array($version) ? ($version['path'] ?? null) : $version)->all(),
+        ])->filter()->all();
+        $paths = collect([$metadata['file_path'] ?? null, ...collect($metadata['versions'] ?? [])
+            ->map(fn ($version) => is_array($version) ? ($version['path'] ?? null) : $version)->all()])
+            ->filter()->unique()->diff($referencedPaths)->values()->all();
+        Storage::disk('public')->delete($paths);
     }
 
     public function setPrimaryGallery(int $galleryId): void
@@ -750,13 +780,12 @@ class Create extends Component
         // تصویر اصلی جدید → جایگزین تصویر اصلی قبلی
 // 4. جایگزینی بلوک primary_image (خطوط 549-572)
         if ($this->primary_image) {
-            $product->galleries()->where('is_primary', true)->get()
-                ->each(fn($g) => $this->deleteGalleryWithVariants($g));
-
+            $oldPrimary = $product->galleries()->where('file_type', 'image')->where('is_primary', true)->first();
             $meta = app(ProductImageService::class)
-                ->process($this->primary_image->getRealPath(), $product->slug, 1, withPdf: true);
+                ->process($this->primary_image->getRealPath(), $product->slug, 1, withPdf: true, baseName: 'product-'.$product->id.'-'.Str::uuid());
 
-            $product->galleries()->create([
+            $oldMetadata = $oldPrimary ? ['file_path' => $oldPrimary->file_path, 'versions' => $oldPrimary->versions ?? []] : [];
+            $primaryMetadata = [
                 'base_name' => $meta['base_name'],
                 'file_name' => $meta['file_name'],
                 'file_path' => $meta['file_path'],
@@ -784,7 +813,24 @@ class Create extends Component
 
 
 
-            ]);
+            ];
+            try {
+                if ($oldPrimary) {
+                    unset($primaryMetadata['created_at']);
+                    $oldPrimary->update($primaryMetadata);
+                    $primaryGallery = $oldPrimary;
+                } else {
+                    $primaryGallery = $product->galleries()->create($primaryMetadata);
+                }
+            } catch (\Throwable $exception) {
+                app(ProductImageService::class)->deleteProcessed($meta);
+                throw $exception;
+            }
+            $product->galleries()->where('file_type', 'image')->where('id', '!=', $primaryGallery->id)->update(['is_primary' => false]);
+            $this->primary_image = null;
+            if ($oldMetadata !== []) {
+                $this->deleteUnreferencedImageFiles($product, $oldMetadata);
+            }
         }
 
         // افزودن تصاویر گالری جدید
@@ -793,9 +839,9 @@ class Create extends Component
             $imageService = app(ProductImageService::class);
             $lastSortOrder = $product->galleries()->where('file_type', 'image')->max('sort_order') ?? 0;
 
-            foreach ($this->gallery_images as $galImage) {
+            foreach ($this->gallery_images as $uploadIndex => $galImage) {
                 $lastSortOrder++;
-                $meta = $imageService->process($galImage->getRealPath(), $product->slug, $lastSortOrder);
+                $meta = $imageService->process($galImage->getRealPath(), $product->slug, $lastSortOrder, baseName: 'product-'.$product->id.'-'.Str::uuid());
 
                 $product->galleries()->create([
                     'base_name' => $meta['base_name'],
@@ -818,7 +864,9 @@ class Create extends Component
                     'alt_text'   => $this->title . ' - تصویر ' . $lastSortOrder,
                     'sort_order' => $lastSortOrder,
                 ]);
+                unset($this->gallery_images[$uploadIndex]);
             }
+            $this->gallery_images = [];
         }
 
         // ویدئوی محصول → در هر محصول فقط یک ویدئو نگهداری می‌شود
@@ -855,6 +903,9 @@ class Create extends Component
             ]);
         }
 
+        $product->galleries()->where('file_type', 'image')->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id')
+            ->get()->each(fn ($gallery, $index) => $gallery->update(['sort_order' => $index + 1, 'is_primary' => $index === 0]));
+
         if ($this->isEdit) {
             $product->markContentUpdated();
         }
@@ -863,6 +914,10 @@ class Create extends Component
             'message' => $this->isEdit ? 'محصول با موفقیت بروزرسانی شد.' : 'محصول با موفقیت ایجاد شد.',
             'type' => 'success',
         ]);
+
+        $this->productId = $product->id;
+        $this->isEdit = true;
+        $this->fillFromProduct($product->fresh());
 
         return redirect()->route('admin.products.index');
     }

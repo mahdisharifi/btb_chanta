@@ -127,7 +127,7 @@ class OutsourcingWorkspaceTest extends TestCase
             $component->set('newAttributeValues.'.$attribute->id, $duplicate)
                 ->call('addProposedAttributeValue', $attribute->id, false)
                 ->assertHasErrors('newAttributeValues.'.$attribute->id)
-                ->assertSee('این مقدار از قبل وجود دارد');
+                ->assertDispatched('attribute-value-duplicate', attributeId: $attribute->id, value: trim($duplicate));
             $this->assertSame([$existing->id], $component->get('draft.attributes')[0]['value_ids']);
             $this->assertSame([], $component->get('draft.attributes')[0]['proposed_values']);
         }
@@ -154,16 +154,61 @@ class OutsourcingWorkspaceTest extends TestCase
                 ->call('saveNewAttributeValue', $attribute->id)
                 ->assertHasErrors('newAttributeValues.'.$attribute->id)
                 ->assertSet('newAttributeValues.'.$attribute->id, $duplicate)
+                ->assertDispatched('attribute-value-duplicate', attributeId: $attribute->id, value: trim($duplicate))
                 ->assertSee('این مقدار از قبل وجود دارد');
             $this->assertSame($selection, $component->get('selectedAttributeValues'));
             $this->assertSame(1, AttributeValue::where('attribute_id', $attribute->id)->count());
         }
-        $component->set('newAttributeValues.'.$attribute->id, 'کیف پارچه‌ای')
-            ->call('saveNewAttributeValue', $attribute->id)->assertHasNoErrors()
+        $component->call('saveNewAttributeValue', $attribute->id, 'کیف پارچه‌ای')->assertHasNoErrors()
             ->assertDispatched('attribute-value-added')
             ->assertSet('newAttributeValues.'.$attribute->id, '');
         $newValue = AttributeValue::where('attribute_id', $attribute->id)->where('value', 'کیف پارچه‌ای')->firstOrFail();
         $component->assertSet('selectedAttributeValues.'.$attribute->id, (string) $newValue->id);
+    }
+
+    public function test_workspace_selector_handles_proposal_errors_and_keeps_draft_selection(): void
+    {
+        [$task, $actor] = $this->task(['attributes' => true], ['attributes' => []]);
+        $attribute = Attribute::factory()->create(['is_multiple' => true]);
+        DB::table('attribute_category')->insert(['attribute_id' => $attribute->id, 'category_id' => $task->product->category_id, 'is_required' => false]);
+        $existing = AttributeValue::create(['attribute_id' => $attribute->id, 'value' => 'Existing value']);
+        $component = Livewire::actingAs($actor)->test(Workspace::class, ['task' => $task])
+            ->call('toggleAttribute', $attribute->id, $existing->id, true)
+            ->call('proposeAttributeValue', $attribute->id, true, 'existing value')
+            ->assertHasNoErrors()
+            ->assertSet('newAttributeValues.'.$attribute->id, 'existing value');
+        $this->assertSame([$existing->id], $component->get('draft.attributes')[0]['value_ids']);
+        $this->assertSame([], $component->get('draft.attributes')[0]['proposed_values']);
+        $component->call('proposeAttributeValue', $attribute->id, true, 'Fresh value')
+            ->assertHasNoErrors()->assertSet('newAttributeValues.'.$attribute->id, '')
+            ->call('proposeAttributeValue', $attribute->id, true, ' fresh VALUE ')
+            ->assertHasNoErrors();
+        $this->assertSame(['Fresh value'], $component->get('draft.attributes')[0]['proposed_values']);
+        $this->assertSame([$existing->id], $component->get('draft.attributes')[0]['value_ids']);
+        $this->assertSame(1, AttributeValue::where('attribute_id', $attribute->id)->count());
+        $component->call('removeProposedAttributeValue', $attribute->id, 'Fresh value')->call('saveDraft')->assertHasNoErrors();
+        $this->assertSame([], $task->refresh()->current_draft_json['attributes'][0]['proposed_values']);
+        $this->assertSame([$existing->id], $task->current_draft_json['attributes'][0]['value_ids']);
+    }
+
+    public function test_admin_attribute_search_handles_quotes_and_preserves_multiple_selection(): void
+    {
+        [$task] = $this->task(['attributes' => true], ['attributes' => []]);
+        $attribute = Attribute::factory()->create(['is_multiple' => true]);
+        DB::table('attribute_category')->insert(['attribute_id' => $attribute->id, 'category_id' => $task->product->category_id, 'is_required' => false]);
+        $first = AttributeValue::create(['attribute_id' => $attribute->id, 'value' => "Rock 'n' Roll"]);
+        $second = AttributeValue::create(['attribute_id' => $attribute->id, 'value' => 'کیف چرمی']);
+        $admin = User::factory()->create()->assignRole(UserRole::SUPER_ADMIN->value);
+        $component = Livewire::actingAs($admin)->test(\App\Livewire\Admin\Products\Create::class, ['product' => $task->product])
+            ->call('toggleAttributeValue', $attribute->id, $first->id)
+            ->call('toggleAttributeValue', $attribute->id, $second->id)
+            ->assertHasNoErrors();
+        $this->assertEqualsCanonicalizing([(string) $first->id, (string) $second->id], $component->get('selectedAttributeValues')[$attribute->id]);
+        $component->call('removeAttributeValue', $attribute->id, $first->id)->assertHasNoErrors();
+        $this->assertSame([(string) $second->id], $component->get('selectedAttributeValues')[$attribute->id]);
+        $component->set('newAttributeValues.'.$attribute->id, 'مقدار جدید')
+            ->call('saveNewAttributeValue', $attribute->id)->assertHasNoErrors();
+        $this->assertCount(2, $component->get('selectedAttributeValues')[$attribute->id]);
     }
 
     public function test_draft_can_be_incomplete_and_submission_displays_the_missing_field(): void

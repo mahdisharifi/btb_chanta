@@ -6,6 +6,7 @@ namespace App\Livewire\Outsourcer\Task;
 
 use App\Exceptions\ProductCompletionDraftVersionConflictException;
 use App\Models\Attribute;
+use App\Models\AttributeValue;
 use App\Models\ProductCompletionMedia;
 use App\Models\ProductCompletionTask;
 use App\Support\AttributeValueIdentity;
@@ -186,6 +187,23 @@ class Workspace extends Component
         $this->draft['attributes'] = $attributes->values()->all();
     }
 
+    public function proposeAttributeValue(int $attributeId, bool $multiple, string $value): array
+    {
+        $this->newAttributeValues[$attributeId] = $value;
+
+        try {
+            $this->addProposedAttributeValue($attributeId, $multiple);
+        } catch (ValidationException $exception) {
+            return [
+                'status' => 'error',
+                'message' => collect($exception->errors())->flatten()->first(),
+                'values' => AttributeValue::where('attribute_id', $attributeId)->get(['id', 'value'])->toArray(),
+            ];
+        }
+
+        return ['status' => 'added'];
+    }
+
     public function addProposedAttributeValue(int $attributeId, bool $multiple): void
     {
         $this->resetValidation("newAttributeValues.{$attributeId}");
@@ -199,6 +217,7 @@ class Workspace extends Component
         }
 
         if (AttributeValueIdentity::exists($attributeId, $value)) {
+            $this->dispatch('attribute-value-duplicate', attributeId: $attributeId, value: $value);
             throw ValidationException::withMessages([
                 "newAttributeValues.{$attributeId}" => 'این مقدار از قبل وجود دارد؛ آن را از فهرست مقادیر انتخاب کنید.',
             ]);
@@ -212,6 +231,7 @@ class Workspace extends Component
         ]);
         foreach ($selection['proposed_values'] ?? [] as $proposedValue) {
             if (AttributeValueIdentity::normalize($proposedValue) === AttributeValueIdentity::normalize($value)) {
+                $this->dispatch('attribute-value-duplicate', attributeId: $attributeId, value: $value);
                 throw ValidationException::withMessages([
                     "newAttributeValues.{$attributeId}" => 'این مقدار قبلاً پیشنهاد شده است.',
                 ]);

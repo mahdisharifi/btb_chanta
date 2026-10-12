@@ -106,63 +106,13 @@
 
             <section x-cloak x-show="tab === 'attributes'" class="space-y-4 rounded-xl border bg-white p-5">
                 @forelse($attributes as $attribute)
-                    @php
-                        $selection = collect($draft['attributes'] ?? [])->firstWhere('attribute_id', $attribute->id) ?? [];
-                        $selectedValueIds = array_map('intval', $selection['value_ids'] ?? []);
-                        $proposedValues = $selection['proposed_values'] ?? [];
-                    @endphp
-                    <div wire:key="task-attribute-{{ $attribute->id }}" x-data="{ search: '', normalize(text) { return text.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\u200C/g, ' ').trim(); } }" class="overflow-hidden rounded-lg border border-gray-200">
-                        <div class="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 py-3">
-                            <h4 class="font-semibold text-gray-800">{{ $attribute->name }}@if($attribute->is_required)<span class="mr-1 text-xs text-red-600">(اجباری)</span>@endif</h4>
-                            <div class="flex gap-2 text-xs"><span class="rounded bg-blue-100 px-2 py-1 text-blue-800">{{ $attribute->is_multiple ? 'چند انتخابی' : 'تک انتخابی' }}</span><span class="rounded bg-[#d4af37]/10 px-2 py-1 text-amber-800">{{ count($selectedValueIds) + count($proposedValues) }} انتخاب شده</span></div>
-                        </div>
-                        <div class="p-4">
-                            @if($selectedValueIds !== [] || $proposedValues !== [])
-                                <div class="mb-4 border-b border-gray-200 pb-4">
-                                    <p class="mb-2 text-xs font-medium text-gray-500">انتخاب‌های شما:</p>
-                                    <div class="flex flex-wrap gap-2">
-                                        @foreach($attribute->values as $value)
-                                            @if(in_array($value->id, $selectedValueIds, true))
-                                                <span class="inline-flex items-center gap-2 rounded-lg bg-[#d4af37] px-3 py-1.5 text-sm font-medium text-white shadow-sm">{{ $value->value }}<button type="button" wire:click="removeAttributeValue({{ $attribute->id }}, {{ $value->id }})" aria-label="حذف انتخاب {{ $value->value }}" class="rounded-full px-1 hover:bg-white/20">×</button></span>
-                                            @endif
-                                        @endforeach
-                                        @foreach($proposedValues as $proposedValue)
-                                            <span class="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-900">{{ $proposedValue }} <span class="text-xs">در انتظار تأیید</span><button type="button" wire:click="removeProposedAttributeValue({{ $attribute->id }}, @js($proposedValue))" aria-label="حذف مقدار پیشنهادی">×</button></span>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            @endif
-                            <label for="attribute-search-{{ $attribute->id }}" class="mb-1 block text-xs text-gray-600">جستجو یا پیشنهاد مقدار جدید برای {{ $attribute->name }}</label>
-                            <div class="mb-3 flex gap-2" x-on:attribute-value-proposed.window="if ($event.detail.attributeId === {{ $attribute->id }}) search = ''">
-                                <div class="relative min-w-0 flex-1">
-                                    <x-heroicon-o-magnifying-glass class="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-gray-400"/>
-                                    <input id="attribute-search-{{ $attribute->id }}" type="text" x-model="search" wire:model="newAttributeValues.{{ $attribute->id }}" @keydown.enter.prevent maxlength="255" placeholder="جستجو یا مقدار جدید..." class="w-full rounded-lg border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-[#d4af37] focus:ring-[#d4af37]">
-                                </div>
-                                <button type="button" x-cloak x-show="search.trim().length > 0" wire:click="addProposedAttributeValue({{ $attribute->id }}, {{ $attribute->is_multiple ? 'true' : 'false' }})" wire:loading.attr="disabled" class="flex items-center gap-1 whitespace-nowrap rounded-lg bg-[#d4af37] px-4 py-2 text-sm font-medium text-black hover:bg-[#c49d2f]"><x-heroicon-o-plus class="h-4 w-4"/>افزودن</button>
-                            </div>
-                            <div class="max-h-40 space-y-2 overflow-y-auto" x-ref="options">
-                                @foreach($attribute->values as $value)
-                                    @if(!in_array($value->id, $selectedValueIds, true))
-                                        <label data-value="{{ $value->value }}" x-show="!search || normalize($el.dataset.value).includes(normalize(search))" class="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-gray-50">
-                                            <input type="{{ $attribute->is_multiple ? 'checkbox' : 'radio' }}" name="task-attribute-{{ $attribute->id }}" wire:click="toggleAttribute({{ $attribute->id }}, {{ $value->id }}, {{ $attribute->is_multiple ? 'true' : 'false' }})" class="border-gray-300 text-[#d4af37] focus:ring-[#d4af37]">
-                                            <span class="text-sm text-gray-700">{{ $value->value }}</span>
-                                        </label>
-                                    @endif
-                                @endforeach
-                            </div>
-                            <p x-cloak x-show="search && !Array.from($refs.options.querySelectorAll('[data-value]')).some(el => normalize(el.dataset.value).includes(normalize(search)))" class="mt-2 text-sm text-gray-500">مقداری پیدا نشد؛ می‌توانید مقدار جدید پیشنهاد دهید.</p>
-
-                        <div class="mt-3">
-                            @error('newAttributeValues.'.$attribute->id)
-                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
-                            @enderror
-                            @error('attributes.*.proposed_values')
-                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
-                            @enderror
-
-                        </div>
-                        </div>
-                    </div>
+                    @include('components.attribute-value-selector', ['attribute' => $attribute, 'workspace' => true])
+                    @error('newAttributeValues.'.$attribute->id)
+                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                    @enderror
+                    @error('attributes.*.proposed_values')
+                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                    @enderror
                 @empty
                     <p class="text-slate-500">این تسک ویژگی قابل تکمیلی ندارد.</p>
                 @endforelse
@@ -170,8 +120,10 @@
 
             <section x-cloak x-show="tab === 'gallery'" class="space-y-4 rounded-xl border bg-white p-5">
                 @if(data_get($task->scope_json, 'gallery'))
+                    @include('livewire.outsourcer.task.partials.image-upload-guide')
                     <div>
-                        <input type="file" wire:model="upload" accept="image/jpeg,image/png,image/webp" class="block w-full text-sm">
+                        <label for="workspace-image-upload" class="mb-2 block text-sm font-medium">انتخاب تصویر محصول</label>
+                        <input id="workspace-image-upload" type="file" wire:model="upload" accept="{{ implode(',', config('product_completion.media.allowed_mime_types', ['image/jpeg', 'image/png', 'image/webp'])) }}" aria-describedby="image-upload-guide" class="block w-full text-sm">
                         <button type="button" wire:click="uploadMedia" @cannot('manageMedia', $task) disabled @endcannot wire:loading.attr="disabled" class="mt-2 rounded-lg bg-slate-800 px-4 py-2 text-white">بارگذاری تصویر</button>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

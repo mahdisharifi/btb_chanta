@@ -42,7 +42,7 @@ class ProductImageService
         $filename = $baseName ?? "{$slug}-{$index}";
         $this->assertSafeBaseName($filename);
 
-        $baseDir = storage_path('app/public/products/gallery');
+        $baseDir = Storage::disk('public')->path('products/gallery');
         $manager = ImageManager::gd();
         $this->ensureDir($baseDir);
 
@@ -108,7 +108,7 @@ class ProductImageService
     private function buildVersions(string $filename, bool $withPdf): array
     {
         $versions = [];
-        $baseDir = storage_path('app/public/products/gallery');
+        $baseDir = Storage::disk('public')->path('products/gallery');
 
         foreach (self::THUMBNAIL_SIZES as $directory => $requestedWidth) {
             $path = "products/gallery/{$directory}/{$filename}.webp";
