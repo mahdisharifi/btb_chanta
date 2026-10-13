@@ -13,7 +13,7 @@ return new class extends Migration
         Schema::create('commission_rules', function (Blueprint $table): void {
             $table->id();
             $table->ulid('public_id')->unique();
-            $table->string('name');
+            $table->string('name', 191);
             $table->unsignedInteger('version')->default(1);
             $table->string('task_type', 50);
             $table->string('calculation_type', 50)->default('per_task');

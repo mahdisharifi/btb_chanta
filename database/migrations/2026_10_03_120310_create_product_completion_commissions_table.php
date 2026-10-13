@@ -31,7 +31,7 @@ return new class extends Migration
             $table->timestamp('payable_at')->nullable();
             $table->foreignId('paid_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('paid_at')->nullable();
-            $table->string('transaction_id')->nullable()->unique();
+            $table->string('transaction_id', 191)->nullable()->unique();
             $table->char('payment_idempotency_key', 64)->nullable()->unique();
             $table->text('dispute_reason')->nullable();
             $table->timestamps();
