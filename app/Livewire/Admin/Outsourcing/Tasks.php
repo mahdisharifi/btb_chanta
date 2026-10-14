@@ -160,11 +160,12 @@ class Tasks extends Component
             taskType: $taskType,
             scope: $scope,
             dueAt: now()->addDays((int) $validated['dueDays']),
+            publishImmediately: true,
         );
 
         $this->reset(['productId', 'commissionRuleId', 'correctionScope']);
         $this->dispatch('outsourcing-product-cleared');
-        $this->dispatch('notify', message: 'تسک با موفقیت ایجاد شد.', type: 'success');
+        $this->dispatch('notify', message: 'تسک ایجاد شد و برای پیمانکاران در فهرست تسک‌های آزاد منتشر شد.', type: 'success');
     }
 
     /**

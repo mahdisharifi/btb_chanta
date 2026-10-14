@@ -38,8 +38,12 @@ class ProductCompletionTaskService
         ?CarbonInterface $dueAt = null,
         ?ProductCompletionReviewMode $reviewMode = null,
         ?int $revisionLimit = null,
+        bool $publishImmediately = false,
     ): ProductCompletionTask {
         Gate::forUser($actor)->authorize('create', ProductCompletionTask::class);
+        if ($publishImmediately) {
+            Gate::forUser($actor)->authorize('outsourcing.publish_task');
+        }
 
         $scope = $this->scopeValidator->resolve($taskType, $scope);
         $reviewMode ??= ProductCompletionReviewMode::from(
@@ -69,6 +73,7 @@ class ProductCompletionTaskService
             $reviewMode,
             $revisionLimit,
             $dueAt,
+            $publishImmediately,
         ): ProductCompletionTask {
             $lockedProduct = Product::query()->lockForUpdate()->findOrFail($product->getKey());
             $lockedRule = CommissionRule::query()->lockForUpdate()->findOrFail($commissionRule->getKey());
@@ -134,7 +139,7 @@ class ProductCompletionTaskService
 
             DB::afterCommit(static fn () => \App\Events\TaskCreated::dispatch($task));
 
-            return $task;
+            return $publishImmediately ? $this->publish($actor, $task) : $task;
         }, 3);
     }
 
