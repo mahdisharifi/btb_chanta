@@ -28,6 +28,7 @@
                 <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('reviewer.outsourcing.commissions.index') }}">پورسانت‌های بررسی‌شده</a>
             @endcan
             @can('outsourcing.view_own_commissions')
+                <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('outsourcer.settlements.index') }}">صورتحساب‌ها و تسویه‌ها</a>
                 <a class="rounded-lg px-3 py-2 hover:bg-slate-100" href="{{ route('outsourcer.commissions.index') }}">پورسانت من</a>
             @endcan
             <form method="POST" action="{{ route('logout') }}">@csrf<button class="rounded-lg px-3 py-2 text-red-600 hover:bg-red-50">خروج</button></form>

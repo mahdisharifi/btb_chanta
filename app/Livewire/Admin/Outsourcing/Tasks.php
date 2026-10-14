@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Renderless;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -49,6 +50,60 @@ class Tasks extends Component
     public function updatedSearch(): void
     {
         $this->resetPage();
+    }
+
+    public function updatedStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    #[Renderless]
+    public function searchProducts(string $term): array
+    {
+        Gate::authorize('outsourcing.view_all_tasks');
+        Gate::authorize('create', ProductCompletionTask::class);
+        $term = mb_substr(preg_replace('/\s+/u', ' ', trim($term)), 0, 100);
+        $term = strtr($term, array_combine(
+            preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
+            str_split('01234567890123456789'),
+        ));
+        if (mb_strlen($term) < 2 && ! ctype_digit($term)) {
+            return [];
+        }
+        $escape = static fn (string $value): string => strtr($value, ['!' => '!!', '%' => '!%', '_' => '!_']);
+        $query = Product::query()->select(['id', 'title', 'sku'])
+            ->withExists(['completionTasks as has_active_task' => fn ($task) => $task->whereNotNull('active_product_id')]);
+        $present = static fn (Product $product): array => [
+            'id' => $product->id, 'title' => $product->title, 'sku' => $product->sku,
+            'has_active_task' => (bool) $product->has_active_task,
+        ];
+        if (ctype_digit($term) && strlen($term) <= 18) {
+            $exact = (clone $query)->find((int) $term);
+            if ($exact !== null) {
+                return [$present($exact)];
+            }
+        }
+        $query->where(function ($query) use ($term, $escape): void {
+            if (ctype_digit($term) && strlen($term) <= 18) {
+                $query->where('id', (int) $term)->orWhere(function ($query) use ($term, $escape): void {
+                    $query->whereRaw("sku LIKE ? ESCAPE '!'", ['%'.$escape($term).'%'])
+                        ->orWhereRaw("title LIKE ? ESCAPE '!'", ['%'.$escape($term).'%']);
+                });
+                return;
+            }
+            foreach (array_slice(explode(' ', $term), 0, 6) as $word) {
+                $variants = array_unique([$word, strtr($word, ['ي' => 'ی', 'ك' => 'ک']), strtr($word, ['ی' => 'ي', 'ک' => 'ك'])]);
+                $query->where(function ($query) use ($variants, $escape): void {
+                    foreach ($variants as $variant) {
+                        $query->orWhereRaw("title LIKE ? ESCAPE '!'", ['%'.$escape($variant).'%'])
+                            ->orWhereRaw("sku LIKE ? ESCAPE '!'", ['%'.$escape($variant).'%']);
+                    }
+                });
+            }
+        });
+
+        return $query->orderByRaw('CASE WHEN id = ? THEN 0 WHEN sku = ? THEN 1 WHEN title = ? THEN 2 ELSE 3 END', [ctype_digit($term) && strlen($term) <= 18 ? (int) $term : 0, $term, $term])
+            ->orderByDesc('id')->limit(15)->get()->map($present)->all();
     }
 
     public function updatedTaskType(): void
@@ -108,6 +163,7 @@ class Tasks extends Component
         );
 
         $this->reset(['productId', 'commissionRuleId', 'correctionScope']);
+        $this->dispatch('outsourcing-product-cleared');
         $this->dispatch('notify', message: 'تسک با موفقیت ایجاد شد.', type: 'success');
     }
 
@@ -142,6 +198,7 @@ class Tasks extends Component
 
     public function render()
     {
+        $search = mb_substr(trim($this->search), 0, 100);
         $tasks = ProductCompletionTask::query()
             ->select([
                 'id', 'public_id', 'product_id', 'assigned_to', 'task_type', 'status',
@@ -152,8 +209,23 @@ class Tasks extends Component
                 'assignee:id,name',
             ])
             ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
-            ->when($this->search !== '', function ($query): void {
-                $query->whereHas('product', fn ($product) => $product->where('title', 'like', '%'.$this->search.'%'));
+            ->when($search !== '', function ($query) use ($search): void {
+                $term = strtr($search, array_combine(
+                    preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
+                    str_split('01234567890123456789'),
+                ));
+                $query->where(function ($query) use ($term): void {
+                    if (ctype_digit($term) && strlen($term) <= 18) {
+                        $query->where('product_id', (int) $term)->orWhereHas('product', fn ($product) => $product->where('sku', $term));
+                        return;
+                    }
+                    $query->whereHas('product', function ($product) use ($term): void {
+                        foreach (array_slice(preg_split('/\s+/u', $term), 0, 6) as $word) {
+                            $pattern = '%'.strtr($word, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
+                            $product->where(fn ($part) => $part->whereRaw("title LIKE ? ESCAPE '!'", [$pattern])->orWhereRaw("sku LIKE ? ESCAPE '!'", [$pattern]));
+                        }
+                    });
+                });
             })
             ->latest('id')
             ->paginate(20);
@@ -161,7 +233,6 @@ class Tasks extends Component
         return view('livewire.admin.outsourcing.tasks', [
             'tasks' => $tasks,
             'statuses' => ProductCompletionTaskStatus::options(),
-            'products' => Product::query()->select(['id', 'title'])->latest('id')->limit(100)->get(),
             'commissionRules' => CommissionRule::query()
                 ->where('is_active', true)
                 ->select(['id', 'name', 'version', 'task_type'])

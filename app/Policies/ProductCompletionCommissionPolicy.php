@@ -34,7 +34,7 @@ class ProductCompletionCommissionPolicy
 
     public function approveCommission(User $user, ProductCompletionCommission $commission): bool
     {
-        return $user->can('outsourcing.approve_commission')
+        return $commission->settlement_id === null && $user->can('outsourcing.approve_commission')
             && in_array($commission->status, [
                 ProductCompletionCommissionStatus::CALCULATED,
                 ProductCompletionCommissionStatus::UNDER_REVIEW,
@@ -43,7 +43,7 @@ class ProductCompletionCommissionPolicy
 
     public function adjustCommission(User $user, ProductCompletionCommission $commission): bool
     {
-        return $user->can('outsourcing.adjust_commission')
+        return $commission->settlement_id === null && $user->can('outsourcing.adjust_commission')
             && in_array($commission->status, [
                 ProductCompletionCommissionStatus::CALCULATED,
                 ProductCompletionCommissionStatus::UNDER_REVIEW,
@@ -55,22 +55,14 @@ class ProductCompletionCommissionPolicy
 
     public function markPayable(User $user, ProductCompletionCommission $commission): bool
     {
-        return $user->can('outsourcing.approve_commission')
+        return $commission->settlement_id === null && $user->can('outsourcing.approve_commission')
             && $commission->status === ProductCompletionCommissionStatus::APPROVED;
     }
 
     public function payCommission(User $user, ProductCompletionCommission $commission): bool
     {
-        if (! $user->can('outsourcing.pay_commission')) {
-            return false;
-        }
-
-        if ($commission->status !== ProductCompletionCommissionStatus::PAYABLE) {
-            return false;
-        }
-
-        return ! config('product_completion.commission.require_distinct_approver_and_payer', true)
-            || $commission->approved_by !== $user->getKey();
+        // New payments are recorded on aggregate settlement statements.
+        return false;
     }
 
     private function wasFinallyReviewedBy(User $user, ProductCompletionCommission $commission): bool

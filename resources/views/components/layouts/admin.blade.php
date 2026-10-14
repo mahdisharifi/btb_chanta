@@ -102,6 +102,7 @@
                     <x-admin-sidebar-link href="{{ route('admin.outsourcing.commission-rules') }}">قوانین پورسانت</x-admin-sidebar-link>
                 @endcan
                 @can('outsourcing.view_all_commissions')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.settlements') }}">تسویه حساب پیمانکاران</x-admin-sidebar-link>
                     <x-admin-sidebar-link href="{{ route('admin.outsourcing.commissions') }}">مدیریت پورسانت‌ها</x-admin-sidebar-link>
                 @endcan
             </div>

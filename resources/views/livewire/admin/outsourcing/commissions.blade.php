@@ -1,4 +1,5 @@
 <div>
+    <a href="{{ route('admin.outsourcing.settlements') }}" class="mb-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-white">تسویه تجمیعی حساب پیمانکاران</a>
     <h1 class="mb-5 text-2xl font-bold">مدیریت پورسانت‌ها</h1>
 
     <x-product-completion-guide title="راهنمای مالی">
@@ -97,11 +98,11 @@
                 <div class="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
                     @can('approveCommission', $commission)<button wire:click="approve('{{ $commission->public_id }}')" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white">تأیید مالی</button>@endcan
                     @can('markPayable', $commission)<button wire:click="markPayable('{{ $commission->public_id }}')" wire:loading.attr="disabled" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white">قابل پرداخت</button>@endcan
-                    @can('payCommission', $commission)
-                        <label for="transaction-{{ $commission->public_id }}" class="sr-only">شماره پیگیری پرداخت</label>
-                        <input id="transaction-{{ $commission->public_id }}" wire:model="transactionIds.{{ $commission->public_id }}" maxlength="255" class="w-48 rounded-lg border-slate-300" placeholder="شماره پیگیری">
-                        <button wire:click="pay('{{ $commission->public_id }}')" wire:loading.attr="disabled" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white">ثبت پرداخت</button>
-                    @endcan
+                    @if($commission->settlement_id)
+                        <span class="text-sm text-indigo-700">این کارکرد در صورتحساب تجمیعی ثبت شده است.</span>
+                    @elseif($commission->status === \App\Enums\ProductCompletionCommissionStatus::PAYABLE)
+                        <a href="{{ route('admin.outsourcing.settlements') }}" class="rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white">افزودن به تسویه تجمیعی</a>
+                    @endif
                 </div>
             </article>
         @empty

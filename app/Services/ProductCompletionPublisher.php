@@ -23,8 +23,12 @@ class ProductCompletionPublisher
         Product $product,
         array $payload,
         ?User $actor = null,
+        ?array $approvedFields = null,
     ): Product {
         $content = $this->validator->validate($task, $payload, $actor, true)->toArray();
+        if ($approvedFields !== null && $approvedFields !== []) {
+            $content = $this->filterForApproval($content, array_values(array_map('strval', $approvedFields)));
+        }
         $updates = [];
 
         foreach (['title', 'short_description', 'full_description'] as $field) {
@@ -50,6 +54,32 @@ class ProductCompletionPublisher
         }
 
         return $product->refresh();
+    }
+
+    public function filterForApproval(array $content, array $approvedFields): array
+    {
+        $approved = array_fill_keys($approvedFields, true);
+        foreach (['title', 'short_description', 'full_description'] as $field) {
+            if (! isset($approved[$field])) {
+                unset($content[$field]);
+            }
+        }
+
+        foreach (['attributes', 'gallery'] as $collection) {
+            if (! array_key_exists($collection, $content) || isset($approved[$collection])) {
+                continue;
+            }
+            $content[$collection] = collect($content[$collection])
+                ->values()
+                ->filter(fn ($item, $index): bool => isset($approved[$collection.'.'.$index]))
+                ->values()
+                ->all();
+            if ($content[$collection] === []) {
+                unset($content[$collection]);
+            }
+        }
+
+        return $content;
     }
 
     private function syncAttributes(Product $product, array $attributes): void

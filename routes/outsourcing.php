@@ -15,6 +15,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('outsourcing.gallery.preview');
 
     Route::prefix('outsourcer')->name('outsourcer.')->group(function (): void {
+        Route::get('/settlements', App\Livewire\Outsourcer\Commissions\Settlements::class)
+            ->middleware('permission:outsourcing.view_own_commissions')
+            ->name('settlements.index');
         Route::get('/tasks', App\Livewire\Outsourcer\Task\Index::class)
             ->middleware('permission:outsourcing.view_tasks')
             ->name('tasks.index');
@@ -39,6 +42,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     });
 
     Route::prefix('admin/outsourcing')->name('admin.outsourcing.')->group(function (): void {
+        Route::get('/settlements', App\Livewire\Admin\Outsourcing\Settlements::class)
+            ->middleware('permission:outsourcing.view_all_commissions')
+            ->name('settlements');
         Route::get('/dashboard', App\Livewire\Admin\Outsourcing\Dashboard::class)
             ->middleware('permission:outsourcing.view_all_tasks')
             ->name('dashboard');

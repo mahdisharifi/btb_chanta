@@ -202,6 +202,11 @@ class ProductCompletionMediaService
 
         $submission = ProductCompletionSubmission::query()->findOrFail($task->last_submission_id);
 
+        $approvedFields = data_get($submission->approval_selection_json, 'approved_fields');
+        if (is_array($approvedFields) && $approvedFields !== [] && ! in_array('gallery', $approvedFields, true)) {
+            return;
+        }
+
         if ($submission->status !== ProductCompletionSubmissionStatus::APPROVED) {
             throw new ProductCompletionMediaException('Submission نهایی تأیید نشده است.');
         }
@@ -272,6 +277,11 @@ class ProductCompletionMediaService
             $submission = ProductCompletionSubmission::query()
                 ->lockForUpdate()
                 ->findOrFail($lockedTask->last_submission_id);
+            $approvedFields = data_get($submission->approval_selection_json, 'approved_fields');
+            if (is_array($approvedFields) && $approvedFields !== [] && ! in_array('gallery', $approvedFields, true)) {
+                $lockedTask->forceFill(['media_published_at' => now(), 'lock_version' => $lockedTask->lock_version + 1])->save();
+                return ['conflicts' => []];
+            }
             $conflict = $this->conflictService->detect($lockedTask, $product, $submission->payload_json);
 
             if ($conflict->hasConflicts()) {

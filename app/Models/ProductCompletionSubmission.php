@@ -47,6 +47,7 @@ class ProductCompletionSubmission extends Model
         'reviewed_by',
         'reviewed_at',
         'review_note',
+        'approval_selection_json',
         'submitted_at',
     ];
 
@@ -62,6 +63,7 @@ class ProductCompletionSubmission extends Model
             'status' => ProductCompletionSubmissionStatus::class,
             'reviewed_at' => 'datetime',
             'submitted_at' => 'datetime',
+            'approval_selection_json' => 'array',
         ];
     }
 

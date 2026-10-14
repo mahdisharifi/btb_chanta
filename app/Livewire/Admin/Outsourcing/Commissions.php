@@ -12,7 +12,6 @@ use App\Models\ProductCompletionTask;
 use App\Services\ProductCompletionCommissionService;
 use App\Services\ProductCompletionFinalizationService;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -24,7 +23,6 @@ class Commissions extends Component
     use WithPagination;
 
     public string $status = '';
-    public array $transactionIds = [];
     public array $bonusAmounts = [];
     public array $penaltyAmounts = [];
     public array $adjustmentAmounts = [];
@@ -85,13 +83,6 @@ class Commissions extends Component
     public function markPayable(string $publicId, ProductCompletionCommissionService $service): void
     {
         $service->markPayable(auth()->user(), $this->commission($publicId));
-    }
-
-    public function pay(string $publicId, ProductCompletionCommissionService $service): void
-    {
-        $transactionId = $this->transactionIds[$publicId] ?? '';
-        $service->pay(auth()->user(), $this->commission($publicId), $transactionId, (string) Str::uuid());
-        unset($this->transactionIds[$publicId]);
     }
 
     public function render()

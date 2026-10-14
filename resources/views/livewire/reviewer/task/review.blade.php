@@ -104,6 +104,24 @@
                 <label for="review-note" class="mb-1.5 block text-sm font-semibold text-slate-700">یادداشت بررسی</label>
                 <textarea id="review-note" wire:model="reviewNote" maxlength="2000" class="mb-3 w-full rounded-lg border-slate-300" rows="4" placeholder="یادداشت بررسی"></textarea>
 
+                <label class="mb-3 flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950">
+                    <input type="checkbox" wire:model.live="selectiveApproval" class="mt-0.5 rounded border-indigo-400 text-indigo-600">
+                    <span><strong>تأیید انتخابی</strong><br><span class="text-xs">در حالت عادی همهٔ موارد تأیید می‌شوند. این گزینه را فقط وقتی فعال کنید که بعضی موارد نباید روی محصول اعمال شوند.</span></span>
+                </label>
+
+                @if($selectiveApproval)
+                    <div class="mb-3 rounded-lg border border-indigo-200 bg-white p-3">
+                        <p class="mb-2 text-sm font-semibold text-slate-700">موارد قابل اعمال را انتخاب کنید:</p>
+                        @foreach($submission->diff_json ?? [] as $selectiveField => $selectiveChange)
+                            <label class="mb-2 flex items-center gap-2 text-sm">
+                                <input type="checkbox" wire:model="approvedFields" value="{{ $selectiveField }}" class="rounded border-slate-300 text-emerald-600">
+                                <span>{{ $fieldLabels[$selectiveField] ?? $selectiveField }}</span>
+                            </label>
+                        @endforeach
+                        <p class="mt-2 text-xs text-amber-700">موارد انتخاب‌نشده اعمال نمی‌شوند و در یادداشت بررسی برای پیمانکار قابل مشاهده خواهند بود.</p>
+                    </div>
+                @endif
+
                 @if($hasCorrections)
                     @can('outsourcing.approve_full_correction_rate')
                         <label class="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">

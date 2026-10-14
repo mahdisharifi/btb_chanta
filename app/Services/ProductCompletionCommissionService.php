@@ -116,6 +116,7 @@ class ProductCompletionCommissionService
         return DB::transaction(function () use ($actor, $commission): ProductCompletionCommission {
             $locked = ProductCompletionCommission::query()->lockForUpdate()->findOrFail($commission->getKey());
             Gate::forUser($actor)->authorize('approveCommission', $locked);
+            $this->assertUnreservedStatus($locked, [ProductCompletionCommissionStatus::CALCULATED, ProductCompletionCommissionStatus::UNDER_REVIEW]);
             $locked->forceFill([
                 'status' => ProductCompletionCommissionStatus::APPROVED,
                 'approved_by' => $actor->getKey(),
@@ -138,6 +139,7 @@ class ProductCompletionCommissionService
         return DB::transaction(function () use ($actor, $commission, $payableAt): ProductCompletionCommission {
             $locked = ProductCompletionCommission::query()->lockForUpdate()->findOrFail($commission->getKey());
             Gate::forUser($actor)->authorize('markPayable', $locked);
+            $this->assertUnreservedStatus($locked, [ProductCompletionCommissionStatus::APPROVED]);
             $locked->forceFill([
                 'status' => ProductCompletionCommissionStatus::PAYABLE,
                 'payable_at' => $payableAt ?? now(),
@@ -183,6 +185,7 @@ class ProductCompletionCommissionService
         ): ProductCompletionCommission {
             $locked = ProductCompletionCommission::query()->lockForUpdate()->findOrFail($commission->getKey());
             Gate::forUser($actor)->authorize('adjustCommission', $locked);
+            $this->assertUnreservedStatus($locked, [ProductCompletionCommissionStatus::CALCULATED, ProductCompletionCommissionStatus::UNDER_REVIEW]);
             $before = $this->amountSnapshot($locked);
             $approvedItemsAmount = (string) data_get(
                 $locked->breakdown_json,
@@ -243,37 +246,18 @@ class ProductCompletionCommissionService
 
         Gate::forUser($actor)->authorize('payCommission', $commission);
 
-        return DB::transaction(function () use (
-            $actor,
-            $commission,
-            $transactionId,
-            $idempotencyKey,
-        ): ProductCompletionCommission {
-            $locked = ProductCompletionCommission::query()->lockForUpdate()->findOrFail($commission->getKey());
+        throw ValidationException::withMessages([
+            'payment' => 'پرداخت جدید باید از صفحه تسویه تجمیعی پیمانکاران ثبت شود.',
+        ]);
+    }
 
-            if ($locked->status === ProductCompletionCommissionStatus::PAID) {
-                if (hash_equals((string) $locked->payment_idempotency_key, $idempotencyKey)) {
-                    return $locked;
-                }
-
-                throw ValidationException::withMessages([
-                    'payment' => 'این پورسانت قبلاً با تراکنش دیگری پرداخت شده است.',
-                ]);
-            }
-
-            Gate::forUser($actor)->authorize('payCommission', $locked);
-            $locked->forceFill([
-                'status' => ProductCompletionCommissionStatus::PAID,
-                'paid_by' => $actor->getKey(),
-                'paid_at' => now(),
-                'transaction_id' => $transactionId,
-                'payment_idempotency_key' => $idempotencyKey,
-            ])->save();
-            $this->auditFinancialChange($actor, $locked, 'commission_paid');
-            DB::afterCommit(static fn () => \App\Events\CommissionPaid::dispatch($locked));
-
-            return $locked;
-        }, 3);
+    private function assertUnreservedStatus(ProductCompletionCommission $commission, array $statuses): void
+    {
+        if ($commission->settlement_id !== null || ! in_array($commission->status, $statuses, true)) {
+            throw ValidationException::withMessages([
+                'commission' => 'کارکرد رزروشده، پرداخت‌شده یا دارای وضعیت نامعتبر قابل تغییر نیست.',
+            ]);
+        }
     }
 
     private function auditFinancialChange(

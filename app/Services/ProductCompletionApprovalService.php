@@ -32,6 +32,7 @@ class ProductCompletionApprovalService
         ProductCompletionSubmission $submission,
         ?string $reviewNote = null,
         bool $approveFullRate = false,
+        ?array $approvedFields = null,
     ): ProductCompletionTask {
         Gate::forUser($actor)->authorize('approveSubmission', $submission);
         $reviewNote = $this->sanitizer->plainText($reviewNote, 2000, true);
@@ -46,7 +47,7 @@ class ProductCompletionApprovalService
             ]);
         }
 
-        $result = DB::transaction(function () use ($actor, $submission, $reviewNote, $approveFullRate): array {
+        $result = DB::transaction(function () use ($actor, $submission, $reviewNote, $approveFullRate, $approvedFields): array {
             $lockedSubmission = ProductCompletionSubmission::query()
                 ->lockForUpdate()
                 ->findOrFail($submission->getKey());
@@ -58,6 +59,14 @@ class ProductCompletionApprovalService
 
             Gate::forUser($actor)->authorize('approveSubmission', $lockedSubmission);
             $this->assertLatestSubmission($task, $lockedSubmission);
+
+            $selection = $approvedFields === null ? null : array_values(array_unique(array_map('strval', $approvedFields)));
+            if ($selection !== null && $selection === []) {
+                throw ValidationException::withMessages(['approvedFields' => 'حداقل یک مورد باید برای اعمال انتخاب شود.']);
+            }
+            if ($selection !== null) {
+                $lockedSubmission->approval_selection_json = ['mode' => 'selective', 'approved_fields' => $selection];
+            }
 
             if ($approveFullRate) {
                 Gate::forUser($actor)->authorize('outsourcing.approve_full_correction_rate');
@@ -95,12 +104,16 @@ class ProductCompletionApprovalService
                 'reviewed_by' => $actor->getKey(),
                 'reviewed_at' => now(),
                 'review_note' => $reviewNote,
+                'approval_selection_json' => $lockedSubmission->approval_selection_json,
             ])->save();
+            $lockedSubmission->setRelation('task', $task);
+            $lockedSubmission->approval_selection_json = $lockedSubmission->approval_selection_json;
+            $task->setRelation('lastSubmission', $lockedSubmission);
             $task->forceFill([
                 'reviewer_id' => $task->reviewer_id ?? $actor->getKey(),
                 'status' => ProductCompletionTaskStatus::APPROVED,
                 'commission_content_snapshot_json' => $task->commission_content_snapshot_json ?? $task->initial_snapshot_json,
-                'commission_rate_percentage' => $this->commissionCalculator->calculate($task, $lockedSubmission)['breakdown']['task_rate_percentage'],
+                'commission_rate_percentage' => $this->calculateApprovedRate($task, $lockedSubmission, $selection),
                 'full_rate_approved_by' => ($approveFullRate || $hasPersistedFullRateApproval)
                     ? ($task->full_rate_approved_by ?? $actor->getKey())
                     : null,
@@ -147,6 +160,18 @@ class ProductCompletionApprovalService
         return $result['task'];
     }
 
+    private function calculateApprovedRate(ProductCompletionTask $task, ProductCompletionSubmission $submission, ?array $selection): string
+    {
+        if ($selection === null) {
+            return $this->commissionCalculator->calculate($task, $submission)['breakdown']['task_rate_percentage'];
+        }
+
+        $filtered = clone $submission;
+        $filtered->payload_json = $this->publisher->filterForApproval($submission->payload_json ?? [], $selection);
+
+        return $this->commissionCalculator->calculate($task, $filtered)['breakdown']['task_rate_percentage'];
+    }
+
     /**
      * Apply approved textual/attribute content. Media is finalized separately.
      */
@@ -191,11 +216,13 @@ class ProductCompletionApprovalService
                 return ['product' => $product, 'conflicts' => $conflict->conflicts];
             }
 
+            $selection = data_get($submission->approval_selection_json, 'approved_fields');
             $product = $this->publisher->apply(
                 task: $lockedTask,
                 product: $product,
                 payload: $conflict->mergedPayload,
                 actor: $actor,
+                approvedFields: is_array($selection) ? $selection : null,
             );
             $lockedTask->forceFill([
                 'content_applied_at' => now(),

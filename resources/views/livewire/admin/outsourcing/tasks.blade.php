@@ -1,19 +1,8 @@
 <div>
     <h1 class="mb-5 text-2xl font-bold">تسک‌های تکمیل محصول</h1>
     <x-product-completion-guide title="راهنمای ایجاد تسک"><p>محصول، نوع فعالیت، قانون پورسانت و مهلت را انتخاب کنید. پیمانکار فقط Scope همان نوع تسک را می‌بیند و به قیمت، موجودی، Tier یا اطلاعات تجاری تأمین‌کننده دسترسی ندارد.</p></x-product-completion-guide>
-    <form wire:submit="createTask" class="mb-6 grid gap-4 rounded-xl border bg-white p-4 md:grid-cols-5">
-        <div>
-            <label for="outsourcing-task-product" class="mb-1.5 block text-sm font-medium text-slate-700">محصول</label>
-            <input id="outsourcing-task-product-search" type="search" list="outsourcing-task-product-list" autocomplete="off" placeholder="جست‌وجوی محصول..." class="w-full rounded-lg border-slate-300" wire:model.live.debounce.300ms="productId">
-            <datalist id="outsourcing-task-product-list">
-                @foreach($products as $product)
-                    <option value="{{ $product->id }}">{{ $product->title }}</option>
-                @endforeach
-            </datalist>
-            @if($productId)
-                <p class="mt-1 text-xs text-slate-500">محصول انتخاب‌شده: {{ $products->firstWhere('id', $productId)?->title ?? '—' }}</p>
-            @endif
-        </div>
+    <form wire:submit="createTask" class="mb-6 grid gap-4 rounded-xl border bg-white p-4 md:grid-cols-4">
+        <x-outsourcing-product-picker />
 
         <div>
             <label for="outsourcing-task-type" class="mb-1.5 block text-sm font-medium text-slate-700">نوع Task</label>
@@ -44,7 +33,7 @@
         </div>
 
         @if($taskType === 'correction')
-            <fieldset class="md:col-span-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <fieldset class="md:col-span-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
                 <legend class="px-1 text-sm font-semibold text-amber-900">بخش‌های مجاز برای اصلاح</legend>
                 <p class="mb-3 text-xs text-amber-900">حداقل یک بخش را انتخاب کنید. پیمانکار فقط به بخش‌های انتخاب‌شده دسترسی دارد.</p>
                 <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -58,7 +47,7 @@
             </fieldset>
         @endif
 
-        <div class="md:col-span-5" aria-live="polite">
+        <div class="md:col-span-4" aria-live="polite">
             @if ($errors->any())
                 <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
                     <p class="font-semibold">ایجاد تسک انجام نشد:</p>

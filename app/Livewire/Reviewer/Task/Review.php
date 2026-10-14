@@ -29,6 +29,8 @@ class Review extends Component
     public string $reviewNote = '';
     public string $revisionClassification = 'contractor_error';
     public bool $approveFullRate = false;
+    public bool $selectiveApproval = false;
+    public array $approvedFields = [];
 
     public function mount(ProductCompletionTask $task): void
     {
@@ -65,6 +67,7 @@ class Review extends Component
             $this->submission(),
             $this->reviewNote,
             $this->approveFullRate,
+            $this->selectiveApproval ? $this->approvedFields : null,
         );
         $this->redirectRoute('reviewer.outsourcing.tasks.index', navigate: true);
     }
