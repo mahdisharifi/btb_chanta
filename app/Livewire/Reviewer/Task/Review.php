@@ -24,6 +24,9 @@ class Review extends Component
     #[Locked]
     public string $taskPublicId;
 
+    #[Locked]
+    public int $submissionId;
+
     public array $requestedFields = [];
     public string $revisionReason = '';
     public string $reviewNote = '';
@@ -37,6 +40,7 @@ class Review extends Component
         Gate::authorize('viewTask', $task);
         Gate::authorize('reviewSubmission', $task);
         $this->taskPublicId = $task->public_id;
+        $this->submissionId = $task->last_submission_id;
     }
 
     public function requestRevision(ProductCompletionRevisionService $service): void
@@ -58,6 +62,16 @@ class Review extends Component
             ProductCompletionRevisionClassification::from($this->revisionClassification),
         );
         $this->redirectRoute('reviewer.outsourcing.tasks.index', navigate: true);
+    }
+
+    public function beginReview(\App\Services\ProductCompletionSubmissionWorkflow $workflow): void
+    {
+        $task = $this->task();
+        if ($task->last_submission_id !== $this->submissionId) {
+            $this->addError('submission', 'نسخهٔ ارسالی تغییر کرده است؛ از فهرست تسک‌ها دوباره وارد شوید.');
+            return;
+        }
+        $workflow->beginReview(auth()->user(), $task, $this->submissionId);
     }
 
     public function approve(ProductCompletionApprovalService $service): void
@@ -125,7 +139,7 @@ class Review extends Component
     private function submission(): ProductCompletionSubmission
     {
         $task = $this->task();
-        $submission = ProductCompletionSubmission::query()->findOrFail($task->last_submission_id);
+        $submission = ProductCompletionSubmission::query()->findOrFail($this->submissionId);
         Gate::authorize('viewSubmission', $submission);
 
         return $submission;

@@ -101,6 +101,14 @@ Route::middleware(['auth', 'role:super_admin'])
             Route::get('/{flowchart}/edit', Form::class)->name('edit');
         });
         Route::get('/system/terminal', ArtisanRunner::class)->name('system.terminal');
+        Route::get('/system/error-preview/{status}', function (int $status) {
+            abort_unless($status >= 400 && $status <= 599, 404);
+
+            return response()->view('errors.page', [
+                'status' => $status,
+                'maintenancePreview' => $status === 503,
+            ])->header('Cache-Control', 'no-store, private');
+        })->whereNumber('status')->name('system.error-preview');
 
 
         Route::get('/geography', GeographyManager::class)->name('geography.index');
@@ -114,4 +122,3 @@ Route::middleware(['auth', 'role:super_admin'])
             ->name('sliders.index');
 
     });
-

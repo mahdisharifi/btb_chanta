@@ -145,6 +145,13 @@ class ProductCompletionTaskPolicy
             && $this->updateDraft($user, $task);
     }
 
+    public function withdrawSubmission(User $user, ProductCompletionTask $task): bool
+    {
+        return $user->can('outsourcing.submit_task')
+            && $task->assigned_to === $user->getKey()
+            && $task->status->canBeReviewed();
+    }
+
     public function requestRevision(User $user, ProductCompletionTask $task): bool
     {
         return $user->can('outsourcing.request_revision')

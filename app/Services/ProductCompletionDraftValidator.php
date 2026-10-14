@@ -139,7 +139,7 @@ class ProductCompletionDraftValidator
         }
 
         if (array_key_exists('gallery', $validated)) {
-            $canonical['gallery'] = $validated['gallery'];
+            $canonical['gallery'] = app(ProductCompletionPrimaryImage::class)->apply($task, $validated['gallery']);
         }
 
         return $canonical;

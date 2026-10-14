@@ -18,6 +18,12 @@
         </div>
     @endif
 
+    @if($submission->status === \App\Enums\ProductCompletionSubmissionStatus::SUBMITTED && $task->last_submission_id === $submission->id && $task->status->canBeReviewed())
+        <section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
+            <p class="mb-4 text-sm leading-7 text-indigo-950">با شروع بررسی، امکان لغو ارسال برای پیمانکار بسته می‌شود و نسخهٔ ارسالی برای بررسی شما نمایش داده خواهد شد.</p>
+            <button type="button" wire:click="beginReview" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">شروع بررسی</button>
+        </section>
+    @elseif($submission->status === \App\Enums\ProductCompletionSubmissionStatus::UNDER_REVIEW && $task->last_submission_id === $submission->id && $task->status->canBeReviewed())
     <div class="grid gap-5 lg:grid-cols-3">
         <section class="space-y-3 lg:col-span-2">
             <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950">
@@ -152,4 +158,7 @@
             </div>
         </aside>
     </div>
+    @else
+        <p class="rounded-lg border bg-slate-50 p-4 text-sm">این نسخه دیگر در صف بررسی نیست. برای مشاهده وضعیت جدید به فهرست تسک‌ها برگردید.</p>
+    @endif
 </div>

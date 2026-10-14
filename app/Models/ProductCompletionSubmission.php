@@ -30,6 +30,7 @@ class ProductCompletionSubmission extends Model
         'base_product_version',
         'idempotency_key',
         'submitted_at',
+        'submission_context_json',
     ];
 
     protected $fillable = [
@@ -49,6 +50,10 @@ class ProductCompletionSubmission extends Model
         'review_note',
         'approval_selection_json',
         'submitted_at',
+        'submission_context_json',
+        'review_started_by',
+        'review_started_at',
+        'withdrawn_at',
     ];
 
     protected function casts(): array
@@ -63,6 +68,9 @@ class ProductCompletionSubmission extends Model
             'status' => ProductCompletionSubmissionStatus::class,
             'reviewed_at' => 'datetime',
             'submitted_at' => 'datetime',
+            'submission_context_json' => 'array',
+            'review_started_at' => 'datetime',
+            'withdrawn_at' => 'datetime',
             'approval_selection_json' => 'array',
         ];
     }

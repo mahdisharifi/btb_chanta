@@ -1,10 +1,10 @@
 @php
     $workspaceTabs = [];
-    if (data_get($task->scope_json, 'title') || data_get($task->scope_json, 'short_description') || data_get($task->scope_json, 'full_description')) {
-        $workspaceTabs['content'] = 'محتوا';
-    }
     if (data_get($task->scope_json, 'attributes')) {
         $workspaceTabs['attributes'] = 'ویژگی‌ها';
+    }
+    if (data_get($task->scope_json, 'title') || data_get($task->scope_json, 'short_description') || data_get($task->scope_json, 'full_description')) {
+        $workspaceTabs['content'] = 'توضیحات';
     }
     if (data_get($task->scope_json, 'gallery')) {
         $workspaceTabs['gallery'] = 'تصاویر';
@@ -34,6 +34,9 @@
     </x-product-completion-guide>
 
     @include('livewire.outsourcer.task.partials.task-brief')
+    @if($displaySubmission)
+        @include('livewire.outsourcer.task.partials.submitted-content')
+    @endif
 
     @if($openRevision)
         @php
@@ -84,6 +87,9 @@
 
         <form wire:submit="saveDraft" class="space-y-4">
             <section x-show="tab === 'content'" class="space-y-4 rounded-xl border bg-white p-5">
+                @if(data_get($task->scope_json, 'short_description') || data_get($task->scope_json, 'full_description'))
+                    @include('livewire.outsourcer.task.partials.ai-prompt')
+                @endif
                 @if(data_get($task->scope_json, 'title'))
                     <label class="block text-sm font-medium">عنوان
                         <input wire:model="draft.title" class="mt-1 w-full rounded-lg border-slate-300">
@@ -136,7 +142,19 @@
                                     <img src="{{ route('outsourcing.gallery.preview', [$task, $existingImages[$item['product_gallery_id']]]) }}" class="mt-2 h-32 w-full rounded object-contain" alt="تصویر فعلی محصول">
                                 @endif
                                 <div class="mt-2 flex gap-2 text-xs">
-                                    <button type="button" wire:click="selectPrimary({{ $index }})" class="{{ !empty($item['is_primary']) ? 'font-bold text-emerald-700' : 'text-slate-500' }}">اصلی</button>
+                                    @php($uploadedImage = $media[$item['media_public_id'] ?? ''] ?? null)
+                                    @if(($item['action'] ?? '') === 'add' && $uploadedImage
+                                        && (int) $uploadedImage->uploaded_by === (int) auth()->id()
+                                        && $uploadedImage->status === \App\Enums\ProductCompletionMediaStatus::TEMPORARY
+                                        && $uploadedImage->published_product_gallery_id === null)
+                                        <button type="button" wire:click="removeUploadedImage('{{ $uploadedImage->public_id }}')"
+                                            wire:confirm="این تصویر از پیش‌نویس حذف شود؟"
+                                            wire:loading.attr="disabled" @cannot('manageMedia', $task) disabled @endcannot
+                                            class="rounded border border-red-200 px-3 py-1 text-red-700">حذف تصویر بارگذاری‌شده</button>
+                                    @endif
+                                    @if(!empty($item['is_primary']))
+                                        <span class="font-bold text-emerald-700">تصویر اصلی (خودکار)</span>
+                                    @endif
                                 </div>
                             </div>
                         @endforeach

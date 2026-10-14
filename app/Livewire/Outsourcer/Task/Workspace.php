@@ -67,7 +67,9 @@ class Workspace extends Component
     {
         $this->resetValidation();
         try {
-            $task = $service->save(auth()->user(), $this->task(), $this->draft, $this->draftVersion);
+            $task = $this->task();
+            $draft = $this->normalizeGalleryOrder($this->draft, $task);
+            $task = $service->save(auth()->user(), $task, $draft, $this->draftVersion);
             $this->syncDraft($task);
             $this->dispatch('notify', message: 'پیش‌نویس ذخیره شد.', type: 'success');
         } catch (ValidationException $e) {
@@ -83,7 +85,9 @@ class Workspace extends Component
     {
         $this->resetValidation();
         try {
-            $task = $draftService->save(auth()->user(), $this->task(), $this->draft, $this->draftVersion);
+            $task = $this->task();
+            $draft = $this->normalizeGalleryOrder($this->draft, $task);
+            $task = $draftService->save(auth()->user(), $task, $draft, $this->draftVersion);
             $this->syncDraft($task);
             $submission = $service->submit(
                 auth()->user(),
@@ -98,6 +102,17 @@ class Workspace extends Component
             $this->dispatch('notify', message: 'ارسال انجام نشد: '.$this->validationErrorSummary($e), type: 'error');
         } catch (ProductCompletionDraftVersionConflictException $e) {
             $this->addError('draft_version', $e->getMessage());
+        }
+    }
+
+    public function withdrawSubmission(int $submissionId, \App\Services\ProductCompletionSubmissionWorkflow $workflow): void
+    {
+        $this->resetValidation();
+        try {
+            $this->syncDraft($workflow->withdraw(auth()->user(), $this->task(), $submissionId));
+            $this->dispatch('notify', message: 'ارسال لغو شد؛ اطلاعات و تصاویر شما حفظ شده‌اند و می‌توانید دوباره ویرایش کنید.', type: 'success');
+        } catch (ValidationException $e) {
+            $this->setErrorBag($e->errors());
         }
     }
 
@@ -134,6 +149,7 @@ class Workspace extends Component
                 ];
                 $draft = $this->draft;
                 data_set($draft, 'gallery.items', $items);
+                $draft = $this->normalizeGalleryOrder($draft, $this->task());
 
                 return $draftService->save(auth()->user(), $this->task(), $draft, $this->draftVersion);
             });
@@ -157,11 +173,85 @@ class Workspace extends Component
         $this->dispatch('notify', message: 'تصویر در پیش‌نویس ذخیره شد.', type: 'success');
     }
 
-    public function selectPrimary(int $index): void
+    public function removeUploadedImage(string $mediaPublicId, ProductCompletionDraftService $draftService): void
     {
-        foreach (data_get($this->draft, 'gallery.items', []) as $itemIndex => $item) {
-            data_set($this->draft, "gallery.items.{$itemIndex}.is_primary", $itemIndex === $index && ($item['action'] ?? '') !== 'remove');
+        $this->resetValidation();
+        $task = $this->task();
+        Gate::authorize('manageMedia', $task);
+        ProductCompletionMedia::query()
+            ->where('task_id', $task->getKey())
+            ->where('public_id', $mediaPublicId)
+            ->where('uploaded_by', auth()->id())
+            ->where('status', \App\Enums\ProductCompletionMediaStatus::TEMPORARY)
+            ->whereNull('published_product_gallery_id')
+            ->firstOrFail();
+
+        $draft = $this->draft;
+        $items = data_get($draft, 'gallery.items', []);
+        $remaining = array_values(array_filter($items, static fn (array $item): bool =>
+            ! (($item['media_public_id'] ?? null) === $mediaPublicId && ($item['action'] ?? '') === 'add')));
+        if (count($remaining) === count($items)) {
+            return;
         }
+        data_set($draft, 'gallery.items', $remaining);
+        $draft = $this->normalizeGalleryOrder($draft, $task);
+        try {
+            // Keep the media file for immutable submission history; only remove its draft reference.
+            $this->syncDraft($draftService->save(auth()->user(), $task, $draft, $this->draftVersion));
+            $this->dispatch('notify', message: 'تصویر از پیش‌نویس حذف شد.', type: 'success');
+        } catch (ValidationException $e) {
+            $this->setErrorBag($e->errors());
+        } catch (ProductCompletionDraftVersionConflictException $e) {
+            $this->addError('draft_version', $e->getMessage());
+        }
+    }
+
+    #[\Livewire\Attributes\Renderless]
+    public function generateAIPrompt(): array
+    {
+        $task = $this->task();
+        Gate::authorize('updateDraft', $task);
+        abort_unless(data_get($task->scope_json, 'short_description') || data_get($task->scope_json, 'full_description'), 403);
+
+        $product = $task->product()->with('category')->firstOrFail();
+        $selections = data_get($task->scope_json, 'attributes', false)
+            ? ($this->draft['attributes'] ?? [])
+            : $product->attributeValues()->get()->groupBy('attribute_id')->map(fn ($values, $id) => [
+                'attribute_id' => (int) $id,
+                'value_ids' => $values->pluck('id')->all(),
+                'proposed_values' => [],
+            ])->values()->all();
+
+        try {
+            $selections = app(\App\Services\ProductCompletionAttributeValidator::class)->validate($task, $selections, true);
+        } catch (ValidationException $e) {
+            return ['ready' => false, 'prompt' => '', 'messages' => collect($e->errors())->flatten()->values()->all()];
+        }
+
+        $attributeIds = array_column($selections, 'attribute_id');
+        $names = Attribute::query()->whereIn('id', $attributeIds)->pluck('name', 'id');
+        $values = AttributeValue::query()->whereIn('id', collect($selections)->flatMap(fn ($selection) => $selection['value_ids'])->all())->pluck('value', 'id');
+        $lines = [];
+        foreach ($selections as $selection) {
+            $texts = array_merge(array_map(fn ($id) => $values->get($id), $selection['value_ids']), $selection['proposed_values']);
+            if ($texts !== []) {
+                $lines[] = '- '.$names->get($selection['attribute_id']).': '.implode('، ', $texts);
+            }
+        }
+
+        $packagingInfo = $product->quantity_per_packaging > 1
+            ? "{$product->quantity_per_packaging} عدد در هر {$product->packaging_unit_label}"
+            : 'تکی';
+        $title = data_get($task->scope_json, 'title') ? ($this->draft['title'] ?? $product->title) : $product->title;
+        $prompt = app(\App\Services\ProductDescriptionPrompt::class)->generate(
+            $title ?: '[نام محصول]',
+            $product->category?->name ?: '[دسته‌بندی]',
+            $product->brand ?: 'نامشخص',
+            $packagingInfo,
+            $lines !== [] ? implode("\n", $lines) : '- هنوز ویژگی‌هایی تعیین نشده است',
+        );
+
+        return ['ready' => true, 'prompt' => $prompt, 'messages' => []];
     }
 
     public function toggleAttribute(int $attributeId, int $valueId, bool $multiple): void
@@ -285,7 +375,7 @@ class Workspace extends Component
 
     public function render()
     {
-        $task = $this->task()->load(['product.category', 'reviewer:id,name']);
+        $task = $this->task()->load(['product.category', 'product.attributeValues.attribute', 'reviewer:id,name']);
         $categoryId = (int) data_get($task->initial_snapshot_json, 'category_id');
         $attributes = data_get($task->scope_json, 'attributes', false)
             ? Attribute::query()
@@ -307,18 +397,26 @@ class Workspace extends Component
             : collect();
         $media = ProductCompletionMedia::query()
             ->where('task_id', $task->getKey())
-            ->select(['id', 'public_id', 'task_id', 'original_name', 'status', 'width', 'height'])
+            ->select(['id', 'public_id', 'task_id', 'uploaded_by', 'original_name', 'status', 'width', 'height', 'published_product_gallery_id'])
             ->get()
             ->keyBy('public_id');
 
-        $existingImages = $task->product->galleries()->where('file_type', 'image')->get()->keyBy('id');
+        $existingImages = $task->product->galleries()->where('file_type', 'image')->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id')->get()->keyBy('id');
 
         $openRevision = $task->revisions()
             ->where('open_task_id', $task->getKey())
             ->with('requester:id,name')
             ->first();
 
-        return view('livewire.outsourcer.task.workspace', compact('task', 'attributes', 'media', 'existingImages', 'openRevision'));
+        $displaySubmission = $task->submissions()->orderByDesc('version_no')->first();
+        $workflow = app(\App\Services\ProductCompletionSubmissionWorkflow::class);
+        $withdrawalDeadline = $displaySubmission ? $workflow->deadline($displaySubmission) : null;
+        $canWithdraw = $displaySubmission && $workflow->canWithdraw(auth()->user(), $task, $displaySubmission);
+        $submittedAttributeNames = $attributes->pluck('name', 'id');
+        $submittedAttributeValues = $attributes->flatMap(fn ($attribute) => $attribute->values)->pluck('value', 'id');
+
+        return view('livewire.outsourcer.task.workspace', compact('task', 'attributes', 'media', 'existingImages', 'openRevision',
+            'displaySubmission', 'withdrawalDeadline', 'canWithdraw', 'submittedAttributeNames', 'submittedAttributeValues'));
     }
 
     private function task(): ProductCompletionTask
@@ -332,8 +430,38 @@ class Workspace extends Component
     private function syncDraft(ProductCompletionTask $task): void
     {
         $task->refresh();
-        $this->draft = $task->current_draft_json ?? [];
+        $this->draft = $this->normalizeGalleryOrder($task->current_draft_json ?? [], $task);
+        if (is_array($this->draft['gallery'] ?? null)) {
+            $this->draft['gallery'] = app(\App\Services\ProductCompletionPrimaryImage::class)->apply($task, $this->draft['gallery']);
+        }
         $this->draftVersion = $task->draft_version;
+    }
+
+    private function normalizeGalleryOrder(array $draft, ProductCompletionTask $task): array
+    {
+        // The workspace displays images in array order. Legacy gallery numbers may
+        // start at zero, contain gaps, or overlap with newly appended images.
+        // Only repair numbering when this task permits changing image order.
+        if (! data_get($task->scope_json, 'gallery.reorder', false)) {
+            return $draft;
+        }
+
+        $items = data_get($draft, 'gallery.items');
+        if (! is_array($items)) {
+            return $draft;
+        }
+
+        $order = 0;
+        foreach ($items as &$item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $item['sort_order'] = ($item['action'] ?? '') === 'remove' ? null : ++$order;
+        }
+        unset($item);
+        data_set($draft, 'gallery.items', $items);
+
+        return $draft;
     }
 
     private function validationErrorSummary(ValidationException $exception): string

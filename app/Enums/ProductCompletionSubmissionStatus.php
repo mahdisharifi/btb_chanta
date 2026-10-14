@@ -8,6 +8,7 @@ enum ProductCompletionSubmissionStatus: string
 {
     case SUBMITTED = 'submitted';
     case UNDER_REVIEW = 'under_review';
+    case WITHDRAWN = 'withdrawn';
     case CHANGES_REQUESTED = 'changes_requested';
     case APPROVED = 'approved';
     case REJECTED = 'rejected';
@@ -19,6 +20,7 @@ enum ProductCompletionSubmissionStatus: string
         return match ($this) {
             self::SUBMITTED => 'ارسال‌شده',
             self::UNDER_REVIEW => 'در حال بررسی',
+            self::WITHDRAWN => 'ارسال لغوشده توسط پیمانکار',
             self::CHANGES_REQUESTED => 'نیازمند اصلاح',
             self::APPROVED => 'تأییدشده',
             self::REJECTED => 'ردشده',
@@ -33,6 +35,7 @@ enum ProductCompletionSubmissionStatus: string
             self::APPROVED,
             self::REJECTED,
             self::SUPERSEDED,
+            self::WITHDRAWN,
         ], true);
     }
 

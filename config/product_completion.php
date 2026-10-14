@@ -27,6 +27,10 @@ return [
         'submissions_per_minute' => 10,
     ],
 
+    'submission' => [
+        'withdrawal_minutes' => 60,
+    ],
+
     /*
     | Scope presets are copied to each task. The persisted task scope becomes
     | the authoritative allowlist for that task.

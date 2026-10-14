@@ -1,4 +1,25 @@
 <div class="space-y-6">
+    <section class="rounded-2xl border p-6 space-y-4 {{ $maintenanceActive ? 'border-amber-300 bg-amber-50 dark:bg-amber-950' : 'border-emerald-200 bg-white dark:bg-gray-900' }}" wire:poll.30s>
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-bold dark:text-white">وضعیت دسترسی سایت</h2>
+                <p class="mt-2 text-sm dark:text-gray-200">{{ $maintenanceActive ? 'حالت تعمیر فعال است؛ سایت موقتاً برای بازدیدکنندگان در دسترس نیست.' : 'سایت فعال است و کاربران می‌توانند از خدمات استفاده کنند.' }}</p>
+            </div>
+            @if($maintenanceActive)
+                <button type="button" wire:click="disableMaintenance" wire:confirm="حالت تعمیر غیرفعال شود و سایت برای همه کاربران در دسترس قرار بگیرد؟" wire:loading.attr="disabled" class="rounded-xl bg-emerald-700 px-5 py-3 text-white disabled:opacity-50">غیرفعال‌سازی حالت تعمیر</button>
+            @else
+                <button type="button" wire:click="enableMaintenance" wire:confirm="با فعال‌سازی حالت تعمیر، دسترسی کاربران موقتاً قطع می‌شود. ادامه می‌دهید؟" wire:loading.attr="disabled" class="rounded-xl bg-amber-700 px-5 py-3 text-white disabled:opacity-50">فعال‌سازی حالت تعمیر</button>
+            @endif
+        </div>
+        <p class="text-xs leading-7 text-gray-600 dark:text-gray-300">دسترسی مرورگری که حالت تعمیر را فعال می‌کند تا ۱۲ ساعت حفظ می‌شود. برای غیرفعال‌سازی به همین صفحه برگردید. اگر کوکی مرورگر پاک شد یا دسترسی منقضی شد، روی سرور فرمان <code dir="ltr">php artisan up</code> را اجرا کنید.</p>
+        <span wire:loading wire:target="enableMaintenance,disableMaintenance" role="status" class="text-sm">در حال تغییر وضعیت سایت…</span>
+        <div class="flex flex-wrap items-center gap-3 text-xs text-blue-700 dark:text-blue-300">
+            <span class="text-gray-600 dark:text-gray-300">پیش‌نمایش صفحه‌ها:</span>
+            @foreach([503 => 'حالت تعمیر', 404 => 'پیدا نشدن صفحه', 403 => 'عدم دسترسی', 419 => 'انقضای فرم', 429 => 'درخواست زیاد', 500 => 'خطای سرور'] as $code => $label)
+                <a href="{{ route('admin.system.error-preview', ['status' => $code]) }}" target="_blank" rel="noopener noreferrer" class="underline underline-offset-4">{{ $label }}</a>
+            @endforeach
+        </div>
+    </section>
     <x-admin.subheader title="مدیریت سیستم و ترمینال آرتیسان">
         <x-slot name="actions">
             <x-admin.buttons.secondary wire:click="clearOutput" class="flex items-center gap-2">

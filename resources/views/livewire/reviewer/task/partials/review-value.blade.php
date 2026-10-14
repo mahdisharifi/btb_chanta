@@ -38,9 +38,11 @@
             @php
                 $uploaded = !empty($item['media_public_id']) ? $uploadedImages->get($item['media_public_id']) : null;
                 $existing = !empty($item['product_gallery_id']) ? $existingImages->get($item['product_gallery_id']) : null;
-                $previewUrl = $uploaded
-                    ? route('outsourcing.media.preview', $uploaded)
-                    : ($existing ? route('outsourcing.gallery.preview', [$task, $existing]) : null);
+                $published = $uploaded?->published_product_gallery_id ? $existingImages->get($uploaded->published_product_gallery_id) : null;
+                $previewUrl = $published
+                    ? route('outsourcing.gallery.preview', [$task, $published])
+                    : ($uploaded ? route('outsourcing.media.preview', $uploaded)
+                    : ($existing ? route('outsourcing.gallery.preview', [$task, $existing]) : null));
                 $removed = ($item['action'] ?? 'keep') === 'remove';
             @endphp
             <figure class="overflow-hidden rounded-lg border border-slate-200 bg-white {{ $removed ? 'opacity-60' : '' }}">

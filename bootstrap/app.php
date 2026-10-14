@@ -26,6 +26,8 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // The framework validates this signed cookie before the web middleware runs.
+        $middleware->encryptCookies(except: ['laravel_maintenance']);
         // اضافه کردن به گروه web
         $middleware->web(append: [
             EnsureMobileIsVerified::class,
@@ -43,6 +45,22 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        $exceptions->respond(function ($response, \Throwable $exception, \Illuminate\Http\Request $request) {
+            $status = $response->getStatusCode();
+            if ($status < 400 || $status > 599 || $request->expectsJson()
+                || $request->is('api/*') || $request->hasHeader('X-Livewire')
+                || str_contains($response->headers->get('Content-Type', ''), 'json')) {
+                return $response;
+            }
+
+            // Keep protocol headers (Allow, Retry-After, cookies, etc.), never expose exception details.
+            $response->setContent(view('errors.page', ['status' => $status])->render());
+            $response->headers->set('Content-Type', 'text/html; charset=UTF-8');
+            $response->headers->set('Cache-Control', 'no-store, private');
+            $response->headers->remove('Content-Length');
+
+            return $response;
+        });
         $exceptions->render(function (\App\Exceptions\ProductSlugRedirectException $e) {
             return redirect()->route('products.show', $e->newSlug, 301);
         });

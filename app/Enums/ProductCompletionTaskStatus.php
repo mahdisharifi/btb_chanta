@@ -85,6 +85,7 @@ enum ProductCompletionTaskStatus: string
             self::ACCEPTED => [self::IN_PROGRESS, self::CANCELLED, self::EXPIRED],
             self::IN_PROGRESS => [self::SUBMITTED, self::RESUBMITTED, self::CANCELLED, self::EXPIRED],
             self::SUBMITTED, self::RESUBMITTED => [
+                self::IN_PROGRESS,
                 self::CHANGES_REQUESTED,
                 self::APPROVED,
                 self::CONFLICTED,

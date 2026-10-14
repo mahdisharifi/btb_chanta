@@ -120,7 +120,14 @@ class ProductCompletionSubmissionService
                 );
             }
 
+            $openRevision = ProductCompletionRevision::query()
+                ->where('open_task_id', $lockedTask->getKey())->lockForUpdate()->first();
             $submission = ProductCompletionSubmission::query()->create([
+                'submission_context_json' => [
+                    'previous_submission_id' => $previousSubmission?->getKey(),
+                    'previous_submission_status' => $previousSubmission?->status->value,
+                    'task_submitted_at' => $lockedTask->submitted_at?->toAtomString(),
+                ],
                 'task_id' => $lockedTask->getKey(),
                 'submitted_by' => $actor->getKey(),
                 'version_no' => $versionNo,
@@ -145,11 +152,6 @@ class ProductCompletionSubmissionService
                     'status' => ProductCompletionSubmissionStatus::SUPERSEDED,
                 ])->save();
             }
-
-            $openRevision = ProductCompletionRevision::query()
-                ->where('open_task_id', $lockedTask->getKey())
-                ->lockForUpdate()
-                ->first();
 
             if ($openRevision !== null) {
                 $pricingSchemaVersion = (int) data_get(

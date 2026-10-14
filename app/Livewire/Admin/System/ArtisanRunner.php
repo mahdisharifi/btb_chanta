@@ -10,6 +10,51 @@ use Illuminate\Support\Facades\Auth;
 #[Layout('components.layouts.admin')]
 class ArtisanRunner extends Component
 {
+    public function enableMaintenance(): void
+    {
+        abort_unless(auth()->user()?->hasRole('super_admin'), 403);
+
+        if (app()->maintenanceMode()->active()) {
+            $this->output = 'حالت تعمیر از قبل فعال است.';
+            return;
+        }
+
+        $secret = \Illuminate\Support\Str::random(64);
+
+        try {
+            \Illuminate\Support\Facades\Cookie::queue(
+                \Illuminate\Foundation\Http\MaintenanceModeBypassCookie::create($secret)
+                    ->withSecure(request()->isSecure())->withHttpOnly(true)->withSameSite('lax')
+            );
+            $exitCode = Artisan::call('down', ['--secret' => $secret, '--retry' => 120]);
+            if ($exitCode !== 0 || ! app()->maintenanceMode()->active()) {
+                throw new \RuntimeException('Maintenance activation failed.');
+            }
+            \Illuminate\Support\Facades\Log::notice('Maintenance enabled from admin terminal.', ['user_id' => auth()->id()]);
+            $this->output = 'حالت تعمیر فعال شد. بازدیدکنندگان صفحه تعمیر را می‌بینند؛ دسترسی این مرورگر تا ۱۲ ساعت حفظ می‌شود.';
+        } catch (\Throwable $e) {
+            report($e);
+            $this->output = 'فعال‌سازی حالت تعمیر کامل نشد. وضعیت فعلی را بررسی کنید. بازیابی از سرور: php artisan up';
+        }
+    }
+
+    public function disableMaintenance(): void
+    {
+        abort_unless(auth()->user()?->hasRole('super_admin'), 403);
+
+        try {
+            if (Artisan::call('up') !== 0 || app()->maintenanceMode()->active()) {
+                throw new \RuntimeException('Maintenance deactivation failed.');
+            }
+            \Illuminate\Support\Facades\Cookie::queue(\Illuminate\Support\Facades\Cookie::forget('laravel_maintenance'));
+            \Illuminate\Support\Facades\Log::notice('Maintenance disabled from admin terminal.', ['user_id' => auth()->id()]);
+            $this->output = 'حالت تعمیر غیرفعال شد. سایت برای کاربران در دسترس است.';
+        } catch (\Throwable $e) {
+            report($e);
+            $this->output = 'خروج از حالت تعمیر انجام نشد. بازیابی از سرور: php artisan up';
+        }
+    }
+
     public string $output = '';
     public string $seederClass = ''; // نام کلاس seeder
 
@@ -121,6 +166,7 @@ class ArtisanRunner extends Component
     public function render()
     {
         return view('livewire.admin.system.artisan-runner', [
+            'maintenanceActive' => app()->maintenanceMode()->active(),
             'commandList' => $this->commandList,
         ]);
     }

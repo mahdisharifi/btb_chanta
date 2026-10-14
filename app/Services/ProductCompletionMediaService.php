@@ -449,6 +449,7 @@ class ProductCompletionMediaService
         $normalized = [];
         $finalItems = [];
         $errors = [];
+        $automaticPrimary = app(ProductCompletionPrimaryImage::class)->apply($task, ['items' => array_values($items)]);
         $allowedKeys = [
             'media_public_id', 'product_gallery_id', 'action', 'sort_order',
             'is_primary', 'title', 'alt_text',
@@ -514,14 +515,10 @@ class ProductCompletionMediaService
                     $errors["gallery.items.{$index}.sort_order"] = 'تغییر ترتیب تصاویر خارج از محدوده تسک است.';
                 }
 
-                if ($requestedPrimary !== (bool) $gallery->is_primary
-                    && ! ($galleryScope['select_primary'] ?? false)) {
-                    $errors["gallery.items.{$index}.is_primary"] = 'تغییر تصویر اصلی خارج از محدوده تسک است.';
-                }
             }
 
-            if ($action === 'add' && $requestedPrimary && ! ($galleryScope['select_primary'] ?? false)) {
-                $errors["gallery.items.{$index}.is_primary"] = 'انتخاب تصویر اصلی خارج از محدوده تسک است.';
+            if ($requestedPrimary !== (bool) data_get($automaticPrimary, "items.{$index}.is_primary", false)) {
+                $errors["gallery.items.{$index}.is_primary"] = 'تصویر اصلی به‌صورت خودکار تعیین می‌شود و قابل انتخاب نیست.';
             }
 
             $normalizedItem = [

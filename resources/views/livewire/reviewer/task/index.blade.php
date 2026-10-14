@@ -1,4 +1,9 @@
 <div>
+    @if($errors->any())
+        <div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
+            @foreach($errors->all() as $message)<p>{{ $message }}</p>@endforeach
+        </div>
+    @endif
     <h1 class="mb-5 text-2xl font-bold">صف بررسی محتوا</h1>
 
     <x-product-completion-guide title="راهنمای بازبینی">
@@ -22,7 +27,7 @@
                     <p class="mt-1 text-xs text-slate-400">مهلت: {{ $task->due_at ? jdate($task->due_at)->format('Y/m/d H:i') : 'بدون مهلت' }}</p>
                 </div>
                 @if(in_array($task->status->value, ['submitted', 'resubmitted'], true))
-                    <a href="{{ route('reviewer.outsourcing.tasks.review', $task) }}" class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">بررسی نسخه ارسالی</a>
+                    <button type="button" wire:click="beginReview('{{ $task->public_id }}', {{ $task->last_submission_id }})" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">شروع / ادامه بررسی</button>
                 @else
                     <span class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">در انتظار ارسال پیمانکار</span>
                 @endif

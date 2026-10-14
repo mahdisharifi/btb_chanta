@@ -48,12 +48,11 @@ class ProductCompletionApprovalService
         }
 
         $result = DB::transaction(function () use ($actor, $submission, $reviewNote, $approveFullRate, $approvedFields): array {
-            $lockedSubmission = ProductCompletionSubmission::query()
-                ->lockForUpdate()
-                ->findOrFail($submission->getKey());
             $task = ProductCompletionTask::query()
                 ->lockForUpdate()
-                ->findOrFail($lockedSubmission->task_id);
+                ->findOrFail($submission->task_id);
+            $lockedSubmission = ProductCompletionSubmission::query()
+                ->lockForUpdate()->findOrFail($submission->getKey());
             $product = Product::query()->lockForUpdate()->findOrFail($task->product_id);
             $lockedSubmission->setRelation('task', $task);
 

@@ -58,12 +58,11 @@ class ProductCompletionRevisionService
             $reason,
             $classification,
         ): ProductCompletionRevision {
-            $lockedSubmission = ProductCompletionSubmission::query()
-                ->lockForUpdate()
-                ->findOrFail($submission->getKey());
             $task = ProductCompletionTask::query()
                 ->lockForUpdate()
-                ->findOrFail($lockedSubmission->task_id);
+                ->findOrFail($submission->task_id);
+            $lockedSubmission = ProductCompletionSubmission::query()
+                ->lockForUpdate()->findOrFail($submission->getKey());
             $lockedSubmission->setRelation('task', $task);
 
             Gate::forUser($actor)->authorize('requestRevision', $lockedSubmission);

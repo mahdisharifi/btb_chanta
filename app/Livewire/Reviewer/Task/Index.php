@@ -39,7 +39,7 @@ class Index extends Component
 
         $tasks = ProductCompletionTask::query()
             ->select([
-                'id', 'public_id', 'product_id', 'assigned_to', 'reviewer_id', 'review_mode',
+                'id', 'public_id', 'product_id', 'assigned_to', 'reviewer_id', 'review_mode', 'last_submission_id',
                 'task_type', 'status', 'submitted_at', 'accepted_at', 'started_at', 'due_at',
             ])
             ->with(['product:id,title', 'assignee:id,name'])
@@ -72,5 +72,12 @@ class Index extends Component
             'tasks' => $tasks,
             'isQueueTab' => $isQueueTab,
         ]);
+    }
+
+    public function beginReview(string $taskPublicId, int $submissionId, \App\Services\ProductCompletionSubmissionWorkflow $workflow): void
+    {
+        $task = ProductCompletionTask::query()->where('public_id', $taskPublicId)->firstOrFail();
+        $workflow->beginReview(auth()->user(), $task, $submissionId);
+        $this->redirectRoute('reviewer.outsourcing.tasks.review', $task, navigate: true);
     }
 }
