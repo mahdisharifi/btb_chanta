@@ -20,7 +20,7 @@
                     <span>برند: <bdi>{{ $task->product?->brand ?: 'ثبت نشده' }}</bdi></span>
                 </div>
                 <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                    <div><dt class="text-xs text-slate-500">مهلت انجام</dt><dd class="mt-1 font-medium"><bdi>{{ $task->due_at ? \Morilog\Jalali\CalendarUtils::convertNumbers(jdate($task->due_at->copy()->timezone(config('app.timezone')))->format('Y/m/d H:i')) : 'بدون مهلت' }}</bdi></dd></div>
+                    <div><dt class="text-xs text-slate-500">مهلت انجام</dt><dd class="mt-1 font-medium"><bdi>{{ $task->completionDeadlineLabel() }}</bdi></dd></div>
                     <div><dt class="text-xs text-slate-500">مهلت پذیرش</dt><dd class="mt-1"><bdi>{{ $task->assignment_expires_at ? \Morilog\Jalali\CalendarUtils::convertNumbers(jdate($task->assignment_expires_at->copy()->timezone(config('app.timezone')))->format('Y/m/d H:i')) : 'بدون محدودیت' }}</bdi></dd></div>
                     <div><dt class="text-xs text-slate-500">بازبین</dt><dd class="mt-1">{{ $task->reviewer?->name ?? 'صف بررسی بازبین‌ها' }}</dd></div>
                     <div><dt class="text-xs text-slate-500">تعداد اصلاح مجاز</dt><dd class="mt-1">{{ $task->remainingRevisions() }}</dd></div>

@@ -62,6 +62,7 @@ class ProductCompletionTask extends Model
         'full_rate_approval_reason',
         'priority',
         'due_at',
+        'completion_duration_seconds',
         'assignment_expires_at',
         'published_at',
         'assigned_at',
@@ -103,6 +104,7 @@ class ProductCompletionTask extends Model
             'full_rate_approved_at' => 'datetime',
             'priority' => 'integer',
             'due_at' => 'datetime',
+            'completion_duration_seconds' => 'integer',
             'assignment_expires_at' => 'datetime',
             'published_at' => 'datetime',
             'assigned_at' => 'datetime',
@@ -227,6 +229,24 @@ class ProductCompletionTask extends Model
     public function remainingRevisions(): int
     {
         return max(0, $this->revision_limit - $this->revision_count);
+    }
+
+    public function completionDeadlineLabel(): string
+    {
+        if ($this->due_at !== null) {
+            return \Morilog\Jalali\CalendarUtils::convertNumbers(
+                jdate($this->due_at->copy()->timezone(config('app.timezone')))->format('Y/m/d H:i')
+            );
+        }
+        if ($this->completion_duration_seconds !== null) {
+            $minutes = (int) ceil($this->completion_duration_seconds / 60);
+            $duration = $minutes % 1440 === 0 ? ($minutes / 1440).' روز'
+                : ($minutes % 60 === 0 ? ($minutes / 60).' ساعت' : $minutes.' دقیقه');
+
+            return \Morilog\Jalali\CalendarUtils::convertNumbers($duration).' پس از پذیرش پیمانکار';
+        }
+
+        return 'بدون مهلت';
     }
 
     public function isAssignedTo(User $user): bool

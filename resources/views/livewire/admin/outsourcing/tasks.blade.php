@@ -25,7 +25,7 @@
         </div>
 
         <div>
-            <label for="outsourcing-task-due-days" class="mb-1.5 block text-sm font-medium text-slate-700">مهلت انجام (روز)</label>
+            <label for="outsourcing-task-due-days" class="mb-1.5 block text-sm font-medium text-slate-700">مدت انجام پس از پذیرش (روز)</label>
             <input id="outsourcing-task-due-days" type="number" min="1" max="90" onwheel="this.blur()" wire:model="dueDays" class="w-full rounded-lg border-slate-300">
         </div>
 
@@ -76,6 +76,6 @@
             </select>
         </div>
     </div>
-    <div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="p-3 text-right">محصول</th><th>نوع</th><th>وضعیت</th><th>پیمانکار</th><th>اصلاح</th><th>مهلت</th><th></th></tr></thead><tbody>@forelse($tasks as $task)<tr class="border-t"><td class="p-3">{{ $task->product?->title }}</td><td>{{ $task->task_type->label() }}</td><td>{{ $task->status->label() }}</td><td>{{ $task->assignee?->name ?? 'تخصیص‌نیافته' }}</td><td>{{ $task->revision_count }}/{{ $task->revision_limit }}</td><td>{{ $task->due_at ? jdate($task->due_at)->format('Y/m/d H:i') : '-' }}</td><td><a class="text-indigo-600" href="{{ route('admin.outsourcing.tasks.show', $task) }}">جزئیات</a></td></tr>@empty<tr><td colspan="7" class="p-8 text-center text-slate-500">تسکی یافت نشد.</td></tr>@endforelse</tbody></table></div>
+    <div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="p-3 text-right">محصول</th><th>نوع</th><th>وضعیت</th><th>پیمانکار</th><th>اصلاح</th><th>مهلت</th><th></th></tr></thead><tbody>@forelse($tasks as $task)<tr class="border-t"><td class="p-3">{{ $task->product?->title }}</td><td>{{ $task->task_type->label() }}</td><td>{{ $task->status->label() }}</td><td>{{ $task->assignee?->name ?? 'تخصیص‌نیافته' }}</td><td>{{ $task->revision_count }}/{{ $task->revision_limit }}</td><td>{{ $task->completionDeadlineLabel() }}</td><td><a class="text-indigo-600" href="{{ route('admin.outsourcing.tasks.show', $task) }}">جزئیات</a></td></tr>@empty<tr><td colspan="7" class="p-8 text-center text-slate-500">تسکی یافت نشد.</td></tr>@endforelse</tbody></table></div>
     <div class="mt-4">{{ $tasks->links() }}</div>
 </div>

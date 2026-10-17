@@ -1,71 +1,64 @@
-# Laravel Deployment Preparation Script
-# Run on local machine before upload
+# Laravel deployment preparation; run locally before uploading.
+[CmdletBinding()]
+param([switch]$NoPause)
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Preparing Project for Deployment" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
+function Invoke-DeployCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
 
-# Project path
-$projectPath = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $projectPath
-
-# 1. Check .env file
-Write-Host "[1/7] Checking .env file..." -ForegroundColor Yellow
-if (-Not (Test-Path ".env")) {
-    Write-Host "ERROR: .env file not found!" -ForegroundColor Red
-    exit 1
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Command $($Arguments -join ' ') failed (exit code $LASTEXITCODE)."
+    }
 }
 
-# 2. Clear old caches
-Write-Host "[2/7] Clearing old caches..." -ForegroundColor Yellow
-php artisan optimize:clear
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Failed to clear caches" -ForegroundColor Red
-    exit 1
-}
-Write-Host "Caches cleared successfully" -ForegroundColor Green
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Stop'
+$deployExitCode = 0
+$locationPushed = $false
 
-# 3. Install dependencies
-Write-Host "[3/7] Installing dependencies (no dev)..." -ForegroundColor Yellow
-composer install --no-dev --optimize-autoloader
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Failed to install dependencies" -ForegroundColor Red
-    exit 1
-}
-Write-Host "Dependencies installed successfully" -ForegroundColor Green
+try {
+    Write-Host 'Preparing Project for Deployment' -ForegroundColor Cyan
+    Push-Location -LiteralPath $PSScriptRoot
+    $locationPushed = $true
 
-# 4. Cache settings
-Write-Host "[4/7] Caching settings..." -ForegroundColor Yellow
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-php artisan event:cache
-Write-Host "Settings cached successfully" -ForegroundColor Green
+    Write-Host '[1/6] Checking prerequisites...' -ForegroundColor Yellow
+    foreach ($commandName in @('php', 'composer')) {
+        Get-Command $commandName -CommandType Application -ErrorAction Stop | Out-Null
+    }
+    foreach ($requiredFile in @('.env', 'artisan', 'composer.json', 'composer.lock', 'vendor/autoload.php')) {
+        if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+            throw "Required file not found: $requiredFile. Install local dependencies before preparing deployment."
+        }
+    }
 
-# 5. Check for errors
-Write-Host "[5/7] Checking for errors..." -ForegroundColor Yellow
-php artisan route:list | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Routes have errors" -ForegroundColor Red
-    exit 1
-}
-Write-Host "Routes are healthy" -ForegroundColor Green
+    Write-Host '[2/6] Clearing local caches...' -ForegroundColor Yellow
+    Invoke-DeployCommand -Command 'php' -Arguments @('artisan', 'optimize:clear')
 
-# 6. Create deploy folder
-Write-Host "[6/7] Creating deploy folder..." -ForegroundColor Yellow
-if (-Not (Test-Path "deploy")) {
-    New-Item -ItemType Directory -Path "deploy" | Out-Null
-}
-Write-Host "Deploy folder created" -ForegroundColor Green
+    Write-Host '[3/6] Installing production dependencies...' -ForegroundColor Yellow
+    Invoke-DeployCommand -Command 'composer' -Arguments @('install', '--no-dev', '--optimize-autoloader', '--no-interaction')
 
-# 7. Create .env.production template
-Write-Host "[7/7] Creating .env.production template..." -ForegroundColor Yellow
+    Write-Host '[4/6] Checking routes and clearing caches for upload...' -ForegroundColor Yellow
+    Invoke-DeployCommand -Command 'php' -Arguments @('artisan', 'route:list')
+    Invoke-DeployCommand -Command 'php' -Arguments @('artisan', 'optimize:clear')
 
-$envContent = @"
+    Write-Host '[5/6] Preparing deploy folder...' -ForegroundColor Yellow
+    if (-not (Test-Path -LiteralPath 'deploy' -PathType Container)) {
+        New-Item -ItemType Directory -Path 'deploy' -ErrorAction Stop | Out-Null
+    }
+
+    Write-Host '[6/6] Preparing production environment template...' -ForegroundColor Yellow
+    $templatePath = Join-Path $PSScriptRoot 'deploy/.env.production'
+    if (Test-Path -LiteralPath $templatePath) {
+        Write-Host 'Existing deploy/.env.production preserved. Check its settings before use.' -ForegroundColor Yellow
+    }
+    else {
+        $envContent = @'
 APP_NAME="B2B Marketplace"
 APP_ENV=production
-APP_KEY=base64:ENW44uDQGJ8dl4fv9FYDRe2DBgdlJpgtIyUoZLhQ9HA=
+APP_KEY=
 APP_DEBUG=false
 APP_URL=https://yourdomain.com
 
@@ -83,34 +76,43 @@ SESSION_DRIVER=file
 CACHE_STORE=file
 QUEUE_CONNECTION=database
 FILESYSTEM_DISK=public
-"@
+'@
+        [System.IO.File]::WriteAllText($templatePath, $envContent, [System.Text.UTF8Encoding]::new($false))
+    }
 
-Set-Content -Path "deploy\.env.production" -Value $envContent -Encoding UTF8
-Write-Host ".env.production template created" -ForegroundColor Green
+    Write-Host ''
+    Write-Host 'Preparation Complete!' -ForegroundColor Green
+    Write-Host 'Create the deployment ZIP manually from the application files and production vendor folder.'
+    Write-Host 'Include built frontend assets in public/build; this script does not build frontend assets.'
+    Write-Host 'Exclude .git, node_modules, tests, local .env, logs, backups and local cache files.'
+    Write-Host 'The environment template is in deploy/.env.production; it is not a complete deployment archive.'
+    Write-Host ''
+    Write-Host 'On existing hosting, preserve the current .env, APP_KEY and uploaded files.' -ForegroundColor Yellow
+    Write-Host 'For a new installation only, configure the template and generate an APP_KEY on the server.'
+    Write-Host 'Point the web document root to the application public directory.'
+    Write-Host 'After uploading, run on the server:'
+    Write-Host '  php artisan optimize:clear'
+    Write-Host '  php artisan migrate --force'
+    Write-Host '  php artisan optimize'
+}
+catch {
+    $deployExitCode = 1
+    Write-Host ''
+    Write-Host "Preparation failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host 'Deployment preparation is incomplete. Fix the error before uploading.' -ForegroundColor Yellow
+}
+finally {
+    try {
+        if ($locationPushed) {
+            Pop-Location
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        if (-not $NoPause) {
+            Read-Host 'Press Enter to close' | Out-Null
+        }
+    }
+}
 
-# Summary
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Preparation Complete!" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Files ready in 'deploy' folder:" -ForegroundColor White
-Write-Host "  - .env.production (settings template)" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "To create ZIP file manually:" -ForegroundColor White
-Write-Host "1. Select these folders:" -ForegroundColor Gray
-Write-Host "   app, bootstrap, config, database, lang, public, resources, routes, storage, vendor" -ForegroundColor Gray
-Write-Host "   Files: artisan, composer.json, composer.lock" -ForegroundColor Gray
-Write-Host "2. Exclude these folders:" -ForegroundColor Gray
-Write-Host "   .git, node_modules, tests, deploy" -ForegroundColor Gray
-Write-Host ""
-Write-Host "Next steps:" -ForegroundColor White
-Write-Host "1. Upload ZIP to public_html on hosting" -ForegroundColor Gray
-Write-Host "2. Extract the ZIP file" -ForegroundColor Gray
-Write-Host "3. Rename .env.production to .env" -ForegroundColor Gray
-Write-Host "4. Update database settings in .env" -ForegroundColor Gray
-Write-Host "5. Run these commands via SSH:" -ForegroundColor Gray
-Write-Host "   php artisan optimize:clear" -ForegroundColor Gray
-Write-Host "   php artisan migrate --force" -ForegroundColor Gray
-Write-Host "   php artisan optimize" -ForegroundColor Gray
-Write-Host ""
+exit $deployExitCode

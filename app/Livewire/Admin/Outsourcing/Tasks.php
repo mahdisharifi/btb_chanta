@@ -159,7 +159,7 @@ class Tasks extends Component
             commissionRule: $commissionRule,
             taskType: $taskType,
             scope: $scope,
-            dueAt: now()->addDays((int) $validated['dueDays']),
+            completionDays: (int) $validated['dueDays'],
             publishImmediately: true,
         );
 
@@ -203,7 +203,7 @@ class Tasks extends Component
         $tasks = ProductCompletionTask::query()
             ->select([
                 'id', 'public_id', 'product_id', 'assigned_to', 'task_type', 'status',
-                'revision_count', 'revision_limit', 'due_at', 'created_at',
+                'revision_count', 'revision_limit', 'due_at', 'completion_duration_seconds', 'accepted_at', 'created_at',
             ])
             ->with([
                 'product:id,title',

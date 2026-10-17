@@ -131,7 +131,10 @@
             @can('extendDeadline', $task)
                 <form wire:submit="extendDeadline" class="rounded-xl border border-amber-200 bg-white p-4">
                     <h2 class="mb-2 font-bold">تمدید مهلت تسک</h2>
-                    <p class="mb-3 text-sm text-slate-600">مهلت فعلی: <bdi>{{ $task->due_at ? \Morilog\Jalali\CalendarUtils::convertNumbers(jdate($task->due_at->copy()->timezone(config('app.timezone')))->format('Y/m/d H:i')) : 'بدون مهلت' }}</bdi> (به وقت تهران). برای ادامه اصلاح پس از پایان مهلت، تاریخ جدید را ثبت کنید.</p>
+                    @if($task->accepted_at === null && $task->completion_duration_seconds !== null)
+                        <p class="mb-3 text-sm text-amber-800">پیمانکار هنوز تسک را نپذیرفته است. فاصلهٔ زمان ثبت تا تاریخ انتخابی، به‌عنوان مدت انجام ذخیره می‌شود و پس از پذیرش آغاز خواهد شد.</p>
+                    @endif
+                    <p class="mb-3 text-sm text-slate-600">مهلت فعلی: <bdi>{{ $task->completionDeadlineLabel() }}</bdi> (به وقت تهران). برای ادامه اصلاح پس از پایان مهلت، تاریخ جدید را ثبت کنید.</p>
                     <label class="block text-sm">تاریخ و ساعت جدید (شمسی)
                         <input type="text" wire:model="newDueAt" dir="ltr" placeholder="1405/07/20 18:00" aria-describedby="deadline-format-help" class="mt-1 w-full rounded-lg border-slate-300" required>
                     </label>

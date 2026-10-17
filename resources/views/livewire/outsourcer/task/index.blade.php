@@ -51,7 +51,7 @@
                     <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700">{{ $task->status->label() }}</span>
                 </div>
                 <p class="mt-2 text-sm text-slate-500">{{ $task->task_type->label() }} · اصلاح {{ $task->revision_count }}/{{ $task->revision_limit }}</p>
-                <p class="mt-2 text-sm text-slate-700">مهلت: {{ $task->due_at ? jdate($task->due_at)->format('Y/m/d H:i') : 'بدون مهلت' }}</p>
+                <p class="mt-2 text-sm text-slate-700">مهلت: {{ $task->completionDeadlineLabel() }}</p>
                 <p class="mt-1 text-xs text-slate-400">شناسه: {{ $task->public_id }}</p>
 
                 <div class="mt-4 flex flex-wrap gap-3">

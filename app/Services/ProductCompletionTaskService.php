@@ -39,6 +39,7 @@ class ProductCompletionTaskService
         ?ProductCompletionReviewMode $reviewMode = null,
         ?int $revisionLimit = null,
         bool $publishImmediately = false,
+        ?int $completionDays = null,
     ): ProductCompletionTask {
         Gate::forUser($actor)->authorize('create', ProductCompletionTask::class);
         if ($publishImmediately) {
@@ -51,6 +52,12 @@ class ProductCompletionTaskService
         );
         $revisionLimit ??= (int) config('product_completion.defaults.revision_limit', 3);
         $dueAt ??= now()->addDays((int) config('product_completion.defaults.due_days', 3));
+        $completionSeconds = $completionDays !== null
+            ? $completionDays * 86400
+            : max(1, (int) now()->diffInSeconds($dueAt, false));
+        if ($completionDays !== null && ($completionDays < 1 || $completionDays > 90)) {
+            throw ValidationException::withMessages(['due_at' => 'مدت انجام باید بین یک تا نود روز باشد.']);
+        }
 
         if ($revisionLimit < 0 || $revisionLimit > 100) {
             throw ValidationException::withMessages([
@@ -72,7 +79,7 @@ class ProductCompletionTaskService
             $scope,
             $reviewMode,
             $revisionLimit,
-            $dueAt,
+            $completionSeconds,
             $publishImmediately,
         ): ProductCompletionTask {
             $lockedProduct = Product::query()->lockForUpdate()->findOrFail($product->getKey());
@@ -120,7 +127,8 @@ class ProductCompletionTaskService
                 'revision_limit' => $revisionLimit,
                 'revision_count' => 0,
                 'commission_rate_percentage' => '100.00',
-                'due_at' => $dueAt,
+                'due_at' => null,
+                'completion_duration_seconds' => $completionSeconds,
             ]);
 
             $this->auditService->record(
@@ -131,6 +139,7 @@ class ProductCompletionTaskService
                     'task_type' => $taskType->value,
                     'review_mode' => $reviewMode->value,
                     'revision_limit' => $revisionLimit,
+                    'completion_duration_seconds' => $completionSeconds,
                     'commission_rate_percentage' => $task->commission_rate_percentage,
                     'correction_restriction_overridden' => $correctionRestrictionOverridden,
                 ],
@@ -211,6 +220,7 @@ class ProductCompletionTaskService
                     (int) config('product_completion.defaults.assignment_expiration_hours', 24)
                 ),
                 'accepted_at' => null,
+                'due_at' => $locked->completion_duration_seconds !== null ? null : $locked->due_at,
                 'started_at' => null,
                 'lock_version' => $locked->lock_version + 1,
             ])->save();
@@ -234,6 +244,7 @@ class ProductCompletionTaskService
 
             $previousStatus = $locked->status;
             $this->assertTransition($previousStatus, ProductCompletionTaskStatus::ACCEPTED);
+            $acceptedAt = now();
             $locked->forceFill([
                 'active_product_id' => $locked->product_id,
                 'assigned_by' => $actor->getKey(),
@@ -241,7 +252,9 @@ class ProductCompletionTaskService
                 'status' => ProductCompletionTaskStatus::ACCEPTED,
                 'assigned_at' => now(),
                 'assignment_expires_at' => null,
-                'accepted_at' => now(),
+                'accepted_at' => $acceptedAt,
+                'due_at' => $locked->completion_duration_seconds !== null
+                    ? $acceptedAt->copy()->addSeconds($locked->completion_duration_seconds) : $locked->due_at,
                 'started_at' => null,
                 'lock_version' => $locked->lock_version + 1,
             ])->save();
@@ -398,14 +411,17 @@ class ProductCompletionTaskService
             Gate::forUser($actor)->authorize('extendDeadline', $locked);
             $before = $locked->due_at?->toAtomString();
             $locked->forceFill([
-                'due_at' => $dueAt,
+                'due_at' => $locked->accepted_at === null && $locked->completion_duration_seconds !== null ? null : $dueAt,
+                'completion_duration_seconds' => $locked->accepted_at === null && $locked->completion_duration_seconds !== null
+                    ? max(1, (int) now()->diffInSeconds($dueAt, false)) : $locked->completion_duration_seconds,
                 'lock_version' => $locked->lock_version + 1,
             ])->save();
             $this->auditService->record(
                 action: 'task_deadline_extended',
                 task: $locked,
                 actor: $actor,
-                metadata: ['before' => $before, 'after' => $dueAt->toAtomString()],
+                metadata: ['before' => $before, 'after' => $locked->due_at?->toAtomString(),
+                    'completion_duration_seconds' => $locked->completion_duration_seconds],
                 entity: $locked,
             );
 
@@ -477,6 +493,10 @@ class ProductCompletionTaskService
 
             $previousStatus = $locked->status;
             $this->assertTransition($previousStatus, $nextStatus);
+            if ($nextStatus === ProductCompletionTaskStatus::ACCEPTED && $locked->completion_duration_seconds !== null) {
+                $attributes['accepted_at'] = now();
+                $attributes['due_at'] = $attributes['accepted_at']->copy()->addSeconds($locked->completion_duration_seconds);
+            }
             $locked->fill($attributes + [
                 'status' => $nextStatus,
                 'lock_version' => $locked->lock_version + 1,

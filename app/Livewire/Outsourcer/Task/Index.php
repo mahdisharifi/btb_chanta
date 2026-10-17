@@ -83,7 +83,7 @@ class Index extends Component
         $tasks = ProductCompletionTask::query()
             ->select([
                 'id', 'public_id', 'product_id', 'assigned_to', 'task_type', 'status', 'revision_count',
-                'revision_limit', 'due_at', 'accepted_at', 'started_at', 'created_at',
+                'revision_limit', 'due_at', 'completion_duration_seconds', 'accepted_at', 'started_at', 'created_at',
             ])
             ->with('product:id,title')
             ->when($isAvailableTab, function ($query): void {
