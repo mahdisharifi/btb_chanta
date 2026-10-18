@@ -15,6 +15,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Renderless;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -25,6 +26,7 @@ class Tasks extends Component
 
     public string $search = '';
     public string $status = '';
+    #[Url(as: 'productId')]
     public ?int $productId = null;
     public ?int $commissionRuleId = null;
     public string $taskType = 'full_completion';
@@ -45,6 +47,7 @@ class Tasks extends Component
     public function mount(): void
     {
         Gate::authorize('viewAny', ProductCompletionTask::class);
+        $this->commissionRuleId = $this->defaultCommissionRuleId($this->taskType);
     }
 
     public function updatedSearch(): void
@@ -108,7 +111,7 @@ class Tasks extends Component
 
     public function updatedTaskType(): void
     {
-        $this->commissionRuleId = null;
+        $this->commissionRuleId = $this->defaultCommissionRuleId($this->taskType);
         $this->correctionScope = [];
         $this->resetValidation(['commissionRuleId', 'correctionScope', 'scope', 'taskType']);
     }
@@ -231,15 +234,34 @@ class Tasks extends Component
             ->latest('id')
             ->paginate(20);
 
+        $selectedProduct = $this->productId
+            ? Product::query()->select(['id', 'title', 'sku'])->find($this->productId)?->only(['id', 'title', 'sku'])
+            : null;
+
         return view('livewire.admin.outsourcing.tasks', [
             'tasks' => $tasks,
+            'selectedProduct' => $selectedProduct,
             'statuses' => ProductCompletionTaskStatus::options(),
             'commissionRules' => CommissionRule::query()
                 ->where('is_active', true)
-                ->select(['id', 'name', 'version', 'task_type'])
+                ->select(['id', 'name', 'version', 'task_type', 'is_default'])
+                ->orderByDesc('is_default')
                 ->latest('id')
                 ->get(),
             'taskTypes' => ProductCompletionTaskType::options(),
         ]);
+    }
+
+    private function defaultCommissionRuleId(string $taskType): ?int
+    {
+        $id = CommissionRule::query()
+            ->where('task_type', $taskType)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->where(fn ($query) => $query->whereNull('effective_from')->orWhere('effective_from', '<=', now()))
+            ->where(fn ($query) => $query->whereNull('effective_until')->orWhere('effective_until', '>=', now()))
+            ->value('id');
+
+        return $id === null ? null : (int) $id;
     }
 }

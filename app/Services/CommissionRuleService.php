@@ -134,6 +134,11 @@ class CommissionRuleService
             $validated['name'],
             function () use ($actor, $validated, $items): CommissionRule {
                 return DB::transaction(function () use ($actor, $validated, $items): CommissionRule {
+                    $replacesDefault = CommissionRule::query()
+                        ->where('name', $validated['name'])
+                        ->where('task_type', $validated['task_type'])
+                        ->where('is_default', true)
+                        ->exists();
                     $lastVersion = (int) (CommissionRule::query()
                         ->where('name', $validated['name'])
                         ->orderByDesc('version')
@@ -169,8 +174,19 @@ class CommissionRuleService
                         ->all();
                     CommissionRule::query()
                         ->whereIn('id', $previousActiveRuleIds)
-                        ->update(['is_active' => false]);
-                    $rule->forceFill(['is_active' => true])->save();
+                        ->update(['is_active' => false, 'is_default' => false]);
+                    $becomesDefault = $replacesDefault || ! CommissionRule::query()
+                        ->where('task_type', $validated['task_type'])
+                        ->where('is_active', true)
+                        ->where('is_default', true)
+                        ->exists();
+                    if ($becomesDefault) {
+                        CommissionRule::query()
+                            ->where('task_type', $validated['task_type'])
+                            ->where('is_default', true)
+                            ->update(['is_default' => false]);
+                    }
+                    $rule->forceFill(['is_active' => true, 'is_default' => $becomesDefault])->save();
                     $this->auditService->record(
                         action: 'commission_rule_version_created',
                         actor: $actor,
@@ -180,6 +196,7 @@ class CommissionRuleService
                             'version' => $rule->version,
                             'pricing_schema_version' => 2,
                             'revision_percentage' => $rule->revision_percentage,
+                            'is_default' => $rule->is_default,
                             'deactivated_rule_ids' => $previousActiveRuleIds,
                             'items' => $items,
                         ],
@@ -310,11 +327,49 @@ class CommissionRuleService
         return DB::transaction(function () use ($actor, $rule): CommissionRule {
             $locked = CommissionRule::query()->lockForUpdate()->findOrFail($rule->getKey());
             Gate::forUser($actor)->authorize('update', $locked);
-            $locked->forceFill(['is_active' => false])->save();
+            $locked->forceFill(['is_active' => false, 'is_default' => false])->save();
             $this->auditService->record(
                 action: 'commission_rule_deactivated',
                 actor: $actor,
                 metadata: ['rule_id' => $locked->getKey(), 'version' => $locked->version],
+                entity: $locked,
+            );
+
+            return $locked;
+        }, 3);
+    }
+
+    public function setDefault(User $actor, CommissionRule $rule): CommissionRule
+    {
+        Gate::forUser($actor)->authorize('update', $rule);
+
+        return DB::transaction(function () use ($actor, $rule): CommissionRule {
+            $locked = CommissionRule::query()->lockForUpdate()->findOrFail($rule->getKey());
+            Gate::forUser($actor)->authorize('update', $locked);
+
+            if (! $locked->is_active
+                || ($locked->effective_from !== null && $locked->effective_from->isFuture())
+                || ($locked->effective_until !== null && $locked->effective_until->isPast())) {
+                throw ValidationException::withMessages([
+                    'defaultRule' => 'فقط قانون فعال و معتبر در بازه زمانی جاری می‌تواند پیش‌فرض شود.',
+                ]);
+            }
+
+            CommissionRule::query()
+                ->where('task_type', $locked->task_type->value)
+                ->where('is_default', true)
+                ->update(['is_default' => false]);
+
+            $locked->forceFill(['is_default' => true])->save();
+            $this->auditService->record(
+                action: 'commission_rule_default_set',
+                actor: $actor,
+                metadata: [
+                    'rule_id' => $locked->getKey(),
+                    'name' => $locked->name,
+                    'version' => $locked->version,
+                    'task_type' => $locked->task_type->value,
+                ],
                 entity: $locked,
             );
 

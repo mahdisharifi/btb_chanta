@@ -785,7 +785,7 @@
 
                 {{-- Pagination --}}
                 <div class="mt-8">
-                    {{ $products->links() }}
+                    {{ $products->onEachSide(1)->links('pagination.products') }}
                 </div>
 
                 {{-- Results Info --}}

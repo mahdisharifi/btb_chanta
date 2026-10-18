@@ -71,7 +71,7 @@
             </div>
 
             {{-- Desktop Menu --}}
-            <div class="hidden md:flex items-center gap-1">
+            <div class="hidden lg:flex items-center gap-1">
                 <a href="{{ route('home') }}"
                    class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center {{ request()->routeIs('home') ? 'text-indigo-600 bg-indigo-50' : '' }}">
                     صفحه اصلی
@@ -114,7 +114,7 @@
             </div>
 
             {{-- Auth Buttons --}}
-            <div class="hidden md:flex items-center gap-1">
+            <div class="hidden lg:flex items-center gap-1">
                 @auth
                 <a href="{{ route('dashboard') }}" 
                    class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center">
@@ -141,7 +141,7 @@
 
             {{-- Mobile menu button --}}
             <button @click="mobileMenu = !mobileMenu" 
-                    class="md:hidden p-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition min-w-[48px] min-h-[48px] flex items-center justify-center"
+                    class="lg:hidden p-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition min-w-[48px] min-h-[48px] flex items-center justify-center"
                     aria-label="منوی موبایل"
                     :aria-expanded="mobileMenu"
                     aria-controls="mobile-menu">
@@ -163,7 +163,7 @@
              x-transition:leave="transition ease-in duration-150"
              x-transition:leave-start="opacity-100 translate-y-0"
              x-transition:leave-end="opacity-0 -translate-y-2"
-             class="md:hidden pb-4 border-t border-gray-200 mt-2 pt-3"
+             class="lg:hidden pb-4 border-t border-gray-200 mt-2 pt-3"
              style="display: none;">
             <div class="flex flex-col gap-1">
                 <a href="{{ route('home') }}" 
@@ -214,13 +214,25 @@
                 </div>
             </div>
             
-            {{-- Mobile Search --}}
-            <form action="{{ route('search') }}" method="GET" class="mt-3 px-3">
-                <input type="text" 
-                       name="q" 
-                       placeholder="جستجو..." 
-                       class="w-full rounded-lg border-gray-300 text-sm min-h-[48px] px-4"
-                       aria-label="جستجوی محصول">
+        </div>
+
+        {{-- Persistent search for mobile and tablet --}}
+        <div class="border-t border-gray-100 px-1 py-3 lg:hidden">
+            <form action="{{ route('products.index') }}" method="GET" role="search" class="relative mx-auto w-full max-w-3xl">
+                <input type="text"
+                       name="q"
+                       value="{{ request('q') }}"
+                       placeholder="جستجوی محصول، برند یا دسته‌بندی..."
+                       enterkeyhint="search"
+                       class="min-h-12 w-full rounded-xl border-gray-300 bg-gray-50 py-3 pr-4 pl-14 text-sm shadow-sm transition focus:border-indigo-500 focus:bg-white focus:ring-indigo-500"
+                       aria-label="جستجوی محصول، برند یا دسته‌بندی">
+                <button type="submit"
+                        class="absolute left-1 top-1/2 flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        aria-label="جستجو در محصولات">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </button>
             </form>
         </div>
     </nav>

@@ -50,6 +50,7 @@ class CommissionRule extends Model
         'pricing_schema_version',
         'revision_percentage',
         'is_active',
+        'is_default',
         'effective_from',
         'effective_until',
         'created_by',
@@ -70,6 +71,7 @@ class CommissionRule extends Model
             'pricing_schema_version' => 'integer',
             'revision_percentage' => 'decimal:2',
             'is_active' => 'boolean',
+            'is_default' => 'boolean',
             'effective_from' => 'datetime',
             'effective_until' => 'datetime',
         ];

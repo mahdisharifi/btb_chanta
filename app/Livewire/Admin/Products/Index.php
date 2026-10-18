@@ -5,6 +5,13 @@ namespace App\Livewire\Admin\Products;
 use App\Models\Product;
 use App\Models\Category;
 use App\Enums\ProductStatus;
+use App\Enums\ProductCompletionTaskStatus;
+use App\Enums\ProductCompletionTaskType;
+use App\Models\CommissionRule;
+use App\Models\ProductCompletionTask;
+use App\Services\ProductCompletionTaskService;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
@@ -16,15 +23,71 @@ class Index extends Component
 {
     use WithPagination;
 
+    public $completionStatus = '';
+    public array $completionCounts = [];
+    public array $supplierCounts = [];
+    public $taskStatus = '';
+    public $taskType = '';
+    public $pricingStatus = '';
+
     public $search = '';
     public $category_id = '';
     public $status = '';
     public $sort = 'latest';
+    public array $selectedProducts = [];
+    public bool $selectAll = false;
+    public int $perPage = 15;
 
-    public function updatedSearch() { $this->resetPage(); }
-    public function updatedCategoryId() { $this->resetPage(); }
-    public function updatedStatus() { $this->resetPage(); }
-    public function updatedSort() { $this->resetPage(); }
+    public function updatedSearch() { $this->resetFiltersAndSelection(); }
+    public function updatedCategoryId() { $this->resetFiltersAndSelection(); }
+    public function updatedStatus() { $this->resetFiltersAndSelection(); }
+    public function updatedSort() { $this->resetFiltersAndSelection(); }
+    public function updatedCompletionStatus() { $this->resetFiltersAndSelection(); }
+    public function updatedCompletionCounts() { $this->resetFiltersAndSelection(); }
+    public function updatedSupplierCounts() { $this->resetFiltersAndSelection(); }
+    public function updatedTaskStatus() { $this->resetFiltersAndSelection(); }
+    public function updatedTaskType() { $this->resetFiltersAndSelection(); }
+    public function updatedPricingStatus() { $this->resetFiltersAndSelection(); }
+
+    public function updatedPerPage(): void
+    {
+        $this->perPage = $this->safePerPage();
+        $this->resetFiltersAndSelection();
+    }
+
+    public function updatedSelectAll(bool $selected): void
+    {
+        if (! $selected) {
+            $this->selectedProducts = [];
+            return;
+        }
+
+        $this->selectedProducts = $this->getFilteredQuery()
+            ->paginate($this->safePerPage())
+            ->getCollection()
+            ->pluck('id')
+            ->map(static fn ($id): string => (string) $id)
+            ->all();
+    }
+
+    public function updatedSelectedProducts(): void
+    {
+        $this->selectAll = false;
+    }
+
+    private function resetFiltersAndSelection(): void
+    {
+        $this->resetPage();
+        $this->selectedProducts = [];
+        $this->selectAll = false;
+    }
+
+    private function safePerPage(): int
+    {
+        return in_array((int) $this->perPage, [15, 30, 50, 100], true)
+            ? (int) $this->perPage
+            : 15;
+    }
 
     public function toggleActive($id)
     {
@@ -42,7 +105,120 @@ class Index extends Component
         $this->dispatch('toast', message: 'محصول با موفقیت حذف شد.', type: 'success');
     }
 
-    protected function getFilteredQuery()
+    public function createDefaultTasksForSelected(ProductCompletionTaskService $service): void
+    {
+        Gate::authorize('create', ProductCompletionTask::class);
+        Gate::authorize('outsourcing.publish_task');
+
+        $selectedIds = collect($this->selectedProducts)
+            ->map(static fn ($id) => filter_var($id, FILTER_VALIDATE_INT))
+            ->filter(static fn ($id) => $id !== false && $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($selectedIds === []) {
+            $this->dispatch('notify', message: 'ابتدا حداقل یک محصول انتخاب کنید.', type: 'warning');
+            return;
+        }
+
+        $query = $this->getFilteredQuery()
+            ->whereIn('products.id', $selectedIds)
+            ->whereDoesntHave('completionTasks');
+
+        $this->createDefaultTasksFromQuery($query, count($selectedIds), $service);
+    }
+
+    public function createDefaultTasksForFilteredProducts(ProductCompletionTaskService $service): void
+    {
+        Gate::authorize('create', ProductCompletionTask::class);
+        Gate::authorize('outsourcing.publish_task');
+
+        $query = $this->getFilteredQuery()->whereDoesntHave('completionTasks');
+        $this->createDefaultTasksFromQuery($query, null, $service);
+    }
+
+    private function createDefaultTasksFromQuery($query, ?int $requestedCount, ProductCompletionTaskService $service): void
+    {
+        $taskType = ProductCompletionTaskType::FULL_COMPLETION;
+        $now = now();
+        $defaultRule = CommissionRule::query()
+            ->where('task_type', $taskType->value)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->where(fn ($rules) => $rules->whereNull('effective_from')->orWhere('effective_from', '<=', $now))
+            ->where(fn ($rules) => $rules->whereNull('effective_until')->orWhere('effective_until', '>=', $now))
+            ->first();
+
+        if ($defaultRule === null) {
+            $this->dispatch('notify', message: 'برای نوع «تکمیل کامل» قانون پورسانت پیش‌فرض فعال و معتبر تعیین نشده است.', type: 'error');
+            return;
+        }
+
+        set_time_limit(300);
+        $created = 0;
+        $failed = 0;
+        $eligible = 0;
+        $actor = auth()->user();
+
+        $query->reorder()->select('products.*')->chunkById(100, function ($products) use (
+            $service,
+            $actor,
+            $defaultRule,
+            $taskType,
+            &$created,
+            &$failed,
+            &$eligible,
+        ): void {
+            foreach ($products as $product) {
+                $eligible++;
+                try {
+                    $service->create(
+                        actor: $actor,
+                        product: $product,
+                        commissionRule: $defaultRule,
+                        taskType: $taskType,
+                        completionDays: (int) config('product_completion.defaults.due_days', 3),
+                        publishImmediately: true,
+                    );
+                    $created++;
+                } catch (ValidationException $exception) {
+                    $failed++;
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    $failed++;
+                }
+            }
+        }, 'products.id', 'id');
+
+        $skipped = $requestedCount === null ? 0 : max(0, $requestedCount - $eligible);
+        $this->selectedProducts = [];
+        $this->selectAll = false;
+
+        $message = $eligible === 0
+            ? 'در نتایج فعلی محصول واجد شرایطِ بدون سابقه تسک پیدا نشد.'
+            : "تسک ایجاد و منتشرشده: {$created}";
+        if ($skipped > 0 || $failed > 0) {
+            $message .= "؛ انتخاب‌های خارج از نتایج یا دارای سابقه تسک: {$skipped}";
+            $message .= "؛ خطای ایجاد: {$failed}";
+        }
+        $this->dispatch('notify', message: $message, type: $created > 0 ? 'success' : 'warning');
+    }
+
+    private function hasDefaultFullCompletionRule(): bool
+    {
+        $now = now();
+
+        return CommissionRule::query()
+            ->where('task_type', ProductCompletionTaskType::FULL_COMPLETION->value)
+            ->where('is_default', true)
+            ->where('is_active', true)
+            ->where(fn ($rules) => $rules->whereNull('effective_from')->orWhere('effective_from', '<=', $now))
+            ->where(fn ($rules) => $rules->whereNull('effective_until')->orWhere('effective_until', '>=', $now))
+            ->exists();
+    }
+
+    protected function getFilteredQuery(bool $includeCompletionCountFilter = true, bool $includeSupplierCountFilter = true)
     {
         $query = Product::query();
 
@@ -54,11 +230,96 @@ class Index extends Component
         }
 
         if (!empty($this->category_id)) {
-            $query->where('category_id', $this->category_id);
+            $query->where('products.category_id', $this->category_id);
         }
 
         if (!empty($this->status)) {
             $query->where('status', $this->status);
+        }
+
+        if ($this->pricingStatus === 'priced') {
+            $query->whereHas('productSuppliers', fn ($supplier) => $supplier
+                ->where('is_active', true)->whereHas('validPrices'));
+        } elseif ($this->pricingStatus === 'unpriced') {
+            $query->whereDoesntHave('productSuppliers', fn ($supplier) => $supplier
+                ->where('is_active', true)->whereHas('validPrices'));
+        }
+
+        $supplierCounts = collect($this->supplierCounts)
+            ->map(static fn ($count) => filter_var((string) $count, FILTER_VALIDATE_INT))
+            ->filter(static fn ($count) => $count !== false && $count >= 0)
+            ->unique()
+            ->values();
+        if ($includeSupplierCountFilter && $supplierCounts->isNotEmpty()) {
+            $query->where(function ($supplierCountQuery) use ($supplierCounts): void {
+                foreach ($supplierCounts as $supplierCount) {
+                    $supplierCountQuery->orWhereHas('productSuppliers', function ($supplier) {
+                        $supplier->where('is_active', true)->whereHas('validPrices');
+                    }, '=', $supplierCount);
+                }
+            });
+        }
+
+        if ($this->taskStatus === 'none') {
+            $query->whereDoesntHave('completionTasks');
+        } elseif ($this->taskStatus === 'active') {
+            $query->whereHas('completionTasks', fn ($task) => $task->whereNotNull('active_product_id'));
+        } elseif ($this->taskStatus === 'completed') {
+            $query->whereHas('completionTasks', fn ($task) => $task->where('status', ProductCompletionTaskStatus::COMPLETED));
+        } elseif ($this->taskStatus === 'any') {
+            $query->whereHas('completionTasks');
+        }
+
+        if ($this->taskType !== '') {
+            $query->whereHas('completionTasks', fn ($task) => $task->where('task_type', $this->taskType));
+        }
+
+        $completionCounts = collect($this->completionCounts)
+            ->map(static fn ($count) => filter_var((string) $count, FILTER_VALIDATE_INT))
+            ->filter(static fn ($count) => $count !== false && $count >= 0)
+            ->unique()
+            ->values();
+        $hasCompletionCountFilter = $completionCounts->isNotEmpty();
+
+        if (in_array($this->completionStatus, ['needs_completion', 'complete'], true)
+            || ($includeCompletionCountFilter && $hasCompletionCountFilter)) {
+            $attributeCounts = \DB::table('attribute_product')
+                ->select('product_id')->selectRaw('COUNT(*) as attributes_count')->groupBy('product_id');
+            $categoryAverages = \DB::table('products as category_products')
+                ->leftJoinSub($attributeCounts, 'category_attribute_counts', 'category_products.id', '=', 'category_attribute_counts.product_id')
+                ->select('category_products.category_id')
+                ->selectRaw('AVG(COALESCE(category_attribute_counts.attributes_count, 0)
+                    + CASE WHEN category_products.short_description IS NOT NULL AND category_products.short_description != "" THEN 1 ELSE 0 END
+                    + CASE WHEN category_products.full_description IS NOT NULL AND category_products.full_description != "" THEN 1 ELSE 0 END) as average_attributes')
+                ->whereNull('category_products.deleted_at')
+                ->groupBy('category_products.category_id');
+
+            $query->leftJoinSub($attributeCounts, 'product_attribute_counts', 'products.id', '=', 'product_attribute_counts.product_id')
+                ->leftJoinSub($categoryAverages, 'category_completion_averages', 'products.category_id', '=', 'category_completion_averages.category_id');
+            $actualCount = 'COALESCE(product_attribute_counts.attributes_count, 0)
+                + CASE WHEN products.short_description IS NOT NULL AND products.short_description != "" THEN 1 ELSE 0 END
+                + CASE WHEN products.full_description IS NOT NULL AND products.full_description != "" THEN 1 ELSE 0 END';
+            $averageCount = 'COALESCE(category_completion_averages.average_attributes, 0)';
+
+            if (in_array($this->completionStatus, ['needs_completion', 'complete'], true)) {
+                $query->whereRaw($actualCount.($this->completionStatus === 'needs_completion' ? ' < ' : ' >= ').$averageCount);
+            }
+
+            if ($includeCompletionCountFilter && $hasCompletionCountFilter) {
+                $query->where(function ($countQuery) use ($completionCounts, $actualCount, $averageCount): void {
+                    foreach ($completionCounts as $completionCount) {
+                        $countQuery->orWhere(function ($exactCountQuery) use ($completionCount, $actualCount, $averageCount): void {
+                            if ($completionCount === 0) {
+                                $exactCountQuery->whereRaw($actualCount.' >= '.$averageCount);
+                                return;
+                            }
+
+                            $exactCountQuery->whereRaw($actualCount.' < '.$averageCount.' - ?', [$completionCount - 1])
+                                ->whereRaw($actualCount.' >= '.$averageCount.' - ?', [$completionCount]);
+                        });
+                    }
+                });
+            }
         }
 
         switch ($this->sort) {
@@ -93,7 +354,7 @@ class Index extends Component
         $headers = [
             'شناسه', 'عنوان محصول', 'کد کالا', 'تأمین‌کنندگان قیمت‌گذار', 'دسته‌بندی',
             'وضعیت نمایش', 'وضعیت کالا', 'تعداد ویژگی', 'میانگین دسته',
-            'نیاز به تکمیل', 'وضعیت SEO'
+            'نیاز به تکمیل', 'وضعیت SEO', 'نیاز به تکمیل دارد'
         ];
 
         // تأمین‌کنندگانی که برای هر کالا حداقل یک قیمت ثبت کرده‌اند، به‌صورت JSON در یک ستون نمایش داده می‌شوند.
@@ -177,7 +438,8 @@ class Index extends Component
                     $attributesCount,
                     $categoryAvgFormatted,
                     $needToComplete,
-                    $seoStatus
+                    $seoStatus,
+                    $attributesCount < $categoryAvg ? 'بله' : 'خیر',
                 ];
 
                 // ستون‌های مخصوص ادمین
@@ -237,6 +499,55 @@ class Index extends Component
         return $averages;
     }
 
+    private function getCompletionCountOptions(array $categoryAverages, $filteredProductIds): array
+    {
+        $attributeCounts = \DB::table('attribute_product')
+            ->select('product_id')
+            ->selectRaw('COUNT(*) as attributes_count')
+            ->groupBy('product_id');
+        $actualCount = 'COALESCE(completion_attribute_counts.attributes_count, 0)
+            + CASE WHEN products.short_description IS NOT NULL AND products.short_description != "" THEN 1 ELSE 0 END
+            + CASE WHEN products.full_description IS NOT NULL AND products.full_description != "" THEN 1 ELSE 0 END';
+
+        $countsByCategory = \DB::table('products')
+            ->leftJoinSub($attributeCounts, 'completion_attribute_counts', 'products.id', '=', 'completion_attribute_counts.product_id')
+            ->whereNull('products.deleted_at')
+            ->whereIn('products.id', $filteredProductIds)
+            ->distinct()
+            ->select('products.category_id')
+            ->selectRaw($actualCount.' as actual_count')
+            ->get();
+
+        return $countsByCategory
+            ->map(function ($row) use ($categoryAverages) {
+                $average = (float) ($categoryAverages[$row->category_id] ?? 0);
+                return max(0, (int) ceil($average - (int) $row->actual_count));
+            })
+            ->filter(fn (int $count) => $count > 0)
+            ->unique()
+            ->sortDesc()
+            ->values()
+            ->all();
+    }
+
+    private function getSupplierCountOptions($filteredProductIds): array
+    {
+        $productsWithSupplierCounts = Product::query()
+            ->whereIn('products.id', $filteredProductIds)
+            ->select('products.id')
+            ->withCount(['productSuppliers as valid_supplier_count' => fn ($supplier) => $supplier
+                ->where('is_active', true)->whereHas('validPrices')]);
+
+        return \DB::query()
+            ->fromSub($productsWithSupplierCounts, 'filtered_products')
+            ->select('valid_supplier_count')
+            ->distinct()
+            ->orderByDesc('valid_supplier_count')
+            ->pluck('valid_supplier_count')
+            ->map(static fn ($count): int => (int) $count)
+            ->all();
+    }
+
     private function checkSeoCompletion(Product $product): string
     {
         $filledCount = 0;
@@ -253,17 +564,48 @@ class Index extends Component
 
     public function render()
     {
-        $query = $this->getFilteredQuery()->with(['category', 'galleries' => function($q) {
-            $q->where('is_primary', true);
-        }]);
+        $query = $this->getFilteredQuery()
+            ->with([
+                'category',
+                'galleries' => fn ($gallery) => $gallery->where('is_primary', true),
+                'productSuppliers' => fn ($supplier) => $supplier->where('is_active', true)
+                    ->whereHas('validPrices')
+                    ->with(['supplier:id,company_name,brand_name', 'validPrices.priceType', 'validPrices.checkPeriod']),
+            ])
+            ->withExists(['completionTasks as has_active_completion_task' => fn ($task) => $task->whereNotNull('active_product_id')])
+            ->withCount('attributeValues');
 
         $categories = Category::where('is_active', true)->doesntHave('children')->get();
         $statuses = ProductStatus::options();
 
+        $products = $query->paginate($this->safePerPage());
+        $categoryAverages = $this->getCategoryAttributeAverages();
+        $filteredProductIds = $this->getFilteredQuery(false, false)->reorder()->select('products.id');
+        $completionCountOptions = $this->getCompletionCountOptions($categoryAverages, $filteredProductIds);
+        $supplierCountOptions = $this->getSupplierCountOptions($filteredProductIds);
+        $products->getCollection()->transform(function (Product $product) use ($categoryAverages) {
+            $actualCount = (int) ($product->attribute_values_count ?? 0);
+            $actualCount += !empty($product->short_description) ? 1 : 0;
+            $actualCount += !empty($product->full_description) ? 1 : 0;
+            $average = (float) ($categoryAverages[$product->category_id] ?? 0);
+            $product->needs_completion_count = max(0, (int) ceil($average - $actualCount));
+            return $product;
+        });
+
         return view('livewire.admin.products.index', [
-            'products' => $query->paginate(15),
+            'products' => $products,
+            'completionCountOptions' => $completionCountOptions,
+            'supplierCountOptions' => $supplierCountOptions,
+            'hasDefaultFullCompletionRule' => $this->hasDefaultFullCompletionRule(),
             'categories' => $categories,
             'statuses' => $statuses,
+            'taskStatuses' => [
+                'none' => 'بدون سابقه تسک',
+                'active' => 'دارای تسک فعال',
+                'completed' => 'تسک تکمیل‌شده دارد',
+                'any' => 'دارای سابقه تسک',
+            ],
+            'taskTypes' => ProductCompletionTaskType::options(),
         ]);
     }
 }

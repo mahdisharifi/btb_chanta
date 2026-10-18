@@ -3,7 +3,7 @@
     <x-product-completion-guide title="راهنمای ایجاد تسک"><p>محصول، نوع فعالیت، قانون پورسانت و مهلت را انتخاب کنید. پیمانکار فقط Scope همان نوع تسک را می‌بیند و به قیمت، موجودی، Tier یا اطلاعات تجاری تأمین‌کننده دسترسی ندارد.</p></x-product-completion-guide>
     <form wire:submit="createTask" class="mb-6 grid gap-4 rounded-xl border bg-white p-4 md:grid-cols-4">
         <p class="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm leading-6 text-indigo-900 md:col-span-4">تسک پس از ایجاد، خودکار برای همه پیمانکاران واجد دسترسی منتشر می‌شود و در فهرست «تسک‌های آزاد» قرار می‌گیرد. اولین پیمانکاری که آن را بپذیرد، مسئول انجام آن خواهد شد.</p>
-        <x-outsourcing-product-picker />
+        <x-outsourcing-product-picker :selected-product="$selectedProduct" />
 
         <div>
             <label for="outsourcing-task-type" class="mb-1.5 block text-sm font-medium text-slate-700">نوع Task</label>
@@ -19,7 +19,7 @@
             <select id="outsourcing-task-commission-rule" wire:model="commissionRuleId" class="w-full rounded-lg border-slate-300">
                 <option value="">انتخاب قانون پورسانت</option>
                 @foreach($commissionRules->filter(fn ($rule) => $rule->task_type?->value === $taskType) as $rule)
-                    <option value="{{ $rule->id }}">{{ $rule->name }} - نسخه {{ $rule->version }}</option>
+                    <option value="{{ $rule->id }}">{{ $rule->name }} - نسخه {{ $rule->version }}{{ $rule->is_default ? ' (پیش‌فرض)' : '' }}</option>
                 @endforeach
             </select>
         </div>

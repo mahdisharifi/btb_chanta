@@ -72,6 +72,13 @@ class CommissionRules extends Component
         $this->dispatch('notify', message: 'قانون پورسانت غیرفعال شد.', type: 'success');
     }
 
+    public function setDefault(string $publicId, CommissionRuleService $service): void
+    {
+        $rule = CommissionRule::query()->where('public_id', $publicId)->firstOrFail();
+        $service->setDefault(auth()->user(), $rule);
+        $this->dispatch('notify', message: 'قانون پورسانت پیش‌فرض به‌روزرسانی شد.', type: 'success');
+    }
+
     public function render()
     {
         Gate::authorize('viewAny', CommissionRule::class);

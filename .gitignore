@@ -63,3 +63,18 @@ Thumbs.db
 
 # Kiro IDE
 /.kiro/reports/
+
+# GapGPT Backup Files
+*.gapgpt-backup
+
+# Project ZIP Archives
+*.zip
+
+# Documentation Directory
+/docs/
+
+# Semantic Review Directory
+/semantic-review/
+
+# Deploy Script Copies
+* - Copy.*

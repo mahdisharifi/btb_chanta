@@ -107,6 +107,11 @@
                             <p class="mt-1 text-sm text-slate-600">{{ $rule->task_type->label() }} · {{ $rule->is_active ? 'فعال' : 'غیرفعال' }}</p>
                         </div>
                         <div class="flex items-center gap-3">
+                            @if($rule->is_default)
+                                <span class="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">پیش‌فرض این نوع تسک</span>
+                            @elseif($rule->is_active)
+                                <button type="button" wire:click="setDefault('{{ $rule->public_id }}')" wire:loading.attr="disabled" class="text-sm text-indigo-600 hover:text-indigo-800">تعیین به‌عنوان پیش‌فرض</button>
+                            @endif
                             <span class="rounded-full px-2.5 py-1 text-xs {{ $rule->pricing_schema_version >= 2 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600' }}">{{ $rule->pricing_schema_version >= 2 ? 'قیمت‌گذاری واحدی' : 'ساختار قدیمی' }}</span>
                             @if($rule->is_active)<button type="button" wire:click="deactivate('{{ $rule->public_id }}')" wire:loading.attr="disabled" class="text-sm text-red-600 hover:text-red-800">غیرفعال‌سازی</button>@endif
                         </div>

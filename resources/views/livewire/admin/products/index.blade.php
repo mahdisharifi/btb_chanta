@@ -98,12 +98,72 @@
     </div>
 
     <!-- عملیات گروهی کاملا تعاملی و قدرتمند (Bulk Actions) -->
+    <div class="grid gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div>
+            <label class="mb-1 block text-xs font-semibold text-slate-700">وضعیت تسک</label>
+            <select wire:model.live="taskStatus" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همه</option>
+                @foreach($taskStatuses as $value => $label)
+                    <option value="{{ $value }}">{{ $label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-semibold text-slate-700">نوع تسک</label>
+            <select wire:model.live="taskType" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همهٔ انواع</option>
+                @foreach($taskTypes as $value => $label)
+                    <option value="{{ $value }}">{{ $label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-semibold text-slate-700">وضعیت قیمت‌گذاری</label>
+            <select wire:model.live="pricingStatus" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همه</option>
+                <option value="priced">قیمت‌گذاری‌شده</option>
+                <option value="unpriced">قیمت‌گذاری‌نشده</option>
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-semibold text-slate-700">نیاز به تکمیل</label>
+            <select wire:model.live="completionStatus" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همه</option>
+                <option value="needs_completion">نیاز به تکمیل دارد</option>
+                <option value="complete">تکمیل‌شده نسبت به میانگین دسته</option>
+            </select>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-semibold text-slate-700">تعداد موارد نیازمند تکمیل</label>
+            <select wire:model.live="completionCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
+                @foreach($completionCountOptions as $count)
+                    <option value="{{ $count }}">نیاز به {{ number_format($count) }} ویژگی</option>
+                @endforeach
+            </select>
+            <p class="mt-1 text-[10px] text-slate-500">برای انتخاب چند تعداد، کلید Ctrl را نگه دارید.</p>
+        </div>
+        <div>
+            <label class="mb-1 block text-xs font-semibold text-slate-700">تعداد تأمین‌کنندگان دارای قیمت معتبر</label>
+            <select wire:model.live="supplierCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
+                @foreach($supplierCountOptions as $count)
+                    <option value="{{ $count }}">{{ number_format($count) }} تأمین‌کننده</option>
+                @endforeach
+            </select>
+            <p class="mt-1 text-[10px] text-slate-500">تعدادها با سایر فیلترها هماهنگ می‌شوند؛ برای انتخاب چند مورد Ctrl را نگه دارید.</p>
+        </div>
+    </div>
+
     @if(!empty($selectedProducts))
     <div class="p-3 bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 rounded-xl flex flex-wrap items-center justify-between gap-3 animate-fade-in">
         <div class="text-[11px] text-blue-800 dark:text-blue-300 font-bold">
             {{ count($selectedProducts) }} محصول انتخاب شده است.
         </div>
         <div class="flex items-center gap-2 flex-wrap">
+            @if($hasDefaultFullCompletionRule)
+                <button wire:click="createDefaultTasksForSelected" onclick="return confirm('برای محصولات انتخاب‌شده که هیچ سابقه تسکی ندارند، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-50">
+                    ایجاد تسک پیش‌فرض برای انتخاب‌شده‌ها
+                </button>
+            @endif
             <button wire:click="bulkToggleActive(1)" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition-all shadow-sm">
                 فعالسازی نمایش گروهی
             </button>
@@ -124,6 +184,27 @@
     @endif
 
     <!-- جدول محصولات مدرن و فشرده -->
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+        <div class="text-xs text-slate-600 dark:text-slate-300">{{ number_format($products->total()) }} محصول مطابق فیلترها</div>
+        <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                تعداد در صفحه
+                <select wire:model.live="perPage" class="rounded-lg border-slate-300 text-xs dark:bg-slate-800">
+                    @foreach([15, 30, 50, 100] as $pageSize)
+                        <option value="{{ $pageSize }}">{{ $pageSize }}</option>
+                    @endforeach
+                </select>
+            </label>
+            @if($hasDefaultFullCompletionRule)
+                <button wire:click="createDefaultTasksForFilteredProducts" onclick="return confirm('برای همه محصولات بدون سابقه تسک در نتایج فیلترشده، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
+                    ایجاد تسک پیش‌فرض برای همه نتایج فیلترشده
+                </button>
+            @else
+                <span class="text-xs text-amber-700">برای تکمیل کامل ابتدا یک قانون پیش‌فرض فعال تعیین کنید.</span>
+            @endif
+        </div>
+    </div>
+
     <div class="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden relative">
 
         <!-- انیمیشن بارگذاری هوشمند (Livewire Loading State Overlay) -->
@@ -162,8 +243,8 @@
 
                     <!-- تصویر کالا -->
                     <td class="p-2.5 text-center align-middle">
-                        @if($product->galleries->first())
-                        <img src="{{ Storage::url($product->galleries->first()->file_path) }}" alt="{{ $product->title }}" class="w-9 h-9 object-cover rounded-lg border border-slate-150 dark:border-slate-700 shadow-sm mx-auto">
+                        @if($gallery = $product->galleries->first())
+                        <img src="{{ $gallery->getVersionUrl('thumbnail') ?? $gallery->getVersionUrl('small') ?? $gallery->full_url }}" alt="{{ $product->title }}" loading="lazy" width="36" height="36" class="w-9 h-9 object-cover rounded-lg border border-slate-150 dark:border-slate-700 shadow-sm mx-auto">
                         @else
                         <div class="w-9 h-9 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 mx-auto border border-dashed border-slate-250 dark:border-slate-700">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,6 +259,34 @@
                         <div class="font-bold text-slate-800 dark:text-white text-[11.5px] whitespace-normal leading-relaxed" title="{{ $product->title }}">
                             {{ $product->title }}
                         </div>
+                        @php($canViewSupplierPrices = auth()->user()?->can('viewSupplierPrices', $product) ?? false)
+                        @if($canViewSupplierPrices && $product->productSuppliers->isNotEmpty())
+                            <details class="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-2 text-[10px] dark:border-emerald-900 dark:bg-emerald-950/20">
+                                <summary class="cursor-pointer font-semibold text-emerald-800 dark:text-emerald-300">مشاهده تأمین‌کنندگان و قیمت‌ها ({{ $product->productSuppliers->count() }})</summary>
+                                <div class="mt-2 space-y-2">
+                                    @foreach($product->productSuppliers as $productSupplier)
+                                        @if($productSupplier->supplier)
+                                            <div class="rounded-md border border-emerald-100 bg-white p-2 dark:border-emerald-900 dark:bg-slate-900">
+                                                <p class="font-bold text-slate-800 dark:text-slate-100">{{ $productSupplier->supplier->brand_name ?: $productSupplier->supplier->company_name }}</p>
+                                                <ul class="mt-1 space-y-1 text-slate-600 dark:text-slate-300">
+                                                    @foreach($productSupplier->validPrices as $price)
+                                                        <li>
+                                                            {{ $price->priceType?->name ?? 'قیمت' }}
+                                                            @php($tier = $product->quantity_tiers[$price->tier_index] ?? null)
+                                                            @if($price->tier_index > 0 && $tier)
+                                                                · {{ $tier['name'] ?? ('حداقل ' . number_format($tier['min_quantity'] ?? 0) . ' عدد') }}
+                                                            @endif
+                                                            @if($price->checkPeriod) · {{ $price->checkPeriod->label ?: $price->checkPeriod->days.' روزه' }} @endif
+                                                            : <strong>{{ number_format($price->price) }} تومان</strong>
+                                                        </li>
+                                                    @endforeach
+                                                </ul>
+                                            </div>
+                                        @endif
+                                    @endforeach
+                                </div>
+                            </details>
+                        @endif
                         <div class="text-[9.5px] text-slate-400 mt-0.5 flex items-center gap-1">
                             <span class="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
                             <span>{{ $product->category->name ?? 'بدون دسته‌بندی' }}</span>
@@ -186,21 +295,24 @@
 
                     <!-- کد کالا SKU -->
                     <td class="p-2.5 align-middle font-mono text-[10px] text-slate-500 dark:text-slate-400">
-                        {{ $product->sku ?? '---' }}
+                        @if($product->slug)
+                            <a href="{{ route('products.show', ['product' => $product->slug]) }}" target="_blank" rel="noopener noreferrer" class="text-blue-700 underline decoration-dotted underline-offset-2 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200" title="مشاهده صفحه محصول">
+                                {{ $product->sku ?? '---' }}
+                            </a>
+                        @else
+                            {{ $product->sku ?? '---' }}
+                        @endif
                     </td>
 
                     <!-- وضعیت سیستم (بدج‌های مدرن و شکیل با پین رینگ زنده) -->
                     <td class="p-2.5 text-center align-middle">
-                        @php
-                        $badgeClass = match($product->status) {
-                        'active' => 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900',
-                        'pending_review' => 'text-amber-700 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900',
-                        'inactive' => 'text-rose-700 bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900',
-                        'out_of_stock' => 'text-orange-700 bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-900',
-                        default => 'text-slate-600 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
-                        };
-                        @endphp
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black border {{ $badgeClass }}">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black border {{ match($product->status?->value ?? $product->status) {
+                            'active' => 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900',
+                            'pending_review' => 'text-amber-700 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900',
+                            'inactive' => 'text-rose-700 bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900',
+                            'out_of_stock' => 'text-orange-700 bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-900',
+                            default => 'text-slate-600 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+                        } }}">
                                     @if($product->status === 'active')
                                         <span class="w-1 h-1 bg-emerald-500 rounded-full animate-ping"></span>
                                     @endif
@@ -218,6 +330,11 @@
                     <!-- عملیات کالا -->
                     <td class="p-2.5 text-center align-middle">
                         <div class="flex items-center justify-center gap-0.5">
+                            @if(!$product->has_active_completion_task)
+                                <a href="{{ route('admin.outsourcing.tasks.index', ['productId' => $product->id]) }}" class="rounded-md px-1.5 py-1 text-[9px] font-bold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/30" title="افزودن تسک پیش‌فرض برای محصول">افزودن تسک</a>
+                            @else
+                                <span class="rounded-md bg-amber-50 px-1.5 py-1 text-[9px] font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">تسک فعال</span>
+                            @endif
                             <!-- دکمه ویرایش کالا -->
                             <a href="{{ route('admin.products.edit', $product->id) }}" class="p-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20 rounded-md transition-all" title="ویرایش کالا">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

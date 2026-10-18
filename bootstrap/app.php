@@ -53,6 +53,13 @@ return Application::configure(basePath: dirname(__DIR__))
                 return $response;
             }
 
+            // Keep Laravel's native exception page for admin requests so administrators
+            // can inspect the real exception and stack trace while APP_DEBUG is enabled.
+            // Other users continue to receive the application's branded error page.
+            if ($request->is('admin/*')) {
+                return $response;
+            }
+
             // Keep protocol headers (Allow, Retry-After, cookies, etc.), never expose exception details.
             $response->setContent(view('errors.page', ['status' => $status])->render());
             $response->headers->set('Content-Type', 'text/html; charset=UTF-8');

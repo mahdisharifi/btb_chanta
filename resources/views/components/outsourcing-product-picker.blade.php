@@ -1,6 +1,8 @@
+@props(['selectedProduct' => null])
+
 <div class="relative md:col-span-4" wire:ignore
     x-data="{
-        query: '', results: [], selected: null, open: false, loading: false, searched: false, failed: false, active: -1, version: 0,
+        query: '', results: [], selected: @js($selectedProduct), open: false, loading: false, searched: false, failed: false, active: -1, version: 0,
         ready() { return this.query.trim().length >= 2 || /^[0-9۰-۹٠-٩]+$/.test(this.query.trim()); },
         changed() { this.version++; this.results = []; this.active = -1; this.searched = false; this.failed = false; this.loading = this.ready(); this.open = true; },
         async lookup() {
