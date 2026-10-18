@@ -66,14 +66,10 @@ class Preview extends Component
             abort_if($this->template->supplier_id !== $this->supplier->id, 403, 'این کاتالوگ متعلق به شما نیست.');
         }
 
-        $this->supplierLogoPath = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
-    ? storage_path('app/public/' . $this->supplier->logo_path)
-    : null;
+        $this->supplierLogoPath = $this->supplier->logoAbsolutePath('pdf');
 
         $this->supplierName = $this->supplier->company_name ?? 'مدیریت مرکزی';
-        $this->supplierLogoUrl = ($this->supplier->logo_path && file_exists(storage_path('app/public/' . $this->supplier->logo_path)))
-            ? asset('storage/' . $this->supplier->logo_path)
-            : null;
+        $this->supplierLogoUrl = $this->supplier->logoUrl('medium');
 
         $this->settings = $this->template->settings ?? [];
         

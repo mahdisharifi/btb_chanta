@@ -250,6 +250,7 @@ class SupplierProducts extends Component
     protected function buildProductsQuery()
     {
         $query = Product::query()
+            ->pricedFirst()
             ->where('is_active', true)
             ->where('status', ProductStatus::ACTIVE)
             ->where(function ($q) {
@@ -366,9 +367,7 @@ class SupplierProducts extends Component
     public function getSeoProperty(): array
     {
         $canonicalUrl = route('suppliers.show', $this->slug);
-        $ogImage = $this->supplier->logo_path
-            ? asset('storage/' . $this->supplier->logo_path)
-            : asset('images/og-default.jpg');
+        $ogImage = $this->supplier->logoUrl('medium') ?: asset('images/og-default.jpg');
 
         return [
             'title' => ($this->supplier->seo_title ?? $this->supplier->company_name) . ' — ' . config('app.name'),
@@ -387,7 +386,7 @@ class SupplierProducts extends Component
             '@type' => 'Organization',
             'name' => $this->supplier->company_name,
             'url' => route('suppliers.show', $this->slug),
-            'logo' => $this->supplier->logo_path ? asset('storage/' . $this->supplier->logo_path) : null,
+            'logo' => $this->supplier->logoUrl('medium'),
             'description' => $this->seo['description'],
             'address' => array_filter([
                 '@type' => 'PostalAddress',

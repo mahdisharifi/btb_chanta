@@ -221,7 +221,7 @@ $categorySlug = $category?->slug;
             >
                 @if($supplier->logo_path)
                 <img
-                    src="{{ asset('storage/' . $supplier->logo_path) }}"
+                    src="{{ $supplier->logoUrl('small') }}"
                     alt="{{ $supplier->company_name }}"
                     class="h-5 w-5 rounded-full border object-cover"
                 >
@@ -241,7 +241,7 @@ $categorySlug = $category?->slug;
             <div class="flex items-center gap-1.5 rounded-lg px-2 py-1">
                 @if($supplier->logo_path)
                 <img
-                    src="{{ asset('storage/' . $supplier->logo_path) }}"
+                    src="{{ $supplier->logoUrl('small') }}"
                     alt="{{ $supplier->company_name }}"
                     class="h-5 w-5 rounded-full border object-cover"
                 >
@@ -413,4 +413,3 @@ $categorySlug = $category?->slug;
     <div class="absolute inset-0 rounded-2xl border-2 border-amber-400 opacity-0 transition-opacity duration-300 group-hover:opacity-100 pointer-events-none"></div>
 </div>
 @endif
-

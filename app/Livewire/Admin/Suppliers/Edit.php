@@ -37,6 +37,9 @@ class Edit extends RegisterSupplier
     {
         // Override برای ریدایرکت به لیست تامین‌کنندگان ادمین
         $this->validate();
+        $logoImages = app(\App\Services\SupplierLogoImageService::class);
+        $newLogo = null;
+        $logoSaved = false;
 
         try {
             $data = [
@@ -59,10 +62,8 @@ class Edit extends RegisterSupplier
 
             // ذخیره لوگو
             if ($this->logo) {
-                if ($this->existingLogo) {
-                    \Illuminate\Support\Facades\Storage::disk('public')->delete($this->existingLogo);
-                }
-                $data['logo_path'] = $this->logo->store('suppliers/logos', 'public');
+                $newLogo = $logoImages->processUpload($this->logo);
+                $data = array_merge($data, $newLogo);
             }
 
             // ذخیره مدارک احراز هویت
@@ -84,13 +85,22 @@ class Edit extends RegisterSupplier
             $data['social_networks'] = array_filter($this->social_networks);
 
             // ادمین می‌تونه همه فیلدها رو ویرایش کنه (بدون قفل)
+            $oldLogoPath = $this->supplier->logo_path;
+            $oldLogoVersions = $this->supplier->logo_versions;
             $this->supplier->update($data);
+            $logoSaved = true;
+            if ($newLogo && $oldLogoPath) {
+                $logoImages->delete($oldLogoPath, $oldLogoVersions);
+            }
 
             session()->flash('success', 'اطلاعات تامین‌کننده با موفقیت به‌روزرسانی شد.');
 
             return $this->redirectRoute('admin.suppliers.index', navigate: true);
 
         } catch (\Exception $e) {
+            if ($newLogo && ! $logoSaved) {
+                $logoImages->delete($newLogo['logo_path'] ?? null, $newLogo['logo_versions'] ?? null);
+            }
             session()->flash('error', 'خطا در به‌روزرسانی اطلاعات: ' . $e->getMessage());
         }
     }

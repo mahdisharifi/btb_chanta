@@ -253,7 +253,7 @@ class HomeController extends Controller
 
     private function getFeaturedProducts(): Collection
     {
-        return Cache::remember('home:products:featured', self::CACHE_TTL_SHORT, function () {
+        return Cache::remember('home:products:featured:priced-first-v1', self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.is_featured', true)
                 ->orderByDesc('products.updated_at')
@@ -264,7 +264,7 @@ class HomeController extends Controller
 
     private function getLatestProducts(): Collection
     {
-        return Cache::remember('home:products:latest', self::CACHE_TTL_SHORT, function () {
+        return Cache::remember('home:products:latest:priced-first-v1', self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->orderByDesc('products.created_at')
                 ->limit(self::LATEST_PRODUCTS_LIMIT)
@@ -274,7 +274,7 @@ class HomeController extends Controller
 
     private function getPopularProducts(): Collection
     {
-        return Cache::remember('home:products:popular', self::CACHE_TTL_MEDIUM, function () {
+        return Cache::remember('home:products:popular:priced-first-v1', self::CACHE_TTL_MEDIUM, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.view_count', '>', 0)
                 ->orderByDesc('products.view_count')
@@ -286,6 +286,7 @@ class HomeController extends Controller
     private function buildHomeProductQuery()
     {
         return Product::query()
+            ->pricedFirst()
             ->select([
                 'products.id',
                 'products.title',
@@ -304,7 +305,7 @@ class HomeController extends Controller
             ->where('products.status', ProductStatus::ACTIVE)
             ->with([
                 'category:id,name,slug',
-                'supplier:id,company_name,brand_name,slug,logo_path,is_verified',
+                'supplier:id,company_name,brand_name,slug,logo_path,logo_versions,is_verified',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
@@ -351,7 +352,7 @@ class HomeController extends Controller
                 ->where('is_verified', true)
                 ->select([
                     'id', 'user_id', 'company_name', 'brand_name',
-                    'logo_path', 'city', 'province', 'is_verified',
+                    'logo_path', 'logo_versions', 'city', 'province', 'is_verified',
                     'description',
                 ])
                 ->withCount(['products as active_products_count' => function ($q) {
@@ -419,7 +420,7 @@ class HomeController extends Controller
             ->where('products.status', ProductStatus::ACTIVE)
             ->with([
                 'category:id,name,slug',
-                'supplier:id,company_name,slug,logo_path,is_verified',
+                'supplier:id,company_name,slug,logo_path,logo_versions,is_verified',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',

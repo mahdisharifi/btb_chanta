@@ -214,7 +214,7 @@
                            class="group bg-white rounded-2xl border border-gray-100 p-5 text-center hover:shadow-lg hover:border-purple-200 transition-all duration-300">
                             <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-50 border-2 border-gray-100 flex items-center justify-center overflow-hidden group-hover:border-purple-200 transition">
                                 @if($supplier->logo_path)
-                                    <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                                    <img src="{{ $supplier->logoUrl('small') }}"
                                          alt="{{ $supplier->brand_name ?: $supplier->company_name }}"
                                          class="w-12 h-12 object-contain" loading="lazy">
                                 @else

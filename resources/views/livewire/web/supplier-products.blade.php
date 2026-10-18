@@ -80,7 +80,7 @@
                         <div class="shrink-0 mx-auto sm:mx-0">
                             <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white border-4 border-white shadow-lg overflow-hidden">
                                 @if($supplier->logo_path)
-                                    <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                                    <img src="{{ $supplier->logoUrl('medium') }}"
                                          alt="{{ $supplier->company_name }}"
                                          width="96" height="96"
                                          loading="eager"

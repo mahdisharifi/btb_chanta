@@ -63,7 +63,7 @@
                    class="inline-flex items-center gap-1 mt-1 text-[11px] text-gray-400 hover:text-blue-600 transition-colors group/supplier"
                    title="مشاهده پروفایل {{ $supplier->company_name }}">
                     @if($supplier->logo_path)
-                        <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                        <img src="{{ $supplier->logoUrl('small') }}"
                              alt="{{ $supplier->company_name }}"
                              class="w-4 h-4 rounded-full object-cover border border-gray-200">
                     @endif

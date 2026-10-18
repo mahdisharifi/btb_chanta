@@ -16,6 +16,7 @@ class ProductBrowserController extends Controller
         $isPremium = $user->hasRole('retailer_premium');
 
         $query = Product::query()
+            ->pricedFirst()
             ->where('is_active', true)
             ->where('status', 'active')
             ->with(['category', 'galleries' => fn($q) => $q->where('is_primary', true)]);
@@ -103,6 +104,7 @@ class ProductBrowserController extends Controller
 
         // Related products
         $relatedProducts = Product::query()
+            ->pricedFirst()
             ->where('category_id', $product->category_id)
             ->where('id', '!=', $product->id)
             ->where('is_active', true)

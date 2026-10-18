@@ -58,6 +58,7 @@
                         @if(isset($info['group']) && $info['group'] === 'clear')
                         <button
                             wire:click="runCommand('{{ $cmd }}')"
+                            @if(!empty($info['confirm'])) wire:confirm="{{ $info['confirm'] }}" @endif
                             wire:loading.attr="disabled"
                             wire:target="runCommand('{{ $cmd }}')"
                             class="relative flex items-center justify-between w-full p-3 overflow-hidden text-white transition-all rounded-lg shadow hover:shadow-md active:scale-[0.98] {{ $info['color'] }} hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"
@@ -236,6 +237,7 @@
                         @if(isset($info['group']) && $info['group'] === 'info')
                         <button
                             wire:click="runCommand('{{ $cmd }}')"
+                            @if(!empty($info['confirm'])) wire:confirm="{{ $info['confirm'] }}" @endif
                             wire:loading.attr="disabled"
                             wire:target="runCommand('{{ $cmd }}')"
                             class="relative flex items-center justify-between w-full p-3 overflow-hidden text-white transition-all rounded-lg shadow hover:shadow-md active:scale-[0.98] {{ $info['color'] }} hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed"

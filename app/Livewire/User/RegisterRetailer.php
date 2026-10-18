@@ -154,6 +154,11 @@ class RegisterRetailer extends Component
     public function register()
     {
         $this->validate();
+        $logoImages = app(\App\Services\SupplierLogoImageService::class);
+        $newLogo = null;
+        $logoSaved = false;
+        $oldLogoPath = $this->editMode ? $this->supplier?->logo_path : null;
+        $oldLogoVersions = $this->editMode ? $this->supplier?->logo_versions : null;
 
         DB::beginTransaction();
 
@@ -179,10 +184,8 @@ class RegisterRetailer extends Component
             ];
             // مدیریت آپلود لوگو
             if ($this->logo) {
-                if ($this->editMode && $this->existingLogo) {
-                    Storage::disk('public')->delete($this->existingLogo);
-                }
-                $data['logo_path'] = $this->logo->store('retailers/logos', 'public');
+                $newLogo = $logoImages->processUpload($this->logo);
+                $data = array_merge($data, $newLogo);
             }
 
             if ($this->editMode) {
@@ -192,8 +195,12 @@ class RegisterRetailer extends Component
                     $data['verification_status'] = 'under_review';
                 }
                 $this->supplier->update($data);
+                $logoSaved = true;
 
                 DB::commit();
+                if ($newLogo && $oldLogoPath) {
+                    $logoImages->delete($oldLogoPath, $oldLogoVersions);
+                }
 
                 session()->flash('message', 'اطلاعات شما با موفقیت به‌روزرسانی شد.');
 
@@ -213,6 +220,7 @@ class RegisterRetailer extends Component
             $data['is_active']           = false;
 
             Supplier::create($data);
+            $logoSaved = true;
 
             $user->syncRoles('retailer_basic');
 
@@ -223,6 +231,9 @@ class RegisterRetailer extends Component
             return redirect()->route('retailer.dashboard');
         } catch (\Exception $e) {
             DB::rollBack();
+            if ($newLogo && ! $logoSaved) {
+                $logoImages->delete($newLogo['logo_path'] ?? null, $newLogo['logo_versions'] ?? null);
+            }
             session()->flash('error', 'خطا در ثبت اطلاعات: ' . $e->getMessage());
         }
     }

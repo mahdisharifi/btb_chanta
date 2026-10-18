@@ -222,7 +222,7 @@ class SupplierProfileController extends Controller
      */
     private function getProducts(int $supplierId, Request $request)
     {
-        $query = Product::whereHas('suppliers', function ($q) use ($supplierId) {
+        $query = Product::query()->pricedFirst()->whereHas('suppliers', function ($q) use ($supplierId) {
                 $q->where('suppliers.id', $supplierId)
                   ->wherePivot('is_active', true);
             })
@@ -302,7 +302,7 @@ class SupplierProfileController extends Controller
             'alternateName' => $supplier->brand_name,
             'description' => $supplier->description,
             'url' => route('suppliers.show', $supplier->slug),
-            'logo' => $supplier->logo_path ? asset('storage/' . $supplier->logo_path) : null,
+            'logo' => $supplier->logoUrl('medium'),
             'address' => [
                 '@type' => 'PostalAddress',
                 'addressLocality' => $supplier->city,

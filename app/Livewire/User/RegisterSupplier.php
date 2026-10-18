@@ -204,6 +204,11 @@ class RegisterSupplier extends Component
     public function register()
     {
         $this->validate();
+        $logoImages = app(\App\Services\SupplierLogoImageService::class);
+        $newLogo = null;
+        $logoSaved = false;
+        $oldLogoPath = $this->editMode ? $this->supplier?->logo_path : null;
+        $oldLogoVersions = $this->editMode ? $this->supplier?->logo_versions : null;
 
         try {
             $data = [
@@ -237,10 +242,8 @@ class RegisterSupplier extends Component
 
             // ذخیره لوگو
             if ($this->logo) {
-                if ($this->existingLogo) {
-                    Storage::disk('public')->delete($this->existingLogo);
-                }
-                $data['logo_path'] = $this->logo->store('suppliers/logos', 'public');
+                $newLogo = $logoImages->processUpload($this->logo);
+                $data = array_merge($data, $newLogo);
             }
 
             // ذخیره مدارک احراز هویت
@@ -270,6 +273,11 @@ class RegisterSupplier extends Component
                     unset($data[$lockedField]);
                 }
 
+                if ($newLogo && ! array_key_exists('logo_path', $data)) {
+                    $logoImages->delete($newLogo['logo_path'] ?? null, $newLogo['logo_versions'] ?? null);
+                    $newLogo = null;
+                }
+
                 // برای ادمین، وضعیت تایید تغییر نکند
                 if ($this->supplier->type !== 'admin') {
                     // فقط اگر قبلاً approved نیست، وضعیت را به under_review تغییر بده
@@ -283,6 +291,7 @@ class RegisterSupplier extends Component
                 }
 
                 $this->supplier->update($data);
+                $logoSaved = true;
             } else {
                 // حالت ثبت‌نام جدید
                 $data['user_id'] = Auth::id();
@@ -291,11 +300,16 @@ class RegisterSupplier extends Component
                 $data['is_active'] = false;
 
                 $this->supplier = Supplier::create($data);
+                $logoSaved = true;
 
                 // تخصیص نقش
                 Auth::user()->syncRoles('regular_supplier');
 
                 session()->flash('message', 'ثبت‌نام شما با موفقیت انجام شد. پس از تایید مدیر، می‌توانید از سیستم استفاده کنید.');
+            }
+
+            if ($newLogo && $logoSaved && $oldLogoPath) {
+                $logoImages->delete($oldLogoPath, $oldLogoVersions);
             }
 
             // ریدایرکت بر اساس نوع و وضعیت تایید
@@ -311,6 +325,9 @@ class RegisterSupplier extends Component
             return redirect()->route('account.pending');
 
         } catch (\Exception $e) {
+            if ($newLogo && ! $logoSaved) {
+                $logoImages->delete($newLogo['logo_path'] ?? null, $newLogo['logo_versions'] ?? null);
+            }
             session()->flash('error', 'خطا در ثبت اطلاعات: ' . $e->getMessage());
         }
     }

@@ -17,7 +17,7 @@ class AdvancedSearchService
 {
     public function searchProducts(array $filters, $user = null)
     {
-        $query = Product::query()->active();
+        $query = Product::query()->active()->pricedFirst();
 
         // جستجوی متنی
         if (!empty($filters['q'])) {

@@ -88,12 +88,14 @@ class Create extends Component
     {
         $this->validate();
 
-        $logoPath = null;
+        $logoImages = app(\App\Services\SupplierLogoImageService::class);
+        $logo = null;
         if ($this->logo) {
-            $logoPath = $this->logo->store('suppliers/logos', 'public');
+            $logo = $logoImages->processUpload($this->logo);
         }
 
-        DB::transaction(function () use ($logoPath) {
+        try {
+            DB::transaction(function () use ($logo) {
             $finalUserId = $this->user_id;
 
             if ($this->is_new_user) {
@@ -132,9 +134,16 @@ class Create extends Component
                 'is_active' => $this->is_active,
                 'is_verified' => $this->is_verified,
                 'verified_at' => $this->is_verified ? now() : null,
-                'logo_path' => $logoPath,
+                'logo_path' => $logo['logo_path'] ?? null,
+                'logo_versions' => $logo['logo_versions'] ?? null,
             ]);
-        });
+            });
+        } catch (\Throwable $exception) {
+            if ($logo) {
+                $logoImages->delete($logo['logo_path'] ?? null, $logo['logo_versions'] ?? null);
+            }
+            throw $exception;
+        }
 
         session()->flash('success', 'تامین‌کننده با موفقیت ثبت شد.');
 

@@ -86,6 +86,7 @@ class ArtisanRunner extends Component
             // 📋 دستورات اطلاعاتی
             'route:list'     => ['name' => 'لیست روت‌ها', 'icon' => 'o-list-bullet', 'color' => 'bg-gray-600', 'group' => 'info'],
             'about'          => ['name' => 'اطلاعات محیط', 'icon' => 'o-information-circle', 'color' => 'bg-slate-600', 'group' => 'info'],
+            'suppliers:generate-logo-versions' => ['name' => 'بازسازی نسخه‌های لوگوی تأمین‌کنندگان', 'icon' => 'o-photo', 'color' => 'bg-fuchsia-600', 'group' => 'info', 'confirm' => 'نسخه‌های لوگوی همهٔ تأمین‌کنندگان دوباره ساخته شوند؟ این کار ممکن است روی هاست اشتراکی چند دقیقه زمان ببرد.'],
         ];
     }
 
@@ -103,17 +104,19 @@ class ArtisanRunner extends Component
             return;
         }
 
-        $this->output = "> در حال اجرای دستور: php artisan {$command} ...\n\n";
+        $arguments = $command === 'suppliers:generate-logo-versions' ? ['--force' => true] : [];
+        $this->output = "> در حال اجرای دستور: php artisan {$command}" . ($arguments !== [] ? ' --force' : '') . " ...\n\n";
 
         try {
             // اجرای دستور
-            Artisan::call($command);
+            $exitCode = Artisan::call($command, $arguments);
 
             // دریافت خروجی
             $result = Artisan::output();
+            $this->output .= "کد خروج: {$exitCode}\n";
             $this->output .= $result ?: "دستور با موفقیت اجرا شد اما خروجی نداشت.\n";
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->output .= "[خطا] اجرای دستور با مشکل مواجه شد:\n" . $e->getMessage() . "\n";
         }
     }

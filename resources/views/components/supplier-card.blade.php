@@ -23,7 +23,7 @@
         {{-- Logo --}}
         <div class="w-20 h-20 mx-auto rounded-2xl bg-white border border-gray-200 overflow-hidden shadow-sm mb-3 group-hover:shadow-md transition-shadow">
             @if($supplier->logo_path)
-                <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                <img src="{{ $supplier->logoUrl('small') }}"
                      alt="{{ $supplier->company_name }}"
                      class="w-full h-full object-contain p-2"
                      loading="lazy">

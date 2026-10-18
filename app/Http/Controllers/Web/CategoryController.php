@@ -83,12 +83,13 @@ class CategoryController extends Controller
 
         // Products in this category and subcategories
         $products = \App\Models\Product::query()
+            ->pricedFirst()
             ->whereIn('category_id', $categoryIds)
             ->where('is_active', true)
             ->where('status', 'active')
             ->with([
                 'category:id,name,slug,parent_id',
-                'supplier:id,company_name,brand_name,logo_path,is_verified',
+                'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
                 'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text', 'versions', 'base_name'])
                     ->where('file_type', 'image')
                     ->orderByDesc('is_primary')

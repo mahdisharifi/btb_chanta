@@ -22,6 +22,7 @@ class SearchApiController extends Controller
         }
 
         $products = Product::query()
+            ->pricedFirst()
             ->where('is_active', true)
             ->where('status', 'active')
             ->where(function ($q) use ($query) {

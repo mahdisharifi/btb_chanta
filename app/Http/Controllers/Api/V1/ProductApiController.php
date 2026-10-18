@@ -12,6 +12,7 @@ class ProductApiController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Product::query()
+            ->pricedFirst()
             ->where('is_active', true)
             ->where('status', 'active')
             ->with(['category:id,name,slug', 'galleries' => fn($q) => $q->where('is_primary', true)]);

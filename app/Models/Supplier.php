@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class Supplier extends Model
 {
@@ -41,6 +43,7 @@ class Supplier extends Model
         'company_name_en',
         'brand_name',
         'logo_path',
+        'logo_versions',
         
         // ✅ تنظیمات قیمت‌گذاری
         'price_rounding_type',
@@ -71,8 +74,46 @@ class Supplier extends Model
         'verified_at' => 'datetime',
         'social_networks' => 'array',
         'verification_documents' => 'array',
+        'logo_versions' => 'array',
 
     ];
+
+    public function logoVersionPath(string $size = 'small'): ?string
+    {
+        $version = data_get($this->logo_versions, $size);
+        $path = is_array($version) ? ($version['path'] ?? null) : $version;
+
+        if (is_string($path) && $path !== '') {
+            return $path;
+        }
+
+        return filled($this->logo_path) ? $this->logo_path : null;
+    }
+
+    public function logoUrl(string $size = 'small'): ?string
+    {
+        $path = $this->logoVersionPath($size);
+        if (! $path) {
+            return null;
+        }
+
+        if (Str::startsWith($path, ['http://', 'https://'])) {
+            return $path;
+        }
+
+        return asset('storage/'.ltrim($path, '/'));
+    }
+
+    public function logoAbsolutePath(string $size = 'pdf'): ?string
+    {
+        $path = $this->logoVersionPath($size);
+        if (! $path || Str::startsWith($path, ['http://', 'https://'])) {
+            return null;
+        }
+
+        $disk = Storage::disk('public');
+        return $disk->exists($path) ? $disk->path($path) : null;
+    }
 
     // Relations
     public function verifier(): BelongsTo

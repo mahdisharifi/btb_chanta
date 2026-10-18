@@ -342,7 +342,7 @@ class ProductSupplier extends Model
      */
     public function scopeWithPricesAndSupplier(Builder $query): Builder
     {
-        return $query->with(['activePrices', 'supplier:id,company_name,brand_name,logo_path,is_verified']);
+        return $query->with(['activePrices', 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified']);
     }
 
     /**
@@ -355,7 +355,7 @@ class ProductSupplier extends Model
             'validPrices'  => fn($q) => $q->orderBy('price'),
             'supplier'     => fn($q) => $q->select([
                 'id', 'user_id', 'company_name', 'company_name_en',
-                'brand_name', 'logo_path', 'phone', 'mobile',
+                'brand_name', 'logo_path', 'logo_versions', 'phone', 'mobile',
                 'email', 'city', 'province', 'is_verified', 'is_active',
             ]),
         ]);
@@ -549,7 +549,7 @@ class ProductSupplier extends Model
     public function getSupplierLogoUrlAttribute(): string
     {
         if ($this->supplier?->logo_path) {
-            return asset('storage/' . $this->supplier->logo_path);
+            return $this->supplier->logoUrl('small');
         }
 
         return asset('images/placeholders/supplier-default.png');

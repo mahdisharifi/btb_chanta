@@ -118,6 +118,8 @@
                         <div class="flex items-center gap-4">
                             @if ($logo)
                             <img src="{{ $logo->temporaryUrl() }}" class="w-14 h-14 rounded-lg object-cover border border-gray-200" />
+                            @elseif ($editMode && $supplier?->logo_path)
+                            <img src="{{ $supplier->logoUrl('small') }}" alt="لوگوی فعلی کسب‌وکار" class="w-14 h-14 rounded-lg object-cover border border-gray-200" />
                             @else
                             <div class="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center border border-dashed border-gray-300">
                                 <x-heroicon-o-photo class="w-6 h-6 text-gray-400" />

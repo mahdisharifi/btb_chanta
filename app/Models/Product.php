@@ -228,6 +228,25 @@ class Product extends Model
                      ->where('status', ProductStatus::ACTIVE);
     }
 
+    /** Put products with a current price from an active supplier first in catalog results. */
+    public function scopePricedFirst(Builder $query): Builder
+    {
+        return $query->orderByRaw("CASE WHEN EXISTS (
+            SELECT 1
+            FROM product_supplier as priced_ps
+            INNER JOIN suppliers as priced_supplier
+                ON priced_supplier.id = priced_ps.supplier_id
+                AND priced_supplier.is_active = 1
+            INNER JOIN product_prices as priced_price
+                ON priced_price.product_supplier_id = priced_ps.id
+                AND priced_price.is_active = 1
+            WHERE priced_ps.product_id = products.id
+                AND priced_ps.is_active = 1
+                AND (priced_price.valid_from IS NULL OR priced_price.valid_from <= CURRENT_DATE)
+                AND (priced_price.valid_until IS NULL OR priced_price.valid_until >= CURRENT_DATE)
+        ) THEN 0 ELSE 1 END ASC");
+    }
+
     /**
      * محصولات ویژه
      */

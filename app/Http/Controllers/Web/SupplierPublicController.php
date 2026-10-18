@@ -200,6 +200,7 @@ class SupplierPublicController extends Controller
 
         // ─── محصولات تأمین‌کننده (هر دو مسیر: supplier_id مستقیم + pivot) ───
         $productsQuery = Product::query()
+            ->pricedFirst()
             ->where('is_active', true)
             ->where('status', ProductStatus::ACTIVE)
             ->where(function ($q) use ($supplier) {
@@ -406,9 +407,7 @@ class SupplierPublicController extends Controller
 
         // ─── SEO — منطبق با layout variables + JSON-LD ───
         $canonicalUrl = route('suppliers.show', $slug);
-        $ogImage      = $supplier->logo_path
-            ? asset('storage/' . $supplier->logo_path)
-            : asset('images/og-default.jpg');
+        $ogImage      = $supplier->logoUrl('medium') ?: asset('images/og-default.jpg');
 
         $seo = [
             'title'          => ($supplier->seo_title ?? $supplier->company_name) . ' — ' . config('app.name'),

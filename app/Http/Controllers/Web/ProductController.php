@@ -58,7 +58,7 @@ class ProductController extends Controller
     /** روابط مشترک برای Eager Loading در لیست */
     private const INDEX_RELATIONS = [
         'category:id,name,slug,icon,parent_id',
-        'supplier:id,company_name,brand_name,logo_path,is_verified',
+        'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
     ];
 
     // ══════════════════════════════════════════════════════════
@@ -282,7 +282,7 @@ class ProductController extends Controller
                     'parent:id,name,slug,parent_id'
                 ]
             ],
-            'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
+            'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,logo_versions,phone,mobile,email,website,city,province,is_verified,is_active',
             // 👇 مشخصات فنی با ساختار EAV اضافه شد 👇
             'attributeValues.attribute',
             // 👇 فیلدهای file_type و alt_text به این بخش اضافه شدند 👇
@@ -308,7 +308,7 @@ class ProductController extends Controller
                 'tier_enabled', 'tier_percentages', 'auto_calculate_tiers'
             ])
             ->with([
-                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active,slug',
+                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,logo_versions,phone,mobile,email,website,city,province,is_verified,is_active,slug',
                 // بارگذاری قیمت‌های ماتریسی جدید با relations (با fallback به ساختار قدیمی)
                 'prices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type_id', 'tier_index', 'check_period_id', 'is_active', 'valid_from', 'valid_until'])
                     ->activeAndValid()
@@ -589,7 +589,7 @@ class ProductController extends Controller
             ->with([
                 'category:id,name,slug,icon,parent_id',
 
-                'supplier:id,company_name,brand_name,logo_path,is_verified',
+                'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'file_type',
@@ -908,6 +908,8 @@ class ProductController extends Controller
      */
     private function applySorting(Builder $query, Request $request): Builder
     {
+        $query->pricedFirst();
+
         $sort = $request->get('sort', 'latest');
 
         if (!in_array($sort, self::ALLOWED_SORT_OPTIONS)) {
@@ -1103,7 +1105,7 @@ class ProductController extends Controller
                 $data['supplierInfo'] = [
                     'company_name' => $product->supplier->company_name ?? null,
                     'brand_name'   => $product->supplier->brand_name ?? null,
-                    'logo_path'    => $product->supplier->logo_path ?? null,
+                    'logo_path'    => $product->supplier?->logoUrl('medium'),
                     'is_verified'  => $product->supplier->is_verified ?? false,
                     'phone'        => $product->supplier->phone ?? null,
                     'mobile'       => $product->supplier->mobile ?? null,
@@ -1177,10 +1179,10 @@ class ProductController extends Controller
      */
     private function getRelatedProducts(Product $product, int $limit = 8): Collection
     {
-        $cacheKey = "web:product:{$product->id}:related:{$limit}";
+        $cacheKey = "web:product:{$product->id}:related:priced-first-v1:{$limit}";
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SHORT, function () use ($product, $limit) {
-            return Product::where('category_id', $product->category_id)
+            return Product::query()->pricedFirst()->where('category_id', $product->category_id)
                 ->where('id', '!=', $product->id)
                 ->where('is_active', true)
                 ->where('status', ProductStatus::ACTIVE)
@@ -1305,7 +1307,7 @@ class ProductController extends Controller
 
         $suppliers = $canSeeSupplierFilter
             ? Supplier::query()
-                ->select('id', 'company_name', 'brand_name', 'logo_path', 'is_verified')
+                ->select('id', 'company_name', 'brand_name', 'logo_path', 'logo_versions', 'is_verified')
                 ->where('is_active', true)
                 ->selectSub(
                     DB::table('products')

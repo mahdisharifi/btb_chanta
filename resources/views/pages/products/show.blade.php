@@ -932,7 +932,7 @@ use App\Helpers\PriceHelper;
                                        title="مشاهده فروشگاه {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
                                        onclick="event.stopPropagation()">
                                         @if($ps->supplier->logo_path)
-                                        <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
+                                        <img src="{{ $ps->supplier->logoUrl('small') }}"
                                              alt="{{ $ps->supplier->company_name ?? '' }}"
                                              class="w-12 h-12 rounded-xl object-cover border-2 border-blue-100 shadow-sm group-hover/supplier:border-blue-400 group-hover/supplier:ring-2 group-hover/supplier:ring-blue-200 transition-all">
                                         @else
@@ -1301,7 +1301,7 @@ use App\Helpers\PriceHelper;
                                             <th class="text-center px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 border-b min-w-[90px] sm:min-w-[110px] md:min-w-[130px]">
                                                 <div class="flex flex-col items-center gap-0.5">
                                                     @if($ps->supplier && $ps->supplier->logo_path)
-                                                    <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}" class="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg object-cover border border-gray-200">
+                                                    <img src="{{ $ps->supplier->logoUrl('small') }}" class="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg object-cover border border-gray-200">
                                                     @else
                                                     <div class="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs sm:text-sm">
                                                         {{ mb_substr($ps->supplier->company_name ?? '?', 0, 1) }}
