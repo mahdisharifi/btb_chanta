@@ -34,6 +34,7 @@ class ProductCompletionTask extends Model
         'active_product_id',
         'supplier_id',
         'created_by',
+        'bulk_creation_batch_id',
         'assigned_by',
         'assigned_to',
         'reviewer_id',
@@ -229,6 +230,11 @@ class ProductCompletionTask extends Model
     public function remainingRevisions(): int
     {
         return max(0, $this->revision_limit - $this->revision_count);
+    }
+
+    public function bulkCreationBatch(): BelongsTo
+    {
+        return $this->belongsTo(ProductCompletionTaskBatch::class, 'bulk_creation_batch_id');
     }
 
     public function completionDeadlineLabel(): string

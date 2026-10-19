@@ -66,7 +66,7 @@
             @endfor
 
             @if($prices->isEmpty())
-            <div style="text-align: center; color: #cbd5e1; font-size: 10px; margin-top: 10px;">بدون قیمت‌گذاری</div>
+            <x-product-unpriced-label style="display: block; text-align: center; color: #cbd5e1; font-size: 10px; margin-top: 10px;" />
             @endif
         </div>
     </td>

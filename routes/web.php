@@ -156,7 +156,8 @@ Route::view('/privacy', 'pages.privacy')->name('privacy');
 
 // Slider Click Tracking
 Route::post('/sliders/{slider}/click', function (Slider $slider) {
-    $slider->increment('clicks');
+    abort_unless(Slider::active()->whereKey($slider->getKey())->exists(), 404);
+    $slider->increment('click_count');
     return response()->json(['success' => true]);
 })->middleware('throttle:30,1')->name('sliders.click');
 

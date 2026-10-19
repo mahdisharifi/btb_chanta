@@ -7,6 +7,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -45,9 +46,12 @@ class Create extends Component
         $rules = [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'mobile' => ['required', 'string', 'max:20', 'unique:users,mobile'],
+            'mobile' => array_merge(
+                $this->isSystemRole() ? ['nullable'] : ['required'],
+                ['string', 'max:20', 'unique:users,mobile'],
+            ),
             'password' => ['required', 'string', 'confirmed', Password::defaults()],
-            'role' => ['required', 'string'],
+            'role' => ['required', 'string', Rule::in(UserRole::values())],
         ];
 
         // اعمال اعتبارسنجی فیلدهای تامین‌کننده فقط اگر نقش تامین‌کننده انتخاب شده باشد
@@ -77,9 +81,12 @@ class Create extends Component
             $user = User::create([
                 'name' => $this->name,
                 'email' => $this->email,
-                'mobile' => $this->mobile,
+                'mobile' => trim((string) $this->mobile) !== '' ? trim((string) $this->mobile) : null,
                 'password' => Hash::make($this->password),
             ]);
+            $user->forceFill([
+                'is_verified' => $this->isSystemRole() && blank($user->mobile),
+            ])->save();
 
             // اختصاص نقش
             $user->assignRole($this->role);
@@ -110,6 +117,19 @@ class Create extends Component
 
     public function render()
     {
-        return view('livewire.admin.users.create');
+        return view('livewire.admin.users.create', [
+            'isSystemRole' => $this->isSystemRole(),
+        ]);
+    }
+
+    private function isSystemRole(): bool
+    {
+        return in_array($this->role, [
+            UserRole::SUPER_ADMIN->value,
+            UserRole::ADMIN->value,
+            UserRole::OUTSOURCER->value,
+            UserRole::REVIEWER->value,
+            UserRole::FINANCE_MANAGER->value,
+        ], true);
     }
 }

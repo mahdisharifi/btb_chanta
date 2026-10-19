@@ -17,25 +17,44 @@ window.mainSlider = function(totalSlides) {
     return {
         current: 0,
         total: totalSlides,
-        paused: false,
         progress: 0,
         progressInterval: null,
         autoPlayDuration: 5000, // 5 ثانیه
+        hoverPaused: false,
+        focusPaused: false,
+        userPaused: false,
+        reducedMotion: false,
+        visibilityHandler: null,
+        motionQuery: null,
+        motionHandler: null,
+        swipeStartX: 0,
+        swipeStartY: 0,
+        swipeActive: false,
+        activePointerId: null,
+        ignoreNextClick: false,
 
         init() {
-            if (this.total > 1) {
-                this.startAutoPlay();
-            }
+            this.motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+            this.reducedMotion = this.motionQuery?.matches ?? false;
+            this.motionHandler = (event) => {
+                this.reducedMotion = event.matches;
+                this.syncAutoPlay();
+            };
+            this.motionQuery?.addEventListener?.('change', this.motionHandler);
+            this.visibilityHandler = () => this.syncAutoPlay();
+            document.addEventListener('visibilitychange', this.visibilityHandler);
+            this.syncAutoPlay();
         },
 
         startAutoPlay() {
+            if (this.total <= 1 || this.shouldPause() || this.progressInterval) return;
             this.progress = 0;
             const step = 100 / (this.autoPlayDuration / 16.67); // ~60fps
             let lastTime = performance.now();
             
             const animate = (currentTime) => {
-                if (this.paused) {
-                    this.progressInterval = requestAnimationFrame(animate);
+                if (this.shouldPause()) {
+                    this.stopAutoPlay();
                     return;
                 }
                 
@@ -66,7 +85,19 @@ window.mainSlider = function(totalSlides) {
         resetProgress() {
             this.stopAutoPlay();
             this.progress = 0;
-            this.startAutoPlay();
+            this.syncAutoPlay();
+        },
+
+        shouldPause() {
+            return this.hoverPaused || this.focusPaused || this.userPaused || this.reducedMotion || document.hidden;
+        },
+
+        syncAutoPlay() {
+            if (this.shouldPause()) {
+                this.stopAutoPlay();
+            } else if (this.total > 1 && !this.progressInterval) {
+                this.startAutoPlay();
+            }
         },
 
         next() {
@@ -87,11 +118,96 @@ window.mainSlider = function(totalSlides) {
         },
 
         pause() {
-            this.paused = true;
+            this.hoverPaused = true;
+            this.syncAutoPlay();
         },
 
         resume() {
-            this.paused = false;
+            this.hoverPaused = false;
+            this.syncAutoPlay();
+        },
+
+        pauseForFocus(paused) {
+            if (paused) this.focusPaused = true;
+            this.syncAutoPlay();
+        },
+
+        toggleUserPause() {
+            if (this.userPaused || this.focusPaused) {
+                this.userPaused = false;
+                this.focusPaused = false;
+            } else {
+                this.userPaused = true;
+            }
+            this.syncAutoPlay();
+        },
+
+        startSwipe(event) {
+            if (event.pointerType === 'mouse' || this.total <= 1 || this.activePointerId !== null) return;
+
+            if (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, [role="button"]')) {
+                return;
+            }
+
+            this.activePointerId = event.pointerId;
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            this.swipeStartX = event.clientX;
+            this.swipeStartY = event.clientY;
+            this.swipeActive = true;
+            this.pause();
+        },
+
+        endSwipe(event) {
+            if (this.activePointerId !== event.pointerId || !this.swipeActive) return;
+
+            const deltaX = event.clientX - this.swipeStartX;
+            const deltaY = event.clientY - this.swipeStartY;
+            const isHorizontalSwipe = Math.abs(deltaX) >= 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+
+            this.swipeActive = false;
+            this.activePointerId = null;
+
+            if (isHorizontalSwipe) {
+                this.ignoreNextClick = true;
+                window.setTimeout(() => { this.ignoreNextClick = false; }, 500);
+                deltaX < 0 ? this.next() : this.prev();
+            }
+
+            this.resume();
+        },
+
+        cancelSwipe(event) {
+            if (event && this.activePointerId !== event.pointerId) return;
+            if (!this.swipeActive) return;
+            this.swipeActive = false;
+            this.activePointerId = null;
+            this.resume();
+        },
+
+        suppressSwipeClick(event) {
+            if (!this.ignoreNextClick) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.ignoreNextClick = false;
+        },
+
+        trackClick(url) {
+            const token = document.querySelector('meta[name="csrf-token"]')?.content;
+            fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                keepalive: true,
+                headers: { 'X-CSRF-TOKEN': token ?? '', Accept: 'application/json' },
+            }).catch(() => {});
+        },
+
+        destroy() {
+            this.stopAutoPlay();
+            if (this.visibilityHandler) {
+                document.removeEventListener('visibilitychange', this.visibilityHandler);
+            }
+            this.motionQuery?.removeEventListener?.('change', this.motionHandler);
         }
     };
 };

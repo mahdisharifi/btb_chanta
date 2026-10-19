@@ -145,6 +145,11 @@ class ProductCompletionTaskPolicy
             && $this->updateDraft($user, $task);
     }
 
+    public function previewAvailableTask(User $user, ProductCompletionTask $task): bool
+    {
+        return $this->claimAvailableTask($user, $task);
+    }
+
     public function withdrawSubmission(User $user, ProductCompletionTask $task): bool
     {
         return $user->can('outsourcing.submit_task')
@@ -181,6 +186,15 @@ class ProductCompletionTaskPolicy
     public function create(User $user): bool
     {
         return $user->can('outsourcing.create_task');
+    }
+
+    public function undoBulkCreation(User $user): bool
+    {
+        return $user->hasAllPermissions([
+            'outsourcing.create_task',
+            'outsourcing.publish_task',
+            'outsourcing.cancel_task',
+        ]);
     }
 
     public function assignTask(User $user, ProductCompletionTask $task): bool

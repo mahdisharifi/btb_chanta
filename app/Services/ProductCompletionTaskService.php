@@ -357,6 +357,41 @@ class ProductCompletionTaskService
         }, 3);
     }
 
+    /** Cancel a task created by a bulk run only while it is still freely available. */
+    public function cancelUnclaimedBulkTask(User $actor, ProductCompletionTask $task, int $batchId): bool
+    {
+        Gate::forUser($actor)->authorize('undoBulkCreation', ProductCompletionTask::class);
+
+        return DB::transaction(function () use ($actor, $task, $batchId): bool {
+            $locked = $this->lockTask($task);
+            if ((int) $locked->bulk_creation_batch_id !== $batchId
+                || $locked->status !== ProductCompletionTaskStatus::AVAILABLE
+                || $locked->assigned_to !== null
+                || $locked->accepted_at !== null
+                || $locked->active_product_id !== $locked->product_id
+                || $locked->submissions()->exists()) {
+                return false;
+            }
+
+            $previousStatus = $locked->status;
+            $this->assertTransition($previousStatus, ProductCompletionTaskStatus::CANCELLED);
+            $locked->forceFill([
+                'status' => ProductCompletionTaskStatus::CANCELLED,
+                'active_product_id' => null,
+                'cancelled_at' => now(),
+                'cancellation_reason' => 'لغو گروهی پیش از پذیرش؛ شناسه عملیات '.$batchId,
+                'lock_version' => $locked->lock_version + 1,
+            ])->save();
+
+            $this->auditStatusChange($actor, $locked, $previousStatus, 'task_cancelled', [
+                'reason' => 'bulk_creation_rollback',
+                'bulk_creation_batch_id' => $batchId,
+            ]);
+
+            return true;
+        }, 3);
+    }
+
     public function expire(ProductCompletionTask $task): ProductCompletionTask
     {
         return DB::transaction(function () use ($task): ProductCompletionTask {

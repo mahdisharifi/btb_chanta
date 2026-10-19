@@ -10,6 +10,7 @@ use App\Models\Flowchart;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class AdminPagesTest extends TestCase
@@ -70,6 +71,45 @@ class AdminPagesTest extends TestCase
             ->get(route('admin.users.create'));
 
         $response->assertStatus(200);
+    }
+
+    public function test_admin_can_create_verified_system_user_without_mobile(): void
+    {
+        Role::firstOrCreate(['name' => UserRole::REVIEWER->value, 'guard_name' => 'web']);
+
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Create::class)
+            ->set('name', 'Reviewer Account')
+            ->set('email', 'reviewer-system@example.test')
+            ->set('role', UserRole::REVIEWER->value)
+            ->assertSee('اختیاری برای کاربر سیستمی')
+            ->set('mobile', '')
+            ->set('password', 'SystemPassword#123')
+            ->set('password_confirmation', 'SystemPassword#123')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('admin.users.index'));
+
+        $user = User::where('email', 'reviewer-system@example.test')->firstOrFail();
+        $this->assertNull($user->mobile);
+        $this->assertTrue((bool) $user->is_verified);
+        $this->assertNull($user->mobile_verified_at);
+        $this->assertFalse($user->needsMobileVerification());
+        $this->assertTrue($user->hasRole(UserRole::REVIEWER->value));
+    }
+
+    public function test_admin_created_external_user_still_requires_mobile(): void
+    {
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Create::class)
+            ->set('name', 'Retailer Account')
+            ->set('email', 'retailer-system@example.test')
+            ->set('role', UserRole::RETAILER_BASIC->value)
+            ->set('mobile', '')
+            ->set('password', 'SystemPassword#123')
+            ->set('password_confirmation', 'SystemPassword#123')
+            ->call('save')
+            ->assertHasErrors(['mobile' => 'required']);
+
+        $this->assertDatabaseMissing('users', ['email' => 'retailer-system@example.test']);
     }
 
     /**

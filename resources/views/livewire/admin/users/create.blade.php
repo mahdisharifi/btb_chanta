@@ -24,19 +24,24 @@
                         </div>
 
                         <div class="col-span-12 sm:col-span-6 md:col-span-4">
-                            <x-label for="mobile" required>موبایل</x-label>
+                            <x-label for="mobile">
+                                موبایل
+                                @if($isSystemRole)
+                                    <span class="text-xs font-normal text-gray-500">(اختیاری برای کاربر سیستمی)</span>
+                                @else
+                                    <span class="text-red-600" aria-hidden="true">*</span>
+                                @endif
+                            </x-label>
                             <x-input id="mobile" wire:model="mobile" class="mt-1 w-full ltr" type="text" />
                             <x-input-error :messages="$errors->get('mobile')" class="mt-2" />
+                            @if($isSystemRole)
+                                <p class="mt-2 text-xs leading-5 text-gray-500">اگر موبایل خالی باشد، کاربر با وضعیت تأییدشده ساخته می‌شود.</p>
+                            @endif
                         </div>
 
                         <div class="col-span-12 sm:col-span-6 md:col-span-4">
                             <x-label for="role" required>نقش</x-label>
-                            <x-select id="role" wire:model.live="role" class="mt-1 w-full">
-                                <option value="">- انتخاب کنید -</option>
-                                @foreach(\App\Enums\UserRole::cases() as $role)
-                                <option value="{{ $role->value }}">{{ $role->label() }}</option>
-                                @endforeach
-                            </x-select>
+                            <x-select id="role" wire:model.live="role" :options="\App\Enums\UserRole::options()" placeholder="- انتخاب نقش -" class="mt-1 w-full" />
                             <x-input-error :messages="$errors->get('role')" class="mt-2" />
                         </div>
 

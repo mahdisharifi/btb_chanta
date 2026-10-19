@@ -73,8 +73,12 @@
 
                                 {{-- پیش‌نمایش --}}
                                 <td class="px-4 py-3">
-                                    <div class="w-24 h-12 rounded-lg overflow-hidden"
+                                    <div class="relative w-24 h-12 rounded-lg overflow-hidden"
                                          style="{{ $slider->bg_gradient ?: 'background-color: ' . $slider->bg_color }}">
+                                        @if($slider->image_path)
+                                            <img src="{{ $slider->image_url }}" alt="" class="absolute inset-0 h-full w-full object-cover">
+                                            <div class="absolute inset-0 bg-black/30"></div>
+                                        @endif
                                         <div class="w-full h-full flex items-center justify-center text-[10px] font-bold px-2"
                                              style="color: {{ $slider->text_color }}">
                                             {{ Str::limit($slider->title, 20) }}
@@ -95,7 +99,7 @@
                                 {{-- لینک --}}
                                 <td class="px-4 py-3">
                                     @if($slider->link_url)
-                                        <a href="{{ $slider->link_url }}" target="_blank"
+                                        <a href="{{ $slider->link_url }}" target="_blank" rel="noopener noreferrer"
                                            class="text-xs text-indigo-600 hover:text-indigo-700 line-clamp-1">
                                             {{ $slider->link_url }}
                                         </a>
@@ -210,12 +214,51 @@
                                 @error('description') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                             </div>
 
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div class="rounded-xl border border-gray-200 p-4 space-y-3">
+                                    <label for="slider-desktop-image" class="block text-sm font-medium text-gray-700">تصویر اسلایدر دسکتاپ</label>
+                                    <input id="slider-desktop-image" type="file" wire:model="desktopUpload" accept="image/jpeg,image/png,image/webp" class="block w-full text-sm text-gray-600">
+                                    <p class="text-xs text-gray-500">JPG، PNG یا WebP؛ حداکثر ۶ مگابایت و ۶۰۰۰×۴۰۰۰ پیکسل.</p>
+                                    @error('desktopUpload') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
+                                    @if($desktopUpload)
+                                        <img src="{{ $desktopUpload->temporaryUrl() }}" alt="پیش‌نمایش تصویر دسکتاپ" class="h-28 w-full rounded-lg object-cover">
+                                    @elseif($existingImagePath && ! $removeDesktopImage)
+                                        <img src="{{ asset('storage/' . $existingImagePath) }}" alt="تصویر فعلی اسلایدر دسکتاپ" class="h-28 w-full rounded-lg object-cover">
+                                    @endif
+                                    @if($existingImagePath && ! $desktopUpload)
+                                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" wire:model.live="removeDesktopImage" class="rounded border-gray-300">
+                                            <span>حذف تصویر دسکتاپ (اسلاید بدون تصویر می‌شود)</span>
+                                        </label>
+                                    @endif
+                                </div>
+
+                                <div class="rounded-xl border border-gray-200 p-4 space-y-3">
+                                    <label for="slider-mobile-image" class="block text-sm font-medium text-gray-700">تصویر جایگزین موبایل (اختیاری)</label>
+                                    <input id="slider-mobile-image" type="file" wire:model="mobileUpload" accept="image/jpeg,image/png,image/webp" class="block w-full text-sm text-gray-600">
+                                    <p class="text-xs text-gray-500">اگر انتخاب نشود، تصویر دسکتاپ در موبایل هم استفاده می‌شود.</p>
+                                    @error('mobileUpload') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
+                                    @if($mobileUpload)
+                                        <img src="{{ $mobileUpload->temporaryUrl() }}" alt="پیش‌نمایش تصویر موبایل" class="h-28 w-full rounded-lg object-cover">
+                                    @elseif($existingMobileImagePath && ! $removeMobileImage)
+                                        <img src="{{ asset('storage/' . $existingMobileImagePath) }}" alt="تصویر فعلی اسلایدر موبایل" class="h-28 w-full rounded-lg object-cover">
+                                    @endif
+                                    @if($existingMobileImagePath)
+                                        <label class="flex items-center gap-2 text-sm text-gray-700">
+                                            <input type="checkbox" wire:model="removeMobileImage" class="rounded border-gray-300">
+                                            <span>حذف تصویر موبایل فعلی</span>
+                                        </label>
+                                    @endif
+                                </div>
+                            </div>
+
                             {{-- لینک --}}
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div class="md:col-span-2">
                                     <label class="block text-sm font-medium text-gray-700 mb-1">آدرس لینک</label>
-                                    <input type="url" wire:model="link_url" placeholder="https://example.com/page"
+                                    <input type="text" wire:model="link_url" placeholder="/products یا https://example.com/page"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                    <p class="mt-1 text-xs text-gray-500">برای صفحات همین سایت از مسیرهایی مثل ‎/products‎ و برای سایت‌های دیگر از آدرس http/https استفاده کنید.</p>
                                     @error('link_url') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
                                 </div>
                                 <div>

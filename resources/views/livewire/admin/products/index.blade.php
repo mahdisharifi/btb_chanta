@@ -126,6 +126,41 @@
             </select>
         </div>
         <div>
+            <label for="filter-primary-image" class="mb-1 block text-xs font-semibold text-slate-700">تصویر اصلی</label>
+            <select id="filter-primary-image" wire:model.live="primaryImageStatus" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همه</option>
+                <option value="has">دارای تصویر اصلی</option>
+                <option value="missing">بدون تصویر اصلی</option>
+            </select>
+        </div>
+        <fieldset class="min-w-0 rounded-lg border border-slate-200 p-2">
+            <legend class="px-1 text-xs font-semibold text-slate-700">تعداد تصاویر گالری (بدون تصویر اصلی)</legend>
+            <div class="max-h-32 space-y-1 overflow-y-auto">
+                @foreach($galleryImageCountOptions as $count)
+                    <label for="filter-gallery-image-count-{{ $count }}" class="flex min-h-8 cursor-pointer items-center gap-2 rounded px-1 text-xs hover:bg-slate-100">
+                        <input id="filter-gallery-image-count-{{ $count }}" type="checkbox" wire:model.live="galleryImageCounts" value="{{ $count }}" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span>{{ number_format($count) }} تصویر</span>
+                    </label>
+                @endforeach
+            </div>
+        </fieldset>
+        <div>
+            <label for="filter-short-description" class="mb-1 block text-xs font-semibold text-slate-700">توضیحات کوتاه</label>
+            <select id="filter-short-description" wire:model.live="shortDescriptionStatus" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همه</option>
+                <option value="has">دارای توضیح</option>
+                <option value="missing">بدون توضیح</option>
+            </select>
+        </div>
+        <div>
+            <label for="filter-full-description" class="mb-1 block text-xs font-semibold text-slate-700">توضیحات کامل</label>
+            <select id="filter-full-description" wire:model.live="fullDescriptionStatus" class="w-full rounded-lg border-slate-300 text-xs">
+                <option value="">همه</option>
+                <option value="has">دارای توضیح</option>
+                <option value="missing">بدون توضیح</option>
+            </select>
+        </div>
+        <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">نیاز به تکمیل</label>
             <select wire:model.live="completionStatus" class="w-full rounded-lg border-slate-300 text-xs">
                 <option value="">همه</option>
@@ -153,16 +188,35 @@
         </div>
     </div>
 
+    @if($canUndoBulkTaskCreation && $latestUndoableTaskBatch)
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+        <p>آخرین ایجاد گروهی شما: {{ number_format($latestUndoableTaskBatch->tasks_count) }} تسک ثبت شده؛ {{ number_format($latestUndoableTaskBatch->failed_count) }} مورد ناموفق.</p>
+        <p class="w-full">بازگردانی فقط تسک‌های آزاد و پذیرفته‌نشده را لغو می‌کند؛ موارد پذیرفته‌شده یا در حال رسیدگی حفظ می‌شوند.</p>
+        @if($latestUndoableTaskBatch->status === 'rolling_back')
+            <p class="w-full">بازگردانی مرحله‌ای: {{ number_format($latestUndoableTaskBatch->rollback_processed_count) }} از {{ number_format($latestUndoableTaskBatch->tasks_count) }} تسک بررسی شده است.</p>
+        @endif
+        <button wire:click="undoLatestBulkTaskCreation" onclick="return confirm('{{ $latestUndoableTaskBatch->status === 'rolling_back' ? 'ادامهٔ بازگردانی تسک‌های باقی‌مانده؟' : 'تسک‌های آزاد این عملیات لغو شوند؟' }}')" wire:loading.attr="disabled" class="rounded-lg border border-amber-400 px-3 py-2 font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:text-amber-100 dark:hover:bg-amber-900/40">
+            {{ $latestUndoableTaskBatch->status === 'rolling_back' ? 'ادامهٔ بازگردانی' : 'بازگردانی آخرین ایجاد گروهی' }}
+        </button>
+    </div>
+    @endif
+
+    @if($bulkTaskUndoResult !== '')
+        <p role="status" aria-live="polite" class="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">{{ $bulkTaskUndoResult }}</p>
+    @endif
+
     @if(!empty($selectedProducts))
     <div class="p-3 bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 rounded-xl flex flex-wrap items-center justify-between gap-3 animate-fade-in">
         <div class="text-[11px] text-blue-800 dark:text-blue-300 font-bold">
             {{ count($selectedProducts) }} محصول انتخاب شده است.
         </div>
         <div class="flex items-center gap-2 flex-wrap">
-            @if($hasDefaultFullCompletionRule)
-                <button wire:click="createDefaultTasksForSelected" onclick="return confirm('برای محصولات انتخاب‌شده که هیچ سابقه تسکی ندارند، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-50">
+            @if($hasDefaultFullCompletionRule && !$hasPendingBulkTaskRollback)
+                <button wire:click="createDefaultTasksForSelected" onclick="return confirm('برای محصولات انتخاب‌شده‌ای که تسک فعال ندارند، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-50">
                     ایجاد تسک پیش‌فرض برای انتخاب‌شده‌ها
                 </button>
+            @elseif($hasPendingBulkTaskRollback)
+                <span class="text-xs font-semibold text-amber-800">ابتدا بازگردانی گروهیِ نیمه‌تمام را کامل کنید.</span>
             @endif
             <button wire:click="bulkToggleActive(1)" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition-all shadow-sm">
                 فعالسازی نمایش گروهی
@@ -195,10 +249,12 @@
                     @endforeach
                 </select>
             </label>
-            @if($hasDefaultFullCompletionRule)
-                <button wire:click="createDefaultTasksForFilteredProducts" onclick="return confirm('برای همه محصولات بدون سابقه تسک در نتایج فیلترشده، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
+            @if($hasDefaultFullCompletionRule && !$hasPendingBulkTaskRollback)
+                <button wire:click="createDefaultTasksForFilteredProducts" onclick="return confirm('برای همهٔ محصولات بدون تسک فعال در نتایج فیلترشده، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
                     ایجاد تسک پیش‌فرض برای همه نتایج فیلترشده
                 </button>
+            @elseif($hasPendingBulkTaskRollback)
+                <span class="text-xs text-amber-700">ابتدا بازگردانی گروهیِ نیمه‌تمام را کامل کنید.</span>
             @else
                 <span class="text-xs text-amber-700">برای تکمیل کامل ابتدا یک قانون پیش‌فرض فعال تعیین کنید.</span>
             @endif

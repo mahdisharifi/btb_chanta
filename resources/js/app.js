@@ -1,19 +1,16 @@
 import './bootstrap';
-import '@splidejs/splide/css';
-import Splide from '@splidejs/splide';
 
 // ✅ Import slider utilities (shared components)
 import './components/slider-utils.js';
 
 // تعریف global برای استفاده در Blade
-window.Splide = Splide;
 
 // Auto-init برای اسلایدرها
 document.addEventListener('DOMContentLoaded', function() {
     // Hero Slider
     const heroSlider = document.querySelector('#hero-slider .splide');
-    if (heroSlider) {
-        new Splide(heroSlider, {
+    if (heroSlider && window.Splide) {
+        new window.Splide(heroSlider, {
             type: 'fade',
             direction: 'rtl',
             rewind: true,

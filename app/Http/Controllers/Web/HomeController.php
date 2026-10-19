@@ -22,6 +22,7 @@ class HomeController extends Controller
 
     private const CACHE_TTL_SHORT  = 600;    // 10 دقیقه
     private const CACHE_TTL_MEDIUM = 1800;   // 30 دقیقه
+    private const CACHE_TTL_SLIDER = 45;
     private const CACHE_TTL_LONG   = 3600;   // 1 ساعت
 
     private const FEATURED_PRODUCTS_LIMIT  = 12;
@@ -96,7 +97,7 @@ class HomeController extends Controller
      */
     private function getActiveSliders(): Collection
     {
-        return Cache::remember('home:sliders:active', self::CACHE_TTL_MEDIUM, function () {
+        return Cache::remember('home:sliders:active:v2', self::CACHE_TTL_SLIDER, function () {
             // ── بررسی وجود جدول sliders ──
             if (!\Schema::hasTable('sliders')) {
                 return $this->getFallbackSliders();

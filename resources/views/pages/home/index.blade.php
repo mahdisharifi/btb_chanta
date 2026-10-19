@@ -5,25 +5,27 @@
 
 @php
     $canSeePrices = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium', 'retailer_basic']);
-    
-    // ✅ Preload تصاویر حیاتی برای بهبود LCP
-    $preloadImages = [];
-    if ($featuredProducts->isNotEmpty()) {
-        $firstProduct = $featuredProducts->first();
-        if ($firstProduct->relationLoaded('galleries') && $firstProduct->galleries->isNotEmpty()) {
-            $primaryImage = $firstProduct->galleries->firstWhere('is_primary', true) ?? $firstProduct->galleries->first();
-            if ($primaryImage && $primaryImage->getVersionUrl('sm')) {
-                $preloadImages[] = $primaryImage->getVersionUrl('sm');
-            }
-        }
-    }
+    $firstSlider = $sliders->first();
+    $sliderImageService = app(\App\Services\SliderImageService::class);
+    $desktopPath = $firstSlider ? data_get($firstSlider, 'image_path') : null;
+    $mobilePath = $firstSlider ? data_get($firstSlider, 'mobile_image_path') : null;
+    $desktopResponsiveSet = $sliderImageService->responsiveSet($desktopPath);
+    $mobileResponsiveSet = $sliderImageService->responsiveSet($mobilePath);
+    $desktopPreloadUrl = $desktopResponsiveSet['fallback'] ?? data_get($firstSlider, 'image_url');
+    $mobilePreloadUrl = $mobileResponsiveSet['fallback'] ?? data_get($firstSlider, 'mobile_image_url');
+    $hasDistinctMobileImage = filled($mobilePreloadUrl) && $mobilePreloadUrl !== $desktopPreloadUrl;
 @endphp
 
-{{-- Preload تصاویر حیاتی --}}
 @push('head')
-    @foreach($preloadImages as $imageUrl)
-        <link rel="preload" href="{{ $imageUrl }}" as="image">
-    @endforeach
+    @if($desktopPreloadUrl)
+        <link rel="preload" href="{{ $desktopPreloadUrl }}" as="image"
+            @if($desktopResponsiveSet['srcset'] ?? null) imagesrcset="{{ $desktopResponsiveSet['srcset'] }}" imagesizes="100vw" @endif
+            @if($hasDistinctMobileImage) media="(min-width: 640px)" @endif fetchpriority="high">
+    @endif
+    @if($hasDistinctMobileImage)
+        <link rel="preload" href="{{ $mobilePreloadUrl }}" as="image" media="(max-width: 639px)"
+            @if($mobileResponsiveSet['srcset'] ?? null) imagesrcset="{{ $mobileResponsiveSet['srcset'] }}" imagesizes="100vw" @endif fetchpriority="high">
+    @endif
 @endpush
 @section('content')
 <div class="min-h-screen bg-gray-50">
@@ -36,7 +38,7 @@
     {{-- ═══════════════ MAIN CONTENT WRAPPER ═════════════════ --}}
     {{-- ══════════════════════════════════════════════════════════ --}}
 
-    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-2 space-y-8">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-0 pb-2 space-y-6 sm:space-y-8">
 
 
 

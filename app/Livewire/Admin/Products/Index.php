@@ -9,6 +9,7 @@ use App\Enums\ProductCompletionTaskStatus;
 use App\Enums\ProductCompletionTaskType;
 use App\Models\CommissionRule;
 use App\Models\ProductCompletionTask;
+use App\Models\ProductCompletionTaskBatch;
 use App\Services\ProductCompletionTaskService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -23,12 +24,19 @@ class Index extends Component
 {
     use WithPagination;
 
+    private const BULK_UNDO_CHUNK_SIZE = 50;
+
     public $completionStatus = '';
     public array $completionCounts = [];
     public array $supplierCounts = [];
     public $taskStatus = '';
     public $taskType = '';
     public $pricingStatus = '';
+    public $primaryImageStatus = '';
+    public $galleryImageCounts = [];
+    public $shortDescriptionStatus = '';
+    public $fullDescriptionStatus = '';
+    public string $bulkTaskUndoResult = '';
 
     public $search = '';
     public $category_id = '';
@@ -48,6 +56,10 @@ class Index extends Component
     public function updatedTaskStatus() { $this->resetFiltersAndSelection(); }
     public function updatedTaskType() { $this->resetFiltersAndSelection(); }
     public function updatedPricingStatus() { $this->resetFiltersAndSelection(); }
+    public function updatedPrimaryImageStatus() { $this->resetFiltersAndSelection(); }
+    public function updatedGalleryImageCounts() { $this->resetFiltersAndSelection(); }
+    public function updatedShortDescriptionStatus() { $this->resetFiltersAndSelection(); }
+    public function updatedFullDescriptionStatus() { $this->resetFiltersAndSelection(); }
 
     public function updatedPerPage(): void
     {
@@ -110,6 +122,11 @@ class Index extends Component
         Gate::authorize('create', ProductCompletionTask::class);
         Gate::authorize('outsourcing.publish_task');
 
+        if ($this->hasPendingBulkTaskRollback()) {
+            $this->dispatch('notify', message: 'ابتدا بازگردانی گروهیِ نیمه‌تمام را ادامه دهید و کامل کنید.', type: 'warning');
+            return;
+        }
+
         $selectedIds = collect($this->selectedProducts)
             ->map(static fn ($id) => filter_var($id, FILTER_VALIDATE_INT))
             ->filter(static fn ($id) => $id !== false && $id > 0)
@@ -124,7 +141,7 @@ class Index extends Component
 
         $query = $this->getFilteredQuery()
             ->whereIn('products.id', $selectedIds)
-            ->whereDoesntHave('completionTasks');
+            ->whereDoesntHave('completionTasks', fn ($task) => $task->whereNotNull('active_product_id'));
 
         $this->createDefaultTasksFromQuery($query, count($selectedIds), $service);
     }
@@ -134,12 +151,18 @@ class Index extends Component
         Gate::authorize('create', ProductCompletionTask::class);
         Gate::authorize('outsourcing.publish_task');
 
-        $query = $this->getFilteredQuery()->whereDoesntHave('completionTasks');
+        if ($this->hasPendingBulkTaskRollback()) {
+            $this->dispatch('notify', message: 'ابتدا بازگردانی گروهیِ نیمه‌تمام را ادامه دهید و کامل کنید.', type: 'warning');
+            return;
+        }
+
+        $query = $this->getFilteredQuery()->whereDoesntHave('completionTasks', fn ($task) => $task->whereNotNull('active_product_id'));
         $this->createDefaultTasksFromQuery($query, null, $service);
     }
 
     private function createDefaultTasksFromQuery($query, ?int $requestedCount, ProductCompletionTaskService $service): void
     {
+        $this->bulkTaskUndoResult = '';
         $taskType = ProductCompletionTaskType::FULL_COMPLETION;
         $now = now();
         $defaultRule = CommissionRule::query()
@@ -156,6 +179,10 @@ class Index extends Component
         }
 
         set_time_limit(300);
+        $batch = ProductCompletionTaskBatch::query()->create([
+            'created_by' => auth()->id(),
+            'status' => 'running',
+        ]);
         $created = 0;
         $failed = 0;
         $eligible = 0;
@@ -169,27 +196,55 @@ class Index extends Component
             &$created,
             &$failed,
             &$eligible,
-        ): void {
+            $batch,
+        ) {
             foreach ($products as $product) {
-                $eligible++;
                 try {
-                    $service->create(
-                        actor: $actor,
-                        product: $product,
-                        commissionRule: $defaultRule,
-                        taskType: $taskType,
-                        completionDays: (int) config('product_completion.defaults.due_days', 3),
-                        publishImmediately: true,
-                    );
+                    $started = \DB::transaction(function () use ($service, $actor, $product, $defaultRule, $taskType, $batch): bool {
+                        $lockedBatch = ProductCompletionTaskBatch::query()->lockForUpdate()->findOrFail($batch->getKey());
+                        if ($lockedBatch->status !== 'running') {
+                            return false;
+                        }
+
+                        $task = $service->create(
+                            actor: $actor,
+                            product: $product,
+                            commissionRule: $defaultRule,
+                            taskType: $taskType,
+                            completionDays: (int) config('product_completion.defaults.due_days', 3),
+                            publishImmediately: true,
+                        );
+                        $task->forceFill(['bulk_creation_batch_id' => $batch->getKey()])->save();
+                        return true;
+                    }, 3);
+                    if (! $started) {
+                        return false;
+                    }
+                    $eligible++;
                     $created++;
                 } catch (ValidationException $exception) {
+                    $eligible++;
                     $failed++;
                 } catch (\Throwable $exception) {
                     report($exception);
+                    $eligible++;
                     $failed++;
                 }
             }
         }, 'products.id', 'id');
+
+        \DB::transaction(function () use ($batch, $eligible, $created, $failed): void {
+            $lockedBatch = ProductCompletionTaskBatch::query()->lockForUpdate()->findOrFail($batch->getKey());
+            if ($lockedBatch->status === 'running') {
+                $lockedBatch->forceFill([
+                    'status' => 'completed',
+                    'eligible_count' => $eligible,
+                    'created_count' => $created,
+                    'failed_count' => $failed,
+                    'completed_at' => now(),
+                ])->save();
+            }
+        }, 3);
 
         $skipped = $requestedCount === null ? 0 : max(0, $requestedCount - $eligible);
         $this->selectedProducts = [];
@@ -205,6 +260,143 @@ class Index extends Component
         $this->dispatch('notify', message: $message, type: $created > 0 ? 'success' : 'warning');
     }
 
+    public function undoLatestBulkTaskCreation(ProductCompletionTaskService $service): void
+    {
+        Gate::authorize('undoBulkCreation', ProductCompletionTask::class);
+
+        $actor = auth()->user();
+        $batch = ProductCompletionTaskBatch::query()
+            ->where('created_by', $actor->getKey())
+            ->whereIn('status', ['running', 'completed', 'rolling_back'])
+            ->whereNull('rolled_back_at')
+            ->whereHas('tasks')
+            ->latest('id')
+            ->first();
+
+        if ($batch === null) {
+            $this->dispatch('notify', message: 'عملیات گروهیِ قابل بازگشت پیدا نشد.', type: 'warning');
+            return;
+        }
+
+        $prepared = \DB::transaction(function () use ($batch, $actor): bool {
+            $lockedBatch = ProductCompletionTaskBatch::query()->lockForUpdate()->findOrFail($batch->getKey());
+            if ((int) $lockedBatch->created_by !== (int) $actor->getKey()
+                || ! in_array($lockedBatch->status, ['running', 'completed', 'rolling_back'], true)
+                || $lockedBatch->rolled_back_at !== null) {
+                return false;
+            }
+
+            if ($lockedBatch->status !== 'rolling_back') {
+                $lockedBatch->forceFill(['status' => 'rolling_back'])->save();
+            }
+
+            return true;
+        }, 3);
+
+        if (! $prepared) {
+            $this->bulkTaskUndoResult = 'این عملیات قبلاً بازگردانده شده یا دیگر قابل بازگردانی نیست.';
+            $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'warning');
+            return;
+        }
+
+        set_time_limit(300);
+        $batch = ProductCompletionTaskBatch::query()->findOrFail($batch->getKey());
+        $cursor = $batch->rollback_cursor_task_id;
+        $tasks = ProductCompletionTask::query()
+            ->where('bulk_creation_batch_id', $batch->getKey())
+            ->when($cursor !== null, fn ($query) => $query->where('id', '>', $cursor))
+            ->orderBy('id')
+            ->limit(self::BULK_UNDO_CHUNK_SIZE)
+            ->get();
+
+        foreach ($tasks as $task) {
+            try {
+                \DB::transaction(function () use ($task, $batch, $actor, $service): void {
+                    $lockedBatch = ProductCompletionTaskBatch::query()->lockForUpdate()->findOrFail($batch->getKey());
+                    if ($lockedBatch->status !== 'rolling_back' || $lockedBatch->rolled_back_at !== null) {
+                        return;
+                    }
+                    if ($lockedBatch->rollback_cursor_task_id !== null
+                        && $task->getKey() <= $lockedBatch->rollback_cursor_task_id) {
+                        return;
+                    }
+
+                    $lockedTask = ProductCompletionTask::query()->lockForUpdate()->find($task->getKey());
+                    $cancelled = $lockedTask !== null
+                        && (int) $lockedTask->bulk_creation_batch_id === (int) $lockedBatch->getKey()
+                        ? $service->cancelUnclaimedBulkTask($actor, $lockedTask, $lockedBatch->getKey())
+                        : false;
+
+                    if ($lockedTask === null || (int) $lockedTask->bulk_creation_batch_id !== (int) $lockedBatch->getKey()) {
+                        $lockedBatch->forceFill([
+                            'rollback_cursor_task_id' => $task->getKey(),
+                            'rollback_processed_count' => $lockedBatch->rollback_processed_count + 1,
+                            'protected_count' => $lockedBatch->protected_count + 1,
+                        ])->save();
+                        return;
+                    }
+                    $lockedBatch->forceFill([
+                        'rollback_cursor_task_id' => $lockedTask->getKey(),
+                        'rollback_processed_count' => $lockedBatch->rollback_processed_count + 1,
+                        'cancelled_count' => $lockedBatch->cancelled_count + ($cancelled ? 1 : 0),
+                        'protected_count' => $lockedBatch->protected_count + ($cancelled ? 0 : 1),
+                    ])->save();
+                }, 3);
+            } catch (\Throwable $exception) {
+                report($exception);
+                $this->bulkTaskUndoResult = 'بازگردانی به‌طور موقت متوقف شد؛ دوباره اقدام کنید تا از همان مرحله ادامه پیدا کند.';
+                $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'warning');
+                return;
+            }
+        }
+
+        $batch = ProductCompletionTaskBatch::query()->findOrFail($batch->getKey());
+        $hasMoreTasks = ProductCompletionTask::query()
+            ->where('bulk_creation_batch_id', $batch->getKey())
+            ->when($batch->rollback_cursor_task_id !== null, fn ($query) => $query->where('id', '>', $batch->rollback_cursor_task_id))
+            ->exists();
+
+        if ($hasMoreTasks) {
+            $total = ProductCompletionTask::query()->where('bulk_creation_batch_id', $batch->getKey())->count();
+            $this->bulkTaskUndoResult = "بازگردانی مرحله‌ای انجام شد: {$batch->rollback_processed_count} از {$total} تسک بررسی شد. دکمهٔ ادامه را برای مرحلهٔ بعد بزنید.";
+            $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'success');
+            return;
+        }
+
+        $result = \DB::transaction(function () use ($batch, $actor): ?array {
+            $lockedBatch = ProductCompletionTaskBatch::query()->lockForUpdate()->findOrFail($batch->getKey());
+            if ((int) $lockedBatch->created_by !== (int) $actor->getKey()
+                || $lockedBatch->status !== 'rolling_back'
+                || $lockedBatch->rolled_back_at !== null) {
+                return null;
+            }
+
+            $lockedBatch->forceFill([
+                'status' => 'rolled_back',
+                'eligible_count' => max($lockedBatch->eligible_count, $lockedBatch->rollback_processed_count),
+                'created_count' => max($lockedBatch->created_count, $lockedBatch->rollback_processed_count),
+                'rolled_back_at' => now(),
+            ])->save();
+
+            return [$lockedBatch->cancelled_count, $lockedBatch->protected_count];
+        }, 3);
+
+        if ($result === null) {
+            $this->bulkTaskUndoResult = 'این عملیات هنگام بازگردانی تغییر کرده است؛ وضعیت را تازه‌سازی کنید.';
+            $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'warning');
+            return;
+        }
+
+        [$cancelled, $protected] = $result;
+        if ($cancelled === 0 && $protected === 0) {
+            $this->bulkTaskUndoResult = 'تسکی برای بازگردانی پیدا نشد.';
+            $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'warning');
+            return;
+        }
+
+        $this->bulkTaskUndoResult = "بازگردانی کامل شد: {$cancelled} تسک لغو شد و {$protected} تسکِ پذیرفته‌شده یا در حال رسیدگی بدون تغییر باقی ماند.";
+        $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'success');
+    }
     private function hasDefaultFullCompletionRule(): bool
     {
         $now = now();
@@ -218,7 +410,17 @@ class Index extends Component
             ->exists();
     }
 
-    protected function getFilteredQuery(bool $includeCompletionCountFilter = true, bool $includeSupplierCountFilter = true)
+    private function hasPendingBulkTaskRollback(): bool
+    {
+        return ProductCompletionTaskBatch::query()
+            ->where('created_by', auth()->id())
+            ->where('status', 'rolling_back')
+            ->whereNull('rolled_back_at')
+            ->whereHas('tasks')
+            ->exists();
+    }
+
+    protected function getFilteredQuery(bool $includeCompletionCountFilter = true, bool $includeSupplierCountFilter = true, bool $includeGalleryImageCountFilter = true)
     {
         $query = Product::query();
 
@@ -234,7 +436,49 @@ class Index extends Component
         }
 
         if (!empty($this->status)) {
-            $query->where('status', $this->status);
+            $query->where('products.status', $this->status);
+        }
+
+        if ($this->primaryImageStatus === 'has') {
+            $query->whereHas('primaryImage');
+        } elseif ($this->primaryImageStatus === 'missing') {
+            $query->whereDoesntHave('primaryImage');
+        }
+
+        $shortDescriptionContent = "TRIM(REPLACE(REPLACE(REPLACE(COALESCE(products.short_description, ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), ''))";
+        $fullDescriptionContent = "TRIM(REPLACE(REPLACE(REPLACE(COALESCE(products.full_description, ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), ''))";
+
+        if ($this->shortDescriptionStatus === 'has') {
+            $query->whereRaw($shortDescriptionContent." <> ''");
+        } elseif ($this->shortDescriptionStatus === 'missing') {
+            $query->whereRaw($shortDescriptionContent." = ''");
+        }
+
+        if ($this->fullDescriptionStatus === 'has') {
+            $query->whereRaw($fullDescriptionContent." <> ''");
+        } elseif ($this->fullDescriptionStatus === 'missing') {
+            $query->whereRaw($fullDescriptionContent." = ''");
+        }
+
+        $galleryImageCounts = collect($this->galleryImageCounts)
+            ->map(static fn ($count) => filter_var((string) $count, FILTER_VALIDATE_INT))
+            ->filter(static fn ($count) => $count !== false && $count >= 0)
+            ->unique()
+            ->values();
+        if ($includeGalleryImageCountFilter && $galleryImageCounts->isNotEmpty()) {
+            $query->where(function ($countQuery) use ($galleryImageCounts): void {
+                foreach ($galleryImageCounts as $count) {
+                    $galleryConstraint = static fn ($gallery) => $gallery
+                        ->reorder()
+                        ->where('file_type', 'image')
+                        ->where('is_primary', false);
+                    if ($count === 0) {
+                        $countQuery->orWhereDoesntHave('galleries', $galleryConstraint);
+                    } else {
+                        $countQuery->orWhereHas('galleries', $galleryConstraint, '=', $count);
+                    }
+                }
+            });
         }
 
         if ($this->pricingStatus === 'priced') {
@@ -548,6 +792,26 @@ class Index extends Component
             ->all();
     }
 
+    private function getGalleryImageCountOptions($filteredProductIds): array
+    {
+        $productsWithGalleryCounts = Product::query()
+            ->whereIn('products.id', $filteredProductIds)
+            ->select('products.id')
+            ->withCount(['galleries as gallery_image_count' => fn ($gallery) => $gallery
+                ->reorder()
+                ->where('file_type', 'image')
+                ->where('is_primary', false)]);
+
+        return \DB::query()
+            ->fromSub($productsWithGalleryCounts, 'filtered_products')
+            ->select('gallery_image_count')
+            ->distinct()
+            ->orderByDesc('gallery_image_count')
+            ->pluck('gallery_image_count')
+            ->map(static fn ($count): int => (int) $count)
+            ->all();
+    }
+
     private function checkSeoCompletion(Product $product): string
     {
         $filledCount = 0;
@@ -581,8 +845,10 @@ class Index extends Component
         $products = $query->paginate($this->safePerPage());
         $categoryAverages = $this->getCategoryAttributeAverages();
         $filteredProductIds = $this->getFilteredQuery(false, false)->reorder()->select('products.id');
+        $galleryCountProductIds = $this->getFilteredQuery(false, false, false)->reorder()->select('products.id');
         $completionCountOptions = $this->getCompletionCountOptions($categoryAverages, $filteredProductIds);
         $supplierCountOptions = $this->getSupplierCountOptions($filteredProductIds);
+        $galleryImageCountOptions = $this->getGalleryImageCountOptions($galleryCountProductIds);
         $products->getCollection()->transform(function (Product $product) use ($categoryAverages) {
             $actualCount = (int) ($product->attribute_values_count ?? 0);
             $actualCount += !empty($product->short_description) ? 1 : 0;
@@ -596,6 +862,17 @@ class Index extends Component
             'products' => $products,
             'completionCountOptions' => $completionCountOptions,
             'supplierCountOptions' => $supplierCountOptions,
+            'galleryImageCountOptions' => $galleryImageCountOptions,
+            'latestUndoableTaskBatch' => ProductCompletionTaskBatch::query()
+                ->where('created_by', auth()->id())
+                ->whereIn('status', ['running', 'completed', 'rolling_back'])
+                ->whereNull('rolled_back_at')
+                ->whereHas('tasks')
+                ->withCount('tasks')
+                ->latest('id')
+                ->first(),
+            'hasPendingBulkTaskRollback' => $this->hasPendingBulkTaskRollback(),
+            'canUndoBulkTaskCreation' => auth()->user()?->can('undoBulkCreation', ProductCompletionTask::class) ?? false,
             'hasDefaultFullCompletionRule' => $this->hasDefaultFullCompletionRule(),
             'categories' => $categories,
             'statuses' => $statuses,

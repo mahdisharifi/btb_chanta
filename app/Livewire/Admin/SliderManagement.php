@@ -9,12 +9,14 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Validate;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
+use Livewire\WithFileUploads;
 
 #[Layout('components.layouts.admin')]
 #[Title('مدیریت اسلایدر اصلی')]
 class SliderManagement extends Component
 {
-    use WithPagination;
+    use WithPagination, WithFileUploads;
 
     // ═══════════════════════════════════════════════════════════
     // Properties
@@ -24,6 +26,16 @@ class SliderManagement extends Component
     public $showModal = false;
     public $deleteConfirm = false;
     public $deleteId;
+    public $existingImagePath;
+    public $existingMobileImagePath;
+    public bool $removeMobileImage = false;
+    public bool $removeDesktopImage = false;
+
+    #[Validate('nullable|image|mimes:jpg,jpeg,png,webp|max:6144|dimensions:max_width=6000,max_height=4000')]
+    public $desktopUpload;
+
+    #[Validate('nullable|image|mimes:jpg,jpeg,png,webp|max:6144|dimensions:max_width=6000,max_height=4000')]
+    public $mobileUpload;
 
     // Form Fields
     #[Validate('required|string|max:255')]
@@ -35,7 +47,7 @@ class SliderManagement extends Component
     #[Validate('nullable|string|max:1000')]
     public $description = '';
 
-    #[Validate('nullable|url|max:500')]
+    #[Validate('nullable|string|max:500')]
     public $link_url = '';
 
     #[Validate('nullable|string|max:100')]
@@ -98,9 +110,11 @@ class SliderManagement extends Component
             'link_url', 'link_text', 'link_target',
             'bg_color', 'bg_gradient', 'text_color', 'overlay_color',
             'text_position', 'sort_order', 'is_active',
-            'starts_at', 'ends_at',
+            'starts_at', 'ends_at', 'desktopUpload', 'mobileUpload',
+            'existingImagePath', 'existingMobileImagePath', 'removeMobileImage',
         ]);
 
+        $this->removeDesktopImage = false;
         $this->bg_color = 'transparent';
         $this->overlay_color = 'transparent';
         $this->text_color = '#ffffff';
@@ -132,6 +146,12 @@ class SliderManagement extends Component
         $this->is_active = $slider->is_active;
         $this->starts_at = $slider->starts_at?->format('Y-m-d');
         $this->ends_at = $slider->ends_at?->format('Y-m-d');
+        $this->existingImagePath = $slider->image_path;
+        $this->existingMobileImagePath = $slider->mobile_image_path;
+        $this->desktopUpload = null;
+        $this->mobileUpload = null;
+        $this->removeMobileImage = false;
+        $this->removeDesktopImage = false;
 
         $this->showModal = true;
     }
@@ -140,45 +160,94 @@ class SliderManagement extends Component
     {
         $this->validate();
 
+        if ($this->starts_at && $this->ends_at) {
+            $this->validate(['ends_at' => 'date|after_or_equal:starts_at']);
+        }
+
+        if (filled($this->link_url) && ! $this->isValidSliderLink($this->link_url)) {
+            $this->addError('link_url', 'لینک باید یک آدرس http/https یا مسیر داخلی معتبر باشد.');
+            return;
+        }
+
+        $slider = $this->sliderId ? Slider::findOrFail($this->sliderId) : new Slider();
+        $oldImagePath = $slider->image_path;
+        $oldMobileImagePath = $slider->mobile_image_path;
+        $newImagePath = null;
+        $newMobileImagePath = null;
+        $saved = false;
+        $images = app(\App\Services\SliderImageService::class);
+
         try {
-            DB::transaction(function () {
-                $data = [
-                    'title' => $this->sanitizeInput($this->title),
-                    'subtitle' => $this->sanitizeInput($this->subtitle),
-                    'description' => $this->sanitizeInput($this->description),
-                    'image_path' => '',
-                    'mobile_image_path' => '',
-                    'link_url' => $this->link_url,
-                    'link_text' => $this->sanitizeInput($this->link_text),
-                    'link_target' => $this->link_target,
-                    'bg_color' => $this->bg_color ?: 'transparent',
-                    'bg_gradient' => $this->bg_gradient,
-                    'text_color' => $this->text_color ?: '#ffffff',
-                    'overlay_color' => $this->overlay_color ?: 'transparent',
-                    'text_position' => $this->text_position,
-                    'sort_order' => (int)$this->sort_order,
-                    'is_active' => (bool)$this->is_active,
-                    'starts_at' => $this->starts_at ?: null,
-                    'ends_at' => $this->ends_at ?: null,
-                ];
+            $data = [
+                'title' => $this->sanitizeInput($this->title),
+                'subtitle' => $this->sanitizeInput($this->subtitle),
+                'description' => $this->sanitizeInput($this->description),
+                'link_url' => $this->link_url,
+                'link_text' => $this->sanitizeInput($this->link_text),
+                'link_target' => $this->link_target,
+                'bg_color' => $this->bg_color ?: 'transparent',
+                'bg_gradient' => $this->bg_gradient,
+                'text_color' => $this->text_color ?: '#ffffff',
+                'overlay_color' => $this->overlay_color ?: 'transparent',
+                'text_position' => $this->text_position,
+                'sort_order' => (int) $this->sort_order,
+                'is_active' => (bool) $this->is_active,
+                'starts_at' => $this->starts_at
+                    ? Carbon::parse($this->starts_at)->startOfDay()
+                    : null,
+                'ends_at' => $this->ends_at
+                    ? Carbon::parse($this->ends_at)->endOfDay()
+                    : null,
+            ];
 
-                if ($this->sliderId) {
-                    Slider::where('id', $this->sliderId)->update($data);
-                    $message = 'اسلایدر با موفقیت بروزرسانی شد.';
-                } else {
-                    Slider::create($data);
-                    $message = 'اسلایدر جدید با موفقیت ایجاد شد.';
-                }
+            if (! $this->sliderId) {
+                $data['image_path'] = null;
+                $data['mobile_image_path'] = null;
+            }
 
-                $this->dispatch('slider-saved', message: $message);
+            if ($this->desktopUpload) {
+                $newImagePath = $images->processUpload($this->desktopUpload, 'desktop');
+                $data['image_path'] = $newImagePath;
+            } elseif ($this->removeDesktopImage) {
+                $data['image_path'] = null;
+            }
+
+            if ($this->mobileUpload) {
+                $newMobileImagePath = $images->processUpload($this->mobileUpload, 'mobile');
+                $data['mobile_image_path'] = $newMobileImagePath;
+            } elseif ($this->removeMobileImage) {
+                $data['mobile_image_path'] = null;
+            }
+
+            DB::transaction(function () use ($slider, $data): void {
+                $slider->fill($data)->save();
             });
+            $saved = true;
 
-            $this->reset(['showModal', 'sliderId']);
+            if (($newImagePath || $this->removeDesktopImage) && $oldImagePath && $oldImagePath !== $newImagePath) {
+                $images->delete($oldImagePath);
+            }
+            if (($newMobileImagePath || $this->removeMobileImage)
+                && $oldMobileImagePath
+                && $oldMobileImagePath !== $newMobileImagePath) {
+                $images->delete($oldMobileImagePath);
+            }
+
+            $this->reset([
+                'showModal', 'sliderId', 'desktopUpload', 'mobileUpload',
+                'existingImagePath', 'existingMobileImagePath', 'removeMobileImage', 'removeDesktopImage',
+            ]);
             $this->resetPage();
-            cache()->forget('home:sliders:active');
+            cache()->forget('home:sliders:active:v2');
+            $this->dispatch('slider-saved', message: 'اسلایدر با موفقیت ذخیره شد.');
 
-        } catch (\Exception $e) {
-            $this->dispatch('slider-error', message: 'خطا در ذخیره اسلایدر: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            if (! $saved) {
+                $images->delete($newImagePath);
+                $images->delete($newMobileImagePath);
+            }
+            report($e);
+            $this->dispatch('slider-error', message: 'ذخیره اسلایدر انجام نشد. لطفاً ورودی‌ها و فایل‌های تصویر را بررسی کنید و دوباره تلاش کنید.');
         }
     }
 
@@ -191,14 +260,21 @@ class SliderManagement extends Component
     public function delete()
     {
         try {
-            Slider::findOrFail($this->deleteId)->delete();
+            $slider = Slider::findOrFail($this->deleteId);
+            $imagePath = $slider->image_path;
+            $mobileImagePath = $slider->mobile_image_path;
+            $slider->delete();
+            $images = app(\App\Services\SliderImageService::class);
+            $images->delete($imagePath);
+            $images->delete($mobileImagePath);
             $this->dispatch('slider-deleted', message: 'اسلایدر با موفقیت حذف شد.');
             $this->reset(['deleteConfirm', 'deleteId']);
             $this->resetPage();
-            cache()->forget('home:sliders:active');
+            cache()->forget('home:sliders:active:v2');
 
         } catch (\Exception $e) {
-            $this->dispatch('slider-error', message: 'خطا در حذف اسلایدر: ' . $e->getMessage());
+            report($e);
+            $this->dispatch('slider-error', message: 'حذف اسلایدر انجام نشد. لطفاً دوباره تلاش کنید.');
         }
     }
 
@@ -209,10 +285,11 @@ class SliderManagement extends Component
             $slider->update(['is_active' => !$slider->is_active]);
             $status = $slider->is_active ? 'فعال' : 'غیرفعال';
             $this->dispatch('slider-toggled', message: "اسلایدر {$status} شد.");
-            cache()->forget('home:sliders:active');
+            cache()->forget('home:sliders:active:v2');
 
         } catch (\Exception $e) {
-            $this->dispatch('slider-error', message: 'خطا در تغییر وضعیت: ' . $e->getMessage());
+            report($e);
+            $this->dispatch('slider-error', message: 'تغییر وضعیت اسلایدر انجام نشد. لطفاً دوباره تلاش کنید.');
         }
     }
 
@@ -234,16 +311,20 @@ class SliderManagement extends Component
             });
 
             $this->dispatch('slider-reordered', message: 'ترتیب اسلایدرها تغییر کرد.');
-            cache()->forget('home:sliders:active');
+            cache()->forget('home:sliders:active:v2');
 
         } catch (\Exception $e) {
-            $this->dispatch('slider-error', message: 'خطا در تغییر ترتیب: ' . $e->getMessage());
+            report($e);
+            $this->dispatch('slider-error', message: 'تغییر ترتیب اسلایدر انجام نشد. لطفاً دوباره تلاش کنید.');
         }
     }
 
     public function closeModal()
     {
-        $this->reset(['showModal', 'sliderId']);
+        $this->reset([
+            'showModal', 'sliderId', 'desktopUpload', 'mobileUpload',
+            'existingImagePath', 'existingMobileImagePath', 'removeMobileImage',
+        ]);
     }
 
     public function cancelDelete()
@@ -259,5 +340,20 @@ class SliderManagement extends Component
     {
         if ($input === null) return null;
         return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
+    }
+
+    private function isValidSliderLink(string $url): bool
+    {
+        $url = trim($url);
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+
+        if (in_array($scheme, ['http', 'https'], true)) {
+            return filter_var($url, FILTER_VALIDATE_URL) !== false;
+        }
+
+        return str_starts_with($url, '/')
+            && ! str_starts_with($url, '//')
+            && ! str_contains($url, '\\')
+            && preg_match('/[\x00-\x20]/', $url) !== 1;
     }
 }

@@ -15,7 +15,9 @@ class ProductCompletionMediaController extends Controller
 {
     public function gallery(ProductCompletionTask $task, ProductGallery $gallery): StreamedResponse
     {
-        Gate::authorize('viewTask', $task);
+        if (! Gate::allows('viewTask', $task)) {
+            Gate::authorize('previewAvailableTask', $task);
+        }
         abort_unless($gallery->product_id === $task->product_id && $gallery->file_type === 'image', 404);
         $disk = Storage::disk(ProductGallery::STORAGE_DISK);
         abort_unless($disk->exists($gallery->file_path), 404);

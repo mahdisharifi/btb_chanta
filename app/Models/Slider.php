@@ -58,13 +58,13 @@ class Slider extends Model
 
     // ─── Accessors ───
 
-    public function getImageUrlAttribute(): string
+    public function getImageUrlAttribute(): ?string
     {
         if ($this->image_path) {
             return asset('storage/' . $this->image_path);
         }
 
-        return asset('images/default-slider.jpg');
+        return null;
     }
 
     public function getMobileImageUrlAttribute(): ?string

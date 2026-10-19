@@ -239,7 +239,7 @@ use App\Helpers\PriceHelper;
                         <div class="flex-1">
                             <h4 class="text-lg sm:text-xl font-black text-red-900 mb-3 flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                محصول فاقد قیمت‌گذاری فعال است
+                                <x-product-unpriced-label class="text-lg font-black text-red-900 sm:text-xl" />
                             </h4>
                             <div class="space-y-3">
                                 <p class="text-sm sm:text-base text-gray-700 leading-relaxed">
