@@ -12,6 +12,7 @@ use App\Models\ProductCompletionTask;
 use App\Models\ProductCompletionTaskBatch;
 use App\Services\ProductCompletionTaskService;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -720,6 +721,7 @@ class Index extends Component
      */
     private function getCategoryAttributeAverages(): array
     {
+        return Cache::remember('admin.products.category_attribute_averages', now()->addMinutes(2), static function (): array {
         $results = \DB::table('products')
             ->select('category_id')
             ->selectRaw('AVG(
@@ -741,6 +743,7 @@ class Index extends Component
             $averages[$row->category_id] = (float) $row->avg_attributes;
         }
         return $averages;
+        });
     }
 
     private function getCompletionCountOptions(array $categoryAverages, $filteredProductIds): array
@@ -839,7 +842,9 @@ class Index extends Component
             ->withExists(['completionTasks as has_active_completion_task' => fn ($task) => $task->whereNotNull('active_product_id')])
             ->withCount('attributeValues');
 
-        $categories = Category::where('is_active', true)->doesntHave('children')->get();
+        $categories = Cache::remember('admin.products.filter.categories', now()->addMinutes(10), static fn () =>
+            Category::where('is_active', true)->doesntHave('children')->orderBy('name')->get()
+        );
         $statuses = ProductStatus::options();
 
         $products = $query->paginate($this->safePerPage());

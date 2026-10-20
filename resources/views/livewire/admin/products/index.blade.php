@@ -98,10 +98,10 @@
     </div>
 
     <!-- عملیات گروهی کاملا تعاملی و قدرتمند (Bulk Actions) -->
-    <div class="grid gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div class="grid gap-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-4 shadow-sm sm:grid-cols-2 xl:grid-cols-4">
         <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">وضعیت تسک</label>
-            <select wire:model.live="taskStatus" class="w-full rounded-lg border-slate-300 text-xs">
+            <select id="filter-task-status" wire:model.live="taskStatus" class="w-full rounded-lg border-slate-300 text-xs">
                 <option value="">همه</option>
                 @foreach($taskStatuses as $value => $label)
                     <option value="{{ $value }}">{{ $label }}</option>
@@ -110,7 +110,7 @@
         </div>
         <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">نوع تسک</label>
-            <select wire:model.live="taskType" class="w-full rounded-lg border-slate-300 text-xs">
+            <select id="filter-task-type" wire:model.live="taskType" class="w-full rounded-lg border-slate-300 text-xs">
                 <option value="">همهٔ انواع</option>
                 @foreach($taskTypes as $value => $label)
                     <option value="{{ $value }}">{{ $label }}</option>
@@ -119,7 +119,7 @@
         </div>
         <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">وضعیت قیمت‌گذاری</label>
-            <select wire:model.live="pricingStatus" class="w-full rounded-lg border-slate-300 text-xs">
+            <select id="filter-pricing-status" wire:model.live="pricingStatus" class="w-full rounded-lg border-slate-300 text-xs">
                 <option value="">همه</option>
                 <option value="priced">قیمت‌گذاری‌شده</option>
                 <option value="unpriced">قیمت‌گذاری‌نشده</option>
@@ -133,17 +133,15 @@
                 <option value="missing">بدون تصویر اصلی</option>
             </select>
         </div>
-        <fieldset class="min-w-0 rounded-lg border border-slate-200 p-2">
-            <legend class="px-1 text-xs font-semibold text-slate-700">تعداد تصاویر گالری (بدون تصویر اصلی)</legend>
-            <div class="max-h-32 space-y-1 overflow-y-auto">
+        <div>
+            <label for="filter-gallery-image-counts" class="mb-1 block text-xs font-semibold text-slate-700">تعداد تصاویر گالری (بدون تصویر اصلی)</label>
+            <select id="filter-gallery-image-counts" wire:model.live="galleryImageCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
                 @foreach($galleryImageCountOptions as $count)
-                    <label for="filter-gallery-image-count-{{ $count }}" class="flex min-h-8 cursor-pointer items-center gap-2 rounded px-1 text-xs hover:bg-slate-100">
-                        <input id="filter-gallery-image-count-{{ $count }}" type="checkbox" wire:model.live="galleryImageCounts" value="{{ $count }}" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                        <span>{{ number_format($count) }} تصویر</span>
-                    </label>
+                    <option value="{{ $count }}">{{ number_format($count) }} تصویر</option>
                 @endforeach
-            </div>
-        </fieldset>
+            </select>
+            <p class="mt-1 text-[10px] text-slate-500">برای انتخاب چند مورد، Ctrl یا لمس چندگانه را استفاده کنید.</p>
+        </div>
         <div>
             <label for="filter-short-description" class="mb-1 block text-xs font-semibold text-slate-700">توضیحات کوتاه</label>
             <select id="filter-short-description" wire:model.live="shortDescriptionStatus" class="w-full rounded-lg border-slate-300 text-xs">
@@ -162,7 +160,7 @@
         </div>
         <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">نیاز به تکمیل</label>
-            <select wire:model.live="completionStatus" class="w-full rounded-lg border-slate-300 text-xs">
+            <select id="filter-completion-status" wire:model.live="completionStatus" class="w-full rounded-lg border-slate-300 text-xs">
                 <option value="">همه</option>
                 <option value="needs_completion">نیاز به تکمیل دارد</option>
                 <option value="complete">تکمیل‌شده نسبت به میانگین دسته</option>
@@ -170,21 +168,21 @@
         </div>
         <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">تعداد موارد نیازمند تکمیل</label>
-            <select wire:model.live="completionCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
+            <select id="filter-completion-counts" wire:model.live="completionCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
                 @foreach($completionCountOptions as $count)
                     <option value="{{ $count }}">نیاز به {{ number_format($count) }} ویژگی</option>
                 @endforeach
             </select>
-            <p class="mt-1 text-[10px] text-slate-500">برای انتخاب چند تعداد، کلید Ctrl را نگه دارید.</p>
+            <p class="mt-1 text-[10px] text-slate-500">برای انتخاب چند تعداد، کلید Ctrl یا لمس چندگانه را استفاده کنید.</p>
         </div>
         <div>
             <label class="mb-1 block text-xs font-semibold text-slate-700">تعداد تأمین‌کنندگان دارای قیمت معتبر</label>
-            <select wire:model.live="supplierCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
+            <select id="filter-supplier-counts" wire:model.live="supplierCounts" multiple size="4" class="w-full rounded-lg border-slate-300 text-xs">
                 @foreach($supplierCountOptions as $count)
                     <option value="{{ $count }}">{{ number_format($count) }} تأمین‌کننده</option>
                 @endforeach
             </select>
-            <p class="mt-1 text-[10px] text-slate-500">تعدادها با سایر فیلترها هماهنگ می‌شوند؛ برای انتخاب چند مورد Ctrl را نگه دارید.</p>
+            <p class="mt-1 text-[10px] text-slate-500">تعدادها با سایر فیلترها هماهنگ می‌شوند؛ برای انتخاب چند مورد Ctrl یا لمس چندگانه را استفاده کنید.</p>
         </div>
     </div>
 
