@@ -6,6 +6,12 @@ use App\Models\Supplier;
 use App\Models\SocialNetwork;
 use App\Models\Province;
 use App\Models\City;
+use App\Models\User;
+use App\Models\SupplierSlugRedirect;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -50,15 +56,29 @@ class RegisterSupplier extends Component
     // مدارک احراز هویت
     public $national_card_file;
     public $business_license_file;
+    #[Locked]
     public $existingNationalCard;
+    #[Locked]
     public $existingBusinessLicense;
 
     // شبکه‌های اجتماعی
     public $social_networks = [];
     public $availableSocialNetworks;
 
+    #[Locked]
     public $editMode = false;
+
+    #[Locked]
     public $supplier;
+
+    #[Locked]
+    public bool $adminMode = false;
+
+    #[Locked]
+    public ?int $selectedUserId = null;
+
+    #[Locked]
+    public string $selectedUserName = '';
 
     protected function rules()
     {
@@ -82,9 +102,10 @@ class RegisterSupplier extends Component
             'slug' => [
                 'nullable',
                 'string',
-                'max:255',
+                'max:191',
                 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/',
-                \Illuminate\Validation\Rule::unique('suppliers', 'slug')->ignore($supplierId)
+                \Illuminate\Validation\Rule::unique('suppliers', 'slug')->ignore($supplierId),
+                \Illuminate\Validation\Rule::unique('supplier_slug_redirects', 'old_slug'),
             ],
             'description' => 'nullable|string',
             'logo' => 'nullable|image|max:2048',
@@ -122,43 +143,34 @@ class RegisterSupplier extends Component
     public function mount()
     {
         $user = Auth::user();
-
-        // بارگذاری لیست استان‌ها
+        abort_unless($user, 403);
         $this->provinces = Province::all();
-
-        // بارگذاری شبکه‌های اجتماعی فعال
         $this->availableSocialNetworks = SocialNetwork::where('is_active', true)->get();
 
-        // بررسی و ایجاد رکورد supplier برای ادمین
-        if ($user->hasRole(['admin', 'super_admin']) && !$user->supplier) {
-            $this->supplier = Supplier::create([
-                'user_id' => $user->id,
-                'type' => 'admin',
-                'verification_status' => 'approved',
-                'is_active' => true,
-                'is_verified' => true,
-                'verified_at' => now(),
-                'verified_by' => $user->id,
-                'company_name' => 'پنل مدیریت',
-                'mobile' => $user->mobile,
-                'email' => $user->email,
-            ]);
-            $this->editMode = true;
-            $this->loadSupplierData();
+        if (request()->query('source') === 'admin' || request()->has('user_id')) {
+            Gate::authorize('create', Supplier::class);
+            $target = User::findOrFail(request()->integer('user_id'));
+            abort_if(Supplier::withTrashed()->where('user_id', $target->id)->exists(), 409);
+            $this->adminMode = true;
+            $this->selectedUserId = $target->id;
+            $this->selectedUserName = $target->name;
+            $this->mobile = $target->mobile;
+            $this->email = $target->email;
+
+            return;
         }
-        // بارگذاری supplier موجود (در صورت وجود)
-        elseif ($user->supplier) {
+
+        if ($this->supplier || $user->supplier) {
+            $this->supplier = $this->supplier ?: $user->supplier;
+            Gate::authorize('update', $this->supplier);
             $this->editMode = true;
-            $this->supplier = $user->supplier;
             $this->loadSupplierData();
         }
 
-        // پر کردن mobile و email از user
         $this->mobile = $this->mobile ?? $user->mobile;
         $this->email = $this->email ?? $user->email;
     }
 
-    // متد برای دریافت خودکار شهرها هنگام انتخاب استان
     public function updatedProvinceId($value)
     {
         $this->city_id = null;
@@ -203,10 +215,23 @@ class RegisterSupplier extends Component
 
     public function register()
     {
+        if ($this->adminMode) {
+            Gate::authorize('create', Supplier::class);
+            abort_unless($this->selectedUserId && ! $this->editMode, 403);
+        } elseif ($this->editMode) {
+            Gate::authorize('update', $this->supplier);
+        }
+
+        $this->slug = $this->editMode ? $this->supplier->slug : $this->generateInitialSlug();
         $this->validate();
         $logoImages = app(\App\Services\SupplierLogoImageService::class);
         $newLogo = null;
         $logoSaved = false;
+        $newDocuments = [];
+        $oldDocuments = $this->editMode ? [
+            'national_card_file' => $this->supplier->national_card_file,
+            'business_license_file' => $this->supplier->business_license_file,
+        ] : [];
         $oldLogoPath = $this->editMode ? $this->supplier?->logo_path : null;
         $oldLogoVersions = $this->editMode ? $this->supplier?->logo_versions : null;
 
@@ -230,11 +255,7 @@ class RegisterSupplier extends Component
 
             // مدیریت slug
             if ($this->editMode) {
-                // حالت ویرایش: فقط اگر کاربر slug جدیدی وارد کرده باشد
-                if ($this->slug && $this->slug !== $this->supplier->slug) {
-                    $data['slug'] = Str::slug($this->slug);
-                }
-                // در غیر این صورت slug تغییر نمی‌کند
+                unset($data['slug']);
             } else {
                 // حالت ثبت‌نام جدید: از company_name یا slug دستی
                 $data['slug'] = $this->slug ? Str::slug($this->slug) : Str::slug($this->company_name);
@@ -248,17 +269,19 @@ class RegisterSupplier extends Component
 
             // ذخیره مدارک احراز هویت
             if ($this->national_card_file) {
-                if ($this->existingNationalCard) {
-                    Storage::disk('public')->delete($this->existingNationalCard);
+                $documentPath = $this->national_card_file->store('suppliers/documents', 'public');
+                if (! is_string($documentPath) || $documentPath === '') {
+                    throw new \RuntimeException('Supplier document upload failed.');
                 }
-                $data['national_card_file'] = $this->national_card_file->store('suppliers/documents', 'public');
+                $newDocuments['national_card_file'] = $data['national_card_file'] = $documentPath;
             }
 
             if ($this->business_license_file) {
-                if ($this->existingBusinessLicense) {
-                    Storage::disk('public')->delete($this->existingBusinessLicense);
+                $documentPath = $this->business_license_file->store('suppliers/documents', 'public');
+                if (! is_string($documentPath) || $documentPath === '') {
+                    throw new \RuntimeException('Supplier document upload failed.');
                 }
-                $data['business_license_file'] = $this->business_license_file->store('suppliers/documents', 'public');
+                $newDocuments['business_license_file'] = $data['business_license_file'] = $documentPath;
             }
 
             // ذخیره شبکه‌های اجتماعی به‌صورت JSON
@@ -294,18 +317,40 @@ class RegisterSupplier extends Component
                 $logoSaved = true;
             } else {
                 // حالت ثبت‌نام جدید
-                $data['user_id'] = Auth::id();
+                $data['user_id'] = $this->adminMode ? $this->selectedUserId : Auth::id();
                 $data['type'] = 'supplier';
                 $data['verification_status'] = 'pending';
                 $data['is_active'] = false;
 
-                $this->supplier = Supplier::create($data);
+                $this->supplier = DB::transaction(function () use ($data) {
+                    $target = User::query()->lockForUpdate()->findOrFail($data['user_id']);
+                    if (Supplier::withTrashed()->where('user_id', $target->id)->exists()) {
+                        throw ValidationException::withMessages([
+                            'company_name' => 'این کاربر قبلاً پروفایل تأمین‌کننده دارد.',
+                        ]);
+                    }
+                    $supplier = Supplier::create($data);
+                    if ($this->adminMode || $target->hasAnyRole(['super_admin', 'admin'])) {
+                        $target->assignRole('regular_supplier');
+                    } else {
+                        $target->syncRoles('regular_supplier');
+                    }
+
+                    return $supplier;
+                });
                 $logoSaved = true;
 
-                // تخصیص نقش
-                Auth::user()->syncRoles('regular_supplier');
-
                 session()->flash('message', 'ثبت‌نام شما با موفقیت انجام شد. پس از تایید مدیر، می‌توانید از سیستم استفاده کنید.');
+            }
+
+            foreach ($newDocuments as $field => $path) {
+                if ($this->supplier->getAttribute($field) === $path) {
+                    if (filled($oldDocuments[$field] ?? null) && $oldDocuments[$field] !== $path) {
+                        Storage::disk('public')->delete($oldDocuments[$field]);
+                    }
+                } else {
+                    Storage::disk('public')->delete($path);
+                }
             }
 
             if ($newLogo && $logoSaved && $oldLogoPath) {
@@ -313,6 +358,10 @@ class RegisterSupplier extends Component
             }
 
             // ریدایرکت بر اساس نوع و وضعیت تایید
+            if ($this->adminMode) {
+                return redirect()->route('admin.suppliers.index');
+            }
+
             if ($this->supplier->type === 'admin') {
                 return redirect()->route('admin.dashboard');
             }
@@ -325,11 +374,37 @@ class RegisterSupplier extends Component
             return redirect()->route('account.pending');
 
         } catch (\Exception $e) {
+            if (! $logoSaved) {
+                Storage::disk('public')->delete(array_values($newDocuments));
+            }
             if ($newLogo && ! $logoSaved) {
                 $logoImages->delete($newLogo['logo_path'] ?? null, $newLogo['logo_versions'] ?? null);
             }
-            session()->flash('error', 'خطا در ثبت اطلاعات: ' . $e->getMessage());
+            if ($e instanceof \Illuminate\Database\UniqueConstraintViolationException) {
+                throw ValidationException::withMessages(['slug' => 'آدرس یا اطلاعات تأمین‌کننده هم‌زمان تغییر کرده است؛ دوباره تلاش کنید.']);
+            }
+            if ($e instanceof ValidationException) {
+                throw $e;
+            }
+            report($e);
+            session()->flash('error', 'ثبت اطلاعات انجام نشد. لطفاً دوباره تلاش کنید.');
         }
+    }
+
+    protected function generateInitialSlug(): string
+    {
+        $base = Str::slug((string) $this->company_name);
+        $base = $base !== '' ? rtrim(substr($base, 0, 191), '-') : 'supplier-'.Str::lower(Str::random(12));
+        $candidate = $base;
+        $suffix = 2;
+
+        while (Supplier::withTrashed()->where('slug', $candidate)->exists()
+            || SupplierSlugRedirect::where('old_slug', $candidate)->exists()) {
+            $suffixText = '-'.$suffix++;
+            $candidate = rtrim(substr($base, 0, 191 - strlen($suffixText)), '-').$suffixText;
+        }
+
+        return $candidate;
     }
 
     public function render()

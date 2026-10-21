@@ -276,4 +276,9 @@ class Supplier extends Model
     {
         return $this->hasMany(ProductCompletionTask::class);
     }
+
+    public function slugRedirects(): HasMany
+    {
+        return $this->hasMany(SupplierSlugRedirect::class);
+    }
 }

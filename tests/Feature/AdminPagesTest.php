@@ -77,11 +77,13 @@ class AdminPagesTest extends TestCase
     {
         Role::firstOrCreate(['name' => UserRole::REVIEWER->value, 'guard_name' => 'web']);
 
-        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Create::class)
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Form::class)
             ->set('name', 'Reviewer Account')
             ->set('email', 'reviewer-system@example.test')
             ->set('role', UserRole::REVIEWER->value)
-            ->assertSee('اختیاری برای کاربر سیستمی')
+            ->set('allow_without_mobile', true)
+            ->set('mark_as_verified', true)
+            ->assertSee('ثبت بدون شماره موبایل')
             ->set('mobile', '')
             ->set('password', 'SystemPassword#123')
             ->set('password_confirmation', 'SystemPassword#123')
@@ -97,11 +99,35 @@ class AdminPagesTest extends TestCase
         $this->assertTrue($user->hasRole(UserRole::REVIEWER->value));
     }
 
-    public function test_admin_created_external_user_still_requires_mobile(): void
+    public function test_admin_can_create_verified_external_user_without_mobile(): void
     {
-        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Create::class)
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Form::class)
             ->set('name', 'Retailer Account')
             ->set('email', 'retailer-system@example.test')
+            ->set('role', UserRole::RETAILER_BASIC->value)
+            ->set('allow_without_mobile', true)
+            ->set('mark_as_verified', true)
+            ->set('mobile', '')
+            ->set('password', 'SystemPassword#123')
+            ->set('password_confirmation', 'SystemPassword#123')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('admin.users.index'));
+
+        $user = User::where('email', 'retailer-system@example.test')->firstOrFail();
+        $this->assertNull($user->mobile);
+        $this->assertTrue((bool) $user->is_verified);
+        $this->assertNull($user->mobile_verified_at);
+    }
+
+    /**
+     * تست صفحه ویرایش کاربر
+     */
+    public function test_external_user_without_mobile_is_rejected_when_override_is_disabled(): void
+    {
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Form::class)
+            ->set('name', 'Retailer Account')
+            ->set('email', 'retailer-required@example.test')
             ->set('role', UserRole::RETAILER_BASIC->value)
             ->set('mobile', '')
             ->set('password', 'SystemPassword#123')
@@ -109,22 +135,76 @@ class AdminPagesTest extends TestCase
             ->call('save')
             ->assertHasErrors(['mobile' => 'required']);
 
-        $this->assertDatabaseMissing('users', ['email' => 'retailer-system@example.test']);
+        $this->assertDatabaseMissing('users', ['email' => 'retailer-required@example.test']);
     }
 
-    /**
-     * تست صفحه ویرایش کاربر
-     */
     public function test_admin_users_edit_is_accessible(): void
     {
-        $this->markTestSkipped('Route has UserRole::USER error in Livewire component');
-        
         $user = User::factory()->create();
 
         $response = $this->actingAs($this->admin)
             ->get(route('admin.users.edit', $user));
 
         $response->assertStatus(200);
+    }
+
+    public function test_admin_can_edit_user_with_shared_form_and_keep_password(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'edit-before@example.test',
+            'mobile' => '09120000001',
+            'mobile_verified_at' => now(),
+        ]);
+        $user->assignRole(UserRole::RETAILER_BASIC->value);
+        $passwordHash = $user->password;
+
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Form::class, ['user' => $user])
+            ->assertSet('email', 'edit-before@example.test')
+            ->set('name', 'Edited User')
+            ->set('email', 'edit-after@example.test')
+            ->set('mobile', '09120000002')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('admin.users.index'));
+
+        $user->refresh();
+        $this->assertSame('Edited User', $user->name);
+        $this->assertSame('edit-after@example.test', $user->email);
+        $this->assertSame('09120000002', $user->mobile);
+        $this->assertNull($user->mobile_verified_at);
+        $this->assertSame($passwordHash, $user->password);
+        $this->assertTrue($user->hasRole(UserRole::RETAILER_BASIC->value));
+    }
+
+    public function test_edit_form_allows_unchanged_email_and_mobile(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'same-user@example.test',
+            'mobile' => '09120000003',
+        ]);
+        $user->assignRole(UserRole::RETAILER_BASIC->value);
+
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Form::class, ['user' => $user])
+            ->call('save')
+            ->assertHasNoErrors();
+    }
+
+    public function test_user_form_does_not_collect_or_create_supplier_profile(): void
+    {
+        \Livewire\Livewire::actingAs($this->admin)->test(\App\Livewire\Admin\Users\Form::class)
+            ->set('role', UserRole::SUPPLIER->value)
+            ->assertDontSee('company_name')
+            ->set('name', 'Supplier Account')
+            ->set('email', 'supplier-user@example.test')
+            ->set('mobile', '09120000004')
+            ->set('password', 'SystemPassword#123')
+            ->set('password_confirmation', 'SystemPassword#123')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $user = User::where('email', 'supplier-user@example.test')->firstOrFail();
+        $this->assertTrue($user->hasRole(UserRole::SUPPLIER->value));
+        $this->assertDatabaseMissing('suppliers', ['user_id' => $user->id]);
     }
 
     /**

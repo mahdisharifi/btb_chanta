@@ -143,7 +143,9 @@ Route::prefix('categories')->name('categories.')->group(function () {
 Route::prefix('suppliers')->name('suppliers.')->group(function () {
     Route::get('/', [SupplierPublicController::class, 'index'])->name('index');
     Route::get('/profile/{supplier}', [SupplierPublicController::class, 'showById'])->name('show.legacy');
-    Route::get('/{slug}', \App\Livewire\Web\SupplierProducts::class)->name('show');
+    Route::get('/{slug}', \App\Livewire\Web\SupplierProducts::class)
+        ->middleware(\App\Http\Middleware\RedirectLegacySupplierSlug::class)
+        ->name('show');
 });
 
 

@@ -366,7 +366,7 @@ class SupplierProducts extends Component
 
     public function getSeoProperty(): array
     {
-        $canonicalUrl = route('suppliers.show', $this->slug);
+        $canonicalUrl = route('suppliers.show', $this->supplier->slug);
         $ogImage = $this->supplier->logoUrl('medium') ?: asset('images/og-default.jpg');
 
         return [
@@ -385,7 +385,7 @@ class SupplierProducts extends Component
             '@context' => 'https://schema.org',
             '@type' => 'Organization',
             'name' => $this->supplier->company_name,
-            'url' => route('suppliers.show', $this->slug),
+            'url' => route('suppliers.show', $this->supplier->slug),
             'logo' => $this->supplier->logoUrl('medium'),
             'description' => $this->seo['description'],
             'address' => array_filter([

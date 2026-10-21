@@ -25,6 +25,21 @@ class UserPolicy
         return $user->hasRole('super_admin') || $user->hasRole('admin');
     }
 
+    public function createWithoutMobile(User $user): bool
+    {
+        return $this->create($user);
+    }
+
+    public function verifyOnCreate(User $user): bool
+    {
+        return $this->create($user);
+    }
+
+    public function assignSensitiveRole(User $user, string $role): bool
+    {
+        return ! in_array($role, ['admin', 'super_admin'], true) || $user->hasRole('super_admin');
+    }
+
     public function update(User $user, User $model): bool
     {
         // سوپر ادمین می‌تواند هر کاربری را ویرایش کند

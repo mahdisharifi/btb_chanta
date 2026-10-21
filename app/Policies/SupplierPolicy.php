@@ -64,11 +64,16 @@ class SupplierPolicy
             return true;
         }
 
-        if ($user->hasRole(UserRole::SUPPLIER->value)) {
+        if ($user->hasAnyRole([UserRole::SUPPLIER->value, 'regular_supplier'])) {
             return $supplier->user_id === $user->id;
         }
 
         return false;
+    }
+
+    public function updateSlug(User $user, Supplier $supplier): bool
+    {
+        return $user->hasRole(UserRole::SUPER_ADMIN->value);
     }
 
     /**

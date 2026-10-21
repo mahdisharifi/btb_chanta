@@ -7,8 +7,7 @@ use App\Livewire\Admin\Flowcharts\Index;
 use App\Livewire\Admin\Flowcharts\Form;
 use App\Livewire\Admin\Dashboard;
 use App\Livewire\Admin\Users\Index as UsersIndex;
-use App\Livewire\Admin\Users\Create as UsersCreate;
-use App\Livewire\Admin\Users\Edit as UsersEdit;
+use App\Livewire\Admin\Users\Form as UsersForm;
 use App\Livewire\Admin\Products\Index as AdminProductIndex;
 use App\Livewire\Admin\Products\Create as AdminProductCreate;
 use App\Livewire\Admin\Products\Show as AdminProductShow;
@@ -45,8 +44,8 @@ Route::middleware(['auth', 'role:super_admin'])
 
         // کاربران
         Route::get('/users', UsersIndex::class)->name('users.index');
-        Route::get('/users/create', UsersCreate::class)->name('users.create');
-        Route::get('/users/{user}/edit', UsersEdit::class)->name('users.edit');
+        Route::get('/users/create', UsersForm::class)->name('users.create');
+        Route::get('/users/{user}/edit', UsersForm::class)->name('users.edit');
 
         // محصولات
         Route::get('products', AdminProductIndex::class)->name('products.index');

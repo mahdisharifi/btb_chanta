@@ -2,174 +2,70 @@
 
 namespace App\Livewire\Admin\Suppliers;
 
-use App\Models\User;
 use App\Models\Supplier;
-use Livewire\Component;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
-use Livewire\WithFileUploads;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
+use Livewire\Component;
 
 #[Layout('components.layouts.admin')]
 class Create extends Component
 {
-    use WithFileUploads;
-
-    // متغیر تعیین کننده وضعیت (کاربر جدید یا موجود)
-    public $is_new_user = false;
-
-    // --- فیلدهای کاربر موجود ---
     public $user_id;
-    public $search = '';
+    public string $search = '';
 
-    // --- فیلدهای کاربر جدید ---
-    public $name;
-    public $email;
-    public $mobile; // شماره موبایل جهت ورود/عضویت کاربر
-    public $password;
-    public $password_confirmation;
-
-    // --- فیلدهای اختصاصی تامین‌کننده ---
-    public $company_name;
-    public $brand_name;
-    public $national_id;
-    public $tax_id;
-    public $phone;
-    public $supplier_mobile; // شماره موبایل کاری و مجزای تامین‌کننده جهت ثبت در جدول suppliers
-    public $province;
-    public $city;
-    public $address;
-    public $is_active = false;
-    public $is_verified = false;
-    public $logo;
-
-    // اعتبارسنجی داینامیک بر اساس وضعیت انتخاب شده
-    protected function rules()
+    public function mount(): void
     {
-        $rules = [
-            'company_name' => 'required|string|max:255',
-            'brand_name' => 'nullable|string|max:255',
-            'national_id' => 'nullable|string|max:50',
-            'tax_id' => 'nullable|string|max:50',
-            'phone' => 'nullable|string|max:20',
-            'supplier_mobile' => 'nullable|string|max:20', // اعتبارسنجی موبایل اختصاصی تامین‌کننده
-            'province' => 'nullable|string|max:255',
-            'city' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
-            'is_active' => 'boolean',
-            'is_verified' => 'boolean',
-            'logo' => 'nullable|image|max:2048',
-        ];
-
-        if ($this->is_new_user) {
-            // اعتبارسنجی برای اکانت کاربر جدید
-            $rules['name'] = 'required|string|max:255';
-            $rules['email'] = 'nullable|string|email|max:255|unique:users,email';
-            $rules['mobile'] = 'required|string|max:20|unique:users,mobile';
-            $rules['password'] = 'required|string|min:8|confirmed';
-        } else {
-            // اعتبارسنجی برای کاربر موجود
-            $rules['user_id'] = 'required|exists:users,id|unique:suppliers,user_id';
-        }
-
-        return $rules;
+        Gate::authorize('create', Supplier::class);
     }
 
-    // متون خطای سفارشی
-    protected function messages()
+    protected function rules(): array
+    {
+        return ['user_id' => ['required', 'integer', Rule::exists('users', 'id'), Rule::unique('suppliers', 'user_id')]];
+    }
+
+    protected function messages(): array
     {
         return [
-            'user_id.required' => 'لطفاً یک کاربر را انتخاب کنید.',
-            'user_id.unique' => 'این کاربر در حال حاضر یک پروفایل تامین‌کننده دارد.',
+            'user_id.required' => 'لطفاً کاربر را انتخاب کنید.',
+            'user_id.integer' => 'کاربر معتبر نیست.',
+            'user_id.exists' => 'کاربر وجود ندارد.',
+            'user_id.unique' => 'کاربر پروفایل تأمین‌کننده دارد؛ حتی اگر حذف شده باشد.',
         ];
     }
 
     public function save()
     {
-        $this->validate();
+        Gate::authorize('create', Supplier::class);
+        $validated = $this->validate();
 
-        $logoImages = app(\App\Services\SupplierLogoImageService::class);
-        $logo = null;
-        if ($this->logo) {
-            $logo = $logoImages->processUpload($this->logo);
-        }
-
-        try {
-            DB::transaction(function () use ($logo) {
-            $finalUserId = $this->user_id;
-
-            if ($this->is_new_user) {
-                // ایجاد کاربر جدید (موبایل کاربر صرفاً برای لاگین استفاده می‌شود)
-                $user = User::create([
-                    'name' => $this->name,
-                    'email' => $this->email,
-                    'mobile' => $this->mobile,
-                    'password' => Hash::make($this->password),
-                ]);
-
-                // تخصیص نقش به کاربر جدید
-                $user->assignRole('supplier');
-
-                $finalUserId = $user->id;
-            } else {
-                // بررسی و تخصیص نقش برای کاربر موجود
-                $user = User::find($finalUserId);
-                if ($user && !$user->hasRole('supplier')) {
-                    $user->assignRole('supplier');
-                }
-            }
-
-            // ایجاد پروفایل تامین‌کننده (با موبایل اختصاصی کاری و تجاری خود تامین‌کننده)
-            Supplier::create([
-                'user_id' => $finalUserId,
-                'company_name' => $this->company_name,
-                'brand_name' => $this->brand_name,
-                'national_id' => $this->national_id,
-                'tax_id' => $this->tax_id,
-                'phone' => $this->phone,
-                'mobile' => $this->supplier_mobile, // کاملا مستقل از شماره موبایل کاربر سیستم
-                'province' => $this->province,
-                'city' => $this->city,
-                'address' => $this->address,
-                'is_active' => $this->is_active,
-                'is_verified' => $this->is_verified,
-                'verified_at' => $this->is_verified ? now() : null,
-                'logo_path' => $logo['logo_path'] ?? null,
-                'logo_versions' => $logo['logo_versions'] ?? null,
-            ]);
-            });
-        } catch (\Throwable $exception) {
-            if ($logo) {
-                $logoImages->delete($logo['logo_path'] ?? null, $logo['logo_versions'] ?? null);
-            }
-            throw $exception;
-        }
-
-        session()->flash('success', 'تامین‌کننده با موفقیت ثبت شد.');
-
-        return $this->redirectRoute('admin.suppliers.index', navigate: true);
+        return redirect()->route('user.register.supplier.complete', ['user_id' => $validated['user_id'], 'source' => 'admin']);
     }
 
     public function render()
     {
-        $users = [];
+        $search = trim($this->search);
+        $eligible = User::query()->whereNotIn('id', Supplier::withTrashed()->select('user_id')->whereNotNull('user_id'));
+        $users = (clone $eligible)->when($search !== '', function ($query) use ($search) {
+            $query->where(function ($query) use ($search) {
+                $query->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('mobile', 'like', '%'.$search.'%')
+                    ->orWhere('email', 'like', '%'.$search.'%');
+            });
+        })->orderBy('name')->orderBy('id')->limit(30)->get(['id', 'name', 'mobile', 'email']);
 
-        // فقط زمانی که حالت انتخاب کاربر موجود فعال باشد دیتا واکشی می‌شود
-        if (!$this->is_new_user) {
-            $users = User::whereDoesntHave('supplier')
-                ->when($this->search, function ($query) {
-                    $query->where(function($q) {
-                        $q->where('name', 'like', '%' . $this->search . '%')
-                            ->orWhere('email', 'like', '%' . $this->search . '%')
-                            ->orWhere('mobile', 'like', '%' . $this->search . '%');
-                    });
-                })
-                ->limit(10)
-                ->get();
+        $matchingCount = $users->count();
+        $retainedSelection = null;
+
+        if (is_scalar($this->user_id) && ctype_digit((string) $this->user_id) && ! $users->contains('id', $this->user_id)) {
+            $selected = (clone $eligible)->find($this->user_id, ['id', 'name', 'mobile', 'email']);
+            if ($selected) {
+                $users->prepend($selected);
+                $retainedSelection = $selected;
+            }
         }
 
-        return view('livewire.admin.suppliers.create', [
-            'users' => $users
-        ]);
+        return view('livewire.admin.suppliers.create', compact('users', 'matchingCount', 'retainedSelection'));
     }
 }
