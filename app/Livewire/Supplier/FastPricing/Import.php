@@ -63,15 +63,33 @@ class Import extends Component
 
         DB::beginTransaction();
         try {
-            // حذف دسته‌های در انتظار قبلی
+            // همه مسیرهای ساخت پیش‌نویس ابتدا Supplier را قفل می‌کنند تا دو عملیات هم‌زمان ساخته نشود.
+            \App\Models\Supplier::query()
+                ->whereKey($supplier->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $pendingPercentageBatchExists = PriceUpdateBatch::query()
+                ->where('supplier_id', $supplier->id)
+                ->where('operation_type', 'fixed_percentage')
+                ->whereIn('status', ['pending', 'processing'])
+                ->lockForUpdate()
+                ->exists();
+
+            if ($pendingPercentageBatchExists) {
+                throw new \RuntimeException('ابتدا پیش‌نویس بروزرسانی درصدی را تأیید یا لغو کنید.');
+            }
+
+            // رفتار فعلی اکسل حفظ می‌شود: آپلود جدید جایگزین پیش‌نویس اکسل قبلی است.
             PriceUpdateBatch::where('supplier_id', $supplier->id)
+                ->where('operation_type', 'excel_import')
                 ->where('status', 'pending')
                 ->delete();
 
             $batch = PriceUpdateBatch::create([
                 'supplier_id' => $supplier->id,
+                'operation_type' => 'excel_import',
                 'status' => 'pending',
-                'created_by' => Auth::id(),
             ]);
 
             // ═══════════════════════════════════════════════════════════

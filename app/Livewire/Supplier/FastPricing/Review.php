@@ -30,22 +30,58 @@ class Review extends Component
     {
         return PriceUpdateBatch::where('id', $this->batchId)
             ->where('supplier_id', Auth::user()->supplier->id)
+            ->where('operation_type', 'excel_import')
             ->where('status', 'pending')
             ->firstOrFail();
     }
 
     public function commitChanges()
     {
-        $batch = $this->getBatch();
+        $supplierId = (int) Auth::user()->supplier->id;
 
         DB::beginTransaction();
         try {
-            $validItems = $batch->items()->where('status', 'valid')->get();
+            \App\Models\Supplier::query()
+                ->whereKey($supplierId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $batch = PriceUpdateBatch::query()
+                ->whereKey($this->batchId)
+                ->where('supplier_id', $supplierId)
+                ->where('operation_type', 'excel_import')
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->firstOrFail();
+            $batch->update(['status' => 'processing']);
+
+            $validItems = $batch->items()
+                ->where('status', 'valid')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
 
             foreach ($validItems as $item) {
-                $productSupplier = ProductSupplier::find($item->product_supplier_id);
+                $productSupplier = ProductSupplier::query()
+                    ->whereKey($item->product_supplier_id)
+                    ->where('supplier_id', $supplierId)
+                    ->lockForUpdate()
+                    ->first();
+
                 if (!$productSupplier) {
-                    continue;
+                    throw new \RuntimeException('یکی از کالاها دیگر در دسترس شما نیست. لطفاً فایل را دوباره بارگذاری کنید.');
+                }
+
+                if ($item->new_stock !== null && (int) $productSupplier->stock_quantity !== (int) $item->old_stock) {
+                    throw new \RuntimeException('موجودی یکی از کالاها پس از بارگذاری فایل تغییر کرده است. لطفاً فایل را دوباره بارگذاری کنید.');
+                }
+
+                if ($item->new_min_order_quantity !== null && (int) $productSupplier->min_order_quantity !== (int) $item->old_min_order_quantity) {
+                    throw new \RuntimeException('حداقل سفارش یکی از کالاها پس از بارگذاری فایل تغییر کرده است. لطفاً فایل را دوباره بارگذاری کنید.');
+                }
+
+                if ($item->new_is_active !== null && (bool) $productSupplier->is_active !== (bool) $item->old_is_active) {
+                    throw new \RuntimeException('وضعیت یکی از کالاها پس از بارگذاری فایل تغییر کرده است. لطفاً فایل را دوباره بارگذاری کنید.');
                 }
 
                 // ═══════════════════════════════════════════════════════════
@@ -76,6 +112,31 @@ class Review extends Component
 
                         // پاکسازی قیمت از کاراکترهای احتمالی
                         $cleanPrice = (int)str_replace([',', '،', ' '], '', (string)$priceValue);
+                        $priceKey = sprintf(
+                            'T%d|PT%d|CP%d',
+                            (int) $tierIndex,
+                            (int) $priceTypeId,
+                            (int) ($checkPeriodId ?? 0)
+                        );
+                        $oldPrice = $item->old_prices[$priceKey]['price'] ?? null;
+                        $currentPrice = ProductPrice::query()
+                            ->where('product_supplier_id', $productSupplier->id)
+                            ->where('tier_index', (int) $tierIndex)
+                            ->where('price_type_id', (int) $priceTypeId)
+                            ->when(
+                                $checkPeriodId,
+                                fn ($query) => $query->where('check_period_id', (int) $checkPeriodId),
+                                fn ($query) => $query->whereNull('check_period_id')
+                            )
+                            ->lockForUpdate()
+                            ->first();
+
+                        if (
+                            ($oldPrice !== null && (!$currentPrice || (int) $currentPrice->price !== (int) $oldPrice))
+                            || ($oldPrice === null && $currentPrice)
+                        ) {
+                            throw new \RuntimeException('یکی از قیمت‌ها پس از بارگذاری فایل تغییر کرده است. لطفاً فایل را دوباره بارگذاری کنید.');
+                        }
 
                         // ✅ شناسایی قیمت نقدی (price_type_id = 1 معمولاً نقدی است)
                         // بهتر است با code چک کنیم
@@ -238,7 +299,6 @@ class Review extends Component
 
             $batch->update([
                 'status' => 'completed',
-                'completed_at' => now(),
             ]);
             
             DB::commit();
@@ -246,32 +306,48 @@ class Review extends Component
             session()->flash('success', 'تغییرات با موفقیت بر روی محصولات اعمال شد.');
             return $this->redirect(route('supplier.product-selection'), navigate: true);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             Log::error('Error committing price update (matrix): ' . $e->getMessage(), [
-                'batch_id' => $batch->id,
+                'batch_id' => $this->batchId,
                 'trace' => $e->getTraceAsString()
             ]);
-            $this->addError('commit', 'خطا در ثبت نهایی: ' . $e->getMessage());
+            $message = $e instanceof \RuntimeException
+                ? $e->getMessage()
+                : 'خطایی در ثبت نهایی رخ داد. هیچ تغییری اعمال نشد.';
+            $this->addError('commit', $message);
         }
     }
 
     public function cancelBatch()
     {
-        $batch = $this->getBatch();
+        $supplierId = (int) Auth::user()->supplier->id;
 
         DB::beginTransaction();
         try {
-            $batch->items()->delete();
-            $batch->delete();
+            \App\Models\Supplier::query()
+                ->whereKey($supplierId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $batch = PriceUpdateBatch::query()
+                ->whereKey($this->batchId)
+                ->where('supplier_id', $supplierId)
+                ->where('operation_type', 'excel_import')
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->firstOrFail();
+            $batch->update(['status' => 'cancelled']);
             DB::commit();
 
             session()->flash('success', 'عملیات بروزرسانی لغو شد.');
             return $this->redirect(route('supplier.fast-pricing.import'), navigate: true);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
-            Log::error('Error cancelling price update batch: ' . $e->getMessage());
+            Log::error('Error cancelling price update batch: ' . $e->getMessage(), [
+                'batch_id' => $this->batchId,
+            ]);
             $this->addError('commit', 'خطایی در هنگام لغو عملیات رخ داد.');
         }
     }

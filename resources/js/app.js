@@ -2,6 +2,7 @@ import './bootstrap';
 
 // ✅ Import slider utilities (shared components)
 import './components/slider-utils.js';
+import './components/formatted-price-input.js';
 
 // تعریف global برای استفاده در Blade
 

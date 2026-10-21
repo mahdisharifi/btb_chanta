@@ -44,6 +44,7 @@ Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_ad
         Route::get('/fast-pricing', FastPricing::class)->name('fast-pricing');
 
         Route::get('/fast-pricing/import', \App\Livewire\Supplier\FastPricing\Import::class)->name('fast-pricing.import');
+        Route::get('/fast-pricing/percentage-update', \App\Livewire\Supplier\FastPricing\PercentageUpdate::class)->name('fast-pricing.percentage-update');
         Route::get('/fast-pricing/review/{batchId}', \App\Livewire\Supplier\FastPricing\Review::class)->name('fast-pricing.review');
 
         Route::get('/catalog/index', \App\Livewire\Supplier\Catalog\Index::class)->name('catalog.index');

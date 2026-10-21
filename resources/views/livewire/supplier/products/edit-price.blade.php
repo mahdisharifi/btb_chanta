@@ -937,28 +937,32 @@
                                                     @endphp
                                                     
                                                     <div class="relative max-w-xs">
-                                                        <input type="number"
-                                                               wire:model.live.debounce.1500ms.blur="priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price"
+                                                        <input type="text"
+                                                               wire:ignore
+                                                               x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price', true)"
+                                                               x-effect="refresh(state)"
+                                                               x-on:input="input($event)"
+                                                               x-on:blur="sync()"
+                                                               value="{{ $priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? '' }}"
+                                                               aria-label="قیمت نقدی رده {{ $tierIndex + 1 }}"
                                                                placeholder="قیمت نقدی"
                                                                inputmode="numeric"
                                                                onwheel="this.blur()"
-                                                               @if($isCashDisabled) disabled readonly @endif
-                                                               class="block w-full py-2.5 text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 focus:border-green-500 focus:ring-green-500 rounded-md shadow-sm @if($isCashDisabled) opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800 pr-10 pl-16 @else px-4 pl-16 @endif">
+                                                               x-bind:disabled="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
+                                                               x-bind:readonly="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
+                                                               x-bind:class="($wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800 pr-10 pl-16' : 'px-4 pl-16'"
+                                                               class="block w-full py-2.5 text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 focus:border-green-500 focus:ring-green-500 rounded-md shadow-sm">
                                                         <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                                                             <span class="text-xs text-gray-500 dark:text-gray-400">تومان</span>
                                                         </div>
-                                                        @if($isCashDisabled)
-                                                            <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                        <div x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                                                                 <x-heroicon-s-lock-closed class="w-4 h-4 text-gray-400"/>
                                                             </div>
-                                                        @endif
                                                     </div>
-                                                    @if($isCashDisabled)
-                                                        <p class="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
+                                                    <p x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
                                                             <x-heroicon-o-information-circle class="w-3.5 h-3.5"/>
                                                             محاسبه خودکار از تیراژ مرجع
-                                                        </p>
-                                                    @endif
+                                                    </p>
                                                 </td>
                                             </tr>
                                             
@@ -1098,8 +1102,13 @@
                                                                     </div>
                                                                 @elseif($mode === 'manual')
                                                                     <div class="relative max-w-xs">
-                                                                        <input type="number"
-                                                                               wire:model.defer="priceMatrix.{{ $tierIndex }}.{{ $checkPriceType->id }}.check_periods.{{ $period->id }}.price"
+                                                                        <input type="text"
+                                                                               wire:ignore
+                                                                               x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $checkPriceType->id }}.check_periods.{{ $period->id }}.price')"
+                                                                               x-effect="refresh(state)"
+                                                                               x-on:input="input($event)"
+                                                                               value="{{ $priceMatrix[$tierIndex][$checkPriceType->id]['check_periods'][$period->id]['price'] ?? '' }}"
+                                                                               aria-label="قیمت چکی رده {{ $tierIndex + 1 }} برای چک {{ $period->days }} روزه"
                                                                                placeholder="قیمت دستی"
                                                                                inputmode="numeric"
                                                                                onwheel="this.blur()"
@@ -1126,8 +1135,13 @@
                                                     <td class="px-6 py-4 border border-gray-200 dark:border-gray-700">
                                                         @if($warrantyType === 'custom')
                                                             <div class="relative max-w-xs">
-                                                                <input type="number"
-                                                                       wire:model.defer="priceMatrix.{{ $tierIndex }}.{{ $warrantyPriceType->id }}.price"
+                                                                <input type="text"
+                                                                       wire:ignore
+                                                                       x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $warrantyPriceType->id }}.price')"
+                                                                       x-effect="refresh(state)"
+                                                                       x-on:input="input($event)"
+                                                                       value="{{ $priceMatrix[$tierIndex][$warrantyPriceType->id]['price'] ?? '' }}"
+                                                                       aria-label="قیمت گارانتی رده {{ $tierIndex + 1 }}"
                                                                        placeholder="هزینه گارانتی"
                                                                        inputmode="numeric"
                                                                        onwheel="this.blur()"
@@ -1172,26 +1186,30 @@
                                             <label class="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
                                                 <x-heroicon-s-banknotes class="w-5 h-5 text-green-600 dark:text-green-400"/>
                                                 قیمت نقدی
-                                                @if($isCashDisabled)
-                                                    <span class="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                <span x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                                                         <x-heroicon-s-lock-closed class="w-3 h-3"/>
                                                         قفل (محاسبه خودکار)
                                                     </span>
-                                                @endif
                                             </label>
-                                            <input type="number"
-                                                   wire:model.live.debounce.1500ms.blur="priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price"
+                                            <input type="text"
+                                                   wire:ignore
+                                                   x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price', true)"
+                                                   x-effect="refresh(state)"
+                                                   x-on:input="input($event)"
+                                                   x-on:blur="sync()"
+                                                   value="{{ $priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? '' }}"
+                                                   aria-label="قیمت نقدی رده {{ $tierIndex + 1 }}"
                                                    placeholder="قیمت نقدی"
                                                    inputmode="numeric"
                                                    onwheel="this.blur()"
-                                                   @if($isCashDisabled) disabled readonly @endif
-                                                   class="block w-full px-4 py-3 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-900 rounded-lg @if($isCashDisabled) opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800 @endif">
-                                            @if($isCashDisabled)
-                                                <p class="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
+                                                   x-bind:disabled="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
+                                                   x-bind:readonly="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
+                                                   x-bind:class="($wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
+                                                   class="block w-full px-4 py-3 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-900 rounded-lg">
+                                            <p x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
                                                     <x-heroicon-o-information-circle class="w-3.5 h-3.5"/>
                                                     این قیمت به صورت خودکار از تیراژ مرجع محاسبه می‌شود
-                                                </p>
-                                            @endif
+                                            </p>
                                         </div>
                                         
                                         {{-- چک‌ها --}}
@@ -1291,8 +1309,13 @@
                                                             </div>
                                                         @elseif($mode === 'manual')
                                                             {{-- Input قیمت دستی --}}
-                                                            <input type="number"
-                                                                   wire:model.defer="priceMatrix.{{ $tierIndex }}.{{ $checkPriceType->id }}.check_periods.{{ $period->id }}.price"
+                                                            <input type="text"
+                                                                   wire:ignore
+                                                                   x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $checkPriceType->id }}.check_periods.{{ $period->id }}.price')"
+                                                                   x-effect="refresh(state)"
+                                                                   x-on:input="input($event)"
+                                                                   value="{{ $priceMatrix[$tierIndex][$checkPriceType->id]['check_periods'][$period->id]['price'] ?? '' }}"
+                                                                   aria-label="قیمت چکی رده {{ $tierIndex + 1 }} برای چک {{ $period->days }} روزه"
                                                                    placeholder="قیمت"
                                                                    inputmode="numeric"
                                                                    onwheel="this.blur()"
@@ -1310,8 +1333,13 @@
                                                     <x-heroicon-s-shield-check class="w-5 h-5 text-purple-600 dark:text-purple-400"/>
                                                     هزینه گارانتی
                                                 </label>
-                                                <input type="number"
-                                                       wire:model.defer="priceMatrix.{{ $tierIndex }}.{{ $warrantyPriceType->id }}.price"
+                                                <input type="text"
+                                                       wire:ignore
+                                                       x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $warrantyPriceType->id }}.price')"
+                                                       x-effect="refresh(state)"
+                                                       x-on:input="input($event)"
+                                                       value="{{ $priceMatrix[$tierIndex][$warrantyPriceType->id]['price'] ?? '' }}"
+                                                       aria-label="قیمت گارانتی رده {{ $tierIndex + 1 }}"
                                                        placeholder="هزینه گارانتی"
                                                        inputmode="numeric"
                                                        onwheel="this.blur()"

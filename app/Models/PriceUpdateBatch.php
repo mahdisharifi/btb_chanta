@@ -8,7 +8,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PriceUpdateBatch extends Model
 {
-    protected $fillable = ['supplier_id', 'status'];
+    protected $fillable = [
+        'supplier_id',
+        'operation_type',
+        'percentage',
+        'status',
+    ];
+
+    protected $casts = [
+        'percentage' => 'decimal:2',
+    ];
 
     public function supplier(): BelongsTo
     {
