@@ -54,6 +54,15 @@ class ProductCompletionSubmissionWorkflow
                 throw ValidationException::withMessages(['submission' => 'این نسخه دیگر قابل بررسی نیست. فهرست تسک‌ها را تازه‌سازی کنید.']);
             }
             if ($submission->status === ProductCompletionSubmissionStatus::UNDER_REVIEW) {
+                if ($lockedTask->reviewer_id === null) {
+                    $lockedTask->forceFill([
+                        'reviewer_id' => $actor->getKey(),
+                        'lock_version' => $lockedTask->lock_version + 1,
+                    ])->save();
+                    $this->auditService->record(action: 'submission_review_claimed', task: $lockedTask, actor: $actor,
+                        metadata: ['submission_id' => $submission->getKey()], entity: $submission);
+                }
+
                 return $lockedTask;
             }
             $submission->forceFill([

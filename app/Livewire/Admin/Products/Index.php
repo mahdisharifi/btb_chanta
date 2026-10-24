@@ -164,20 +164,23 @@ class Index extends Component
     private function createDefaultTasksFromQuery($query, ?int $requestedCount, ProductCompletionTaskService $service): void
     {
         $this->bulkTaskUndoResult = '';
-        $taskType = ProductCompletionTaskType::FULL_COMPLETION;
         $now = now();
         $defaultRule = CommissionRule::query()
-            ->where('task_type', $taskType->value)
             ->where('is_default', true)
+            ->where('task_type', '!=', ProductCompletionTaskType::SEO->value)
             ->where('is_active', true)
             ->where(fn ($rules) => $rules->whereNull('effective_from')->orWhere('effective_from', '<=', $now))
-            ->where(fn ($rules) => $rules->whereNull('effective_until')->orWhere('effective_until', '>=', $now))
+            ->whereNull('effective_until')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
             ->first();
 
         if ($defaultRule === null) {
             $this->dispatch('notify', message: 'برای نوع «تکمیل کامل» قانون پورسانت پیش‌فرض فعال و معتبر تعیین نشده است.', type: 'error');
             return;
         }
+
+        $taskType = $defaultRule->task_type;
 
         set_time_limit(300);
         $batch = ProductCompletionTaskBatch::query()->create([
@@ -398,17 +401,19 @@ class Index extends Component
         $this->bulkTaskUndoResult = "بازگردانی کامل شد: {$cancelled} تسک لغو شد و {$protected} تسکِ پذیرفته‌شده یا در حال رسیدگی بدون تغییر باقی ماند.";
         $this->dispatch('notify', message: $this->bulkTaskUndoResult, type: 'success');
     }
-    private function hasDefaultFullCompletionRule(): bool
+    private function usableDefaultRule(): ?CommissionRule
     {
         $now = now();
 
         return CommissionRule::query()
-            ->where('task_type', ProductCompletionTaskType::FULL_COMPLETION->value)
             ->where('is_default', true)
+            ->where('task_type', '!=', ProductCompletionTaskType::SEO->value)
             ->where('is_active', true)
             ->where(fn ($rules) => $rules->whereNull('effective_from')->orWhere('effective_from', '<=', $now))
-            ->where(fn ($rules) => $rules->whereNull('effective_until')->orWhere('effective_until', '>=', $now))
-            ->exists();
+            ->whereNull('effective_until')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
     }
 
     private function hasPendingBulkTaskRollback(): bool
@@ -878,7 +883,7 @@ class Index extends Component
                 ->first(),
             'hasPendingBulkTaskRollback' => $this->hasPendingBulkTaskRollback(),
             'canUndoBulkTaskCreation' => auth()->user()?->can('undoBulkCreation', ProductCompletionTask::class) ?? false,
-            'hasDefaultFullCompletionRule' => $this->hasDefaultFullCompletionRule(),
+            'defaultCommissionRule' => $this->usableDefaultRule(),
             'categories' => $categories,
             'statuses' => $statuses,
             'taskStatuses' => [

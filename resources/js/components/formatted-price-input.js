@@ -3,13 +3,13 @@ document.addEventListener('alpine:init', () => {
         wire,
         property,
         live,
-        state: wire.entangle(property),
+        state: property ? wire.entangle(property) : null,
         syncTimer: null,
         lastSyncedRaw: '',
 
         init() {
-            this.lastSyncedRaw = this.normalize(this.state);
-            this.$el.value = this.format(this.state);
+            this.lastSyncedRaw = this.normalize(this.state ?? this.$el.value);
+            this.$el.value = this.format(this.state ?? this.$el.value);
         },
 
         normalize(value) {
@@ -44,7 +44,7 @@ document.addEventListener('alpine:init', () => {
 
             input.setSelectionRange(caret, caret);
             this.lastSyncedRaw = rawValue;
-            this.state = rawValue === '' ? null : rawValue;
+            if (this.property) this.state = rawValue === '' ? null : rawValue;
 
             if (this.live) {
                 clearTimeout(this.syncTimer);
@@ -56,8 +56,11 @@ document.addEventListener('alpine:init', () => {
             clearTimeout(this.syncTimer);
             const rawValue = this.normalize(this.$el.value);
             this.lastSyncedRaw = rawValue;
-            this.state = rawValue === '' ? null : rawValue;
-            this.wire.set(this.property, rawValue === '' ? null : rawValue, true);
+
+            if (this.property) {
+                this.state = rawValue === '' ? null : rawValue;
+                this.wire.set(this.property, rawValue === '' ? null : rawValue, true);
+            }
         },
 
         refresh(value) {

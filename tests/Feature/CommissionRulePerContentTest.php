@@ -124,4 +124,40 @@ class CommissionRulePerContentTest extends TestCase
         $this->assertSame('7000.00', $second->items()->where('content_type', 'image')->value('unit_amount'));
         $this->assertSame(2, CommissionRule::query()->where('name', 'قانون تصاویر')->count());
     }
+
+    #[Test]
+    public function selecting_a_default_replaces_the_previous_system_default_across_task_types(): void
+    {
+        $finance = User::factory()->create()->assignRole(UserRole::FINANCE_MANAGER->value);
+        $previousDefault = CommissionRule::factory()->create([
+            'task_type' => 'full_completion',
+            'is_default' => true,
+        ]);
+        $selectedDefault = CommissionRule::factory()->create([
+            'task_type' => 'media',
+            'is_default' => false,
+            'effective_from' => now()->subDay(),
+            'effective_until' => null,
+        ]);
+
+        app(CommissionRuleService::class)->setDefault($finance, $selectedDefault);
+
+        $this->assertFalse($previousDefault->refresh()->is_default);
+        $this->assertTrue($selectedDefault->refresh()->is_default);
+        $this->assertSame(1, CommissionRule::query()->where('is_default', true)->count());
+    }
+
+    #[Test]
+    public function seo_rules_cannot_be_selected_as_the_system_default(): void
+    {
+        $finance = User::factory()->create()->assignRole(UserRole::FINANCE_MANAGER->value);
+        $seoRule = CommissionRule::factory()->create([
+            'task_type' => 'seo',
+            'is_default' => false,
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(CommissionRuleService::class)->setDefault($finance, $seoRule);
+    }
 }

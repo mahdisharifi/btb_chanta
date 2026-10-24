@@ -53,10 +53,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 return $response;
             }
 
-            // Keep Laravel's native exception page for admin requests so administrators
-            // can inspect the real exception and stack trace while APP_DEBUG is enabled.
-            // Other users continue to receive the application's branded error page.
-            if ($request->is('admin/*')) {
+            // Preserve Laravel's native exception page whenever debug mode is enabled.
+            // In production (APP_DEBUG=false), public HTML requests still receive the safe branded page.
+            if ((bool) config('app.debug') || $request->is('admin/*')) {
                 return $response;
             }
 

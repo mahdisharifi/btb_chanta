@@ -76,6 +76,7 @@ class CommissionRules extends Component
     {
         $rule = CommissionRule::query()->where('public_id', $publicId)->firstOrFail();
         $service->setDefault(auth()->user(), $rule);
+        $this->resetPage();
         $this->dispatch('notify', message: 'قانون پورسانت پیش‌فرض به‌روزرسانی شد.', type: 'success');
     }
 
@@ -83,8 +84,19 @@ class CommissionRules extends Component
     {
         Gate::authorize('viewAny', CommissionRule::class);
 
+        $now = now();
+
         return view('livewire.admin.outsourcing.commission-rules', [
             'rules' => CommissionRule::query()->with('items')->latest('id')->paginate(20),
+            'currentSystemDefaultId' => CommissionRule::query()
+                ->where('is_default', true)
+                ->where('task_type', '!=', ProductCompletionTaskType::SEO->value)
+                ->where('is_active', true)
+                ->where(fn ($query) => $query->whereNull('effective_from')->orWhere('effective_from', '<=', $now))
+                ->whereNull('effective_until')
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->value('id'),
             'taskTypes' => collect(ProductCompletionTaskType::options())
                 ->except(ProductCompletionTaskType::SEO->value)
                 ->all(),

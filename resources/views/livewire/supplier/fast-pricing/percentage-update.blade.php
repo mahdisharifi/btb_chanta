@@ -183,11 +183,13 @@
                                         قیمت جدید (تومان)
                                         <span class="sr-only">برای {{ $item->productSupplier?->product?->title ?? 'کالا' }}، {{ $priceData['tier_name'] ?? 'تیراژ نامشخص' }}، {{ $priceData['price_type_name'] ?? 'نوع قیمت نامشخص' }}</span>
                                     </label>
-                                    <input id="price-{{ $item->id }}-{{ $loop->index }}" type="number" min="1" max="999999999999" step="1"
-                                           value="{{ $newPrice }}" onwheel="this.blur()" inputmode="numeric" dir="ltr"
+                                    <input id="price-{{ $item->id }}-{{ $loop->index }}" type="text" inputmode="numeric" dir="ltr"
+                                           x-data="formattedPriceInput($wire, null)"
+                                           x-on:input="input($event)"
+                                           x-on:change="$wire.updatePrice({{ $item->id }}, '{{ $key }}', normalize($event.target.value))"
+                                           value="{{ $newPrice }}" onwheel="this.blur()"
                                            wire:loading.attr="disabled"
                                            @if($fieldError) aria-invalid="true" aria-describedby="price-error-{{ $item->id }}-{{ $loop->index }}" @endif
-                                           wire:change="updatePrice({{ $item->id }}, '{{ $key }}', $event.target.value)"
                                            class="min-h-11 w-full rounded-lg text-left font-bold shadow-sm focus:border-indigo-500 focus:ring-indigo-500 md:w-56 {{ $fieldError ? 'border-red-400' : 'border-gray-300' }}" />
                                     @if($fieldError)
                                         <p id="price-error-{{ $item->id }}-{{ $loop->index }}" role="alert" class="mt-1 text-xs text-red-600">{{ $fieldError }}</p>

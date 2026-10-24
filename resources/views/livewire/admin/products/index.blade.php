@@ -209,9 +209,10 @@
             {{ count($selectedProducts) }} محصول انتخاب شده است.
         </div>
         <div class="flex items-center gap-2 flex-wrap">
-            @if($hasDefaultFullCompletionRule && !$hasPendingBulkTaskRollback)
-                <button wire:click="createDefaultTasksForSelected" onclick="return confirm('برای محصولات انتخاب‌شده‌ای که تسک فعال ندارند، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition-all disabled:opacity-50">
-                    ایجاد تسک پیش‌فرض برای انتخاب‌شده‌ها
+            @if($defaultCommissionRule && !$hasPendingBulkTaskRollback)
+                <span class="text-xs text-indigo-800 dark:text-indigo-300">تسک پیش‌فرض سیستم: {{ $defaultCommissionRule->task_type->label() }}</span>
+                <button wire:click="createDefaultTasksForSelected" onclick="return confirm('برای محصولات انتخاب‌شده بدون تسک فعال، تسک {{ $defaultCommissionRule->task_type->label() }} با قانون پیش‌فرض سیستم ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="min-h-11 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50">
+                    تخصیص تسک پیش‌فرض سیستم به محصولات انتخاب‌شده
                 </button>
             @elseif($hasPendingBulkTaskRollback)
                 <span class="text-xs font-semibold text-amber-800">ابتدا بازگردانی گروهیِ نیمه‌تمام را کامل کنید.</span>
@@ -247,14 +248,15 @@
                     @endforeach
                 </select>
             </label>
-            @if($hasDefaultFullCompletionRule && !$hasPendingBulkTaskRollback)
-                <button wire:click="createDefaultTasksForFilteredProducts" onclick="return confirm('برای همهٔ محصولات بدون تسک فعال در نتایج فیلترشده، تسک تکمیل کامل با قانون پیش‌فرض ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
-                    ایجاد تسک پیش‌فرض برای همه نتایج فیلترشده
+            @if($defaultCommissionRule && !$hasPendingBulkTaskRollback)
+                <span class="text-xs text-indigo-800 dark:text-indigo-300">تسک پیش‌فرض سیستم: {{ $defaultCommissionRule->task_type->label() }}</span>
+                <button wire:click="createDefaultTasksForFilteredProducts" onclick="return confirm('برای همهٔ محصولات بدون تسک فعال در نتایج فیلترشده، تسک {{ $defaultCommissionRule->task_type->label() }} با قانون پیش‌فرض سیستم ساخته و منتشر شود؟')" wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50">
+                    تخصیص تسک پیش‌فرض سیستم به همه نتایج فیلترشده
                 </button>
             @elseif($hasPendingBulkTaskRollback)
                 <span class="text-xs text-amber-700">ابتدا بازگردانی گروهیِ نیمه‌تمام را کامل کنید.</span>
             @else
-                <span class="text-xs text-amber-700">برای تکمیل کامل ابتدا یک قانون پیش‌فرض فعال تعیین کنید.</span>
+                <span class="text-xs text-amber-700">برای تخصیص گروهی، ابتدا قانون پیش‌فرض سیستم را تعیین کنید.</span>
             @endif
         </div>
     </div>

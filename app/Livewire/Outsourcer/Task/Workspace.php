@@ -35,6 +35,7 @@ class Workspace extends Component
 
     public array $draft = [];
     public int $draftVersion = 0;
+    public array $popularAttributeValues = [];
 
     /** @var array<int, string> */
     public array $newAttributeValues = [];
@@ -46,6 +47,7 @@ class Workspace extends Component
         Gate::authorize('viewTask', $task);
         $this->taskPublicId = $task->public_id;
         $this->syncDraft($task);
+        $this->popularAttributeValues = $this->loadPopularAttributeValues($task);
     }
 
     public function accept(ProductCompletionTaskService $service): void
@@ -277,6 +279,34 @@ class Workspace extends Component
         $this->draft['attributes'] = $attributes->values()->all();
     }
 
+    public function searchAttributeValues(int $attributeId, string $search = ''): array
+    {
+        $task = $this->task();
+        Gate::authorize('updateDraft', $task);
+        abort_unless(data_get($task->scope_json, 'attributes', false), 404);
+
+        $categoryId = (int) data_get($task->initial_snapshot_json, 'category_id');
+        abort_unless(Attribute::query()
+            ->join('attribute_category', 'attribute_category.attribute_id', '=', 'attributes.id')
+            ->where('attribute_category.category_id', $categoryId)
+            ->where('attributes.id', $attributeId)
+            ->exists(), 404);
+
+        $search = str_replace(["\u{064A}", "\u{0643}", "\u{200C}"], ["\u{06CC}", "\u{06A9}", ' '], trim($search));
+        if (mb_strlen($search) < 2) {
+            return [];
+        }
+
+        return AttributeValue::query()
+            ->where('attribute_id', $attributeId)
+            ->where('value', 'like', '%'.addcslashes($search, '%_\\').'%' )
+            ->orderBy('value')
+            ->limit(51)
+            ->get(['id', 'value'])
+            ->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])
+            ->all();
+    }
+
     public function proposeAttributeValue(int $attributeId, bool $multiple, string $value): array
     {
         $this->newAttributeValues[$attributeId] = $value;
@@ -287,7 +317,6 @@ class Workspace extends Component
             return [
                 'status' => 'error',
                 'message' => collect($exception->errors())->flatten()->first(),
-                'values' => AttributeValue::where('attribute_id', $attributeId)->get(['id', 'value'])->toArray(),
             ];
         }
 
@@ -383,7 +412,6 @@ class Workspace extends Component
                     $join->on('attribute_category.attribute_id', '=', 'attributes.id')
                         ->where('attribute_category.category_id', '=', $categoryId);
                 })
-                ->with('values:id,attribute_id,value')
                 ->select([
                     'attributes.id',
                     'attributes.name',
@@ -409,14 +437,33 @@ class Workspace extends Component
             ->first();
 
         $displaySubmission = $task->submissions()->orderByDesc('version_no')->first();
+        $submittedAttributeSelections = collect(data_get($displaySubmission?->payload_json, 'attributes', []));
+        $submittedAttributeNames = Attribute::query()
+            ->whereIn('id', $submittedAttributeSelections->pluck('attribute_id')->filter()->unique())
+            ->pluck('name', 'id');
+        $submittedAttributeValues = AttributeValue::query()
+            ->whereIn('id', $submittedAttributeSelections->pluck('value_ids')->flatten()->filter()->unique())
+            ->pluck('value', 'id');
         $workflow = app(\App\Services\ProductCompletionSubmissionWorkflow::class);
         $withdrawalDeadline = $displaySubmission ? $workflow->deadline($displaySubmission) : null;
         $canWithdraw = $displaySubmission && $workflow->canWithdraw(auth()->user(), $task, $displaySubmission);
-        $submittedAttributeNames = $attributes->pluck('name', 'id');
-        $submittedAttributeValues = $attributes->flatMap(fn ($attribute) => $attribute->values)->pluck('value', 'id');
+        $selectedValueIds = collect($this->draft['attributes'] ?? [])->flatMap(fn ($selection) => $selection['value_ids'] ?? [])->filter()->unique();
+        $selectedValuesByAttribute = AttributeValue::query()
+            ->whereIn('attribute_id', $attributes->pluck('id'))
+            ->whereIn('id', $selectedValueIds)
+            ->get(['id', 'attribute_id', 'value'])
+            ->groupBy('attribute_id');
+        $selectedAttributeOptions = $attributes->mapWithKeys(function ($attribute) use ($selectedValuesByAttribute): array {
+            $popularValues = collect($this->popularAttributeValues[$attribute->id] ?? []);
+            $selectedValues = $selectedValuesByAttribute->get($attribute->id, collect())
+                ->map(fn ($value) => ['id' => $value->id, 'value' => $value->value]);
+
+            return [$attribute->id => $popularValues->concat($selectedValues)->unique('id')->values()->all()];
+        })->all();
 
         return view('livewire.outsourcer.task.workspace', compact('task', 'attributes', 'media', 'existingImages', 'openRevision',
-            'displaySubmission', 'withdrawalDeadline', 'canWithdraw', 'submittedAttributeNames', 'submittedAttributeValues'));
+            'displaySubmission', 'submittedAttributeNames', 'submittedAttributeValues', 'withdrawalDeadline', 'canWithdraw',
+            'selectedAttributeOptions'));
     }
 
     private function task(): ProductCompletionTask
@@ -425,6 +472,36 @@ class Workspace extends Component
         Gate::authorize('viewTask', $task);
 
         return $task;
+    }
+
+    private function loadPopularAttributeValues(ProductCompletionTask $task): array
+    {
+        if (! data_get($task->scope_json, 'attributes', false)) {
+            return [];
+        }
+
+        $categoryId = (int) data_get($task->initial_snapshot_json, 'category_id');
+
+        return Attribute::query()
+            ->join('attribute_category', function ($join) use ($categoryId): void {
+                $join->on('attribute_category.attribute_id', '=', 'attributes.id')
+                    ->where('attribute_category.category_id', '=', $categoryId);
+            })
+            ->with(['values' => function ($query): void {
+                $query->withCount('products')
+                    ->orderByDesc('products_count')
+                    ->orderBy('attribute_values.value')
+                    ->limit(50);
+            }])
+            ->select('attributes.id')
+            ->orderBy('attributes.id')
+            ->get()
+            ->mapWithKeys(fn ($attribute) => [
+                $attribute->id => $attribute->values
+                    ->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])
+                    ->all(),
+            ])
+            ->all();
     }
 
     private function syncDraft(ProductCompletionTask $task): void

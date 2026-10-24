@@ -125,18 +125,40 @@ class CommissionRuleService
             'items.*.max_payable_units.max' => 'سقف تعداد نمی‌تواند بیشتر از صد باشد.',
         ])->validate();
         $validated['name'] = $this->sanitizer->plainText($validated['name'], 255);
+        $hasDifferentTaskType = CommissionRule::query()
+            ->where('name', $validated['name'])
+            ->where('task_type', '!=', $validated['task_type'])
+            ->exists();
+
+        if ($hasDifferentTaskType) {
+            throw ValidationException::withMessages([
+                'name' => 'نوع تسک یک قانون در نسخه‌های بعدی قابل تغییر نیست؛ برای نوع تسک جدید نام دیگری انتخاب کنید.',
+            ]);
+        }
+
         $items = $this->normalizePerContentItems(
             ProductCompletionTaskType::from($validated['task_type']),
             $validated['items'],
         );
 
-        return $this->withRuleVersionLock(
-            $validated['name'],
-            function () use ($actor, $validated, $items): CommissionRule {
+        return $this->withRuleVersionLock('global-default', function () use ($actor, $validated, $items): CommissionRule {
+            return $this->withRuleVersionLock(
+                $validated['name'],
+                function () use ($actor, $validated, $items): CommissionRule {
                 return DB::transaction(function () use ($actor, $validated, $items): CommissionRule {
+                    $hasDifferentTaskType = CommissionRule::query()
+                        ->where('name', $validated['name'])
+                        ->where('task_type', '!=', $validated['task_type'])
+                        ->exists();
+
+                    if ($hasDifferentTaskType) {
+                        throw ValidationException::withMessages([
+                            'name' => 'برای نسخه‌های یک قانون، نوع تسک باید ثابت بماند.',
+                        ]);
+                    }
+
                     $replacesDefault = CommissionRule::query()
                         ->where('name', $validated['name'])
-                        ->where('task_type', $validated['task_type'])
                         ->where('is_default', true)
                         ->exists();
                     $lastVersion = (int) (CommissionRule::query()
@@ -176,13 +198,14 @@ class CommissionRuleService
                         ->whereIn('id', $previousActiveRuleIds)
                         ->update(['is_active' => false, 'is_default' => false]);
                     $becomesDefault = $replacesDefault || ! CommissionRule::query()
-                        ->where('task_type', $validated['task_type'])
                         ->where('is_active', true)
                         ->where('is_default', true)
+                        ->where('task_type', '!=', ProductCompletionTaskType::SEO->value)
+                        ->where(fn ($query) => $query->whereNull('effective_from')->orWhere('effective_from', '<=', now()))
+                        ->whereNull('effective_until')
                         ->exists();
                     if ($becomesDefault) {
                         CommissionRule::query()
-                            ->where('task_type', $validated['task_type'])
                             ->where('is_default', true)
                             ->update(['is_default' => false]);
                     }
@@ -205,8 +228,9 @@ class CommissionRuleService
 
                     return $rule->load('items');
                 }, 3);
-            }
-        );
+                }
+            );
+        });
     }
 
     private function withRuleVersionLock(string $ruleName, Closure $callback): mixed
@@ -327,6 +351,23 @@ class CommissionRuleService
         return DB::transaction(function () use ($actor, $rule): CommissionRule {
             $locked = CommissionRule::query()->lockForUpdate()->findOrFail($rule->getKey());
             Gate::forUser($actor)->authorize('update', $locked);
+
+            $currentDefaultId = CommissionRule::query()
+                ->where('is_default', true)
+                ->where('is_active', true)
+                ->where('task_type', '!=', ProductCompletionTaskType::SEO->value)
+                ->where(fn ($query) => $query->whereNull('effective_from')->orWhere('effective_from', '<=', now()))
+                ->whereNull('effective_until')
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->value('id');
+
+            if ((int) $locked->getKey() === (int) $currentDefaultId) {
+                throw ValidationException::withMessages([
+                    'defaultRule' => 'برای حفظ تسک پیش‌فرض سیستم، ابتدا قانون دیگری را پیش‌فرض کنید و سپس این قانون را غیرفعال کنید.',
+                ]);
+            }
+
             $locked->forceFill(['is_active' => false, 'is_default' => false])->save();
             $this->auditService->record(
                 action: 'commission_rule_deactivated',
@@ -343,37 +384,45 @@ class CommissionRuleService
     {
         Gate::forUser($actor)->authorize('update', $rule);
 
-        return DB::transaction(function () use ($actor, $rule): CommissionRule {
-            $locked = CommissionRule::query()->lockForUpdate()->findOrFail($rule->getKey());
-            Gate::forUser($actor)->authorize('update', $locked);
+        if ($rule->task_type === ProductCompletionTaskType::SEO) {
+            throw ValidationException::withMessages([
+                'defaultRule' => 'قانون SEO را نمی‌توان به‌عنوان تسک پیش‌فرض سیستم انتخاب کرد.',
+            ]);
+        }
 
-            if (! $locked->is_active
-                || ($locked->effective_from !== null && $locked->effective_from->isFuture())
-                || ($locked->effective_until !== null && $locked->effective_until->isPast())) {
-                throw ValidationException::withMessages([
-                    'defaultRule' => 'فقط قانون فعال و معتبر در بازه زمانی جاری می‌تواند پیش‌فرض شود.',
-                ]);
-            }
+        return $this->withRuleVersionLock('global-default', function () use ($actor, $rule): CommissionRule {
+            return DB::transaction(function () use ($actor, $rule): CommissionRule {
+                $locked = CommissionRule::query()->lockForUpdate()->findOrFail($rule->getKey());
+                Gate::forUser($actor)->authorize('update', $locked);
 
-            CommissionRule::query()
-                ->where('task_type', $locked->task_type->value)
-                ->where('is_default', true)
-                ->update(['is_default' => false]);
+                if (! $locked->is_active
+                    || ($locked->effective_from !== null && $locked->effective_from->isFuture())
+                    || $locked->effective_until !== null
+                    || $locked->task_type === ProductCompletionTaskType::SEO) {
+                    throw ValidationException::withMessages([
+                        'defaultRule' => 'تسک پیش‌فرض باید فعال باشد، از همین حالا معتبر باشد و تاریخ انقضا نداشته باشد.',
+                    ]);
+                }
 
-            $locked->forceFill(['is_default' => true])->save();
-            $this->auditService->record(
-                action: 'commission_rule_default_set',
-                actor: $actor,
-                metadata: [
-                    'rule_id' => $locked->getKey(),
-                    'name' => $locked->name,
-                    'version' => $locked->version,
-                    'task_type' => $locked->task_type->value,
-                ],
-                entity: $locked,
-            );
+                CommissionRule::query()
+                    ->where('is_default', true)
+                    ->update(['is_default' => false]);
 
-            return $locked;
-        }, 3);
+                $locked->forceFill(['is_default' => true])->save();
+                $this->auditService->record(
+                    action: 'commission_rule_default_set',
+                    actor: $actor,
+                    metadata: [
+                        'rule_id' => $locked->getKey(),
+                        'name' => $locked->name,
+                        'version' => $locked->version,
+                        'task_type' => $locked->task_type->value,
+                    ],
+                    entity: $locked,
+                );
+
+                return $locked;
+            }, 3);
+        });
     }
 }

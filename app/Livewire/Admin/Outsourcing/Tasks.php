@@ -7,10 +7,13 @@ namespace App\Livewire\Admin\Outsourcing;
 use App\Enums\ProductCompletionTaskStatus;
 use App\Enums\ProductCompletionTaskType;
 use App\Models\CommissionRule;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductCompletionTask;
+use App\Models\User;
 use App\Services\ProductCompletionTaskService;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -24,10 +27,25 @@ class Tasks extends Component
 {
     use WithPagination;
 
+    #[Url(as: 'q', except: '')]
     public string $search = '';
+    #[Url(except: '')]
     public string $status = '';
+    #[Url(as: 'type', except: '')]
+    public string $taskTypeFilter = '';
+    #[Url(as: 'attention', except: '')]
+    public string $attentionFilter = '';
+    #[Url(as: 'assignee', except: '')]
+    public string $assigneeFilter = '';
+    #[Url(as: 'reviewer', except: '')]
+    public string $reviewerFilter = '';
+    #[Url(as: 'category', except: '')]
+    public string $categoryFilter = '';
     #[Url(as: 'productId')]
     public ?int $productId = null;
+    public bool $showCreateForm = false;
+    public array $selectedTaskIds = [];
+    public int $bulkDeadlineDays = 3;
     public ?int $commissionRuleId = null;
     public string $taskType = 'full_completion';
     public int $dueDays = 3;
@@ -47,7 +65,12 @@ class Tasks extends Component
     public function mount(): void
     {
         Gate::authorize('viewAny', ProductCompletionTask::class);
-        $this->commissionRuleId = $this->defaultCommissionRuleId($this->taskType);
+        $this->showCreateForm = $this->productId !== null;
+        $defaultRule = $this->defaultCommissionRule();
+        if ($defaultRule !== null) {
+            $this->taskType = $defaultRule->task_type->value;
+            $this->commissionRuleId = (int) $defaultRule->getKey();
+        }
     }
 
     public function updatedSearch(): void
@@ -57,7 +80,119 @@ class Tasks extends Component
 
     public function updatedStatus(): void
     {
+        if ($this->status !== '' && ! array_key_exists($this->status, ProductCompletionTaskStatus::options())) {
+            $this->status = '';
+        }
+
         $this->resetPage();
+    }
+
+    public function updatedTaskTypeFilter(): void
+    {
+        if ($this->taskTypeFilter !== '' && ! array_key_exists($this->taskTypeFilter, ProductCompletionTaskType::options())) {
+            $this->taskTypeFilter = '';
+        }
+
+        $this->resetPage();
+    }
+
+    public function updatedAttentionFilter(): void
+    {
+        if (! in_array($this->attentionFilter, ['', 'needs_attention', 'overdue', 'finalization', 'review_queue'], true)) {
+            $this->attentionFilter = '';
+        }
+
+        $this->resetPage();
+    }
+
+    public function updatedAssigneeFilter(): void
+    {
+        if ($this->assigneeFilter !== '' && ! ctype_digit($this->assigneeFilter)) {
+            $this->assigneeFilter = '';
+        }
+
+        $this->resetPage();
+    }
+
+    public function updatedReviewerFilter(): void
+    {
+        if ($this->reviewerFilter !== '' && ! ctype_digit($this->reviewerFilter)) {
+            $this->reviewerFilter = '';
+        }
+
+        $this->resetPage();
+    }
+
+    public function updatedCategoryFilter(): void
+    {
+        if ($this->categoryFilter !== '' && ! ctype_digit($this->categoryFilter)) {
+            $this->categoryFilter = '';
+        }
+        $this->resetPage();
+    }
+
+    public function updatedSelectedTaskIds(): void
+    {
+        $this->selectedTaskIds = array_values(array_unique(array_filter(
+            array_map('intval', $this->selectedTaskIds),
+            static fn (int $id): bool => $id > 0,
+        )));
+    }
+
+    public function toggleCreateForm(): void
+    {
+        Gate::authorize('create', ProductCompletionTask::class);
+        $this->showCreateForm = ! $this->showCreateForm;
+    }
+
+    public function setAttentionFilter(string $filter): void
+    {
+        if (! in_array($filter, ['needs_attention', 'overdue', 'finalization', 'review_queue'], true)) {
+            throw ValidationException::withMessages(['attentionFilter' => 'فیلتر رسیدگی معتبر نیست.']);
+        }
+
+        $this->attentionFilter = $filter;
+        $this->status = '';
+        $this->resetPage();
+    }
+
+    public function resetFilters(): void
+    {
+        $this->reset(['search', 'status', 'taskTypeFilter', 'attentionFilter', 'assigneeFilter', 'reviewerFilter', 'categoryFilter']);
+        $this->resetPage();
+    }
+
+    public function bulkExtendDeadlines(ProductCompletionTaskService $service): void
+    {
+        Gate::authorize('outsourcing.extend_deadline');
+        $this->validate(['bulkDeadlineDays' => ['required', 'integer', 'min:1', 'max:90']]);
+        $ids = array_values(array_unique(array_map('intval', $this->selectedTaskIds)));
+        if ($ids === []) {
+            throw ValidationException::withMessages(['selectedTaskIds' => 'حداقل یک تسک را انتخاب کنید.']);
+        }
+
+        $updated = 0;
+        $skipped = 0;
+        $dueAt = now()->addDays($this->bulkDeadlineDays);
+        foreach (ProductCompletionTask::query()->whereKey($ids)->get() as $task) {
+            if (! Gate::allows('extendDeadline', $task)) {
+                $skipped++;
+                continue;
+            }
+            try {
+                $service->extendDeadline(auth()->user(), $task, $dueAt);
+                $updated++;
+            } catch (\Throwable) {
+                $skipped++;
+            }
+        }
+
+        $this->selectedTaskIds = [];
+        $message = "مهلت {$updated} تسک تمدید شد.";
+        if ($skipped > 0) {
+            $message .= " {$skipped} مورد به دلیل وضعیت یا خطا نادیده گرفته شد.";
+        }
+        $this->dispatch('notify', message: $message, type: $updated > 0 ? 'success' : 'warning');
     }
 
     #[Renderless]
@@ -111,7 +246,10 @@ class Tasks extends Component
 
     public function updatedTaskType(): void
     {
-        $this->commissionRuleId = $this->defaultCommissionRuleId($this->taskType);
+        $defaultRule = $this->defaultCommissionRule();
+        $this->commissionRuleId = $defaultRule !== null && $defaultRule->task_type->value === $this->taskType
+            ? (int) $defaultRule->getKey()
+            : null;
         $this->correctionScope = [];
         $this->resetValidation(['commissionRuleId', 'correctionScope', 'scope', 'taskType']);
     }
@@ -203,16 +341,32 @@ class Tasks extends Component
     public function render()
     {
         $search = mb_substr(trim($this->search), 0, 100);
+        $categoryIds = [];
+        if ($this->categoryFilter !== '') {
+            $category = Category::query()->find((int) $this->categoryFilter);
+            if ($category !== null) {
+                $categoryIds = $category->getAllDescendantIdsRecursive()->all();
+            }
+        }
+
         $tasks = ProductCompletionTask::query()
             ->select([
-                'id', 'public_id', 'product_id', 'assigned_to', 'task_type', 'status',
-                'revision_count', 'revision_limit', 'due_at', 'completion_duration_seconds', 'accepted_at', 'created_at',
+                'id', 'public_id', 'product_id', 'active_product_id', 'assigned_by', 'assigned_to', 'reviewer_id',
+                'bulk_creation_batch_id', 'task_type', 'status', 'revision_count', 'revision_limit', 'due_at',
+                'completion_duration_seconds', 'assignment_expires_at', 'accepted_at', 'content_applied_at',
+                'media_published_at', 'last_error', 'created_at',
             ])
             ->with([
-                'product:id,title',
+                'product:id,title,sku',
                 'assignee:id,name',
+                'reviewer:id,name',
+                'assigner:id,name',
             ])
             ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
+            ->when($this->taskTypeFilter !== '', fn ($query) => $query->where('task_type', $this->taskTypeFilter))
+            ->when($this->assigneeFilter !== '', fn ($query) => $query->where('assigned_to', (int) $this->assigneeFilter))
+            ->when($this->reviewerFilter !== '', fn ($query) => $query->where('reviewer_id', (int) $this->reviewerFilter))
+            ->when($categoryIds !== [], fn ($query) => $query->whereHas('product', fn ($product) => $product->whereIn('category_id', $categoryIds)))
             ->when($search !== '', function ($query) use ($search): void {
                 $term = strtr($search, array_combine(
                     preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
@@ -223,7 +377,7 @@ class Tasks extends Component
                         $query->where('product_id', (int) $term)->orWhereHas('product', fn ($product) => $product->where('sku', $term));
                         return;
                     }
-                    $query->whereHas('product', function ($product) use ($term): void {
+                    $query->where('public_id', $term)->orWhereHas('product', function ($product) use ($term): void {
                         foreach (array_slice(preg_split('/\s+/u', $term), 0, 6) as $word) {
                             $pattern = '%'.strtr($word, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
                             $product->where(fn ($part) => $part->whereRaw("title LIKE ? ESCAPE '!'", [$pattern])->orWhereRaw("sku LIKE ? ESCAPE '!'", [$pattern]));
@@ -231,37 +385,169 @@ class Tasks extends Component
                     });
                 });
             })
+            ->when($this->attentionFilter !== '', fn (Builder $query) => $this->applyAttentionFilter($query, $this->attentionFilter))
             ->latest('id')
             ->paginate(20);
 
         $selectedProduct = $this->productId
             ? Product::query()->select(['id', 'title', 'sku'])->find($this->productId)?->only(['id', 'title', 'sku'])
             : null;
+        $canCreateTasks = Gate::allows('create', ProductCompletionTask::class);
+        $showCreateForm = $canCreateTasks && $this->showCreateForm;
 
         return view('livewire.admin.outsourcing.tasks', [
             'tasks' => $tasks,
+            'categories' => Category::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'parent_id']),
             'selectedProduct' => $selectedProduct,
             'statuses' => ProductCompletionTaskStatus::options(),
-            'commissionRules' => CommissionRule::query()
+            'commissionRules' => $showCreateForm ? CommissionRule::query()
                 ->where('is_active', true)
                 ->select(['id', 'name', 'version', 'task_type', 'is_default'])
                 ->orderByDesc('is_default')
-                ->latest('id')
-                ->get(),
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->get() : collect(),
+            'systemDefaultRuleId' => $this->defaultCommissionRule()?->getKey(),
             'taskTypes' => ProductCompletionTaskType::options(),
+            'attentionOptions' => [
+                'needs_attention' => 'نیازمند رسیدگی',
+                'overdue' => 'مهلت گذشته',
+                'finalization' => 'خطای نهایی‌سازی',
+                'review_queue' => 'در انتظار بررسی',
+            ],
+            'assignees' => User::role('outsourcer')->orderBy('name')->get(['id', 'name']),
+            'reviewers' => User::role('reviewer')->orderBy('name')->get(['id', 'name']),
+            'taskMetrics' => $this->taskMetrics(),
+            'canCreateTasks' => $canCreateTasks,
+            'showCreateForm' => $showCreateForm,
         ]);
     }
 
-    private function defaultCommissionRuleId(string $taskType): ?int
+    private function applyAttentionFilter(Builder $query, string $filter): Builder
     {
-        $id = CommissionRule::query()
-            ->where('task_type', $taskType)
+        $now = now();
+        $activeStatuses = [
+            ProductCompletionTaskStatus::DRAFT->value,
+            ProductCompletionTaskStatus::AVAILABLE->value,
+            ProductCompletionTaskStatus::ASSIGNED->value,
+            ProductCompletionTaskStatus::ACCEPTED->value,
+            ProductCompletionTaskStatus::IN_PROGRESS->value,
+            ProductCompletionTaskStatus::SUBMITTED->value,
+            ProductCompletionTaskStatus::CHANGES_REQUESTED->value,
+            ProductCompletionTaskStatus::RESUBMITTED->value,
+            ProductCompletionTaskStatus::APPROVED->value,
+            ProductCompletionTaskStatus::CONFLICTED->value,
+            ProductCompletionTaskStatus::DISPUTED->value,
+        ];
+
+        if ($filter === 'review_queue') {
+            return $query->whereIn('status', [
+                ProductCompletionTaskStatus::SUBMITTED->value,
+                ProductCompletionTaskStatus::RESUBMITTED->value,
+            ]);
+        }
+
+        if ($filter === 'finalization') {
+            return $query->where(function (Builder $tasks): void {
+                $tasks->where(fn (Builder $approved) => $approved
+                    ->where('status', ProductCompletionTaskStatus::APPROVED->value)
+                    ->where(fn (Builder $markers) => $markers->whereNull('content_applied_at')->orWhereNull('media_published_at')))
+                    ->orWhere(fn (Builder $error) => $error->whereNotNull('last_error')->where('last_error', '<>', ''));
+            });
+        }
+
+        $overdue = static fn (Builder $tasks) => $tasks->where(function (Builder $conditions) use ($now, $activeStatuses): void {
+            $conditions->where(fn (Builder $due) => $due->whereIn('status', $activeStatuses)->whereNotNull('due_at')->where('due_at', '<', $now))
+                ->orWhere(fn (Builder $assignment) => $assignment
+                    ->where('status', ProductCompletionTaskStatus::ASSIGNED->value)
+                    ->whereNotNull('assigned_to')
+                    ->whereNull('accepted_at')
+                    ->whereNotNull('assignment_expires_at')
+                    ->where('assignment_expires_at', '<', $now));
+        });
+
+        if ($filter === 'overdue') {
+            return $overdue($query);
+        }
+
+        return $query->where(function (Builder $tasks) use ($now, $activeStatuses, $overdue): void {
+            $tasks->whereIn('status', [
+                ProductCompletionTaskStatus::EXPIRED->value,
+                ProductCompletionTaskStatus::CONFLICTED->value,
+                ProductCompletionTaskStatus::DISPUTED->value,
+            ])
+                ->orWhere(fn (Builder $error) => $error->whereNotNull('last_error')->where('last_error', '<>', ''))
+                ->orWhere($overdue)
+                ->orWhere(fn (Builder $approved) => $approved
+                    ->where('status', ProductCompletionTaskStatus::APPROVED->value)
+                    ->where(fn (Builder $markers) => $markers->whereNull('content_applied_at')->orWhereNull('media_published_at')))
+                ->orWhere(fn (Builder $missingActive) => $missingActive
+                    ->whereIn('status', $activeStatuses)
+                    ->whereNull('active_product_id'));
+        });
+    }
+
+    private function taskMetrics(): object
+    {
+        $now = now();
+        $activeStatuses = [
+            ProductCompletionTaskStatus::DRAFT->value,
+            ProductCompletionTaskStatus::AVAILABLE->value,
+            ProductCompletionTaskStatus::ASSIGNED->value,
+            ProductCompletionTaskStatus::ACCEPTED->value,
+            ProductCompletionTaskStatus::IN_PROGRESS->value,
+            ProductCompletionTaskStatus::SUBMITTED->value,
+            ProductCompletionTaskStatus::CHANGES_REQUESTED->value,
+            ProductCompletionTaskStatus::RESUBMITTED->value,
+            ProductCompletionTaskStatus::APPROVED->value,
+            ProductCompletionTaskStatus::CONFLICTED->value,
+            ProductCompletionTaskStatus::DISPUTED->value,
+        ];
+        $attentionStatuses = [
+            ProductCompletionTaskStatus::EXPIRED->value,
+            ProductCompletionTaskStatus::CONFLICTED->value,
+            ProductCompletionTaskStatus::DISPUTED->value,
+        ];
+        $activePlaceholders = implode(',', array_fill(0, count($activeStatuses), '?'));
+        $attentionSql = 'SUM(CASE WHEN status IN (?, ?, ?)'
+            .' OR (last_error IS NOT NULL AND last_error <> ?)'
+            .' OR (due_at IS NOT NULL AND due_at < ? AND status IN ('.$activePlaceholders.'))'
+            .' OR (status = ? AND assignment_expires_at IS NOT NULL AND assignment_expires_at < ? AND accepted_at IS NULL)'
+            .' OR (status = ? AND (content_applied_at IS NULL OR media_published_at IS NULL))'
+            .' OR (active_product_id IS NULL AND status IN ('.$activePlaceholders.'))'
+            .' THEN 1 ELSE 0 END) AS attention_count';
+        $attentionBindings = [
+            ...$attentionStatuses,
+            '',
+            $now,
+            ...$activeStatuses,
+            ProductCompletionTaskStatus::ASSIGNED->value,
+            $now,
+            ProductCompletionTaskStatus::APPROVED->value,
+            ...$activeStatuses,
+        ];
+
+        return ProductCompletionTask::query()
+            ->selectRaw('COUNT(*) AS total_count')
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS available_count', [ProductCompletionTaskStatus::AVAILABLE->value])
+            ->selectRaw('SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) AS review_count', [
+                ProductCompletionTaskStatus::SUBMITTED->value,
+                ProductCompletionTaskStatus::RESUBMITTED->value,
+            ])
+            ->selectRaw($attentionSql, $attentionBindings)
+            ->first();
+    }
+
+    private function defaultCommissionRule(): ?CommissionRule
+    {
+        return CommissionRule::query()
             ->where('is_default', true)
+            ->where('task_type', '!=', ProductCompletionTaskType::SEO->value)
             ->where('is_active', true)
             ->where(fn ($query) => $query->whereNull('effective_from')->orWhere('effective_from', '<=', now()))
-            ->where(fn ($query) => $query->whereNull('effective_until')->orWhere('effective_until', '>=', now()))
-            ->value('id');
-
-        return $id === null ? null : (int) $id;
+            ->whereNull('effective_until')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
     }
 }

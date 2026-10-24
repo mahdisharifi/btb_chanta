@@ -98,19 +98,22 @@
 
     <section>
         <h2 class="mb-3 text-lg font-bold">نسخه‌های قوانین</h2>
+        <p class="mb-3 rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm leading-6 text-indigo-900">
+            در کل سیستم فقط یک قانون پیش‌فرض فعال است. تغییر آن روی تخصیص‌های بعدی اثر می‌گذارد و تسک‌های قبلی را تغییر نمی‌دهد.
+        </p>
         <div class="space-y-3">
             @forelse($rules as $rule)
-                <article class="rounded-xl border bg-white p-4">
+                <article wire:key="commission-rule-{{ $rule->public_id }}" class="rounded-xl border bg-white p-4">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <h3 class="font-bold">{{ $rule->name }} <span class="text-sm font-normal text-slate-500">نسخه {{ $rule->version }}</span></h3>
                             <p class="mt-1 text-sm text-slate-600">{{ $rule->task_type->label() }} · {{ $rule->is_active ? 'فعال' : 'غیرفعال' }}</p>
                         </div>
-                        <div class="flex items-center gap-3">
-                            @if($rule->is_default)
-                                <span class="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">پیش‌فرض این نوع تسک</span>
+                        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                            @if((int) $currentSystemDefaultId === (int) $rule->getKey())
+                                <span class="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">تسک پیش‌فرض سیستم</span>
                             @elseif($rule->is_active)
-                                <button type="button" wire:click="setDefault('{{ $rule->public_id }}')" wire:loading.attr="disabled" class="text-sm text-indigo-600 hover:text-indigo-800">تعیین به‌عنوان پیش‌فرض</button>
+                                <button type="button" wire:click="setDefault('{{ $rule->public_id }}')" wire:loading.attr="disabled" class="text-sm text-indigo-600 hover:text-indigo-800 disabled:cursor-not-allowed disabled:opacity-50">تغییر تسک پیش‌فرض سیستم به این قانون</button>
                             @endif
                             <span class="rounded-full px-2.5 py-1 text-xs {{ $rule->pricing_schema_version >= 2 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600' }}">{{ $rule->pricing_schema_version >= 2 ? 'قیمت‌گذاری واحدی' : 'ساختار قدیمی' }}</span>
                             @if($rule->is_active)<button type="button" wire:click="deactivate('{{ $rule->public_id }}')" wire:loading.attr="disabled" class="text-sm text-red-600 hover:text-red-800">غیرفعال‌سازی</button>@endif

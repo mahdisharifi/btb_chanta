@@ -1,6 +1,6 @@
 @php
     $workspace = $workspace ?? false;
-    $selectorOptions = $attribute->values->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])->values()->all();
+    $selectorOptions = $selectedAttributeOptions[$attribute->id] ?? [];
 @endphp
 <div wire:key="{{ $workspace ? 'task' : 'admin' }}-attribute-selector-{{ $attribute->id }}" wire:ignore
      class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
@@ -8,7 +8,10 @@
          attributeId: {{ $attribute->id }},
          workspace: @js($workspace),
          multiple: @js((bool) $attribute->is_multiple),
+         defaultOptions: @js($selectorOptions),
          options: @js($selectorOptions),
+         searching: false,
+         searchTimer: null,
          search: '',
          error: '',
          rejectedSearch: null,
@@ -23,12 +26,37 @@
          },
          get selectedOptions() { return this.options.filter(option => this.selectedIds.includes(String(option.id))); },
          get normalizedSearch() { return this.normalize(this.search); },
+         get matchingOptionCount() {
+             return this.options.filter(option => !this.selectedIds.includes(String(option.id)))
+                 .filter(option => !this.normalizedSearch || this.normalize(option.value).includes(this.normalizedSearch)).length;
+         },
          get matchingOptions() {
-             return this.options.filter(option => !this.selectedIds.includes(String(option.id)) && this.normalize(option.value).includes(this.normalizedSearch));
+             return this.options.filter(option => !this.selectedIds.includes(String(option.id)))
+                 .filter(option => !this.normalizedSearch || this.normalize(option.value).includes(this.normalizedSearch)).slice(0, 50);
          },
          get existingOption() { return this.options.find(option => this.normalize(option.value) === this.normalizedSearch); },
          get existingProposal() { return this.proposals.some(value => this.normalize(value) === this.normalizedSearch); },
          get canAdd() { return this.normalizedSearch.length > 0 && !this.existingOption && !this.existingProposal && this.normalizedSearch !== this.rejectedSearch; },
+         queueSearch() {
+             clearTimeout(this.searchTimer);
+             const submittedSearch = this.search;
+             this.options = this.selectedOptions;
+             this.searching = this.normalize(submittedSearch).length >= 2;
+             this.searchTimer = setTimeout(async () => {
+                 if (this.normalize(submittedSearch).length < 2) {
+                     this.options = [...this.defaultOptions, ...this.selectedOptions]
+                         .filter((option, index, options) => options.findIndex(item => String(item.id) === String(option.id)) === index);
+                     this.searching = false;
+                     return;
+                 }
+                 try {
+                     const results = await $wire.searchAttributeValues(this.attributeId, submittedSearch);
+                     if (this.search !== submittedSearch) return;
+                     this.options = [...this.selectedOptions, ...results.filter(result => !this.selectedIds.includes(String(result.id)))];
+                     this.searching = false;
+                 } catch (failure) { this.searching = false; this.error = 'جستجوی مقادیر با خطا روبه‌رو شد.'; }
+             }, 250);
+         },
          async choose(option) {
              if (this.busy) return;
              this.busy = true;
@@ -77,7 +105,7 @@
              finally { this.busy = false; }
          }
      }"
-     x-on:attribute-values-refreshed.window="const refreshed = $event.detail.attributes.find(item => Number(item.id) === attributeId); if (refreshed) options = refreshed.values">
+     >
     <div class="bg-gray-50 px-4 py-3 dark:bg-gray-900">
         <div class="flex items-center justify-between">
             <h4 class="font-semibold text-gray-800 dark:text-gray-200">{{ $attribute->name }}@if($workspace && $attribute->is_required)<span class="mr-1 text-xs text-red-600">(اجباری)</span>@endif</h4>
@@ -110,7 +138,7 @@
             <div class="relative flex-1">
                 <x-heroicon-o-magnifying-glass class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 @if($workspace)<label class="mb-1 block text-xs text-gray-600">جستجو یا پیشنهاد مقدار جدید برای {{ $attribute->name }}</label>@endif
-                <input type="text" x-model="search" x-on:input="error = ''; rejectedSearch = null" x-on:keydown.enter.prevent maxlength="{{ $workspace ? config('product_completion.validation.attribute_proposed_value_max', 255) : 255 }}"
+                <input type="text" x-model="search" x-on:input="error = ''; rejectedSearch = null; queueSearch()" x-on:keydown.enter.prevent="if (canAdd) add()" maxlength="{{ $workspace ? config('product_completion.validation.attribute_proposed_value_max', 255) : 255 }}"
                        aria-label="جستجو یا مقدار جدید برای {{ $attribute->name }}" placeholder="جستجو یا مقدار جدید..."
                        class="w-full rounded-lg border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-[#d4af37] focus:ring-[#d4af37] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
             </div>
@@ -129,7 +157,9 @@
                 </label>
             </template>
         </div>
-        <p x-cloak x-show="normalizedSearch && !matchingOptions.length && !existingOption" class="mt-2 text-xs text-gray-500">مقداری پیدا نشد؛ می‌توانید مقدار جدید اضافه کنید.</p>
+        <p x-cloak x-show="!normalizedSearch" class="mt-2 text-xs text-gray-500">حداکثر ۵۰ مقدار پرتکرار این ویژگی نمایش داده شده است؛ برای دیدن بقیه جستجو کنید.</p>
+        <p x-cloak x-show="matchingOptionCount > matchingOptions.length" class="mt-2 text-xs text-amber-700" x-text="'بیش از ' + matchingOptions.length + ' نتیجه وجود دارد؛ جستجو را دقیق‌تر کنید.'"></p>
+        <p x-cloak x-show="normalizedSearch && !searching && !matchingOptions.length && !existingOption" class="mt-2 text-xs text-gray-500">مقداری پیدا نشد؛ می‌توانید مقدار جدید اضافه کنید.</p>
         <p x-cloak x-show="error" x-text="error" role="alert" class="mt-2 text-xs text-red-500"></p>
     </div>
 </div>

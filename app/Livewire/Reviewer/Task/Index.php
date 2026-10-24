@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Reviewer\Task;
 
 use App\Enums\ProductCompletionReviewMode;
+use App\Enums\ProductCompletionSubmissionStatus;
 use App\Enums\ProductCompletionTaskStatus;
 use App\Models\ProductCompletionTask;
 use Illuminate\Support\Facades\Gate;
@@ -36,6 +37,14 @@ class Index extends Component
     public function render()
     {
         $isQueueTab = $this->tab === 'queue';
+        $reviewableTaskStatuses = [
+            ProductCompletionTaskStatus::SUBMITTED->value,
+            ProductCompletionTaskStatus::RESUBMITTED->value,
+        ];
+        $reviewableSubmissionStatuses = [
+            ProductCompletionSubmissionStatus::SUBMITTED->value,
+            ProductCompletionSubmissionStatus::UNDER_REVIEW->value,
+        ];
 
         $tasks = ProductCompletionTask::query()
             ->select([
@@ -43,25 +52,30 @@ class Index extends Component
                 'task_type', 'status', 'submitted_at', 'accepted_at', 'started_at', 'due_at',
             ])
             ->with(['product:id,title', 'assignee:id,name'])
-            ->when($isQueueTab, function ($query): void {
+            ->when($isQueueTab, function ($query) use ($reviewableTaskStatuses, $reviewableSubmissionStatuses): void {
                 $query->whereNull('reviewer_id')
                     ->whereNotNull('assigned_to')
                     ->whereIn('review_mode', [
                         ProductCompletionReviewMode::REVIEWER,
                         ProductCompletionReviewMode::EITHER,
                     ])
-                    ->whereIn('status', [
-                        ProductCompletionTaskStatus::ACCEPTED,
-                        ProductCompletionTaskStatus::IN_PROGRESS,
-                        ProductCompletionTaskStatus::SUBMITTED,
-                        ProductCompletionTaskStatus::RESUBMITTED,
-                    ]);
-            }, function ($query): void {
+                    ->where(function ($query) use ($reviewableTaskStatuses, $reviewableSubmissionStatuses): void {
+                        $query->whereIn('status', [
+                            ProductCompletionTaskStatus::ACCEPTED->value,
+                            ProductCompletionTaskStatus::IN_PROGRESS->value,
+                        ])->orWhere(function ($query) use ($reviewableTaskStatuses, $reviewableSubmissionStatuses): void {
+                            $query->whereIn('status', $reviewableTaskStatuses)
+                                ->whereNotNull('last_submission_id')
+                                ->whereHas('lastSubmission', fn ($submission) => $submission
+                                    ->whereIn('status', $reviewableSubmissionStatuses));
+                        });
+                    });
+            }, function ($query) use ($reviewableTaskStatuses, $reviewableSubmissionStatuses): void {
                 $query->where('reviewer_id', auth()->id())
-                    ->whereIn('status', [
-                        ProductCompletionTaskStatus::SUBMITTED,
-                        ProductCompletionTaskStatus::RESUBMITTED,
-                    ]);
+                    ->whereIn('status', $reviewableTaskStatuses)
+                    ->whereNotNull('last_submission_id')
+                    ->whereHas('lastSubmission', fn ($submission) => $submission
+                        ->whereIn('status', $reviewableSubmissionStatuses));
             })
             ->orderByRaw('submitted_at is null')
             ->orderBy('submitted_at')

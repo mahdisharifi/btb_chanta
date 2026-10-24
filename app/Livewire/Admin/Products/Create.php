@@ -66,6 +66,7 @@ class Create extends Component
     public $searchCategories = [];
     public $selectedCategoryName = '';
     public $categoryAttributes = [];
+    public array $popularAttributeValues = [];
     public $attributeValues = [];
     public $newAttributeValues = [];
     public $selectedAttributeValues = []; // ساختار: [attribute_id => [value_id1, ...]] یا [attribute_id => value_id]
@@ -307,10 +308,21 @@ class Create extends Component
     public function loadCategoryAttributes()
     {
         $this->categoryAttributes = [];
+        $this->popularAttributeValues = [];
 
         if ($this->category_id) {
-            $category = Category::with('attributes.values')->find($this->category_id);
+            $category = Category::with(['attributes.values' => function ($query): void {
+                $query->withCount('products')
+                    ->orderByDesc('products_count')
+                    ->orderBy('attribute_values.value')
+                    ->limit(50);
+            }])->find($this->category_id);
             $this->categoryAttributes = $category?->attributes ?? [];
+            $this->popularAttributeValues = collect($this->categoryAttributes)->mapWithKeys(fn ($attribute) => [
+                $attribute->id => $attribute->values
+                    ->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])
+                    ->all(),
+            ])->all();
 
             // مقداردهی اولیه فقط برای کلیدهایی که هنوز وجود ندارند
             // (حفظ انتخاب‌های فعلی هنگام افزودن مقدار جدید یا رفرش)
@@ -324,13 +336,37 @@ class Create extends Component
         }
     }
 
+    public function searchAttributeValues(int $attributeId, string $search = ''): array
+    {
+        if ($this->isEdit && $this->productId) {
+            Gate::authorize('update', Product::findOrFail($this->productId));
+        } else {
+            Gate::authorize('create', Product::class);
+        }
+
+        abort_unless($this->category_id && Category::query()
+            ->whereKey($this->category_id)
+            ->whereHas('attributes', fn ($query) => $query->whereKey($attributeId))
+            ->exists(), 404);
+
+        $search = str_replace(["\u{064A}", "\u{0643}", "\u{200C}"], ["\u{06CC}", "\u{06A9}", ' '], trim($search));
+        if (mb_strlen($search) < 2) {
+            return [];
+        }
+
+        return AttributeValue::query()
+            ->where('attribute_id', $attributeId)
+            ->where('value', 'like', '%'.addcslashes($search, '%_\\').'%' )
+            ->orderBy('value')
+            ->limit(51)
+            ->get(['id', 'value'])
+            ->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])
+            ->all();
+    }
+
     public function refreshAttributes()
     {
         $this->loadCategoryAttributes();
-        $this->dispatch('attribute-values-refreshed', attributes: collect($this->categoryAttributes)->map(fn ($attribute) => [
-            'id' => $attribute->id,
-            'values' => $attribute->values->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])->values()->all(),
-        ])->values()->all());
         $this->dispatch('notify', ['message' => 'ویژگی‌ها بروزرسانی شدند', 'type' => 'success']);
     }
 
@@ -361,7 +397,7 @@ class Create extends Component
             return [
                 'status' => 'duplicate',
                 'message' => 'این مقدار از قبل وجود دارد؛ آن را از فهرست مقادیر انتخاب کنید.',
-                'values' => AttributeValue::where('attribute_id', $attributeId)->get(['id', 'value'])->toArray(),
+                'values' => $this->searchAttributeValues((int) $attributeId, $value),
             ];
         }
 
@@ -640,6 +676,10 @@ class Create extends Component
             Gate::authorize('create', Product::class);
         }
 
+        foreach ($this->quantity_tiers as $index => $tier) {
+            $this->quantity_tiers[$index]['max_quantity'] = $this->normalizeMaxQuantity($tier['max_quantity'] ?? null);
+        }
+
         $rules = [
             'seo_title'         => 'nullable|string|max:60',
             'seo_description'   => 'nullable|string|max:160',
@@ -687,7 +727,7 @@ class Create extends Component
             } catch (\Illuminate\Validation\ValidationException $e) {
                 // بازنشانی خطاها برای نمایش در UI
                 $this->dispatch('notify', [
-                    'message' => $e->getMessage() ?: 'تیراژها نامعتبر هستند.',
+                    'message' => collect($e->errors())->flatten()->first() ?: 'تیراژها نامعتبر هستند.',
                     'type' => 'error',
                 ]);
                 throw $e;
@@ -940,16 +980,34 @@ class Create extends Component
         }
 
         // محاسبه min_quantity جدید بر اساس max_quantity تیراژ قبلی
-        $lastTier = end($this->quantity_tiers);
-        $newMin = $lastTier && isset($lastTier['max_quantity']) && $lastTier['max_quantity'] > 0 
-            ? $lastTier['max_quantity'] + 1 
-            : 1;
+        if (! $this->canAddQuantityTier()) {
+            $this->dispatch('notify', [
+                'message' => 'برای افزودن تیراژ بعدی، ابتدا حداکثر تعداد تیراژ فعلی را وارد کنید.',
+                'type' => 'error',
+            ]);
+            return;
+        }
+
+        $lastTier = $this->quantity_tiers[array_key_last($this->quantity_tiers)];
+        $newMin = $this->normalizeMaxQuantity($lastTier['max_quantity'] ?? null) + 1;
 
         $this->quantity_tiers[] = [
             'name' => 'تیراژ ' . (count($this->quantity_tiers) + 1),
             'min_quantity' => $newMin,
             'max_quantity' => null,
         ];
+    }
+
+    public function canAddQuantityTier(): bool
+    {
+        if (count($this->quantity_tiers) >= 4 || $this->quantity_tiers === []) {
+            return false;
+        }
+
+        $lastTier = $this->quantity_tiers[array_key_last($this->quantity_tiers)];
+        $lastMax = $this->normalizeMaxQuantity($lastTier['max_quantity'] ?? null);
+
+        return $lastMax !== null && $lastMax > 0;
     }
     
     /**
@@ -958,14 +1016,12 @@ class Create extends Component
      */
     public function updateNextTierMin(int $index): void
     {
-        $currentMax = $this->quantity_tiers[$index]['max_quantity'] ?? null;
+        $currentMax = $this->normalizeMaxQuantity($this->quantity_tiers[$index]['max_quantity'] ?? null);
         $currentMin = $this->quantity_tiers[$index]['min_quantity'] ?? 0;
         
         // بررسی 1: max باید بزرگتر از min باشد
         if ($currentMax !== null && $currentMax <= $currentMin) {
             // max نامعتبر است، تیراژهای بعدی را حذف کن
-            $this->removeAllTiersAfter($index);
-            
             $this->dispatch('notify', [
                 'message' => 'حداکثر تعداد باید بزرگتر از حداقل تعداد باشد. تیراژهای بعدی حذف شدند.',
                 'type' => 'warning',
@@ -981,11 +1037,9 @@ class Create extends Component
                 $this->quantity_tiers[$index + 1]['min_quantity'] = $expectedNextMin;
                 
                 // بررسی 2: اگر min جدید از max فعلی تیراژ بعدی بزرگتر شد
-                $nextMax = $this->quantity_tiers[$index + 1]['max_quantity'] ?? null;
+                $nextMax = $this->normalizeMaxQuantity($this->quantity_tiers[$index + 1]['max_quantity'] ?? null);
                 if ($nextMax !== null && $nextMax < $expectedNextMin) {
                     // تداخل ایجاد شده، تیراژهای بعدی را حذف کن
-                    $this->removeAllTiersAfter($index);
-                    
                     $this->dispatch('notify', [
                         'message' => 'تغییر باعث تداخل در تیراژهای بعدی شد. تیراژهای نامعتبر حذف شدند.',
                         'type' => 'info',
@@ -1009,7 +1063,7 @@ class Create extends Component
             return;
         }
         
-        $currentMax = $this->quantity_tiers[$startIndex]['max_quantity'] ?? null;
+        $currentMax = $this->normalizeMaxQuantity($this->quantity_tiers[$startIndex]['max_quantity'] ?? null);
         
         // اگر max فعلی معتبر نیست، متوقف شو
         if ($currentMax === null) {
@@ -1017,11 +1071,14 @@ class Create extends Component
         }
         
         $expectedNextMin = $currentMax + 1;
-        $nextMax = $this->quantity_tiers[$startIndex + 1]['max_quantity'] ?? null;
+        $nextMax = $this->normalizeMaxQuantity($this->quantity_tiers[$startIndex + 1]['max_quantity'] ?? null);
         
         // اگر تداخل ایجاد شده، تیراژهای بعدی را حذف کن
         if ($nextMax !== null && $nextMax < $expectedNextMin) {
-            $this->removeAllTiersAfter($startIndex);
+            $this->dispatch('notify', [
+                'message' => 'بازه تیراژها معتبر نیست؛ حداکثر تیراژ بعدی با حداقل جدید آن تداخل دارد.',
+                'type' => 'error',
+            ]);
             return;
         }
         
@@ -1062,6 +1119,15 @@ class Create extends Component
      */
     public function updatedQuantityTiers($value, $key): void
     {
+        if (str_ends_with($key, '.max_quantity')) {
+            preg_match('/(\d+)\.max_quantity$/', $key, $matches);
+
+            if (isset($matches[1])) {
+                $index = (int) $matches[1];
+                $this->quantity_tiers[$index]['max_quantity'] = $this->normalizeMaxQuantity($value);
+            }
+        }
+
         // اگر max_quantity تیراژی تغییر کرد
         if (strpos($key, '.max_quantity') !== false) {
             // پیدا کردن index تیراژ فعلی
@@ -1078,7 +1144,7 @@ class Create extends Component
             if (isset($matches[1])) {
                 $currentIndex = (int)$matches[1];
                 $currentMin = $this->quantity_tiers[$currentIndex]['min_quantity'] ?? 0;
-                $currentMax = $this->quantity_tiers[$currentIndex]['max_quantity'] ?? null;
+                $currentMax = $this->normalizeMaxQuantity($this->quantity_tiers[$currentIndex]['max_quantity'] ?? null);
                 
                 // بررسی: min باید کوچکتر از max باشد
                 if ($currentMax !== null && $currentMin >= $currentMax) {
@@ -1119,11 +1185,16 @@ class Create extends Component
                     ->where('tier_index', $index)
                     ->whereNotNull('price_type_id') // فقط قیمت‌های سیستم جدید
                     ->exists();
+
+                $hasLaterPrices = $product->prices()
+                    ->where('tier_index', '>', $index)
+                    ->whereNotNull('price_type_id')
+                    ->exists();
                 
-                if ($hasPrices) {
+                if ($hasPrices || $hasLaterPrices) {
                     $tierName = $this->quantity_tiers[$index]['name'] ?? "تیراژ " . ($index + 1);
                     $this->dispatch('notify', [
-                        'message' => "تیراژ «{$tierName}» دارای قیمت‌گذاری است و نمی‌تواند حذف شود. ابتدا قیمت‌های مربوطه را حذف کنید.",
+                        'message' => "تیراژ «{$tierName}» یا تیراژهای بعد از آن قیمت‌گذاری شده‌اند و قابل حذف نیستند. ابتدا قیمت‌های مربوطه را حذف کنید.",
                         'type' => 'error',
                     ]);
                     return;
@@ -1133,6 +1204,27 @@ class Create extends Component
 
         unset($this->quantity_tiers[$index]);
         $this->quantity_tiers = array_values($this->quantity_tiers); // Re-index
+
+        if ($this->quantity_tiers !== []) {
+            $lastIndex = array_key_last($this->quantity_tiers);
+            $this->quantity_tiers[$lastIndex]['max_quantity'] = null;
+
+            foreach ($this->quantity_tiers as $tierIndex => $tier) {
+                if ($tierIndex === 0) {
+                    continue;
+                }
+
+                $previousMax = $this->normalizeMaxQuantity(
+                    $this->quantity_tiers[$tierIndex - 1]['max_quantity'] ?? null
+                );
+
+                if ($previousMax === null) {
+                    continue;
+                }
+
+                $this->quantity_tiers[$tierIndex]['min_quantity'] = $previousMax + 1;
+            }
+        }
         
         $this->dispatch('notify', [
             'message' => 'تیراژ با موفقیت حذف شد.',
@@ -1146,12 +1238,27 @@ class Create extends Component
     public function applyAutoTiers(): void
     {
         // بررسی اینکه واحد بسته‌بندی تعیین شده باشد
-        if ($this->quantity_per_packaging <= 0) {
+        if ($this->quantity_per_packaging < 1 || $this->quantity_per_packaging > 999999) {
             $this->dispatch('notify', [
                 'message' => 'ابتدا تعداد در هر واحد بسته‌بندی را مشخص کنید.',
                 'type' => 'error',
             ]);
             return;
+        }
+
+        if ($this->isEdit && $this->productId) {
+            $product = Product::find($this->productId);
+            $hasPrices = $product && $product->prices()
+                ->whereNotNull('price_type_id')
+                ->exists();
+
+            if ($hasPrices) {
+                $this->dispatch('notify', [
+                    'message' => 'محصول دارای قیمت‌گذاری است؛ تیراژبندی خودکار بدون جابه‌جایی قیمت‌ها قابل اعمال نیست.',
+                    'type' => 'error',
+                ]);
+                return;
+            }
         }
 
         $this->quantity_tiers = $this->generateAutoTiers();
@@ -1241,7 +1348,19 @@ class Create extends Component
 
     public function render()
     {
-        return view('livewire.admin.products.create');
+        $selectedValuesByAttribute = AttributeValue::query()
+            ->whereIn('id', collect($this->selectedAttributeValues)->flatten()->filter()->unique())
+            ->get(['id', 'attribute_id', 'value'])
+            ->groupBy('attribute_id');
+        $selectedAttributeOptions = collect($this->categoryAttributes)->mapWithKeys(function ($attribute) use ($selectedValuesByAttribute): array {
+            $popularValues = collect($this->popularAttributeValues[$attribute->id] ?? []);
+            $selectedValues = $selectedValuesByAttribute->get($attribute->id, collect())
+                ->map(fn ($value) => ['id' => $value->id, 'value' => $value->value]);
+
+            return [$attribute->id => $popularValues->concat($selectedValues)->unique('id')->values()->all()];
+        })->all();
+
+        return view('livewire.admin.products.create', compact('selectedAttributeOptions'));
     }
     
     /**
@@ -1372,7 +1491,24 @@ class Create extends Component
             ],
         ];
     }
-    
+
+    private function normalizeMaxQuantity(mixed $value): mixed
+    {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return null;
+        }
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return $value;
+    }
+
     /**
      * ✅ دریافت برچسب فارسی واحد بسته‌بندی
      * 
