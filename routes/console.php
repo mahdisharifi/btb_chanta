@@ -26,11 +26,25 @@ Schedule::job(new RecoverProductCompletionOperationsJob())
     ->withoutOverlapping()
     ->name('recover-product-completion-operations');
 
-// اجرای Queue Worker برای هاست اشتراکی
-Schedule::exec('php artisan queue:work --stop-when-empty --max-time=55')
+// Use the scheduler's PHP binary and consume both configured and legacy default queues.
+$queueConnection = (string) config('queue.default');
+$workerQueues = implode(',', array_unique(array_filter([
+    (string) config("queue.connections.{$queueConnection}.queue", 'default'),
+    'default',
+])));
+
+Schedule::command('queue:work', [
+    '--queue' => $workerQueues,
+    '--stop-when-empty',
+    '--max-time' => 55,
+    '--timeout' => 60,
+    '--sleep' => 1,
+    '--no-interaction',
+])
     ->everyMinute()
-    ->withoutOverlapping(60)
-    ->runInBackground();
+    ->name('shared-hosting-queue-worker')
+    ->withoutOverlapping(5)
+    ->appendOutputTo(storage_path('logs/queue-worker.log'));
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

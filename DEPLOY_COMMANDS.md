@@ -27,25 +27,25 @@ php artisan config:show
 
 ```bash
 # 1. رفتن به پوشه پروژه
-cd /home/username/public_html
+cd /home/oirjwzer/chanta
 
 # 2. پاکسازی کش‌های قدیمی
-php artisan optimize:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize:clear
 
 # 3. کش کردن تنظیمات
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-php artisan event:cache
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan config:cache
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan route:cache
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan view:cache
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan event:cache
 
 # 4. اجرای migrations
-php artisan migrate --force
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan migrate --force
 
 # 5. لینک storage (اگر نیاز است)
-php artisan storage:link
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan storage:link
 
 # 6. بهینه‌سازی نهایی
-php artisan optimize
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize
 ```
 
 ---
@@ -54,22 +54,22 @@ php artisan optimize
 
 ```bash
 # پاکسازی همه کش‌ها
-php artisan optimize:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize:clear
 
 # یا جداگانه:
-php artisan cache:clear
-php artisan config:clear
-php artisan route:clear
-php artisan view:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan cache:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan config:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan route:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan view:clear
 
 # بازسازی کش
-php artisan optimize
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize
 
 # بررسی وضعیت
-php artisan about
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan about
 
 # تست دیتابیس
-php artisan tinker
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan tinker
 >>> DB::connection()->getPdo();
 
 # بررسی لاگ‌ها
@@ -92,10 +92,10 @@ mysql -u db_user -p db_name < backup.sql
 ### بکاپ فایل‌ها:
 ```bash
 # فشرده‌سازی
-tar -czf backup.tar.gz /home/username/public_html
+tar -czf backup.tar.gz /home/oirjwzer/chanta
 
 # استخراج
-tar -xzf backup.tar.gz -C /home/username/public_html
+tar -xzf backup.tar.gz -C /home/oirjwzer/chanta
 ```
 
 ---
@@ -104,14 +104,15 @@ tar -xzf backup.tar.gz -C /home/username/public_html
 
 ### خطای 500:
 ```bash
-php artisan optimize:clear
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize:clear
 chmod -R 775 storage bootstrap/cache
 ```
 
 ### خطای Class not found:
 ```bash
-composer dump-autoload
-php artisan optimize:clear
+# Composer هاست را با /usr/local/bin/ea-php82 و مسیر تأییدشدهٔ فایل Composer اجرا کنید؛ سپس dump-autoload را اجرا کنید.
+# مسیر Composer روی این هاست هنوز بررسی نشده است.
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize:clear
 ```
 
 ### خطای Permission denied:
@@ -133,8 +134,10 @@ chmod -R 775 public/uploads
 
 ```bash
 # در cPanel → Cron Jobs
-* * * * * cd /home/username/public_html && php artisan schedule:run >> /dev/null 2>&1
+* * * * * /usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan schedule:run >> /home/oirjwzer/chanta/storage/logs/scheduler-cron.log 2>&1
 ```
+
+در cPanel پنج فیلد زمان را روی `*` قرار دهید و فقط بخش بعد از پنج ستاره را در Command وارد کنید. همین زمان‌بند worker صف را اجرا می‌کند؛ Cron جداگانه برای `queue:work` اضافه نکنید. جزئیات استقرار و بررسی اجرا در [HOSTING_CRON.md](HOSTING_CRON.md) آمده است.
 
 ---
 
@@ -142,16 +145,16 @@ chmod -R 775 public/uploads
 
 ```bash
 # بررسی روت‌ها
-php artisan route:list --name=home
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan route:list --name=home
 
 # بررسی تنظیمات
-php artisan config:show app
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan config:show app
 
 # بررسی environment
-php artisan env
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan env
 
 # تست application
-php artisan about
+/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan about
 ```
 
 ---
@@ -160,10 +163,10 @@ php artisan about
 
 | کار | دستور |
 |-----|-------|
-| پاکسازی همه کش‌ها | `php artisan optimize:clear` |
-| بهینه‌سازی کامل | `php artisan optimize` |
-| اجرای migration | `php artisan migrate --force` |
-| بررسی روت‌ها | `php artisan route:list` |
+| پاکسازی همه کش‌ها | `/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize:clear` |
+| بهینه‌سازی کامل | `/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan optimize` |
+| اجرای migration | `/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan migrate --force` |
+| بررسی روت‌ها | `/usr/local/bin/ea-php82 /home/oirjwzer/chanta/artisan route:list` |
 | مشاهده لاگ‌ها | `tail -f storage/logs/laravel.log` |
 
 ---
