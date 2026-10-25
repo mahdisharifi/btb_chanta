@@ -59,6 +59,9 @@ if ($allMedia->isEmpty()) {
      x-data="{
          activeMedia: 0,
          zoomOpen: false,
+         touchStartX: 0,
+         touchStartY: 0,
+         touchMoved: false,
          media: {{ Js::from($allMedia) }},
          placeholderUrl: '{{ $placeholderUrl }}',
          
@@ -87,6 +90,41 @@ if ($allMedia->isEmpty()) {
          prev() { 
              this.activeMedia = (this.activeMedia - 1 + this.media.length) % this.media.length; 
          },
+
+         handleTouchStart(event) {
+             const touch = event.touches[0];
+             this.touchStartX = touch.clientX;
+             this.touchStartY = touch.clientY;
+             this.touchMoved = false;
+         },
+
+         handleTouchMove(event) {
+             const touch = event.touches[0];
+             this.touchMoved = Math.abs(touch.clientX - this.touchStartX) > 8
+                 || Math.abs(touch.clientY - this.touchStartY) > 8;
+         },
+
+         handleTouchEnd(event) {
+             const touch = event.changedTouches[0];
+             const deltaX = touch.clientX - this.touchStartX;
+             const deltaY = touch.clientY - this.touchStartY;
+             if (Math.abs(deltaX) < 40 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+             deltaX < 0 ? this.next() : this.prev();
+         },
+
+         handleMainClick() {
+             if (this.touchMoved) {
+                 this.touchMoved = false;
+                 return;
+             }
+             this.next();
+         },
+
+         handleKeydown(event) {
+             if (!this.zoomOpen) return;
+             if (event.key === 'ArrowLeft') { event.preventDefault(); this.next(); }
+             if (event.key === 'ArrowRight') { event.preventDefault(); this.prev(); }
+         },
          
          openZoom() { 
              if (this.isImage && !this.isPlaceholder) {
@@ -107,7 +145,16 @@ if ($allMedia->isEmpty()) {
     <div class="relative bg-white rounded-2xl border border-gray-200 overflow-hidden aspect-[4/3] sm:aspect-square mb-3 shadow-sm group">
         
         <template x-if="currentMedia && isImage">
-            <div @click="openZoom()" 
+            <div @click="handleMainClick()"
+                 @dblclick="openZoom()"
+                 @keydown.enter.prevent="next()"
+                 @keydown.space.prevent="next()"
+                 @touchstart.passive="handleTouchStart"
+                 @touchmove.passive="handleTouchMove"
+                 @touchend="handleTouchEnd"
+                 title="برای تصویر بعدی لمس کنید؛ برای بزرگ‌نمایی دوبار لمس کنید"
+                 role="button"
+                 tabindex="0"
                  :class="!isPlaceholder ? 'cursor-zoom-in' : 'cursor-default'"
                  class="w-full h-full">
                 <img :src="currentMedia.url"
@@ -123,11 +170,14 @@ if ($allMedia->isEmpty()) {
                      x-transition:enter-end="opacity-100 scale-100"
                      class="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105">
                 
-                <div x-show="!isPlaceholder" 
-                     class="absolute bottom-3 left-3 bg-black/60 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button x-show="!isPlaceholder"
+                     type="button"
+                     @click.stop="openZoom()"
+                     aria-label="کلیک برای بزرگنمایی"
+                     class="absolute bottom-3 left-3 bg-black/60 text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <x-heroicon-o-magnifying-glass-plus class="w-4 h-4" />
                     <span>کلیک برای بزرگنمایی</span>
-                </div>
+                </button>
             </div>
         </template>
 
@@ -157,14 +207,14 @@ if ($allMedia->isEmpty()) {
 
         <template x-if="media.length > 1">
             <div>
-                <button @click="prev()"
-                        class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100 z-10">
+                <button @click.stop="prev()" aria-label="تصویر قبلی"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
                 </button>
-                <button @click="next()"
-                        class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-0 group-hover:opacity-100 z-10">
+                <button @click.stop="next()" aria-label="تصویر بعدی"
+                        class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm shadow-lg flex items-center justify-center text-gray-600 hover:bg-white hover:text-blue-600 transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
@@ -181,8 +231,8 @@ if ($allMedia->isEmpty()) {
 
     <template x-if="media.length > 1">
         <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300">
-            <template x-for="(item, index) in media" :key="index">
-                <button @click="activeMedia = index"
+            <template x-for="(item, index) in media" :key="item.id">
+                    <button @click="activeMedia = index" :aria-current="activeMedia === index ? 'true' : 'false'" aria-label="انتخاب تصویر"
                         class="relative shrink-0 w-16 h-16 rounded-xl border-2 overflow-hidden transition-all duration-200"
                         :class="activeMedia === index
                             ? 'border-blue-500 shadow-lg shadow-blue-100 ring-2 ring-blue-200'
@@ -204,8 +254,16 @@ if ($allMedia->isEmpty()) {
         </div>
     </template>
 
-    <div x-show="zoomOpen" 
+    <div x-show="zoomOpen"
          x-cloak
+         x-effect="document.body.classList.toggle('overflow-hidden', zoomOpen)"
+         @keydown.window="handleKeydown($event)"
+         @touchstart.passive="handleTouchStart"
+         @touchmove.passive="handleTouchMove"
+         @touchend="handleTouchEnd"
+         role="dialog"
+         aria-modal="true"
+         aria-label="گالری تصاویر محصول"
          @click.self="closeZoom()"
          @keydown.escape.window="closeZoom()"
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
@@ -216,8 +274,8 @@ if ($allMedia->isEmpty()) {
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0">
         
-        <button @click="closeZoom()"
-                class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center text-white transition-all z-10">
+        <button @click="closeZoom()" aria-label="بستن گالری"
+                class="absolute top-4 left-4 w-12 h-12 rounded-full bg-white text-slate-900 shadow-xl ring-2 ring-white/70 hover:bg-slate-100 flex items-center justify-center transition-all z-20">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -226,13 +284,13 @@ if ($allMedia->isEmpty()) {
         <template x-if="media.length > 1">
             <div>
                 <button @click.stop="prev()"
-                        class="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center text-white transition-all">
+                        class="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white text-slate-900 shadow-xl ring-2 ring-white/70 hover:bg-slate-100 flex items-center justify-center transition-all z-20">
                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
                 </button>
                 <button @click.stop="next()"
-                        class="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 flex items-center justify-center text-white transition-all">
+                        class="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white text-slate-900 shadow-xl ring-2 ring-white/70 hover:bg-slate-100 flex items-center justify-center transition-all z-20">
                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
@@ -246,6 +304,10 @@ if ($allMedia->isEmpty()) {
                  class="max-w-full max-h-full object-contain"
                  x-on:error="handleImageError($event, currentMedia)"
                  @click.stop>
+        </template>
+
+        <template x-if="currentMedia && isVideo">
+            <video :src="currentMedia.url" :poster="currentMedia.thumb" controls class="max-w-full max-h-full object-contain" @click.stop></video>
         </template>
 
         <div class="absolute bottom-4 right-1/2 translate-x-1/2 bg-white/10 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm">

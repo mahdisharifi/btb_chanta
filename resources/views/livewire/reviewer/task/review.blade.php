@@ -21,7 +21,7 @@
     @if($submission->status === \App\Enums\ProductCompletionSubmissionStatus::SUBMITTED && $task->last_submission_id === $submission->id && $task->status->canBeReviewed())
         <section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
             <p class="mb-4 text-sm leading-7 text-indigo-950">با شروع بررسی، امکان لغو ارسال برای پیمانکار بسته می‌شود و نسخهٔ ارسالی برای بررسی شما نمایش داده خواهد شد.</p>
-            <button type="button" wire:click="beginReview" wire:loading.attr="disabled" class="rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">شروع بررسی</button>
+            <button type="button" wire:click="beginReview" wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-50">شروع بررسی</button>
         </section>
     @elseif($submission->status === \App\Enums\ProductCompletionSubmissionStatus::UNDER_REVIEW && $task->last_submission_id === $submission->id && $task->status->canBeReviewed())
     <div class="grid gap-5 lg:grid-cols-3">
@@ -31,9 +31,21 @@
                 <p class="mt-1">مقادیر پیشنهادی با نشان زرد مشخص شده‌اند. برای مشاهده تصویر در اندازه کامل، روی آن کلیک کنید.</p>
                 <p class="mt-1">برای درخواست اصلاح بخشی از محتوا، گزینه کنار عنوان همان بخش را انتخاب کنید.</p>
             </div>
+            <section class="min-w-0 rounded-xl border border-indigo-200 bg-white p-4">
+                <button type="button" wire:click="toggleReviewEditor" wire:loading.attr="disabled" aria-expanded="{{ $showReviewEditor ? 'true' : 'false' }}" aria-controls="review-editor-panel" class="min-h-11 w-full rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-60 sm:w-auto">{{ $showReviewEditor ? 'ذخیره و بستن ویرایشگر' : 'تصمیم و ویرایش بازبین' }}</button>
+                <p class="mt-2 text-sm leading-7 text-slate-600">نسخه اصلی پیمانکار و سابقه اصلاحات حفظ می‌شود. افزودن محتوای بازبین به‌تنهایی دستمزد پیمانکار را افزایش نمی‌دهد.</p>
+                @if(data_get($submission->approval_selection_json, 'schema_version') === 2)
+                    <p class="mt-3 rounded-lg bg-amber-50 p-3 text-sm leading-7 text-amber-950" role="status">برای این نسخه تصمیم و ویرایش بازبین ذخیره شده است. تأیید نهایی بر اساس همین نسخه ویرایش‌شده انجام می‌شود؛ پیش از تأیید، بخش تصمیم و ویرایش بازبین را بازبینی کنید.</p>
+                @endif
+                @if($showReviewEditor)
+                    <div id="review-editor-panel" class="mt-4 min-w-0">
+                        @include('livewire.reviewer.task.partials.review-editor')
+                    </div>
+                @endif
+            </section>
             @forelse($submission->diff_json ?? [] as $field => $change)
                 <article wire:key="review-field-{{ $field }}" class="rounded-xl border bg-white p-4">
-                    <label class="mb-2 flex items-center gap-2 font-bold">
+                    <label class="mb-2 flex min-h-11 items-center gap-2 font-bold">
                         <input type="checkbox" wire:model="requestedFields" value="{{ $field }}" class="rounded border-slate-300 text-indigo-600">
                         {{ $fieldLabels[$field] ?? 'سایر تغییرات' }}
                     </label>
@@ -110,23 +122,7 @@
                 <label for="review-note" class="mb-1.5 block text-sm font-semibold text-slate-700">یادداشت بررسی</label>
                 <textarea id="review-note" wire:model="reviewNote" maxlength="2000" class="mb-3 w-full rounded-lg border-slate-300" rows="4" placeholder="یادداشت بررسی"></textarea>
 
-                <label class="mb-3 flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950">
-                    <input type="checkbox" wire:model.live="selectiveApproval" class="mt-0.5 rounded border-indigo-400 text-indigo-600">
-                    <span><strong>تأیید انتخابی</strong><br><span class="text-xs">در حالت عادی همهٔ موارد تأیید می‌شوند. این گزینه را فقط وقتی فعال کنید که بعضی موارد نباید روی محصول اعمال شوند.</span></span>
-                </label>
-
-                @if($selectiveApproval)
-                    <div class="mb-3 rounded-lg border border-indigo-200 bg-white p-3">
-                        <p class="mb-2 text-sm font-semibold text-slate-700">موارد قابل اعمال را انتخاب کنید:</p>
-                        @foreach($submission->diff_json ?? [] as $selectiveField => $selectiveChange)
-                            <label class="mb-2 flex items-center gap-2 text-sm">
-                                <input type="checkbox" wire:model="approvedFields" value="{{ $selectiveField }}" class="rounded border-slate-300 text-emerald-600">
-                                <span>{{ $fieldLabels[$selectiveField] ?? $selectiveField }}</span>
-                            </label>
-                        @endforeach
-                        <p class="mt-2 text-xs text-amber-700">موارد انتخاب‌نشده اعمال نمی‌شوند و در یادداشت بررسی برای پیمانکار قابل مشاهده خواهند بود.</p>
-                    </div>
-                @endif
+                <p class="mb-3 text-sm leading-7 text-slate-600">برای تأیید یا رد تک‌به‌تک و اصلاح محتوا، از بخش «تصمیم و ویرایش بازبین» استفاده کنید. رد یک تغییر، مقدار قبلی محصول را حفظ می‌کند.</p>
 
                 @if($hasCorrections)
                     @can('outsourcing.approve_full_correction_rate')
@@ -138,12 +134,19 @@
                 @endif
 
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" wire:click="approve" wire:loading.attr="disabled" class="rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:opacity-60">تأیید</button>
-                    <button type="button" wire:click="reject" wire:loading.attr="disabled" class="rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-60">بازگشت برای اصلاح</button>
+                    <button type="button" wire:click="approve" wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-emerald-600 px-4 py-2 text-white disabled:opacity-60">تأیید</button>
+                    <button type="button" wire:click="reject" wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-60">بازگشت برای اصلاح</button>
                 </div>
             </div>
 
             <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <p class="mb-3 text-sm text-amber-950">اصلاحات ثبت‌شده: {{ $task->revision_count }} از {{ $task->revision_limit }}</p>
+                @if($task->revision_count >= $task->revision_limit)
+                    <label class="mb-4 flex min-h-11 items-start gap-3 rounded-lg border border-amber-300 bg-white p-3 text-sm leading-7">
+                        <input type="checkbox" wire:model="extendRevisionAllowance" class="mt-1.5 rounded border-amber-400">
+                        <span>با حفظ سابقه، یک نوبت به سقف اصلاحات اضافه شود و تسک برای اصلاح به پیمانکار برگردد.</span>
+                    </label>
+                @endif
                 <label for="revision-classification" class="mb-1.5 block text-sm font-semibold text-amber-950">علت درخواست اصلاح</label>
                 <select id="revision-classification" wire:model="revisionClassification" class="mb-3 w-full rounded-lg border-amber-300">
                     @foreach($classifications as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
@@ -154,7 +157,7 @@
 
                 <label for="revision-reason" class="mb-1.5 block text-sm font-semibold text-amber-950">توضیح دقیق اصلاح</label>
                 <textarea id="revision-reason" wire:model="revisionReason" maxlength="2000" class="mb-3 w-full rounded-lg border-amber-300" rows="4" placeholder="دلیل و اقدام موردنیاز"></textarea>
-                <button type="button" wire:click="requestRevision" wire:loading.attr="disabled" class="rounded-lg bg-amber-600 px-4 py-2 text-white disabled:opacity-60">درخواست اصلاح</button>
+                <button type="button" wire:click="requestRevision" wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-amber-600 px-4 py-2 text-white disabled:opacity-60">درخواست اصلاح</button>
             </div>
         </aside>
     </div>

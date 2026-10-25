@@ -79,7 +79,7 @@ class Index extends Component
             })
             ->orderByRaw('submitted_at is null')
             ->orderBy('submitted_at')
-            ->orderBy('accepted_at')
+            ->orderBy('id')
             ->paginate(20);
 
         return view('livewire.reviewer.task.index', [

@@ -52,7 +52,7 @@ class ProductCompletionConflictResolutionService
             $conflict = $this->conflictService->detect(
                 $lockedTask,
                 $product,
-                $submission->payload_json,
+                $submission->publicationPayload(),
             );
 
             if ($conflict->hasConflicts()) {
@@ -76,6 +76,11 @@ class ProductCompletionConflictResolutionService
 
                 return ['task' => $lockedTask, 'conflicts' => $conflict->conflicts];
             }
+
+            if ($lockedTask->getRawOriginal('commission_content_snapshot_json') === null) {
+                $lockedTask->commission_content_snapshot_json = $lockedTask->initial_snapshot_json;
+            }
+            app(ProductCompletionCommissionCalculator::class)->calculate($lockedTask, $submission);
 
             $submission->forceFill([
                 'status' => ProductCompletionSubmissionStatus::APPROVED,
@@ -128,6 +133,7 @@ class ProductCompletionConflictResolutionService
         string $reason,
     ): ProductCompletionRevision {
         Gate::forUser($actor)->authorize('resolveConflict', $task);
+        app(ProductCompletionStorageGuard::class)->assertTransactional();
         $reason = $this->sanitizer->plainText($reason, 2000, true);
 
         if ($reason === null) {
@@ -165,15 +171,17 @@ class ProductCompletionConflictResolutionService
             }
 
             $product = Product::query()->lockForUpdate()->findOrFail($lockedTask->product_id);
-            $conflict = $this->conflictService->detect($lockedTask, $product, $submission->payload_json);
+            $publicationPayload = $submission->publicationPayload();
+            $conflict = $this->conflictService->detect($lockedTask, $product, $publicationPayload);
             $draft = $conflict->mergedPayload;
             foreach ($conflict->conflicts as $field => $details) {
-                if (array_key_exists($field, $submission->payload_json)) {
-                    $draft[$field] = $submission->payload_json[$field];
+                if (array_key_exists($field, $publicationPayload)) {
+                    $draft[$field] = $publicationPayload[$field];
                 }
             }
 
             $revisionNo = $lockedTask->revision_count + 1;
+            $duration = ProductCompletionRevisionService::correctionDuration($lockedTask);
             $revision = ProductCompletionRevision::query()->create([
                 'task_id' => $lockedTask->getKey(),
                 'open_task_id' => $lockedTask->getKey(),
@@ -195,11 +203,15 @@ class ProductCompletionConflictResolutionService
                 'reviewed_at' => now(),
                 'review_note' => $reason,
             ])->save();
+            if ($lockedTask->getRawOriginal('commission_content_snapshot_json') === null) {
+                $lockedTask->commission_content_snapshot_json = $lockedTask->initial_snapshot_json;
+            }
             $lockedTask->forceFill([
                 'status' => ProductCompletionTaskStatus::CHANGES_REQUESTED,
                 'revision_count' => $revisionNo,
+                'completion_duration_seconds' => $duration,
+                'due_at' => now()->addSeconds($duration),
                 'initial_snapshot_json' => $this->snapshotService->build($product, $lockedTask->scope_json),
-                'commission_content_snapshot_json' => $lockedTask->commission_content_snapshot_json ?? $lockedTask->initial_snapshot_json,
                 'product_version_at_assignment' => $product->content_version,
                 'product_updated_at_assignment' => $product->updated_at,
                 'current_draft_json' => $draft,

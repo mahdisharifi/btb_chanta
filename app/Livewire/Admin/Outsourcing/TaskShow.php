@@ -9,6 +9,7 @@ use App\Models\ProductCompletionTask;
 use App\Models\User;
 use App\Services\ProductCompletionConflictResolutionService;
 use App\Services\ProductCompletionTaskService;
+use App\Services\ProductCompletionRecoveryService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -29,6 +30,14 @@ class TaskShow extends Component
     public string $cancelReason = '';
     public string $newDueAt = '';
     public string $conflictResolutionReason = '';
+    public string $recoveryReason = '';
+
+    public function recoverInterruptedApproval(int $expectedLockVersion, ProductCompletionRecoveryService $service): void
+    {
+        $service->recover(auth()->user(), $this->task(), $expectedLockVersion, $this->recoveryReason);
+        $this->recoveryReason = '';
+        $this->dispatch('notify', message: 'تأیید ناقص با ثبت سابقه به صف بازبینی بازگردانده شد؛ بازبین باید دوباره تصمیم بگیرد.', type: 'success');
+    }
 
     public function mount(ProductCompletionTask $task): void
     {
@@ -160,6 +169,7 @@ class TaskShow extends Component
             'product:id,title,category_id',
             'assignee:id,name',
             'reviewer:id,name',
+            'lastSubmission',
             'submissions:id,task_id,public_id,version_no,status,submitted_at',
             'revisions:id,task_id,revision_no,status,reason,requested_at',
         ]);

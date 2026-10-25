@@ -27,6 +27,7 @@ class ExpireProductCompletionTasksJob implements ShouldQueue
                 ProductCompletionTaskStatus::ASSIGNED,
                 ProductCompletionTaskStatus::ACCEPTED,
                 ProductCompletionTaskStatus::IN_PROGRESS,
+                ProductCompletionTaskStatus::CHANGES_REQUESTED,
             ])
             ->where(function ($query): void {
                 $query->where('due_at', '<', now())

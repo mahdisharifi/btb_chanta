@@ -7,6 +7,7 @@ use App\Models\ProductGallery;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Supplier;
@@ -312,8 +313,7 @@ class Create extends Component
 
         if ($this->category_id) {
             $category = Category::with(['attributes.values' => function ($query): void {
-                $query->withCount('products')
-                    ->orderByDesc('products_count')
+                $query->orderByDesc(DB::raw('(select count(*) from attribute_product inner join products on products.id = attribute_product.product_id where attribute_product.attribute_value_id = attribute_values.id and products.deleted_at is null)'))
                     ->orderBy('attribute_values.value')
                     ->limit(50);
             }])->find($this->category_id);

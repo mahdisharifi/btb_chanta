@@ -11,6 +11,7 @@ use App\Enums\ProductCompletionRevisionPolicy;
 use App\Enums\ProductCompletionRevisionStatus;
 use App\Models\ProductCompletionSubmission;
 use App\Models\ProductCompletionTask;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class ProductCompletionCommissionCalculator
@@ -28,6 +29,20 @@ class ProductCompletionCommissionCalculator
         string|int|float $penalty = '0',
         string|int|float $adjustment = '0',
     ): array {
+        $selection = $submission->approval_selection_json;
+        if ($selection !== null
+            && ($selection['mode'] ?? null) !== 'item_review'
+            && (($selection['mode'] ?? null) !== 'all' || array_key_exists('approved_fields', $selection))) {
+            throw ValidationException::withMessages([
+                'review' => 'Legacy selective review snapshots must be migrated using the review editor before pricing.',
+            ]);
+        }
+        $pricingPayload = $submission->pricingPayload();
+        if ($this->isItemReview($submission)) {
+            $submission = clone $submission;
+            $submission->payload_json = $pricingPayload;
+        }
+
         $snapshot = $task->commission_rule_snapshot_json;
 
         if ((int) ($snapshot['pricing_schema_version'] ?? 1) >= 2) {
@@ -67,7 +82,7 @@ class ProductCompletionCommissionCalculator
             sort($baseUnits[$contentType->value]);
         }
         $basePricing = $this->priceUnits($snapshot, $baseUnits, $scale, $rates);
-        $revisionPricing = $this->priceRevisions($task, $snapshot, $scale);
+        $revisionPricing = $this->priceRevisions($task, $snapshot, $scale, $this->isItemReview($submission) ? $rates : null);
         $rawBaseMinor = $basePricing['raw_total_minor'];
         $baseMinor = $basePricing['total_minor'];
         $taskRateBasisPoints = $this->effectiveRate($baseMinor, $rawBaseMinor);
@@ -128,12 +143,15 @@ class ProductCompletionCommissionCalculator
         $calculationType = CommissionCalculationType::from(
             (string) ($snapshot['calculation_type'] ?? CommissionCalculationType::PER_TASK->value)
         );
-        $revisionCount = $this->commissionableRevisionCount($task, $revisionPolicy);
         $rates = $this->contentRates($task, $submission);
+        $revisionCount = $this->commissionableRevisionCount($task, $revisionPolicy, $this->isItemReview($submission) ? $rates : null);
         $ratedUnits = array_merge(...array_values($rates));
         $approvedItemCount = $calculationType === CommissionCalculationType::PER_FIELD_GROUP ? count($ratedUnits) : 0;
         // A fixed task fee is full-rate for completion work; a task with only corrections gets correction rate.
         $fixedBaseRate = $ratedUnits === [] || in_array('100.00', array_column($ratedUnits, 'rate_percentage'), true) ? 10000 : 3000;
+        if ($this->isItemReview($submission) && $ratedUnits === []) {
+            $fixedBaseRate = 0;
+        }
         $rawBaseMinor = $this->toMinor($snapshot['base_amount'] ?? '0', $scale);
         $rawApprovedItemsMinor = $this->toMinor(
             $snapshot['per_approved_item_amount'] ?? '0',
@@ -284,7 +302,7 @@ class ProductCompletionCommissionCalculator
     }
 
     /** @return array{total_minor: int, revision_count: int, breakdown: array<int, array<string, mixed>>} */
-    private function priceRevisions(ProductCompletionTask $task, array $snapshot, int $scale): array
+    private function priceRevisions(ProductCompletionTask $task, array $snapshot, int $scale, ?array $acceptedRates = null): array
     {
         $policy = ProductCompletionRevisionPolicy::from(
             (string) ($snapshot['revision_policy'] ?? ProductCompletionRevisionPolicy::NONE->value)
@@ -324,6 +342,12 @@ class ProductCompletionCommissionCalculator
                         $revision->submission->payload_json ?? [],
                         $revision->resolvedBySubmission->payload_json ?? [],
                     );
+            if ($acceptedRates !== null) {
+                $units = $this->acceptedRevisionUnits($units, $acceptedRates);
+                if (array_merge(...array_values($units)) === []) {
+                    continue;
+                }
+            }
             $unitPricing = $this->priceUnits($snapshot, $units, $scale);
             $revisionMinor = $this->percentageOf(
                 $unitPricing['total_minor'],
@@ -378,6 +402,7 @@ class ProductCompletionCommissionCalculator
     private function commissionableRevisionCount(
         ProductCompletionTask $task,
         ProductCompletionRevisionPolicy $policy,
+        ?array $acceptedRates = null,
     ): int {
         if ($policy === ProductCompletionRevisionPolicy::NONE) {
             return 0;
@@ -391,7 +416,42 @@ class ProductCompletionCommissionCalculator
             $query->where('classification', ProductCompletionRevisionClassification::SUPPLIER_SCOPE_CHANGE);
         }
 
-        return $query->count();
+        if ($acceptedRates === null) {
+            return $query->count();
+        }
+
+        return $query->with(['submission:id,payload_json', 'resolvedBySubmission:id,payload_json'])
+            ->get()->filter(function ($revision) use ($acceptedRates): bool {
+                if ($revision->submission === null || $revision->resolvedBySubmission === null) {
+                    return false;
+                }
+
+                $units = is_array($revision->changed_units_json) && (int) $revision->pricing_schema_version >= 2
+                    ? $revision->changed_units_json
+                    : $this->unitCounter->compare(
+                        $revision->submission->payload_json ?? [],
+                        $revision->resolvedBySubmission->payload_json ?? [],
+                    );
+
+                return array_merge(...array_values($this->acceptedRevisionUnits($units, $acceptedRates))) !== [];
+            })->count();
+    }
+
+    private function isItemReview(ProductCompletionSubmission $submission): bool
+    {
+        $selection = $submission->approval_selection_json ?? [];
+
+        return (int) ($selection['schema_version'] ?? 1) === 2
+            && ($selection['mode'] ?? null) === 'item_review';
+    }
+
+    private function acceptedRevisionUnits(array $units, array $acceptedRates): array
+    {
+        foreach ($units as $type => $keys) {
+            $units[$type] = array_values(array_intersect($keys, array_keys($acceptedRates[$type] ?? [])));
+        }
+
+        return $units;
     }
 
     private function percentageToBasisPoints(string|int|float $percentage): int

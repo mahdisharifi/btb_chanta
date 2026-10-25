@@ -33,8 +33,12 @@ class ProductCompletionApprovalService
         ?string $reviewNote = null,
         bool $approveFullRate = false,
         ?array $approvedFields = null,
+        ?int $expectedLockVersion = null,
     ): ProductCompletionTask {
         Gate::forUser($actor)->authorize('approveSubmission', $submission);
+        if ($approvedFields !== null) {
+            throw ValidationException::withMessages(['approvedFields' => 'تأیید انتخابی باید از بخش تصمیم و ویرایش بازبین انجام شود.']);
+        }
         $reviewNote = $this->sanitizer->plainText($reviewNote, 2000, true);
 
         if ($approveFullRate) {
@@ -47,7 +51,9 @@ class ProductCompletionApprovalService
             ]);
         }
 
-        $result = DB::transaction(function () use ($actor, $submission, $reviewNote, $approveFullRate, $approvedFields): array {
+        app(ProductCompletionStorageGuard::class)->assertTransactional();
+
+        $result = DB::transaction(function () use ($actor, $submission, $reviewNote, $approveFullRate, $expectedLockVersion): array {
             $task = ProductCompletionTask::query()
                 ->lockForUpdate()
                 ->findOrFail($submission->task_id);
@@ -59,12 +65,14 @@ class ProductCompletionApprovalService
             Gate::forUser($actor)->authorize('approveSubmission', $lockedSubmission);
             $this->assertLatestSubmission($task, $lockedSubmission);
 
-            $selection = $approvedFields === null ? null : array_values(array_unique(array_map('strval', $approvedFields)));
-            if ($selection !== null && $selection === []) {
-                throw ValidationException::withMessages(['approvedFields' => 'حداقل یک مورد باید برای اعمال انتخاب شود.']);
+            if ($expectedLockVersion !== null && $task->lock_version !== $expectedLockVersion) {
+                throw ValidationException::withMessages(['submission' => 'این تسک تغییر کرده است. صفحه را تازه‌سازی و دوباره بررسی کنید.']);
             }
-            if ($selection !== null) {
-                $lockedSubmission->approval_selection_json = ['mode' => 'selective', 'approved_fields' => $selection];
+
+            if (! $task->status->canBeReviewed()
+                || $lockedSubmission->task_id !== $task->getKey()
+                || ! in_array($lockedSubmission->status, [ProductCompletionSubmissionStatus::SUBMITTED, ProductCompletionSubmissionStatus::UNDER_REVIEW], true)) {
+                throw ValidationException::withMessages(['submission' => 'وضعیت نسخه با تسک هماهنگ نیست؛ مدیر باید گردش‌کار را بررسی کند.']);
             }
 
             if ($approveFullRate) {
@@ -84,7 +92,7 @@ class ProductCompletionApprovalService
                 ]);
             }
 
-            $conflict = $this->conflictService->detect($task, $product, $lockedSubmission->payload_json);
+            $conflict = $this->conflictService->detect($task, $product, $lockedSubmission->publicationPayload());
 
             if ($conflict->hasConflicts()) {
                 $this->persistConflict(
@@ -97,6 +105,11 @@ class ProductCompletionApprovalService
 
                 return ['task' => $task, 'conflicts' => $conflict->conflicts];
             }
+
+            if ($task->getRawOriginal('commission_content_snapshot_json') === null) {
+                $task->commission_content_snapshot_json = $task->initial_snapshot_json;
+            }
+            $approvedRate = $this->commissionCalculator->calculate($task, $lockedSubmission)['breakdown']['task_rate_percentage'];
 
             $lockedSubmission->forceFill([
                 'status' => ProductCompletionSubmissionStatus::APPROVED,
@@ -111,8 +124,7 @@ class ProductCompletionApprovalService
             $task->forceFill([
                 'reviewer_id' => $task->reviewer_id ?? $actor->getKey(),
                 'status' => ProductCompletionTaskStatus::APPROVED,
-                'commission_content_snapshot_json' => $task->commission_content_snapshot_json ?? $task->initial_snapshot_json,
-                'commission_rate_percentage' => $this->calculateApprovedRate($task, $lockedSubmission, $selection),
+                'commission_rate_percentage' => $approvedRate,
                 'full_rate_approved_by' => ($approveFullRate || $hasPersistedFullRateApproval)
                     ? ($task->full_rate_approved_by ?? $actor->getKey())
                     : null,
@@ -159,18 +171,6 @@ class ProductCompletionApprovalService
         return $result['task'];
     }
 
-    private function calculateApprovedRate(ProductCompletionTask $task, ProductCompletionSubmission $submission, ?array $selection): string
-    {
-        if ($selection === null) {
-            return $this->commissionCalculator->calculate($task, $submission)['breakdown']['task_rate_percentage'];
-        }
-
-        $filtered = clone $submission;
-        $filtered->payload_json = $this->publisher->filterForApproval($submission->payload_json ?? [], $selection);
-
-        return $this->commissionCalculator->calculate($task, $filtered)['breakdown']['task_rate_percentage'];
-    }
-
     /**
      * Apply approved textual/attribute content. Media is finalized separately.
      */
@@ -207,7 +207,8 @@ class ProductCompletionApprovalService
                 ]);
             }
 
-            $conflict = $this->conflictService->detect($lockedTask, $product, $submission->payload_json);
+            $this->commissionCalculator->calculate($lockedTask, $submission);
+            $conflict = $this->conflictService->detect($lockedTask, $product, $submission->publicationPayload());
 
             if ($conflict->hasConflicts()) {
                 $this->persistConflict($actor, $lockedTask, $submission, $conflict);
@@ -222,6 +223,7 @@ class ProductCompletionApprovalService
                 payload: $conflict->mergedPayload,
                 actor: $actor,
                 approvedFields: is_array($selection) ? $selection : null,
+                submission: $submission,
             );
             $lockedTask->forceFill([
                 'content_applied_at' => now(),

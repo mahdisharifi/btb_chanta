@@ -15,12 +15,33 @@ use App\Models\ProductCompletionRevision;
 use App\Models\ProductCompletionTask;
 use App\Models\User;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 class ProductCompletionTaskService
 {
+    public static function applyUnfinishedTaskFilter(Builder $query): Builder
+    {
+        $model = $query->getModel();
+
+        return $query->withoutGlobalScope('withoutExcludedFields')
+            ->where(static function (Builder $tasks) use ($model): void {
+                $tasks->whereNotIn($model->qualifyColumn('status'), [
+                    ProductCompletionTaskStatus::COMPLETED->value,
+                    ProductCompletionTaskStatus::CANCELLED->value,
+                    ProductCompletionTaskStatus::EXPIRED->value,
+                ])->orWhere(static function (Builder $completed) use ($model): void {
+                    $completed->where($model->qualifyColumn('status'), ProductCompletionTaskStatus::COMPLETED->value)
+                        ->where(static function (Builder $markers) use ($model): void {
+                            $markers->whereNull($model->qualifyColumn('content_applied_at'))
+                                ->orWhereNull($model->qualifyColumn('media_published_at'));
+                        });
+                });
+            });
+    }
+
     public function __construct(
         private readonly ProductCompletionScopeDefinitionValidator $scopeValidator,
         private readonly ProductCompletionSnapshotService $snapshotService,
@@ -71,6 +92,8 @@ class ProductCompletionTaskService
             ]);
         }
 
+        app(ProductCompletionStorageGuard::class)->assertTransactional();
+
         return DB::transaction(function () use (
             $actor,
             $product,
@@ -96,10 +119,44 @@ class ProductCompletionTaskService
 
             $this->assertCommissionRuleAvailable($lockedRule, $taskType);
 
-            if (ProductCompletionTask::query()->where('active_product_id', $lockedProduct->getKey())->exists()) {
+            if (self::applyUnfinishedTaskFilter(ProductCompletionTask::query())
+                ->where('product_id', $lockedProduct->getKey())->lockForUpdate()->first(['id']) !== null) {
                 throw ValidationException::withMessages([
                     'product_id' => 'برای این محصول یک تسک فعال دیگر وجود دارد.',
                 ]);
+            }
+
+            $markerOwner = ProductCompletionTask::withoutGlobalScope('withoutExcludedFields')
+                ->where('active_product_id', $lockedProduct->getKey())
+                ->lockForUpdate()->first();
+
+            if ($markerOwner !== null) {
+                if ($markerOwner->product_id !== $lockedProduct->getKey()) {
+                    throw ValidationException::withMessages([
+                        'product_id' => 'این محصول نشانگر فعال متعلق به تسک محصول دیگری دارد؛ ابتدا ناسازگاری نشانگر را در مدیریت تسک‌ها بررسی و اصلاح کنید.',
+                    ]);
+                }
+
+                if (! $markerOwner->status->isTerminal()
+                    || ($markerOwner->status === ProductCompletionTaskStatus::COMPLETED
+                        && ($markerOwner->content_applied_at === null || $markerOwner->media_published_at === null))) {
+                    throw ValidationException::withMessages([
+                        'product_id' => 'این محصول هنوز یک تسک ناتمام دارد؛ ابتدا آن تسک را تعیین تکلیف کنید.',
+                    ]);
+                }
+
+                $markerOwner->forceFill([
+                    'active_product_id' => null,
+                    'lock_version' => $markerOwner->lock_version + 1,
+                ])->save();
+                $this->auditService->record(
+                    action: 'task_active_marker_reconciled',
+                    task: $markerOwner,
+                    actor: $actor,
+                    before: ['active_product_id' => $lockedProduct->getKey()],
+                    after: ['active_product_id' => null],
+                    entity: $markerOwner,
+                );
             }
 
             $snapshot = $this->snapshotService->build($lockedProduct, $scope);
@@ -394,6 +451,8 @@ class ProductCompletionTaskService
 
     public function expire(ProductCompletionTask $task): ProductCompletionTask
     {
+        app(ProductCompletionStorageGuard::class)->assertTransactional();
+
         return DB::transaction(function () use ($task): ProductCompletionTask {
             $locked = $this->lockTask($task);
 
@@ -402,6 +461,7 @@ class ProductCompletionTaskService
                 ProductCompletionTaskStatus::ASSIGNED,
                 ProductCompletionTaskStatus::ACCEPTED,
                 ProductCompletionTaskStatus::IN_PROGRESS,
+                ProductCompletionTaskStatus::CHANGES_REQUESTED,
             ], true)) {
                 return $locked;
             }
@@ -417,6 +477,18 @@ class ProductCompletionTaskService
 
             $previousStatus = $locked->status;
             $this->assertTransition($previousStatus, ProductCompletionTaskStatus::EXPIRED);
+            $openRevision = ProductCompletionRevision::query()
+                ->where('open_task_id', $locked->getKey())
+                ->lockForUpdate()->first();
+
+            if ($openRevision !== null) {
+                $openRevision->forceFill([
+                    'open_task_id' => null,
+                    'status' => ProductCompletionRevisionStatus::CANCELLED,
+                    'resolved_at' => now(),
+                ])->save();
+            }
+
             $locked->fill([
                 'status' => ProductCompletionTaskStatus::EXPIRED,
                 'active_product_id' => null,
@@ -424,7 +496,9 @@ class ProductCompletionTaskService
                 'lock_version' => $locked->lock_version + 1,
             ])->save();
 
-            $this->auditStatusChange(null, $locked, $previousStatus, 'task_expired');
+            $this->auditStatusChange(null, $locked, $previousStatus, 'task_expired', [
+                'cancelled_revision_id' => $openRevision?->getKey(),
+            ]);
 
             return $locked;
         }, 3);

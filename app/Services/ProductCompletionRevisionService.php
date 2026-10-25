@@ -31,6 +31,8 @@ class ProductCompletionRevisionService
         array $requestedFields,
         string $reason,
         ProductCompletionRevisionClassification $classification = ProductCompletionRevisionClassification::CONTRACTOR_ERROR,
+        bool $extendRevisionAllowance = false,
+        ?int $expectedLockVersion = null,
     ): ProductCompletionRevision {
         Gate::forUser($actor)->authorize('requestRevision', $submission);
 
@@ -51,12 +53,16 @@ class ProductCompletionRevisionService
             ]);
         }
 
+        app(ProductCompletionStorageGuard::class)->assertTransactional();
+
         return DB::transaction(function () use (
             $actor,
             $submission,
             $requestedFields,
             $reason,
             $classification,
+            $extendRevisionAllowance,
+            $expectedLockVersion,
         ): ProductCompletionRevision {
             $task = ProductCompletionTask::query()
                 ->lockForUpdate()
@@ -67,14 +73,37 @@ class ProductCompletionRevisionService
 
             Gate::forUser($actor)->authorize('requestRevision', $lockedSubmission);
 
+            if ($expectedLockVersion !== null && $task->lock_version !== $expectedLockVersion) {
+                throw ValidationException::withMessages(['lock_version' => 'این تسک تغییر کرده است. صفحه را تازه‌سازی و دوباره بررسی کنید.']);
+            }
+
             if ($classification === ProductCompletionRevisionClassification::SUPPLIER_SCOPE_CHANGE) {
                 Gate::forUser($actor)->authorize('outsourcing.approve_revision_commission');
             }
 
+            if ($lockedSubmission->task_id !== $task->getKey()
+                || $task->last_submission_id !== $lockedSubmission->getKey()
+                || ! $task->status->canBeReviewed()
+                || ! in_array($lockedSubmission->status, [
+                    ProductCompletionSubmissionStatus::SUBMITTED,
+                    ProductCompletionSubmissionStatus::UNDER_REVIEW,
+                ], true)) {
+                throw ValidationException::withMessages([
+                    'submission' => 'فقط آخرین نسخهٔ ارسالی که در انتظار بررسی است، قابل بازگشت برای اصلاح است.',
+                ]);
+            }
+
             $this->validateRequestedFields($task, $requestedFields);
 
-            if ($task->revision_count >= $task->revision_limit) {
+            $allowanceExhausted = $task->revision_count >= $task->revision_limit;
+            if ($allowanceExhausted && ! $extendRevisionAllowance) {
                 throw new ProductCompletionRevisionLimitException();
+            }
+
+            if ($extendRevisionAllowance && ($task->revision_count !== $task->revision_limit || $task->revision_count >= 100)) {
+                throw ValidationException::withMessages([
+                    'revision_limit' => 'افزایش سهمیه فقط هنگام برابر بودن تعداد اصلاحات با سقف فعلی، به‌اندازهٔ یک نوبت و تا سقف ۱۰۰ اصلاح مجاز است؛ اگر تعداد اصلاحات از سقف بیشتر است، ابتدا ناسازگاری سابقه را بررسی و رفع کنید.',
+                ]);
             }
 
             if (ProductCompletionRevision::query()->where('open_task_id', $task->getKey())->exists()) {
@@ -84,6 +113,10 @@ class ProductCompletionRevisionService
             }
 
             $revisionNo = $task->revision_count + 1;
+            $previousLimit = $task->revision_limit;
+            $duration = self::correctionDuration($task);
+            $returnedAt = now();
+
             $revision = ProductCompletionRevision::query()->create([
                 'task_id' => $task->getKey(),
                 'open_task_id' => $task->getKey(),
@@ -111,8 +144,23 @@ class ProductCompletionRevisionService
                 'reviewer_id' => $task->reviewer_id ?? $actor->getKey(),
                 'status' => ProductCompletionTaskStatus::CHANGES_REQUESTED,
                 'revision_count' => $revisionNo,
+                'revision_limit' => $extendRevisionAllowance ? $revisionNo : $previousLimit,
+                'completion_duration_seconds' => $duration,
+                'due_at' => $returnedAt->copy()->addSeconds($duration),
                 'lock_version' => $task->lock_version + 1,
             ])->save();
+
+            if ($extendRevisionAllowance) {
+                $this->auditService->record(
+                    action: 'revision_limit_extended',
+                    task: $task,
+                    actor: $actor,
+                    metadata: ['before' => $previousLimit, 'after' => $revisionNo, 'reason' => $reason],
+                    before: ['revision_limit' => $previousLimit],
+                    after: ['revision_limit' => $revisionNo],
+                    entity: $task,
+                );
+            }
 
             $this->auditService->record(
                 action: 'revision_requested',
@@ -132,6 +180,16 @@ class ProductCompletionRevisionService
 
             return $revision;
         }, 3);
+    }
+
+    public static function correctionDuration(ProductCompletionTask $task): int
+    {
+        $duration = (int) $task->completion_duration_seconds;
+        if ($duration <= 0) {
+            $duration = max(1, min(90, (int) config('product_completion.defaults.due_days', 3))) * 86400;
+        }
+
+        return min($duration, 90 * 86400);
     }
 
     private function validateRequestedFields(ProductCompletionTask $task, array $fields): void

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\AttributeValue;
 use App\Models\Product;
+use App\Models\ProductCompletionSubmission;
 use App\Models\ProductCompletionTask;
 use App\Models\User;
 
@@ -24,14 +25,22 @@ class ProductCompletionPublisher
         array $payload,
         ?User $actor = null,
         ?array $approvedFields = null,
+        ?ProductCompletionSubmission $submission = null,
     ): Product {
-        $content = $this->validator->validate($task, $payload, $actor, true)->toArray();
+        $content = $submission !== null && data_get($submission->approval_selection_json, 'schema_version') === 2
+            ? app(ProductCompletionReviewService::class)->validatePublication($task, $submission, $payload, $actor)
+            : $this->validator->validate($task, $payload, $actor, true)->toArray();
         if ($approvedFields !== null && $approvedFields !== []) {
             $content = $this->filterForApproval($content, array_values(array_map('strval', $approvedFields)));
         }
         $updates = [];
 
         foreach (['title', 'short_description', 'full_description'] as $field) {
+            if ($submission !== null
+                && data_get($submission->approval_selection_json, 'schema_version') === 2
+                && ($submission->approval_selection_json['decisions']['text:'.$field] ?? null) === 'reject') {
+                continue;
+            }
             if ($this->scopeAllows($task, $field) && array_key_exists($field, $content)) {
                 $updates[$field] = $content[$field];
             }

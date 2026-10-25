@@ -92,7 +92,7 @@ enum ProductCompletionTaskStatus: string
                 self::CANCELLED,
                 self::DISPUTED,
             ],
-            self::CHANGES_REQUESTED => [self::IN_PROGRESS, self::CANCELLED, self::DISPUTED],
+            self::CHANGES_REQUESTED => [self::IN_PROGRESS, self::CANCELLED, self::EXPIRED, self::DISPUTED],
             self::APPROVED => [self::COMPLETED, self::CONFLICTED, self::DISPUTED],
             self::CONFLICTED => [self::APPROVED, self::CHANGES_REQUESTED, self::CANCELLED],
             self::COMPLETED => [self::DISPUTED],

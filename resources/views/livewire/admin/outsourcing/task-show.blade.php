@@ -97,6 +97,22 @@
         </section>
     @endif
 
+    @if($task->status->canBeReviewed() && $task->lastSubmission?->status === \App\Enums\ProductCompletionSubmissionStatus::APPROVED)
+        <section class="mb-5 rounded-xl border border-red-200 bg-red-50 p-4" aria-labelledby="approval-recovery-heading">
+            <h2 id="approval-recovery-heading" class="font-bold text-red-950">تأیید ناقص؛ وضعیت تسک و نسخه هماهنگ نیست</h2>
+            <p class="mt-2 text-sm leading-7 text-red-900">آخرین نسخه تأیید شده، اما تأیید تسک کامل نشده است. بازگردانی، نسخه را برای تصمیم مجدد بازبین آماده می‌کند؛ محتوای محصول و مبالغ مالی تغییر نمی‌کنند.</p>
+            @can('recoverInterruptedApproval', $task)
+                <form wire:submit="recoverInterruptedApproval({{ $task->lock_version }})" class="mt-4 space-y-3">
+                    <label for="approval-recovery-reason" class="block text-sm font-semibold text-red-950">علت بازگردانی به بازبینی</label>
+                    <textarea id="approval-recovery-reason" wire:model="recoveryReason" required minlength="5" maxlength="2000" rows="3" class="min-h-24 w-full rounded-lg border-red-300" aria-invalid="{{ $errors->has('recoveryReason') ? 'true' : 'false' }}" aria-describedby="approval-recovery-help approval-recovery-error"></textarea>
+                    <div id="approval-recovery-error" aria-live="polite">@error('recoveryReason')<p class="text-sm text-red-800">{{ $message }}</p>@enderror</div>
+                    <p id="approval-recovery-help" class="text-xs leading-6 text-red-900">علت و وضعیت قبلی در سابقه ثبت می‌شوند. اگر انتشار یا عملیات مالی انجام شده باشد، بازگردانی مجاز نیست. پیش از اجرا، مایگریشن ایمنی داده باید اجرا شده باشد.</p>
+                    <button type="submit" wire:loading.attr="disabled" wire:target="recoverInterruptedApproval" class="min-h-11 w-full rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2 disabled:opacity-60 sm:w-auto">بازگردانی تأیید ناقص به بازبینی</button>
+                </form>
+            @endcan
+        </section>
+    @endif
+
     @can('retryFinalization', $task)
         <section class="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4">
             <div class="flex flex-wrap items-center justify-between gap-3">

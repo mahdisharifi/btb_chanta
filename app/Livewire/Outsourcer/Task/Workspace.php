@@ -123,19 +123,21 @@ class Workspace extends Component
         ProductCompletionDraftService $draftService,
     ): void {
         $this->validate([
-            'upload' => ['required', 'image', 'max:'.(int) config('product_completion.media.max_file_size_kb', 2048)],
+            'upload' => ['required', 'file'],
         ], [
-            'upload.required' => 'انتخاب تصویر الزامی است.',
-            'upload.image' => 'فایل انتخاب‌شده تصویر معتبر نیست.',
-            'upload.max' => 'حجم تصویر بیشتر از حد مجاز است.',
+            'upload.required' => 'ابتدا یک تصویر انتخاب کنید.',
+            'upload.file' => 'فایل انتخاب‌شده قابل دریافت نیست؛ دوباره آن را انتخاب کنید.',
         ]);
         $this->resetValidation();
         $media = null;
         try {
             $items = data_get($this->draft, 'gallery.items', []);
             $finalCount = count(array_filter($items, static fn (array $item): bool => ($item['action'] ?? '') !== 'remove'));
-            if ($finalCount >= (int) config('product_completion.media.max_images', 10)) {
-                throw ValidationException::withMessages(['upload' => 'حداکثر تعداد تصاویر محصول تکمیل شده است.']);
+            $maxImages = (int) config('product_completion.media.max_images', 10);
+            if ($finalCount >= $maxImages) {
+                throw ValidationException::withMessages([
+                    'upload' => "اکنون {$finalCount} تصویر در محصول دارید؛ حداکثر تعداد مجاز {$maxImages} تصویر است. پیش از افزودن تصویر جدید، یک تصویر را حذف کنید.",
+                ]);
             }
 
             $task = DB::transaction(function () use ($mediaService, $draftService, $items, $finalCount, &$media) {
@@ -161,6 +163,7 @@ class Workspace extends Component
             }
             if ($e instanceof ValidationException) {
                 $this->setErrorBag($e->errors());
+                $this->dispatch('workspace-upload-failed');
                 return;
             }
             if ($e instanceof ProductCompletionDraftVersionConflictException) {
@@ -172,6 +175,7 @@ class Workspace extends Component
 
         $this->upload = null;
         $this->syncDraft($task);
+        $this->dispatch('workspace-upload-finished');
         $this->dispatch('notify', message: 'تصویر در پیش‌نویس ذخیره شد.', type: 'success');
     }
 
@@ -488,8 +492,7 @@ class Workspace extends Component
                     ->where('attribute_category.category_id', '=', $categoryId);
             })
             ->with(['values' => function ($query): void {
-                $query->withCount('products')
-                    ->orderByDesc('products_count')
+                $query->orderByDesc(DB::raw('(select count(*) from attribute_product inner join products on products.id = attribute_product.product_id where attribute_product.attribute_value_id = attribute_values.id and products.deleted_at is null)'))
                     ->orderBy('attribute_values.value')
                     ->limit(50);
             }])

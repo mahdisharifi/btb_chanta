@@ -232,6 +232,13 @@ class ProductCompletionTaskPolicy
             && ($task->content_applied_at === null || $task->media_published_at === null);
     }
 
+    public function recoverInterruptedApproval(User $user, ProductCompletionTask $task): bool
+    {
+        return $user->can('outsourcing.view_all_tasks')
+            && $user->can('outsourcing.resolve_conflict')
+            && $task->status->canBeReviewed();
+    }
+
     public function cancelTask(User $user, ProductCompletionTask $task): bool
     {
         return $user->can('outsourcing.cancel_task') && ! $task->status->isTerminal();
@@ -264,6 +271,7 @@ class ProductCompletionTaskPolicy
                 ProductCompletionTaskStatus::IN_PROGRESS,
                 ProductCompletionTaskStatus::SUBMITTED,
                 ProductCompletionTaskStatus::RESUBMITTED,
+                ProductCompletionTaskStatus::EXPIRED,
             ], true);
     }
 

@@ -36,6 +36,20 @@
     </div>
 </header>
 <main class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">{{ $slot }}</main>
+<div x-data="{ items: [], add(e) { const d = Array.isArray(e.detail) ? e.detail[0] : e.detail; const id = Date.now() + Math.random(); this.items.push({ id, message: d.message, type: d.type || 'success' }); setTimeout(() => this.items = this.items.filter(i => i.id !== id), 6000); } }"
+     @notify.window="add($event)"
+     class="pointer-events-none fixed inset-x-0 top-4 z-[110] flex flex-col items-center gap-2 px-4" aria-live="polite">
+    <template x-for="item in items" :key="item.id">
+        <div class="pointer-events-auto w-full max-w-md rounded-xl px-4 py-3 text-sm leading-7 shadow-lg"
+             :class="item.type === 'error' ? 'bg-red-700 text-white' : 'bg-emerald-700 text-white'"
+             :role="item.type === 'error' ? 'alert' : 'status'">
+            <div class="flex items-start justify-between gap-3">
+                <span class="break-words" x-text="item.message"></span>
+                <button type="button" class="min-h-8 shrink-0 px-2 text-lg leading-none" aria-label="بستن" @click="items = items.filter(i => i.id !== item.id)">×</button>
+            </div>
+        </div>
+    </template>
+</div>
 @livewireScripts
 </body>
 </html>

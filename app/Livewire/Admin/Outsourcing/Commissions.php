@@ -98,7 +98,8 @@ class Commissions extends Component
                     'task.product:id,title',
                 ])
                 ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
-                ->latest('id')
+                ->orderBy('calculated_at')
+                ->orderBy('id')
                 ->paginate(20),
             'approvedTasks' => ProductCompletionTask::query()
                 ->with(['product:id,title', 'assignee:id,name', 'reviewer:id,name'])
@@ -106,7 +107,8 @@ class Commissions extends Component
                 ->whereHas('lastSubmission', fn ($query) => $query->where('status', ProductCompletionSubmissionStatus::APPROVED))
                 ->whereDoesntHave('commission')
                 ->when(! in_array($this->status, ['', ProductCompletionCommissionStatus::PENDING->value], true), fn ($query) => $query->whereRaw('1 = 0'))
-                ->latest('id')
+                ->orderBy('approved_at')
+                ->orderBy('id')
                 ->paginate(20, ['*'], 'approvedTasksPage'),
             'statuses' => ProductCompletionCommissionStatus::options(),
         ]);

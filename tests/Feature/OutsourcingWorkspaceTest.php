@@ -288,6 +288,21 @@ class OutsourcingWorkspaceTest extends TestCase
         $this->assertArrayNotHasKey('specifications', $payload);
     }
 
+    public function test_invalid_image_dimensions_explain_the_rule_and_the_selected_file(): void
+    {
+        [$task, $actor] = $this->task(['gallery' => $this->galleryScope()], ['gallery' => ['items' => []]]);
+        $component = Livewire::actingAs($actor)->test(Workspace::class, ['task' => $task])
+            ->set('upload', UploadedFile::fake()->image('too-small.png', 640, 480))
+            ->call('uploadMedia')
+            ->assertHasErrors('upload');
+
+        $message = (string) $component->errors()->first('upload');
+        $this->assertStringContainsString('too-small.png', $message);
+        $this->assertStringContainsString('640×480', $message);
+        $this->assertStringContainsString('800×800', $message);
+        $this->assertStringContainsString('قانون تصویر', $message);
+    }
+
     public function test_upload_with_a_stale_draft_rolls_back_record_and_file(): void
     {
         [$task, $actor] = $this->task(['gallery' => $this->galleryScope()], ['gallery' => ['items' => []]]);

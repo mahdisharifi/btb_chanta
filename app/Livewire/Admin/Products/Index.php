@@ -142,7 +142,7 @@ class Index extends Component
 
         $query = $this->getFilteredQuery()
             ->whereIn('products.id', $selectedIds)
-            ->whereDoesntHave('completionTasks', fn ($task) => $task->whereNotNull('active_product_id'));
+            ->whereDoesntHave('completionTasks', fn ($task) => ProductCompletionTaskService::applyUnfinishedTaskFilter($task));
 
         $this->createDefaultTasksFromQuery($query, count($selectedIds), $service);
     }
@@ -157,7 +157,7 @@ class Index extends Component
             return;
         }
 
-        $query = $this->getFilteredQuery()->whereDoesntHave('completionTasks', fn ($task) => $task->whereNotNull('active_product_id'));
+        $query = $this->getFilteredQuery()->whereDoesntHave('completionTasks', fn ($task) => ProductCompletionTaskService::applyUnfinishedTaskFilter($task));
         $this->createDefaultTasksFromQuery($query, null, $service);
     }
 
@@ -513,7 +513,7 @@ class Index extends Component
         if ($this->taskStatus === 'none') {
             $query->whereDoesntHave('completionTasks');
         } elseif ($this->taskStatus === 'active') {
-            $query->whereHas('completionTasks', fn ($task) => $task->whereNotNull('active_product_id'));
+            $query->whereHas('completionTasks', fn ($task) => ProductCompletionTaskService::applyUnfinishedTaskFilter($task));
         } elseif ($this->taskStatus === 'completed') {
             $query->whereHas('completionTasks', fn ($task) => $task->where('status', ProductCompletionTaskStatus::COMPLETED));
         } elseif ($this->taskStatus === 'any') {
@@ -844,7 +844,7 @@ class Index extends Component
                     ->whereHas('validPrices')
                     ->with(['supplier:id,company_name,brand_name', 'validPrices.priceType', 'validPrices.checkPeriod']),
             ])
-            ->withExists(['completionTasks as has_active_completion_task' => fn ($task) => $task->whereNotNull('active_product_id')])
+            ->withExists(['completionTasks as has_active_completion_task' => fn ($task) => ProductCompletionTaskService::applyUnfinishedTaskFilter($task)])
             ->withCount('attributeValues');
 
         $categories = Cache::remember('admin.products.filter.categories', now()->addMinutes(10), static fn () =>

@@ -211,10 +211,7 @@ class ProductCompletionMediaService
             throw new ProductCompletionMediaException('Submission نهایی تأیید نشده است.');
         }
 
-        $mediaItems = $submission->mediaItems()
-            ->where('action', 'add')
-            ->with('media')
-            ->get();
+        $mediaItems = $this->reviewedMediaItems($submission)->where('action', 'add');
 
         foreach ($mediaItems as $item) {
             $media = $item->media;
@@ -282,7 +279,7 @@ class ProductCompletionMediaService
                 $lockedTask->forceFill(['media_published_at' => now(), 'lock_version' => $lockedTask->lock_version + 1])->save();
                 return ['conflicts' => []];
             }
-            $conflict = $this->conflictService->detect($lockedTask, $product, $submission->payload_json);
+            $conflict = $this->conflictService->detect($lockedTask, $product, $submission->publicationPayload());
 
             if ($conflict->hasConflicts()) {
                 $submission->forceFill(['status' => ProductCompletionSubmissionStatus::CONFLICTED])->save();
@@ -301,7 +298,10 @@ class ProductCompletionMediaService
                 return ['conflicts' => $conflict->conflicts];
             }
 
-            if (data_get($lockedTask->scope_json, 'gallery', false) !== false) {
+            $publicationPayload = $submission->publicationPayload();
+            $galleryAlreadyCurrent = data_get($submission->approval_selection_json, 'schema_version') === 2
+                && ($conflict->mergedPayload['gallery'] ?? null) != ($publicationPayload['gallery'] ?? null);
+            if (data_get($lockedTask->scope_json, 'gallery', false) !== false && ! $galleryAlreadyCurrent) {
                 $this->applyManifest($lockedTask, $product, $submission);
                 $product->forceFill([
                     'content_version' => (int) $product->content_version + 1,
@@ -381,46 +381,74 @@ class ProductCompletionMediaService
 
     private function inspectUpload(UploadedFile $file): array
     {
+        $originalName = basename((string) $file->getClientOriginalName()) ?: 'نامشخص';
+        $allowedExtensions = implode('، ', array_map('strtoupper', config('product_completion.media.allowed_extensions', ['jpg', 'jpeg', 'png', 'webp'])));
+        $maxKilobytes = (int) config('product_completion.media.max_file_size_kb', 2048);
+        $maxMegabytes = rtrim(rtrim(number_format($maxKilobytes / 1024, 2, '.', ''), '0'), '.');
+
         if (! $file->isValid()) {
-            throw ValidationException::withMessages(['file' => 'بارگذاری فایل کامل نشده است.']);
+            throw ValidationException::withMessages([
+                'upload' => "فایل «{$originalName}» کامل بارگذاری نشده یا در انتقال آن خطا رخ داده است. دوباره تلاش کنید.",
+            ]);
         }
 
         $realPath = $file->getRealPath();
         $fileSize = (int) $file->getSize();
-        $maxBytes = (int) config('product_completion.media.max_file_size_kb', 2048) * 1024;
+        $maxBytes = $maxKilobytes * 1024;
 
-        if ($fileSize <= 0 || $fileSize > $maxBytes) {
+        if ($fileSize <= 0) {
             throw ValidationException::withMessages([
-                'file' => 'حجم تصویر بیشتر از حد مجاز است.',
+                'upload' => "فایل «{$originalName}» خالی است و محتوای آن خوانده نمی‌شود.",
+            ]);
+        }
+
+        if ($fileSize > $maxBytes) {
+            throw ValidationException::withMessages([
+                'upload' => "فایل «{$originalName}» با حجم ".number_format($fileSize / 1024 / 1024, 2, '.', '')." مگابایت (".number_format($fileSize)." بایت) است؛ حداکثر حجم مجاز {$maxMegabytes} مگابایت (".number_format($maxBytes)." بایت) است.",
             ]);
         }
 
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $mimeType = (string) $finfo->file($realPath);
         $allowedMimeTypes = config('product_completion.media.allowed_mime_types', []);
+        $actualMime = $mimeType ?: 'نامشخص';
 
         if (! in_array($mimeType, $allowedMimeTypes, true)) {
             throw ValidationException::withMessages([
-                'file' => 'نوع واقعی فایل تصویر مجاز نیست.',
+                'upload' => "فایل «{$originalName}» از نوع واقعی «{$actualMime}» است؛ فقط فایل‌های تصویری با فرمت‌های {$allowedExtensions} مجاز هستند.",
             ]);
         }
 
         $dimensions = @getimagesize($realPath);
         if ($dimensions === false) {
-            throw ValidationException::withMessages(['file' => 'محتوای فایل یک تصویر معتبر نیست.']);
+            throw ValidationException::withMessages([
+                'upload' => "فایل «{$originalName}» تصویر قابل خواندن نیست؛ یک فایل سالم با فرمت‌های {$allowedExtensions} انتخاب کنید.",
+            ]);
         }
 
         $width = (int) $dimensions[0];
         $height = (int) $dimensions[1];
         $pixels = $width * $height;
+        $minWidth = (int) config('product_completion.media.min_width', 800);
+        $minHeight = (int) config('product_completion.media.min_height', 800);
+        $maxWidth = (int) config('product_completion.media.max_width', 8000);
+        $maxHeight = (int) config('product_completion.media.max_height', 8000);
+        $maxPixels = (int) config('product_completion.media.max_pixels', 40000000);
 
-        if ($width < (int) config('product_completion.media.min_width', 800)
-            || $height < (int) config('product_completion.media.min_height', 800)
-            || $width > (int) config('product_completion.media.max_width', 8000)
-            || $height > (int) config('product_completion.media.max_height', 8000)
-            || $pixels > (int) config('product_completion.media.max_pixels', 40000000)) {
+        $violatedRules = [];
+        if ($width < $minWidth || $height < $minHeight) {
+            $violatedRules[] = "حداقل ابعاد مجاز {$minWidth}×{$minHeight} پیکسل (عرض×ارتفاع) است";
+        }
+        if ($width > $maxWidth || $height > $maxHeight) {
+            $violatedRules[] = "حداکثر ابعاد مجاز {$maxWidth}×{$maxHeight} پیکسل (عرض×ارتفاع) است";
+        }
+        if ($pixels > $maxPixels) {
+            $violatedRules[] = "حداکثر مجموع پیکسل‌ها ".number_format($maxPixels)." پیکسل است";
+        }
+
+        if ($violatedRules !== []) {
             throw ValidationException::withMessages([
-                'file' => 'ابعاد تصویر خارج از محدوده مجاز است.',
+                'upload' => "قانون تصویر رعایت نشده است: ".implode('؛ ', $violatedRules).". مشخصات فایل «{$originalName}»: {$width}×{$height} پیکسل، ".number_format($pixels)." پیکسل در مجموع.",
             ]);
         }
 
@@ -428,7 +456,7 @@ class ProductCompletionMediaService
             'image/jpeg' => 'jpg',
             'image/png' => 'png',
             'image/webp' => 'webp',
-            default => throw new ProductCompletionMediaException('نوع تصویر پشتیبانی نمی‌شود.'),
+            default => throw new ProductCompletionMediaException('فرمت تصویر پشتیبانی نمی‌شود.'),
         };
 
         return [
@@ -564,7 +592,7 @@ class ProductCompletionMediaService
         Product $product,
         ProductCompletionSubmission $submission,
     ): void {
-        $items = $submission->mediaItems()->with(['media', 'productGallery'])->get();
+        $items = $this->reviewedMediaItems($submission);
         $product->galleries()->where('file_type', 'image')->update([
             'is_primary' => false,
         ]);
@@ -611,5 +639,47 @@ class ProductCompletionMediaService
                 'published_at' => now(),
             ])->save();
         }
+    }
+
+    private function reviewedMediaItems(ProductCompletionSubmission $submission): \Illuminate\Support\Collection
+    {
+        $items = $submission->mediaItems()->with(['media', 'productGallery'])->get();
+        $snapshot = $submission->approval_selection_json;
+
+        if (($snapshot['schema_version'] ?? null) !== 2) {
+            return $items;
+        }
+
+        $submission->publicationPayload();
+        if (! is_array($snapshot['media_items'] ?? null)) {
+            throw ValidationException::withMessages(['submission' => 'تصمیم‌های بررسی تصاویر ناقص است.']);
+        }
+
+        $originals = $items->keyBy('id');
+        $resolved = collect();
+        $seen = [];
+        foreach ($snapshot['media_items'] as $overlay) {
+            $identity = (int) ($overlay['id'] ?? 0);
+            $original = $originals->get($identity);
+            if ($original === null || isset($seen[$identity])
+                || ! in_array($overlay['action'] ?? null, [$original->action, 'keep'], true)
+                || ($original->action === 'add' && ($overlay['action'] ?? null) !== 'add')) {
+                throw ValidationException::withMessages(['submission' => 'تصمیم بررسی تصویر معتبر نیست.']);
+            }
+            $seen[$identity] = true;
+            $item = clone $original;
+            $item->forceFill(array_intersect_key($overlay, array_flip([
+                'action', 'sort_order', 'is_primary', 'title', 'alt_text',
+            ])));
+            $resolved->push($item);
+        }
+
+        foreach ($items as $original) {
+            if ($original->action !== 'add' && ! isset($seen[$original->getKey()])) {
+                throw ValidationException::withMessages(['submission' => 'تصویر موجود نباید از نتیجه بررسی حذف شود.']);
+            }
+        }
+
+        return $resolved;
     }
 }

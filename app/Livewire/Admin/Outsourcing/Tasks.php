@@ -340,7 +340,7 @@ class Tasks extends Component
 
     public function render()
     {
-        $search = mb_substr(trim($this->search), 0, 100);
+        $search = self::normalizeSearchTerm($this->search);
         $categoryIds = [];
         if ($this->categoryFilter !== '') {
             $category = Category::query()->find((int) $this->categoryFilter);
@@ -368,20 +368,27 @@ class Tasks extends Component
             ->when($this->reviewerFilter !== '', fn ($query) => $query->where('reviewer_id', (int) $this->reviewerFilter))
             ->when($categoryIds !== [], fn ($query) => $query->whereHas('product', fn ($product) => $product->whereIn('category_id', $categoryIds)))
             ->when($search !== '', function ($query) use ($search): void {
-                $term = strtr($search, array_combine(
-                    preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
-                    str_split('01234567890123456789'),
-                ));
-                $query->where(function ($query) use ($term): void {
-                    if (ctype_digit($term) && strlen($term) <= 18) {
-                        $query->where('product_id', (int) $term)->orWhereHas('product', fn ($product) => $product->where('sku', $term));
+                $query->where(function ($query) use ($search): void {
+                    if (ctype_digit($search) && strlen($search) <= 18) {
+                        $pattern = '%'.$search.'%';
+                        $query->where('product_id', (int) $search)
+                            ->orWhereHas('product', fn ($product) => $product
+                                ->where('sku', $search)
+                                ->orWhere('sku', 'like', $pattern)
+                                ->orWhere('title', 'like', $pattern));
                         return;
                     }
-                    $query->where('public_id', $term)->orWhereHas('product', function ($product) use ($term): void {
-                        foreach (array_slice(preg_split('/\s+/u', $term), 0, 6) as $word) {
-                            $pattern = '%'.strtr($word, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
-                            $product->where(fn ($part) => $part->whereRaw("title LIKE ? ESCAPE '!'", [$pattern])->orWhereRaw("sku LIKE ? ESCAPE '!'", [$pattern]));
-                        }
+                    $query->where('public_id', $search)->orWhereHas('product', function ($product) use ($search): void {
+                        $words = array_values(array_filter(preg_split('/\s+/u', $search), fn ($word) => mb_strlen($word) >= 2));
+                        $product->where(function ($product) use ($words): void {
+                            foreach (array_slice($words, 0, 8) as $word) {
+                                $pattern = '%'.strtr($word, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
+                                $product->orWhere(function ($part) use ($pattern): void {
+                                    $part->whereRaw("REPLACE(REPLACE(REPLACE(title, 'ي', 'ی'), 'ى', 'ی'), 'ك', 'ک') LIKE ? ESCAPE '!'", [$pattern])
+                                        ->orWhereRaw("REPLACE(REPLACE(REPLACE(sku, 'ي', 'ی'), 'ى', 'ی'), 'ك', 'ک') LIKE ? ESCAPE '!'", [$pattern]);
+                                });
+                            }
+                        });
                     });
                 });
             })
@@ -421,6 +428,19 @@ class Tasks extends Component
             'canCreateTasks' => $canCreateTasks,
             'showCreateForm' => $showCreateForm,
         ]);
+    }
+
+    private static function normalizeSearchTerm(string $value): string
+    {
+        $value = trim(preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]+/u', '', $value) ?? '');
+        $value = strtr($value, [
+            'ي' => 'ی', 'ى' => 'ی', 'ك' => 'ک', 'ة' => 'ه', 'ۀ' => 'ه',
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        ]);
+        return mb_substr(preg_replace('/\s+/u', ' ', $value) ?? '', 0, 100);
     }
 
     private function applyAttentionFilter(Builder $query, string $filter): Builder
