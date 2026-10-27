@@ -242,7 +242,7 @@ class OutsourcingHandoffTest extends TestCase
         $task->lastSubmission->update(['status' => ProductCompletionSubmissionStatus::APPROVED]);
         Livewire::actingAs($reviewer)->test(\App\Livewire\Admin\Outsourcing\TaskShow::class, ['task' => $task])
             ->set('recoveryReason', 'Not authorized to recover.')
-            ->call('recoverInterruptedApproval', $task->lock_version)->assertForbidden();
+            ->call('recoverInterruptedApproval', $task->lock_version)->assertNotFound();
         $admin = User::factory()->create()->assignRole(UserRole::ADMIN->value);
         Livewire::actingAs($admin)->test(\App\Livewire\Admin\Outsourcing\TaskShow::class, ['task' => $task])
             ->call('recoverInterruptedApproval', $task->lock_version)->assertHasErrors('recoveryReason')

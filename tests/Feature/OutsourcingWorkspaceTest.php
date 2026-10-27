@@ -269,7 +269,7 @@ class OutsourcingWorkspaceTest extends TestCase
         $other = Product::factory()->create()->galleries()->create(['file_path' => 'other.png', 'file_type' => 'image']);
         $this->get(route('outsourcing.gallery.preview', [$task, $other]))->assertNotFound();
         $stranger = User::factory()->create()->assignRole(UserRole::OUTSOURCER->value);
-        $this->actingAs($stranger)->get($url)->assertForbidden();
+        $this->actingAs($stranger)->get($url)->assertNotFound();
     }
 
     public function test_media_only_task_stages_and_submits_an_image_without_content_fields(): void
@@ -378,7 +378,7 @@ class OutsourcingWorkspaceTest extends TestCase
         $this->actingAs($reviewer)->get(route('outsourcing.media.preview', $media))->assertOk();
         $this->get(route('outsourcing.gallery.preview', [$task, $gallery]))->assertOk();
         $stranger = User::factory()->create()->assignRole(UserRole::REVIEWER->value);
-        $this->actingAs($stranger)->get(route('outsourcing.media.preview', $media))->assertForbidden();
+        $this->actingAs($stranger)->get(route('outsourcing.media.preview', $media))->assertNotFound();
 
         app(\App\Services\ProductCompletionRevisionService::class)->request(
             $reviewer, $task->lastSubmission, ['short_description'], 'Provide a revised introduction.',
@@ -573,9 +573,11 @@ class OutsourcingWorkspaceTest extends TestCase
             ->call('extendDeadline')->assertHasNoErrors();
         $this->assertTrue($task->refresh()->due_at->isFuture());
         $this->assertTrue(\Illuminate\Support\Facades\Gate::forUser($actor)->allows('submitTask', $task));
+        $dueAt = $task->due_at->toDateTimeString();
         Livewire::actingAs($actor)->test(\App\Livewire\Admin\Outsourcing\TaskShow::class, ['task' => $task])
             ->set('newDueAt', jdate(now()->addDays(2))->format('Y/m/d H:i'))
-            ->call('extendDeadline')->assertForbidden();
+            ->call('extendDeadline')->assertNotFound();
+        $this->assertSame($dueAt, $task->refresh()->due_at->toDateTimeString());
     }
 
     public function test_deadline_accepts_persian_digits_and_rejects_invalid_jalali_dates(): void

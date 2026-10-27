@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->prepend(\App\Http\Middleware\ConcealForbiddenResponses::class);
         // The framework validates this signed cookie before the web middleware runs.
         $middleware->encryptCookies(except: ['laravel_maintenance']);
         // اضافه کردن به گروه web
@@ -46,6 +47,10 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->respond(function ($response, \Throwable $exception, \Illuminate\Http\Request $request) {
+            if ($response->getStatusCode() === 403) {
+                return \App\Http\Middleware\ConcealForbiddenResponses::notFound($request);
+            }
+
             $status = $response->getStatusCode();
             if ($status < 400 || $status > 599 || $request->expectsJson()
                 || $request->is('api/*') || $request->hasHeader('X-Livewire')

@@ -157,7 +157,7 @@ class RetailerPagesTest extends TestCase
         // بررسی redirect یا نمایش پیام خطا
         // این بستگی به پیاده‌سازی middleware check.subscription دارد
         $this->assertTrue(
-            $response->isRedirect() || $response->status() === 403
+            $response->isRedirect() || $response->status() === 404
         );
     }
 
@@ -188,7 +188,7 @@ class RetailerPagesTest extends TestCase
 
         // بررسی عدم دسترسی (403 یا redirect)
         $this->assertTrue(
-            $response->status() === 403 || $response->isRedirect()
+            $response->status() === 404 || $response->isRedirect()
         );
     }
 }

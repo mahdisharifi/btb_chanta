@@ -29,7 +29,7 @@ class ProductCompletionAuthorizationTest extends TestCase
 
         $this->actingAs($attacker)
             ->get(route('outsourcer.tasks.show', $task))
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_workspace_does_not_render_commercial_tier_data(): void

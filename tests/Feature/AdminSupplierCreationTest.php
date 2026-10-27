@@ -62,7 +62,7 @@ class AdminSupplierCreationTest extends TestCase
     {
         $user = User::factory()->create();
         Livewire::actingAs($user)->withQueryParams(['source' => 'admin', 'user_id' => $this->admin->id])
-            ->test(RegisterSupplier::class)->assertForbidden();
+            ->test(RegisterSupplier::class)->assertNotFound();
     }
 
     public function test_selected_user_is_locked_against_client_changes(): void
