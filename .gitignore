@@ -21,4 +21,14 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
-/storage
+/.vagrant
+
+# Laravel 4 specific
+bootstrap/compiled.php
+app/storage/
+
+# Laravel 5 & Lumen specific
+public_html/storage
+public_html/hot
+
+.env
