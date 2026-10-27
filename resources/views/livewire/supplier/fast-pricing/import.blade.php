@@ -1,10 +1,40 @@
 <div class="max-w-4xl mx-auto space-y-6">
-    <div class="flex items-center justify-between">
-        <h2 class="text-xl font-bold text-gray-800">بروزرسانی سریع قیمت‌ها (آپلود اکسل)</h2>
-        <button wire:click="downloadTemplate" class="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors shadow-sm flex items-center gap-2">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 class="text-xl font-bold text-gray-800">بروزرسانی سریع قیمت‌ها</h2>
+        <button wire:click="downloadTemplate" class="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
             <x-heroicon-o-document-arrow-down class="w-5 h-5" />
             <span>دانلود فایل محصولات فعال</span>
         </button>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <a href="#excel-upload" class="rounded-xl border border-indigo-200 bg-white p-5 shadow-sm transition hover:border-indigo-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <div class="flex items-start gap-3">
+                <div class="rounded-lg bg-indigo-100 p-3 text-indigo-600">
+                    <x-heroicon-o-arrow-up-tray class="h-6 w-6" />
+                </div>
+                <div>
+                    <h3 class="font-bold text-gray-900">بروزرسانی با فایل اکسل</h3>
+                    <p class="mt-1 text-sm leading-6 text-gray-600">فایل قیمت‌ها را دانلود، ویرایش و دوباره بارگذاری کنید.</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{{ route('supplier.fast-pricing.percentage-update') }}"
+           class="group rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm transition hover:border-emerald-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <div class="flex items-start justify-between gap-3">
+                <div class="flex items-start gap-3">
+                    <div class="rounded-lg bg-emerald-100 p-3 text-emerald-700">
+                        <x-heroicon-o-calculator class="h-6 w-6" />
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-900">بروزرسانی با درصد ثابت</h3>
+                        <p class="mt-1 text-sm leading-6 text-gray-600">افزایش یا کاهش درصدی همه قیمت‌ها، همراه با پیش‌نمایش و امکان اصلاح.</p>
+                    </div>
+                </div>
+                <x-heroicon-o-chevron-left class="mt-1 h-5 w-5 shrink-0 text-emerald-700 transition group-hover:-translate-x-1" />
+            </div>
+        </a>
     </div>
 
     @if(isset($pendingBatch) && empty($rowErrors))
@@ -124,7 +154,7 @@
         </div>
     </div>
 
-    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative">
+    <div id="excel-upload" class="scroll-mt-6 bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative">
         <!-- نمایش مراحل کار به صورت بصری -->
         <div class="flex items-center gap-2 mb-6 text-sm font-medium text-gray-500 border-b border-gray-100 pb-4">
             <span class="flex items-center gap-1 {{ !$file ? 'text-indigo-600 font-bold' : 'text-gray-400' }}">

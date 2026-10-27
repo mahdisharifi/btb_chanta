@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class Supplier extends Model
 {
-    use SoftDeletes;
+    use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes, HasLockableFields;
 
     protected $fillable = [
         // User relation
@@ -41,6 +43,10 @@ class Supplier extends Model
         'company_name_en',
         'brand_name',
         'logo_path',
+        'logo_versions',
+        
+        // ✅ تنظیمات قیمت‌گذاری
+        'price_rounding_type',
 
         // Address
         'address',
@@ -53,6 +59,8 @@ class Supplier extends Model
         // Legal info
         'tax_id',
         'national_id',
+        'national_card_file',
+        'business_license_file',
 
         // Status flags (legacy)
         'is_verified',
@@ -66,8 +74,46 @@ class Supplier extends Model
         'verified_at' => 'datetime',
         'social_networks' => 'array',
         'verification_documents' => 'array',
+        'logo_versions' => 'array',
 
     ];
+
+    public function logoVersionPath(string $size = 'small'): ?string
+    {
+        $version = data_get($this->logo_versions, $size);
+        $path = is_array($version) ? ($version['path'] ?? null) : $version;
+
+        if (is_string($path) && $path !== '') {
+            return $path;
+        }
+
+        return filled($this->logo_path) ? $this->logo_path : null;
+    }
+
+    public function logoUrl(string $size = 'small'): ?string
+    {
+        $path = $this->logoVersionPath($size);
+        if (! $path) {
+            return null;
+        }
+
+        if (Str::startsWith($path, ['http://', 'https://'])) {
+            return $path;
+        }
+
+        return asset('storage/'.ltrim($path, '/'));
+    }
+
+    public function logoAbsolutePath(string $size = 'pdf'): ?string
+    {
+        $path = $this->logoVersionPath($size);
+        if (! $path || Str::startsWith($path, ['http://', 'https://'])) {
+            return null;
+        }
+
+        $disk = Storage::disk('public');
+        return $disk->exists($path) ? $disk->path($path) : null;
+    }
 
     // Relations
     public function verifier(): BelongsTo
@@ -102,6 +148,17 @@ class Supplier extends Model
         return $this->hasMany(ProductSupplier::class);
     }
 
+    /**
+     * دوره‌های چک فعال این تامین‌کننده
+     * با اطلاعات درصد افزایش قیمت و عنوان اختصاصی از جدول pivot
+     */
+    public function checkPeriods(): BelongsToMany
+    {
+        return $this->belongsToMany(CheckPeriod::class, 'supplier_check_period')
+            ->withPivot('percentage_increase', 'is_active', 'label')
+            ->withTimestamps();
+    }
+
     public function profile(): HasOne
     {
         return $this->hasOne(SupplierProfile::class);
@@ -127,6 +184,11 @@ class Supplier extends Model
     public function isRetailer(): bool
     {
         return $this->type === 'retailer';
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->type === 'admin';
     }
 
     public function isPending(): bool
@@ -171,5 +233,52 @@ class Supplier extends Model
     public function city()
     {
         return $this->belongsTo(City::class);
+    }
+
+    /**
+     * رنج‌های رُند کردن قیمت این تأمین‌کننده
+     */
+    public function priceRoundingRanges(): HasMany
+    {
+        return $this->hasMany(SupplierPriceRoundingRange::class);
+    }
+
+    /**
+     * رنج‌های فعال رُند کردن قیمت
+     */
+    public function activePriceRoundingRanges(): HasMany
+    {
+        return $this->hasMany(SupplierPriceRoundingRange::class)
+            ->where('is_active', true)
+            ->orderBy('min_price', 'asc');
+    }
+
+    /**
+     * تنظیمات درصد تیراژها
+     */
+    public function tierPercentages(): HasMany
+    {
+        return $this->hasMany(SupplierTierPercentage::class);
+    }
+
+    /**
+     * تنظیمات فعال درصد تیراژها
+     */
+    public function activeTierPercentages(): HasMany
+    {
+        return $this->hasMany(SupplierTierPercentage::class)
+            ->where('is_active', true)
+            ->orderBy('sort_order', 'asc')
+            ->orderBy('tier_index', 'asc');
+    }
+
+    public function completionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class);
+    }
+
+    public function slugRedirects(): HasMany
+    {
+        return $this->hasMany(SupplierSlugRedirect::class);
     }
 }

@@ -54,6 +54,36 @@
 
         <form wire:submit="register" class="space-y-8">
 
+            @if($adminMode)
+                <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4 break-words" role="status">
+                    <p class="font-semibold text-indigo-900">تکمیل پروفایل برای: {{ $selectedUserName }}</p>
+                    <p class="mt-1 text-sm text-indigo-800">پروفایل با همان قواعد ثبت‌نام عادی و وضعیت در انتظار تأیید ثبت می‌شود. حساب مدیر تغییر نمی‌کند.</p>
+                </div>
+            @endif
+
+            @if($this instanceof \App\Livewire\Admin\Suppliers\Edit && $editMode && $supplier && auth()->user()?->can('updateSlug', $supplier))
+                <section class="rounded-xl border border-amber-200 bg-amber-50 p-4 min-w-0" aria-labelledby="supplier-url-heading">
+                    <h2 id="supplier-url-heading" class="font-semibold text-gray-900">مدیریت آدرس عمومی و ریدایرکت‌ها</h2>
+                    <label for="supplier-slug" class="mt-3 block text-sm font-medium">اسلاگ عمومی</label>
+                    <input id="supplier-slug" wire:model="slug" type="text" dir="ltr" maxlength="255" required aria-describedby="supplier-slug-help supplier-slug-error" aria-invalid="{{ $errors->has('slug') ? 'true' : 'false' }}" class="mt-1 w-full min-h-[44px] rounded-lg border-gray-300 text-left" />
+                    <p id="supplier-slug-help" class="mt-2 text-sm text-amber-900">فقط مدیر ارشد مجاز به تغییر است. آدرس قبلی با ریدایرکت دائمی 301 مستقیماً به آدرس جدید هدایت و برای استفاده مجدد رزرو می‌شود.</p>
+                    <div id="supplier-slug-error" role="alert">@error('slug')<p class="text-sm text-red-700">{{ $message }}</p>@enderror</div>
+                    <ul class="mt-3 space-y-2 text-sm" aria-label="تاریخچه آدرس‌های قبلی">
+                        @forelse($supplier->slugRedirects()->orderByDesc('id')->get() as $slugRedirect)
+                            <li class="rounded-lg bg-white p-3 break-words">
+                                <span class="block">آدرس قبلی: <bdi>{{ $slugRedirect->old_slug }}</bdi></span>
+                                <span class="block">مقصد فعلی: <bdi>{{ $supplier->slug }}</bdi></span>
+                                <span class="block">مقصد هنگام تغییر: <bdi>{{ $slugRedirect->new_slug }}</bdi></span>
+                                <span class="block">شناسه مدیر ثبت‌کننده: {{ $slugRedirect->created_by ?? 'حذف شده' }}</span>
+                                <time class="block" dir="ltr">{{ $slugRedirect->created_at }}</time>
+                            </li>
+                        @empty
+                            <li>هنوز تغییری در آدرس ثبت نشده است.</li>
+                        @endforelse
+                    </ul>
+                </section>
+            @endif
+
             {{-- Section 1: Business Info --}}
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="bg-gray-50 border-b border-gray-100 px-6 py-4 flex items-center gap-3">
@@ -118,6 +148,8 @@
                         <div class="flex items-center gap-4">
                             @if ($logo)
                             <img src="{{ $logo->temporaryUrl() }}" class="w-14 h-14 rounded-lg object-cover border border-gray-200" />
+                            @elseif ($editMode && $supplier?->logo_path)
+                            <img src="{{ $supplier->logoUrl('small') }}" alt="لوگوی فعلی کسب‌وکار" class="w-14 h-14 rounded-lg object-cover border border-gray-200" />
                             @else
                             <div class="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center border border-dashed border-gray-300">
                                 <x-heroicon-o-photo class="w-6 h-6 text-gray-400" />
@@ -425,10 +457,15 @@
 
             {{-- Submit --}}
             <div class="flex items-center justify-between pt-2">
+                {{-- دکمه بازگشت فقط در حالت ثبت‌نام (نه ویرایش) --}}
+                @if(!$editMode)
                 <a href="{{ route('user.role-selection') }}" class="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition">
                     <x-heroicon-o-arrow-right class="w-4 h-4" />
                     بازگشت به انتخاب نقش
                 </a>
+                @else
+                <div></div>
+                @endif
 
                 <button
                     type="submit"
@@ -445,7 +482,7 @@
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 6.477 0 12h4z"/>
                         </svg>
                     </span>
-                    ثبت‌نام به عنوان تامین‌کننده
+                    {{ $editMode ? 'ذخیره تغییرات' : 'ثبت‌نام به عنوان تامین‌کننده' }}
                 </button>
             </div>
 

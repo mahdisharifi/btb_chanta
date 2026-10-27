@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" class="scroll-smooth">
+<html lang="fa" dir="rtl" class="scroll-smooth motion-reduce:scroll-auto">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,15 +16,20 @@
     <meta property="og:title" content="{{ $ogTitle ?? $seoTitle ?? config('app.name') }}">
     <meta property="og:description" content="{{ $ogDescription ?? $seoDescription ?? '' }}">
     <meta property="og:image" content="{{ $ogImage ?? asset('images/og-default.jpg') }}">
-    <meta property="og:url" content="{{ url()->current() }}">
+    <meta property="og:url" content="{{ $canonical ?? url()->current() }}">
     <meta property="og:locale" content="fa_IR">
 
     {{-- Canonical --}}
     <link rel="canonical" href="{{ $canonical ?? url()->current() }}">
 
     {{-- Favicon --}}
-    <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
+    <link rel="icon" type="image/png" href="{{ asset('favicon.jpg') }}">
 
+    {{-- Font Preload: فقط فونت Regular که بیشترین استفاده را دارد - WOFF2 برای کاهش حجم --}}
+    <link rel="preload" href="{{ asset('build/assets/Vazir-Regular-FD-M-dqDxKz.woff2') }}" as="font" type="font/woff2" crossorigin>
+
+    {{-- SEO Section (for schema, custom meta, etc.) --}}
+    @yield('seo')
 
     {{-- Styles --}}
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -52,38 +57,13 @@
 
 {{-- Header / Navigation --}}
 <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
-    {{-- Top Bar --}}
-    <div class="bg-gray-800 text-gray-300 text-xs">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex justify-between items-center">
-            <div class="flex items-center gap-4">
-                <span>📞 پشتیبانی: 09355921203</span>
-                <span class="hidden sm:inline">✉️ info@chanta.ir</span>
-            </div>
-            <div class="flex items-center gap-3">
-                @auth
-                <span class="text-green-400">{{ auth()->user()->name }}</span>
-                <span class="text-gray-500">|</span>
-                <a href="{{ route('dashboard') }}" class="hover:text-white transition">پنل کاربری</a>
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
-                    <button type="submit" class="text-sm text-red-600 hover:text-red-800 transition-colors">خروج</button>
-                </form>
-                @else
-                <a href="{{ route('login') }}" class="hover:text-white transition">ورود</a>
-                <span class="text-gray-500">|</span>
-                <a href="{{ route('register') }}" class="hover:text-white transition">ثبت‌نام</a>
-                @endauth
-            </div>
-        </div>
-    </div>
-
     {{-- Main Navigation --}}
     <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" x-data="{ mobileMenu: false }">
         <div class="flex justify-between items-center h-16">
             {{-- Logo --}}
             <div class="flex-shrink-0">
                 <a href="{{ route('home') }}" class="flex items-center gap-2">
-                    <span class="text-xl font-bold text-gray-800 hidden sm:block">پلتفرم چن تا؟</span>
+                    <span class="text-xl font-bold text-gray-800 hidden sm:block">{{ config('app.name') }}</span>
                     <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
                         <span class="text-white font-bold text-lg">B2B</span>
                     </div>
@@ -91,25 +71,25 @@
             </div>
 
             {{-- Desktop Menu --}}
-            <div class="hidden md:flex items-center gap-6">
+            <div class="hidden lg:flex items-center gap-1">
                 <a href="{{ route('home') }}"
-                   class="text-gray-700 hover:text-indigo-600 font-medium transition {{ request()->routeIs('home') ? 'text-indigo-600 border-b-2 border-indigo-600 pb-1' : '' }}">
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center {{ request()->routeIs('home') ? 'text-indigo-600 bg-indigo-50' : '' }}">
                     صفحه اصلی
                 </a>
                 <a href="{{ route('products.index') }}"
-                   class="text-gray-700 hover:text-indigo-600 font-medium transition {{ request()->routeIs('products.*') ? 'text-indigo-600 border-b-2 border-indigo-600 pb-1' : '' }}">
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center {{ request()->routeIs('products.*') ? 'text-indigo-600 bg-indigo-50' : '' }}">
                     محصولات
                 </a>
                 <a href="{{ route('categories.index') }}"
-                   class="text-gray-700 hover:text-indigo-600 font-medium transition {{ request()->routeIs('categories.*') ? 'text-indigo-600 border-b-2 border-indigo-600 pb-1' : '' }}">
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center {{ request()->routeIs('categories.*') ? 'text-indigo-600 bg-indigo-50' : '' }}">
                     دسته‌بندی‌ها
                 </a>
                 <a href="{{ route('about') }}"
-                   class="text-gray-700 hover:text-indigo-600 font-medium transition {{ request()->routeIs('about') ? 'text-indigo-600 border-b-2 border-indigo-600 pb-1' : '' }}">
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center {{ request()->routeIs('about') ? 'text-indigo-600 bg-indigo-50' : '' }}">
                     درباره ما
                 </a>
                 <a href="{{ route('contact') }}"
-                   class="text-gray-700 hover:text-indigo-600 font-medium transition {{ request()->routeIs('contact') ? 'text-indigo-600 border-b-2 border-indigo-600 pb-1' : '' }}">
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center {{ request()->routeIs('contact') ? 'text-indigo-600 bg-indigo-50' : '' }}">
                     تماس با ما
                 </a>
             </div>
@@ -121,21 +101,54 @@
                            name="q"
                            value="{{ request('q') }}"
                            placeholder="جستجوی محصول، برند، دسته‌بندی..."
-                           class="w-full rounded-full border-gray-300 bg-gray-100 pr-4 pl-10 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition">
-                    <button type="submit" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           class="w-full rounded-full border-gray-300 bg-gray-100 pr-4 pl-10 py-2.5 text-sm focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition min-h-[44px]"
+                           aria-label="جستجوی محصول، برند، دسته‌بندی">
+                    <button type="submit" 
+                            class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full hover:bg-gray-200 transition"
+                            aria-label="جستجو">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                     </button>
                 </form>
             </div>
 
+            {{-- Auth Buttons --}}
+            <div class="hidden lg:flex items-center gap-1">
+                @auth
+                <a href="{{ route('dashboard') }}" 
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center">
+                    پنل کاربری
+                </a>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button type="submit" 
+                            class="px-3 py-2 rounded-md text-sm text-red-600 hover:text-red-700 hover:bg-red-50 font-medium transition min-h-[40px]">
+                        خروج
+                    </button>
+                </form>
+                @else
+                <a href="{{ route('login') }}" 
+                   class="px-3 py-2 rounded-md text-sm text-gray-700 hover:text-indigo-600 hover:bg-gray-100 font-medium transition min-h-[40px] flex items-center">
+                    ورود
+                </a>
+                <a href="{{ route('register') }}" 
+                   class="px-4 py-2 rounded-md text-sm bg-indigo-600 text-white hover:bg-indigo-700 font-medium transition min-h-[40px] flex items-center">
+                    ثبت‌نام
+                </a>
+                @endauth
+            </div>
+
             {{-- Mobile menu button --}}
-            <button @click="mobileMenu = !mobileMenu" class="md:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100">
-                <svg x-show="!mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button @click="mobileMenu = !mobileMenu" 
+                    class="lg:hidden p-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition min-w-[48px] min-h-[48px] flex items-center justify-center"
+                    aria-label="منوی موبایل"
+                    :aria-expanded="mobileMenu"
+                    aria-controls="mobile-menu">
+                <svg x-show="!mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
-                <svg x-show="mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;">
+                <svg x-show="mobileMenu" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display: none;" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
@@ -143,24 +156,83 @@
 
         {{-- Mobile Menu --}}
         <div x-show="mobileMenu"
+             id="mobile-menu"
              x-transition:enter="transition ease-out duration-200"
              x-transition:enter-start="opacity-0 -translate-y-2"
              x-transition:enter-end="opacity-100 translate-y-0"
              x-transition:leave="transition ease-in duration-150"
              x-transition:leave-start="opacity-100 translate-y-0"
              x-transition:leave-end="opacity-0 -translate-y-2"
-             class="md:hidden pb-4 border-t border-gray-200 mt-2 pt-3"
+             class="lg:hidden pb-4 border-t border-gray-200 mt-2 pt-3"
              style="display: none;">
-            <div class="flex flex-col gap-2">
-                <a href="{{ route('home') }}" class="px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">صفحه اصلی</a>
-                <a href="{{ route('products.index') }}" class="px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">محصولات</a>
-                <a href="{{ route('categories.index') }}" class="px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">دسته‌بندی‌ها</a>
-                <a href="{{ route('about') }}" class="px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">درباره ما</a>
-                <a href="{{ route('contact') }}" class="px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">تماس با ما</a>
+            <div class="flex flex-col gap-1">
+                <a href="{{ route('home') }}" 
+                   class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                    صفحه اصلی
+                </a>
+                <a href="{{ route('products.index') }}" 
+                   class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                    محصولات
+                </a>
+                <a href="{{ route('categories.index') }}" 
+                   class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                    دسته‌بندی‌ها
+                </a>
+                <a href="{{ route('about') }}" 
+                   class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                    درباره ما
+                </a>
+                <a href="{{ route('contact') }}" 
+                   class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                    تماس با ما
+                </a>
+                
+                {{-- Auth Buttons in Mobile Menu --}}
+                <div class="border-t border-gray-200 mt-2 pt-2">
+                    @auth
+                    <a href="{{ route('dashboard') }}" 
+                       class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                        پنل کاربری
+                    </a>
+                    <form method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit" 
+                                class="w-full px-4 py-3 rounded-md text-red-600 hover:bg-red-50 transition min-h-[48px] flex items-center">
+                            خروج
+                        </button>
+                    </form>
+                    @else
+                    <a href="{{ route('login') }}" 
+                       class="px-4 py-3 rounded-md text-gray-700 hover:bg-gray-100 hover:text-indigo-600 transition min-h-[48px] flex items-center">
+                        ورود
+                    </a>
+                    <a href="{{ route('register') }}" 
+                       class="px-4 py-3 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition min-h-[48px] flex items-center mt-1">
+                        ثبت‌نام
+                    </a>
+                    @endauth
+                </div>
             </div>
-            {{-- Mobile Search --}}
-            <form action="{{ route('search') }}" method="GET" class="mt-3 px-3">
-                <input type="text" name="q" placeholder="جستجو..." class="w-full rounded-lg border-gray-300 text-sm">
+            
+        </div>
+
+        {{-- Persistent search for mobile and tablet --}}
+        <div class="border-t border-gray-100 px-1 py-3 lg:hidden">
+            <form action="{{ route('products.index') }}" method="GET" role="search" class="relative mx-auto w-full max-w-3xl">
+                <input type="text"
+                       name="q"
+                       value="{{ request('q') }}"
+                       placeholder="جستجوی محصول، برند یا دسته‌بندی..."
+                       enterkeyhint="search"
+                       class="min-h-12 w-full rounded-xl border-gray-300 bg-gray-50 py-3 pr-4 pl-14 text-sm shadow-sm transition focus:border-indigo-500 focus:bg-white focus:ring-indigo-500"
+                       aria-label="جستجوی محصول، برند یا دسته‌بندی">
+                <button type="submit"
+                        class="absolute left-1 top-1/2 flex min-h-10 min-w-10 -translate-y-1/2 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        aria-label="جستجو در محصولات">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </button>
             </form>
         </div>
     </nav>
@@ -183,7 +255,9 @@
      class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
     <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
         <span>✅ {{ session('success') }}</span>
-        <button @click="show = false" class="text-green-500 hover:text-green-700">&times;</button>
+        <button @click="show = false" 
+                class="text-green-500 hover:text-green-700" 
+                aria-label="بستن پیام موفقیت">&times;</button>
     </div>
 </div>
 @endif
@@ -193,7 +267,9 @@
      class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
     <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
         <span>❌ {{ session('error') }}</span>
-        <button @click="show = false" class="text-red-500 hover:text-red-700">&times;</button>
+        <button @click="show = false" 
+                class="text-red-500 hover:text-red-700"
+                aria-label="بستن پیام خطا">&times;</button>
     </div>
 </div>
 @endif
@@ -205,7 +281,7 @@
 </main>
 
 {{-- Footer --}}
-<footer class="bg-gray-800 text-gray-300 mt-16">
+<footer class="bg-gray-800 text-gray-100 mt-16">
 
     {{-- Main Footer --}}
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -216,7 +292,7 @@
                     <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
                         <span class="text-white font-bold text-lg">B2B</span>
                     </div>
-                    <span class="text-xl font-bold text-white">مارکت‌پلیس</span>
+                    <span class="text-xl font-bold text-white">{{ config('app.name') }}</span>
                 </div>
                 <p class="text-sm text-gray-400 leading-7">
                     بزرگ‌ترین پلتفرم تجارت عمده ایران.
@@ -252,10 +328,8 @@
                 <h4 class="text-white font-semibold mb-4">تماس با ما</h4>
                 <ul class="space-y-3 text-sm">
                     <li class="flex items-center gap-2">
-                        <svg class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                        </svg>
-                        <span>021-55915347</span>
+<li class="flex items-center gap-3"><span>📱</span> 09355921203</li>
+                        
                     </li>
                     <li class="flex items-center gap-2">
                         <svg class="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -290,14 +364,14 @@
                 </div>
 
             </div>
-            <a referrerpolicy='origin' target='_blank' href='https://trustseal.enamad.ir/?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t'><img referrerpolicy='origin' src='https://trustseal.enamad.ir/logo.aspx?id=743142&Code=uPvXcmevQLu4ywWugwOlGjxP6uDphi3t' alt='' style='cursor:pointer' code='uPvXcmevQLu4ywWugwOlGjxP6uDphi3t'></a>
+
         </div>
     </div>
 
     {{-- Copyright Bar --}}
     <div class="border-t border-gray-700">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-500">
-            <span>© {{ date('Y') }} مارکت‌پلیس B2B — تمامی حقوق محفوظ است.</span>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-300">
+            <span>© {{ date('Y') }} {{ config('app.name') }} — تمامی حقوق محفوظ است.</span>
             <span class="mt-2 sm:mt-0">توسعه با ❤️ در ایران</span>
         </div>
     </div>
@@ -315,13 +389,15 @@
         x-on:scroll.window="show = window.scrollY > 500"
         x-show="show"
         x-transition
-        @click="window.scrollTo({ top: 0, behavior: 'smooth' })"
-        class="fixed bottom-6 left-6 z-50 w-12 h-12 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-indigo-700 transition"
-        style="display: none;">
-    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        @click="window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })"
+        class="fixed bottom-6 left-6 z-50 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-indigo-700 transition"
+        style="display: none;"
+        aria-label="بازگشت به بالای صفحه">
+    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
     </svg>
-
 </button>
+
 </body>
 </html>
+

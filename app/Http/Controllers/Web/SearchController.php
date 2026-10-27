@@ -19,6 +19,7 @@ class SearchController extends Controller
         if (strlen($query) >= 2) {
             // Search products
             $products = Product::query()
+                ->pricedFirst()
                 ->where('is_active', true)
                 ->where('status', 'active')
                 ->where(function ($q) use ($query) {

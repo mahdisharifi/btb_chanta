@@ -11,6 +11,18 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
 
+/**
+ * ⚠️ DEPRECATED - این کنترلر دیگر استفاده نمی‌شود
+ * 
+ * سیستم قیمت‌گذاری به ساختار جدید منتقل شده است:
+ * - ProductSupplier (product_suppliers)
+ * - ProductSupplierPrice (product_supplier_prices)
+ * 
+ * برای مدیریت قیمت‌ها از Livewire Components استفاده شود:
+ * - App\Livewire\Supplier\FastPricing\*
+ * 
+ * @deprecated از تاریخ 2026-08-25
+ */
 class PriceController extends Controller
 {
     private function getSupplier(): Supplier

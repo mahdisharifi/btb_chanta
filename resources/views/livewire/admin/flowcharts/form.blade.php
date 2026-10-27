@@ -47,8 +47,9 @@
                 return;
             }
             try {
+                const mermaid = await window.loadMermaid();
                 const id = 'mermaid-svg-' + Math.round(Math.random() * 100000);
-                const { svg } = await window.mermaid.render(id, value);
+                const { svg } = await mermaid.render(id, value);
                 this.$refs.container.innerHTML = svg;
             } catch (error) {
                 console.warn('خطای ساختار Mermaid:', error);
@@ -120,8 +121,9 @@
 }
     }"
              x-init="
-        window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
-        setTimeout(() => { if(code) renderChart(code); }, 100);
+        window.loadMermaid().then(() => {
+            setTimeout(() => { if(code) renderChart(code); }, 100);
+        });
         $watch('code', value => renderChart(value));
     ">
 

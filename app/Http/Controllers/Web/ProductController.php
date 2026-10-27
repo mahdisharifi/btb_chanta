@@ -58,7 +58,7 @@ class ProductController extends Controller
     /** روابط مشترک برای Eager Loading در لیست */
     private const INDEX_RELATIONS = [
         'category:id,name,slug,icon,parent_id',
-        'supplier:id,company_name,brand_name,logo_path,is_verified',
+        'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
     ];
 
     // ══════════════════════════════════════════════════════════
@@ -111,7 +111,146 @@ class ProductController extends Controller
         ], $sidebarData));
     }
 
+    // ══════════════════════════════════════════════════════════
+    //  CATEGORY COUNTS — endpoint برای فیلترهای وابسته
+    // ══════════════════════════════════════════════════════════
 
+    /**
+     * تعداد محصولات هر دسته‌بندی با در نظر گرفتن فیلترهای فعال
+     * URL: GET /products/filters/category-counts?supplier_id=X&...
+     * Response: JSON { counts: { "category_id": count }, total: N }
+     */
+    public function getCategoryCounts(Request $request): \Illuminate\Http\JsonResponse
+    {
+        // ساخت کوئری با همان فیلترهای فعال (بجز category — تا همه دسته‌ها نمایش داده شوند)
+        $query = $this->buildBaseProductQuery();
+        $query = $this->applySupplierFilter($query, $request);
+        $query = $this->applyPriceFilter($query, $request);
+        $query = $this->applyStockFilter($query, $request);
+        $query = $this->applyFeaturedFilter($query, $request);
+        $query = $this->applySearch($query, $request);
+
+        // تعداد مستقیم هر category_id
+        $directCounts = (clone $query)
+            ->select('products.category_id', DB::raw('COUNT(*) as count'))
+            ->groupBy('products.category_id')
+            ->pluck('count', 'category_id')
+            ->map(fn($v) => (int) $v)
+            ->toArray();
+
+        // لود همه دسته‌بندی‌های فعال برای ساختن درخت
+        $allCategories = Category::query()
+            ->where('is_active', true)
+            ->select('id', 'parent_id')
+            ->get();
+
+        // شروع با تعداد مستقیم
+        $aggregated = [];
+        foreach ($allCategories as $cat) {
+            $aggregated[$cat->id] = $directCounts[$cat->id] ?? 0;
+        }
+
+        // تجمیع از برگ‌ها به ریشه — هر فرزند تعداد خود را به والد اضافه می‌کند
+        // برای درستی، باید از عمیق‌ترین سطح شروع کنیم
+        // ابتدا map والد هر node
+        $parentMap = $allCategories->pluck('parent_id', 'id')->toArray();
+
+        foreach ($allCategories as $cat) {
+            if (!$cat->parent_id) continue;
+            $childCount  = $aggregated[$cat->id]  ?? 0;
+            $parentId    = $cat->parent_id;
+
+            // حرکت به بالا در درخت
+            while ($parentId && isset($aggregated[$parentId])) {
+                $aggregated[$parentId] += $childCount;
+                $parentId = $parentMap[$parentId] ?? null;
+            }
+        }
+
+        // فقط تعداد مستقیم را در پاسخ بگذار (UI خودش تجمیع می‌کند با درخت server-side)
+        // ولی aggregated برای hide/show کافی‌تر است
+        return response()->json([
+            'counts' => $aggregated,
+            'total'  => array_sum($directCounts),
+        ]);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  FILTERED SUPPLIERS — endpoint برای فیلترهای وابسته
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * لیست تأمین‌کنندگان با تعداد محصول، وابسته به فیلترهای فعال
+     * URL: GET /products/filters/suppliers?category=slug&...
+     * Response: JSON { suppliers: [{id, name, count},...] }
+     */
+    public function getFilteredSuppliers(Request $request): \Illuminate\Http\JsonResponse
+    {
+        if (!in_array($this->resolveUserRole(), ['super_admin', 'supplier', 'retailer_premium'])) {
+            return response()->json(['suppliers' => []]);
+        }
+
+        // کوئری پایه با فیلترهای فعال (بجز supplier — تا همه supplierها نمایش داده شوند)
+        $baseQuery = $this->buildBaseProductQuery();
+        $baseQuery = $this->applyCategoryFilter($baseQuery, $request);
+        $baseQuery = $this->applyPriceFilter($baseQuery, $request);
+        $baseQuery = $this->applyStockFilter($baseQuery, $request);
+        $baseQuery = $this->applyFeaturedFilter($baseQuery, $request);
+        $baseQuery = $this->applySearch($baseQuery, $request);
+
+        // supplier_id های محصولات فیلترشده (مستقیم)
+        $directSupplierCounts = (clone $baseQuery)
+            ->select('products.supplier_id', DB::raw('COUNT(DISTINCT products.id) as cnt'))
+            ->whereNotNull('products.supplier_id')
+            ->groupBy('products.supplier_id')
+            ->pluck('cnt', 'supplier_id')
+            ->map(fn($v) => (int) $v)
+            ->toArray();
+
+        // supplier_id های از طریق pivot
+        $pivotSupplierCounts = (clone $baseQuery)
+            ->join('product_supplier', 'products.id', '=', 'product_supplier.product_id')
+            ->where('product_supplier.is_active', true)
+            ->select('product_supplier.supplier_id', DB::raw('COUNT(DISTINCT products.id) as cnt'))
+            ->groupBy('product_supplier.supplier_id')
+            ->pluck('cnt', 'supplier_id')
+            ->map(fn($v) => (int) $v)
+            ->toArray();
+
+        // ادغام تعداد (union)
+        $mergedCounts = $directSupplierCounts;
+        foreach ($pivotSupplierCounts as $sid => $cnt) {
+            $mergedCounts[$sid] = ($mergedCounts[$sid] ?? 0) + $cnt;
+            // از double-counting محصولاتی که هم supplier_id دارند هم pivot جلوگیری می‌کنیم
+            // با MAX به جای جمع
+            $mergedCounts[$sid] = max($directSupplierCounts[$sid] ?? 0, $pivotSupplierCounts[$sid] ?? 0);
+        }
+
+        if (empty($mergedCounts)) {
+            return response()->json(['suppliers' => []]);
+        }
+
+        $supplierIds = array_keys($mergedCounts);
+
+        $suppliers = Supplier::query()
+            ->select('id', 'company_name', 'brand_name', 'is_verified')
+            ->where('is_active', true)
+            ->whereIn('id', $supplierIds)
+            ->orderBy('company_name')
+            ->get()
+            ->map(fn($s) => [
+                'id'       => $s->id,
+                'name'     => $s->brand_name ?: $s->company_name,
+                'verified' => $s->is_verified,
+                'count'    => $mergedCounts[$s->id] ?? 0,
+            ]);
+
+        return response()->json(['suppliers' => $suppliers]);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  PRODUCT DETAIL
+    // ══════════════════════════════════════════════════════════
 
     /**
      * صفحه جزئیات محصول - بهینه‌شده
@@ -122,7 +261,7 @@ class ProductController extends Controller
      * - استفاده از select برای محدود کردن ستون‌ها
      * - بهینه‌سازی محاسبات قیمت
      */
-    public function show(Product $product): \Illuminate\View\View
+    public function show(Product $product): \Illuminate\Http\Response
     {
         // ─── 1. اطمینان از فعال بودن محصول ───
         abort_unless(
@@ -143,56 +282,68 @@ class ProductController extends Controller
                     'parent:id,name,slug,parent_id'
                 ]
             ],
-            'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
+            'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,logo_versions,phone,mobile,email,website,city,province,is_verified,is_active',
             // 👇 مشخصات فنی با ساختار EAV اضافه شد 👇
             'attributeValues.attribute',
             // 👇 فیلدهای file_type و alt_text به این بخش اضافه شدند 👇
-            'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text'])
+            'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text', 'versions', 'base_name', 'is_seo_image'])
                 ->orderByDesc('is_primary')
                 ->orderBy('sort_order'),
-            'prices' => fn($q) => $q->select(['id', 'product_id', 'price', 'price_type', 'min_quantity', 'is_active', 'valid_from', 'valid_until'])
-                ->where('is_active', true)
-                ->where(function ($sub) {
-                    $sub->whereNull('valid_until')
-                        ->orWhere('valid_until', '>=', now());
-                })
-                ->where(function ($sub) {
-                    $sub->whereNull('valid_from')
-                        ->orWhere('valid_from', '<=', now());
-                })
-                ->orderBy('price', 'asc'),
+            // 🔴 DEPRECATED: ساختار قدیمی prices حذف شد - اکنون از productSuppliers.prices استفاده می‌شود
             'retailPrices' => fn($q) => $q->select(['id', 'product_id', 'user_id', 'retail_price', 'is_published'])
                 ->where('is_published', true)
                 ->with('user:id,name')
                 ->orderBy('retail_price', 'asc'),
         ]);
 
-        // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده ───
+        // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده با ساختار ماتریسی ───
         $productSuppliers = $product->productSuppliers()
             ->active()
-            ->select(['id', 'product_id', 'supplier_id', 'is_primary', 'sort_order'])
+            ->select([
+                'id', 'product_id', 'supplier_id', 'is_primary', 'sort_order',
+                // ✅ فیلدهای گارانتی
+                'has_warranty', 'warranty_type', 'warranty_value', 'warranty_provider',
+                'warranty_coverage_type', 'warranty_type_coverage', 'warranty_duration_days',
+                // ✅ فیلدهای تیراژها
+                'tier_enabled', 'tier_percentages', 'auto_calculate_tiers'
+            ])
             ->with([
-                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,phone,mobile,email,website,city,province,is_verified,is_active',
-                'activePrices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type', 'min_quantity', 'is_active', 'valid_from', 'valid_until'])
-                    ->where('is_active', true)
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
-                    })
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_from')
-                            ->orWhere('valid_from', '<=', now());
-                    })
+                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,logo_versions,phone,mobile,email,website,city,province,is_verified,is_active,slug',
+                // بارگذاری قیمت‌های ماتریسی جدید با relations (با fallback به ساختار قدیمی)
+                'prices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type_id', 'tier_index', 'check_period_id', 'is_active', 'valid_from', 'valid_until'])
+                    ->activeAndValid()
+                    ->with([
+                        'priceType:id,name,code',
+                        'checkPeriod:id,name,days,is_active'
+                    ])
+                    ->orderBy('tier_index', 'asc')
                     ->orderBy('price', 'asc'),
             ])
             ->orderByDesc('is_primary')
             ->orderBy('sort_order')
             ->get();
 
+        // ✅ فیلتر کردن تامین‌کنندگانی که حداقل یک قیمت فعال دارند
+        $productSuppliers = $productSuppliers->filter(function($ps) {
+            return $ps->prices->isNotEmpty();
+        })->values();
+
+        // ✅ سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
+        if ($productSuppliers->count() > 1) {
+            $productSuppliers = $this->sortSuppliersByBestPrices($productSuppliers, $product);
+        }
+
+        // ✅ مهم: قرار دادن productSuppliers لود شده در product برای استفاده در متدهای دیگر
+        $product->setRelation('productSuppliers', $productSuppliers);
+
         $hasMultipleSuppliers = $productSuppliers->count() > 1;
 
-        // ─── 6. محاسبه قیمت‌های کلی - بهینه‌شده ───
-        $allSupplierPrices = $productSuppliers->flatMap(fn($ps) => $ps->activePrices);
+        // بررسی اینکه آیا ساختار ماتریسی موجود است یا خیر
+        // (اگر هر قیمتی وجود داشته باشد، ماتریس نمایش داده می‌شود)
+        $hasMatrixPricing = $productSuppliers->flatMap(fn($ps) => $ps->prices)->isNotEmpty();
+
+        // ─── 6. محاسبه قیمت‌های کلی - بهینه‌شده با ساختار ماتریسی ───
+        $allSupplierPrices = $productSuppliers->flatMap(fn($ps) => $ps->prices);
         $usePivotPrices = $allSupplierPrices->isNotEmpty();
 
         if ($usePivotPrices) {
@@ -200,9 +351,17 @@ class ProductController extends Controller
             $overallHighestPrice = $allSupplierPrices->max('price');
             $directPrices = collect();
         } else {
-            $directPrices = $product->prices;
-            $overallLowestPrice = $directPrices->min('price');
-            $overallHighestPrice = $directPrices->max('price');
+            // ✅ جمع‌آوری قیمت‌ها از productSuppliers (ساختار جدید)
+            $directPrices = collect();
+            if ($product->relationLoaded('productSuppliers')) {
+                foreach ($product->productSuppliers as $ps) {
+                    if ($ps->relationLoaded('prices')) {
+                        $directPrices = $directPrices->merge($ps->prices->where('is_active', true));
+                    }
+                }
+            }
+            $overallLowestPrice = $directPrices->isNotEmpty() ? $directPrices->min('price') : null;
+            $overallHighestPrice = $directPrices->isNotEmpty() ? $directPrices->max('price') : null;
         }
 
         // ─── 8. آمار مقایسه تأمین‌کنندگان ───
@@ -261,10 +420,11 @@ class ProductController extends Controller
         $seo = $this->buildSeoData($product, $breadcrumbs);
 
         // ─── 15. ارسال به View ───
-        return view('pages.products.show', [
+        return response()->view('pages.products.show', [
             'product'               => $product,
             'productSuppliers'      => $productSuppliers,
             'hasMultipleSuppliers'  => $hasMultipleSuppliers,
+            'hasMatrixPricing'      => $hasMatrixPricing,
             'overallLowestPrice'    => $overallLowestPrice,
             'overallHighestPrice'   => $overallHighestPrice,
             'retailPrices'          => $retailPrices,
@@ -290,7 +450,9 @@ class ProductController extends Controller
             'myRetailPrice'         => $roleData['myRetailPrice'] ?? null,
             'profitMargin'          => $roleData['profitMargin'] ?? null,
             'canSetRetailPrice'     => $roleData['canSetRetailPrice'] ?? false,
-        ]);
+        ])
+        ->header('Cache-Control', 'max-age=1800, public, must-revalidate')
+        ->header('Expires', now()->addMinutes(30)->toRfc7231String());
     }
 
 
@@ -427,33 +589,35 @@ class ProductController extends Controller
             ->with([
                 'category:id,name,slug,icon,parent_id',
 
-                'supplier:id,company_name,brand_name,logo_path,is_verified',
+                'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'file_type',
                         'alt_text', 'sort_order', 'is_primary',
+                        'versions', 'base_name', // 👈 اضافه شد برای getVersionUrl()
                     ])
                         ->where('file_type', 'image')
                         ->orderByDesc('is_primary')
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                'prices' => function ($q) {
-                    $q->select([
-                        'id', 'product_id', 'price_type', 'price',
-                        'min_quantity', 'is_active', 'valid_from', 'valid_until',
-                    ])
-                        ->where('is_active', true)
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices
+                'productSuppliers' => function ($q) {
+                    $q->where('is_active', true);
+                },
+                'productSuppliers.prices' => function ($q) {
+                    $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
+                                ->orWhere('valid_until', '>=', now()->startOfDay());
                         })
                         ->where(function ($sub) {
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
-                        })
-                        ->orderBy('price', 'asc');
+                        });
                 },
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'user_id', 'retail_price', 'is_published',
@@ -478,7 +642,8 @@ class ProductController extends Controller
             'category'     => 'nullable|string|max:100',
             'min_price'    => 'nullable|numeric|min:0',
             'max_price'    => 'nullable|numeric|min:0',
-            'supplier'     => 'nullable|string|max:100',
+            'supplier_id'   => 'nullable|array',
+            'supplier_id.*' => 'integer|exists:suppliers,id',
             'in_stock'     => 'nullable|in:0,1',
             'featured'     => 'nullable|in:0,1',
             'sort'         => 'nullable|string|in:' . implode(',', self::ALLOWED_SORT_OPTIONS),
@@ -554,6 +719,8 @@ class ProductController extends Controller
 
     /**
      * فیلتر بر اساس بازه قیمت
+     * فقط کاربرانی که به قیمت دسترسی دارند می‌توانند این فیلتر را اعمال کنند.
+     * قیمت‌ها در دیتابیس به تومان هستند.
      */
     private function applyPriceFilter(Builder $query, Request $request): Builder
     {
@@ -561,67 +728,86 @@ class ProductController extends Controller
             return $query;
         }
 
-        $minPrice = $request->filled('min_price')
-            ? (int) ($request->min_price * 10)
-            : null;
-
-        $maxPrice = $request->filled('max_price')
-            ? (int) ($request->max_price * 10)
-            : null;
-
-        $userRole = $this->resolveUserRole();
-
-        if ($userRole === 'retailer_premium') {
-            $query->whereHas('prices', function ($priceQuery) use ($minPrice, $maxPrice) {
-                $priceQuery->where('is_active', true)
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
-                    });
-
-                if ($minPrice !== null) {
-                    $priceQuery->where('price', '>=', $minPrice);
-                }
-                if ($maxPrice !== null) {
-                    $priceQuery->where('price', '<=', $maxPrice);
-                }
-            });
-        } else {
-            $query->whereHas('retailPrices', function ($priceQuery) use ($minPrice, $maxPrice) {
-                $priceQuery->where('is_published', true);
-
-                if ($minPrice !== null) {
-                    $priceQuery->where('retail_price', '>=', $minPrice);
-                }
-                if ($maxPrice !== null) {
-                    $priceQuery->where('retail_price', '<=', $maxPrice);
-                }
-            });
+        // فقط کاربرانی که به قیمت دسترسی دارند می‌توانند فیلتر کنند
+        if (!$this->userCanSeePrice()) {
+            return $query;
         }
+
+        $minPrice = $request->filled('min_price') ? (int) $request->min_price : null;
+        $maxPrice = $request->filled('max_price') ? (int) $request->max_price : null;
+
+        $query->whereHas('prices', function ($priceQuery) use ($minPrice, $maxPrice) {
+            $priceQuery->where('is_active', true)
+                ->where(function ($sub) {
+                    $sub->whereNull('valid_until')
+                        ->orWhere('valid_until', '>=', now()->startOfDay());
+                });
+
+            if ($minPrice !== null) {
+                $priceQuery->where('price', '>=', $minPrice);
+            }
+            if ($maxPrice !== null) {
+                $priceQuery->where('price', '<=', $maxPrice);
+            }
+        });
 
         return $query;
     }
 
     /**
-     * فیلتر بر اساس تأمین‌کننده
+     * آیا کاربر جاری دسترسی به مشاهده قیمت دارد؟
+     * 
+     * ✅ بازنویسی شده با استفاده از PriceVisibilityService
+     */
+    private function userCanSeePrice(): bool
+    {
+        $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+        return $priceVisibilityService->canFilterByPrice(Auth::user());
+    }
+
+    /**
+     * فیلتر بر اساس تأمین‌کننده (multi-select)
+     * محصول می‌تواند از طریق supplier_id مستقیم یا جدول pivot product_supplier به تأمین‌کننده وصل باشد.
      */
     private function applySupplierFilter(Builder $query, Request $request): Builder
     {
-        if (!$request->filled('supplier')) {
+        $supplierIds = $this->resolveSupplierIds($request);
+
+        if (empty($supplierIds)) {
             return $query;
         }
 
-        $supplierSlug = $request->supplier;
-
-        $query->whereHas('supplier', function ($supplierQuery) use ($supplierSlug) {
-            $supplierQuery->where('is_active', true)
-                ->where(function ($sub) use ($supplierSlug) {
-                    $sub->where('brand_name', 'LIKE', "%{$supplierSlug}%")
-                        ->orWhere('company_name', 'LIKE', "%{$supplierSlug}%");
-                });
+        $query->where(function ($q) use ($supplierIds) {
+            $q->whereIn('products.supplier_id', $supplierIds)
+              ->orWhereExists(function ($sub) use ($supplierIds) {
+                  $sub->select(DB::raw(1))
+                      ->from('product_supplier')
+                      ->whereColumn('product_supplier.product_id', 'products.id')
+                      ->whereIn('product_supplier.supplier_id', $supplierIds)
+                      ->where('product_supplier.is_active', true);
+              });
         });
 
         return $query;
+    }
+
+    /**
+     * خواندن و نرمال‌سازی supplier_id از request (آرایه یا scalar)
+     */
+    private function resolveSupplierIds(Request $request): array
+    {
+        $raw = $request->input('supplier_id');
+
+        if (empty($raw)) {
+            return [];
+        }
+
+        return collect(is_array($raw) ? $raw : [$raw])
+            ->map(fn($id) => (int) $id)
+            ->filter(fn($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -639,7 +825,7 @@ class ProductController extends Controller
                     $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
+                                ->orWhere('valid_until', '>=', now()->startOfDay());
                         });
                 });
         }
@@ -723,6 +909,8 @@ class ProductController extends Controller
      */
     private function applySorting(Builder $query, Request $request): Builder
     {
+        $query->pricedFirst();
+
         $sort = $request->get('sort', 'latest');
 
         if (!in_array($sort, self::ALLOWED_SORT_OPTIONS)) {
@@ -757,7 +945,7 @@ class ProductController extends Controller
                     ->where('product_prices.is_active', true)
                     ->where(function ($sub) {
                         $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
+                            ->orWhere('valid_until', '>=', now()->startOfDay());
                     })
                     ->limit(1),
             ]);
@@ -780,6 +968,52 @@ class ProductController extends Controller
     // ══════════════════════════════════════════════════════════
     //  PRIVATE: PRODUCT DETAIL HELPERS
     // ══════════════════════════════════════════════════════════
+
+    /**
+     * سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
+     * 
+     * @param \Illuminate\Support\Collection $productSuppliers
+     * @param Product $product
+     * @return \Illuminate\Support\Collection
+     */
+    private function sortSuppliersByBestPrices($productSuppliers, $product)
+    {
+        // محاسبه تعداد قیمت‌های فعال برای هر supplier
+        $supplierScores = $productSuppliers->map(function($ps) use ($product) {
+            // ✅ tier_enabled از model به صورت array برمی‌گردد (cast شده)
+            $tierEnabled = $ps->tier_enabled ?? [];
+            $activePrices = 0;
+            
+            // شمارش قیمت‌های فعال
+            foreach ($ps->prices as $price) {
+                // بررسی فعال بودن تیراژ
+                if (!empty($tierEnabled) && !($tierEnabled[$price->tier_index] ?? true)) {
+                    continue; // تیراژ غیرفعال
+                }
+                
+                // شمارش قیمت فعال
+                $activePrices++;
+            }
+            
+            return [
+                'ps' => $ps,
+                'score' => $activePrices,
+                'is_primary' => $ps->is_primary ? 1 : 0,
+            ];
+        });
+        
+        // سورت بر اساس:
+        // 1. is_primary (تامین‌کننده اصلی اول)
+        // 2. تعداد قیمت‌های فعال (بیشترین اول)
+        // 3. sort_order (ترتیب دستی)
+        $sorted = $supplierScores->sortBy([
+            ['is_primary', 'desc'],
+            ['score', 'desc'],
+            ['ps.sort_order', 'asc'],
+        ])->pluck('ps');
+        
+        return $sorted->values();
+    }
 
     /**
      * افزایش شمارنده بازدید با Rate Limiting
@@ -830,14 +1064,24 @@ class ProductController extends Controller
 
     /**
      * تعیین داده‌های قابل مشاهده بر اساس نقش کاربر
+     * 
+     * ✅ بازنویسی شده با استفاده از PriceVisibilityService
+     * این متد حالا از سرویس یکپارچه استفاده می‌کند و دیگر hard-coded نیست
      */
     private function resolveVisibleDataByRole(Product $product, string $userRole): array
     {
+        // استفاده از Service برای دریافت دسترسی‌ها
+        $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+        $user = Auth::user();
+
+        // ✅ دریافت داده‌های اولیه از Service
+        $visibilityData = $priceVisibilityService->getVisibleDataForProduct($product, $user);
+
         $data = [
-            'showSupplierInfo'    => false,
-            'showWholesalePrices' => false,
-            'showRetailPrice'     => true,
-            'canSetRetailPrice'   => false,
+            'showSupplierInfo'    => $visibilityData['showSupplierInfo'],
+            'showWholesalePrices' => $visibilityData['showWholesalePrice'],
+            'showRetailPrice'     => $visibilityData['showRetailPrice'],
+            'canSetRetailPrice'   => $visibilityData['canSetRetailPrice'],
             'supplierInfo'        => null,
             'wholesalePrices'     => collect(),
             'retailPrice'         => null,
@@ -845,76 +1089,83 @@ class ProductController extends Controller
             'profitMargin'        => null,
         ];
 
-        // قیمت خرده‌فروشی (برای همه)
-        $lowestRetailPrice = $product->retailPrices
-            ->where('is_published', true)
-            ->sortBy('retail_price')
-            ->first();
+        // ─── قیمت خرده‌فروشی (برای کسانی که دسترسی دارند) ───
+        if ($data['showRetailPrice']) {
+            $lowestRetailPrice = $product->retailPrices
+                ->where('is_published', true)
+                ->sortBy('retail_price')
+                ->first();
 
-        $data['retailPrice'] = $lowestRetailPrice;
+            $data['retailPrice'] = $lowestRetailPrice;
+        }
 
-        switch ($userRole) {
-            case 'retailer_premium':
-                $data['showSupplierInfo']    = true;
-                $data['showWholesalePrices'] = true;
-                $data['canSetRetailPrice']   = true;
-
+        // ─── اطلاعات تامین‌کننده (اگر دسترسی دارد) ───
+        if ($data['showSupplierInfo'] && $product->supplier) {
+            // برای retailer_premium فقط اطلاعات عمومی
+            if ($userRole === 'retailer_premium') {
                 $data['supplierInfo'] = [
                     'company_name' => $product->supplier->company_name ?? null,
                     'brand_name'   => $product->supplier->brand_name ?? null,
-                    'logo_path'    => $product->supplier->logo_path ?? null,
+                    'logo_path'    => $product->supplier?->logoUrl('medium'),
                     'is_verified'  => $product->supplier->is_verified ?? false,
                     'phone'        => $product->supplier->phone ?? null,
                     'mobile'       => $product->supplier->mobile ?? null,
                     'email'        => $product->supplier->email ?? null,
                     'website'      => $product->supplier->website ?? null,
                 ];
+            } else {
+                // برای supplier و super_admin اطلاعات کامل
+                $data['supplierInfo'] = $product->supplier;
+            }
+        }
 
-                $data['wholesalePrices'] = $product->prices;
-
-                // قیمت خرده‌فروشی خود کاربر
-                $myPrice = $product->retailPrices
-                    ->where('user_id', Auth::id())
-                    ->first();
-
-                $data['myRetailPrice'] = $myPrice;
-
-                // محاسبه حاشیه سود
-                if ($myPrice && $product->prices->isNotEmpty()) {
-                    $lowestWholesale = $product->prices->min('price');
-                    if ($lowestWholesale > 0) {
-                        $profitAmount     = $myPrice->retail_price - $lowestWholesale;
-                        $profitPercentage = round(($profitAmount / $lowestWholesale) * 100, 1);
-
-                        $data['profitMargin'] = [
-                            'wholesale_price'   => $lowestWholesale,
-                            'retail_price'      => $myPrice->retail_price,
-                            'profit_amount'     => $profitAmount,
-                            'profit_percentage' => $profitPercentage,
-                        ];
+        // ─── قیمت‌های عمده (اگر دسترسی دارد) ───
+        if ($data['showWholesalePrices']) {
+            $wholesalePrices = collect();
+            
+            if ($product->relationLoaded('productSuppliers')) {
+                foreach ($product->productSuppliers as $ps) {
+                    if ($ps->relationLoaded('prices')) {
+                        $activePrices = $ps->prices->where('is_active', true);
+                        
+                        // ✅ فیلتر بر اساس انواع قیمت مجاز (اگر محدودیت وجود دارد)
+                        $filteredPrices = $priceVisibilityService->filterPricesByVisibility(
+                            $activePrices, 
+                            $user
+                        );
+                        
+                        $wholesalePrices = $wholesalePrices->merge($filteredPrices);
                     }
                 }
-                break;
+            }
+            
+            $data['wholesalePrices'] = $wholesalePrices;
+        }
 
-            case 'retailer_basic':
-                $data['canSetRetailPrice'] = true;
-                $data['myRetailPrice'] = $product->retailPrices
-                    ->where('user_id', Auth::id())
-                    ->first();
-                break;
+        // ─── قیمت خرده‌فروشی خود کاربر (برای کسانی که می‌توانند ثبت کنند) ───
+        if ($data['canSetRetailPrice'] && $user) {
+            $myPrice = $product->retailPrices
+                ->where('user_id', $user->id)
+                ->first();
 
-            case 'supplier':
-            case 'super_admin':
-                $data['showSupplierInfo']    = true;
-                $data['showWholesalePrices'] = true;
-                $data['supplierInfo']        = $product->supplier;
-                $data['wholesalePrices']     = $product->prices;
-                break;
+            $data['myRetailPrice'] = $myPrice;
 
-            case 'end_user':
-            case 'guest':
-            default:
-                break;
+            // ─── محاسبه حاشیه سود (فقط برای retailer_premium) ───
+            if ($userRole === 'retailer_premium' && $myPrice && $data['wholesalePrices']->isNotEmpty()) {
+                $lowestWholesale = $data['wholesalePrices']->min('price');
+                
+                if ($lowestWholesale > 0) {
+                    $profitAmount     = $myPrice->retail_price - $lowestWholesale;
+                    $profitPercentage = round(($profitAmount / $lowestWholesale) * 100, 1);
+
+                    $data['profitMargin'] = [
+                        'wholesale_price'   => $lowestWholesale,
+                        'retail_price'      => $myPrice->retail_price,
+                        'profit_amount'     => $profitAmount,
+                        'profit_percentage' => $profitPercentage,
+                    ];
+                }
+            }
         }
 
         return $data;
@@ -929,10 +1180,10 @@ class ProductController extends Controller
      */
     private function getRelatedProducts(Product $product, int $limit = 8): Collection
     {
-        $cacheKey = "web:product:{$product->id}:related:{$limit}";
+        $cacheKey = "web:product:{$product->id}:related:priced-first-v2:{$limit}";
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SHORT, function () use ($product, $limit) {
-            return Product::where('category_id', $product->category_id)
+            return Product::query()->pricedFirst()->where('category_id', $product->category_id)
                 ->where('id', '!=', $product->id)
                 ->where('is_active', true)
                 ->where('status', ProductStatus::ACTIVE)
@@ -945,6 +1196,19 @@ class ProductController extends Controller
                         ->orderBy('retail_price')
                         ->limit(1),
                     'category:id,name,slug',
+                    // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                    'productSuppliers' => fn($q) => $q->where('is_active', true),
+                    'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_until')
+                                ->orWhere('valid_until', '>=', now()->startOfDay());
+                        })
+                        ->where(function ($sub) {
+                            $sub->whereNull('valid_from')
+                                ->orWhere('valid_from', '<=', now());
+                        }),
+                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 ])
                 ->inRandomOrder()
                 ->limit($limit)
@@ -993,6 +1257,19 @@ class ProductController extends Controller
                     ->orderBy('retail_price')
                     ->limit(1),
                 'category:id,name,slug',
+                // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                'productSuppliers' => fn($q) => $q->where('is_active', true),
+                'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_until')
+                            ->orWhere('valid_until', '>=', now()->startOfDay());
+                    })
+                    ->where(function ($sub) {
+                        $sub->whereNull('valid_from')
+                            ->orWhere('valid_from', '<=', now());
+                    }),
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
             ])
             ->get()
             ->sortBy(function ($product) use ($recentIds) {
@@ -1011,54 +1288,51 @@ class ProductController extends Controller
     {
         $filterableAttributes = collect();
         $selectedAttributeFilters = $request->input('attributes', []);
+        $supplierIds = $this->resolveSupplierIds($request);
 
-        $categoriesTree = Cache::remember('categories.tree.active', now()->addHours(6), function () {
-            return Category::query()
-                ->whereNull('parent_id')
-                ->where('is_active', true)
-                // محاسبه تعداد محصولات مستقیم متصل به دسته‌های ریشه
-                ->withCount(['products as total_products_count' => function ($query) {
-                    $query->where('products.is_active', true)
-                        ->where('products.status', 'active');
-                }])
-                ->with([
-                    'children' => function ($query) {
-                        $query->where('is_active', true)
-                            ->orderBy('sort_order')
-                            // محاسبه تعداد محصولات مستقیم برای فرزندان
-                            ->withCount(['products as total_products_count' => function ($q) {
-                                $q->where('products.is_active', true)
-                                    ->where('products.status', 'active');
-                            }])
-                            ->with([
-                                'children' => function ($subQuery) {
-                                    $subQuery->where('is_active', true)
-                                        ->orderBy('sort_order')
-                                        // محاسبه تعداد محصولات برای فرزندان سطح سوم
-                                        ->withCount(['products as active_products_count' => function ($sq) {
-                                            $sq->where('products.is_active', true)
-                                                ->where('products.status', 'active');
-                                        }]);
-                                }
-                            ]);
-                    }
-                ])
-                ->orderBy('sort_order')
-                ->get();
-        });
+        // وقتی supplier انتخاب شده، categories بدون کش و با تعداد وابسته ساخته می‌شود
+        if (!empty($supplierIds)) {
+            $categoriesTree = $this->buildCategoriesTreeForSuppliers($supplierIds);
+        } else {
+            $categoriesTree = Cache::remember('categories.tree.active', now()->addHours(6), function () {
+                return $this->buildCategoriesTree();
+            });
+        }
 
         $priceRange = Cache::remember('products.price_range', now()->addHours(1), function () {
             return [
-                'min' => RetailPrice::query()->where('is_published', true)->min('retail_price') ?? 0,
-                'max' => RetailPrice::query()->where('is_published', true)->max('retail_price') ?? 0,
+                'min' => \App\Models\ProductPrice::query()->where('is_active', true)->min('price') ?? 0,
+                'max' => \App\Models\ProductPrice::query()->where('is_active', true)->max('price') ?? 0,
             ];
         });
 
-        $suppliers = Supplier::query()
-            ->select('id', 'company_name', 'brand_name', 'logo_path', 'is_verified')
-            ->where('is_active', true)
-            ->orderBy('brand_name')
-            ->get();
+        $canSeeSupplierFilter = in_array($this->resolveUserRole(), ['super_admin', 'supplier', 'retailer_premium']);
+
+        $suppliers = $canSeeSupplierFilter
+            ? Supplier::query()
+                ->select('id', 'company_name', 'brand_name', 'logo_path', 'logo_versions', 'is_verified')
+                ->where('is_active', true)
+                ->selectSub(
+                    DB::table('products')
+                        ->selectRaw('COUNT(*)')
+                        ->where('products.is_active', true)
+                        ->where('products.status', \App\Enums\ProductStatus::ACTIVE->value)
+                        ->whereNull('products.deleted_at')
+                        ->where(function ($q) {
+                            $q->whereColumn('products.supplier_id', 'suppliers.id')
+                              ->orWhereExists(function ($sub) {
+                                  $sub->select(DB::raw(1))
+                                      ->from('product_supplier')
+                                      ->whereColumn('product_supplier.product_id', 'products.id')
+                                      ->whereColumn('product_supplier.supplier_id', 'suppliers.id')
+                                      ->where('product_supplier.is_active', true);
+                              });
+                        }),
+                    'products_count'
+                )
+                ->orderBy('company_name')
+                ->get()
+            : collect();
 
         $sortOptions = [
             'latest' => 'جدیدترین',
@@ -1103,11 +1377,13 @@ class ProductController extends Controller
         return [
             'categories' => $categoriesTree,
             'priceRange' => $priceRange,
-            'suppliers' => $suppliers,
+            'suppliers'                => $suppliers,
+            'canSeeSupplierFilter'     => $canSeeSupplierFilter,
             'sortOptions' => $sortOptions,
             'perPageOptions' => $perPageOptions,
             'filterableAttributes' => $filterableAttributes,
             'selectedAttributeFilters' => $selectedAttributeFilters,
+            'canSeePriceFilter' => $this->userCanSeePrice(),
         ];
     }
 
@@ -1126,6 +1402,78 @@ class ProductController extends Controller
             'name_asc'    => 'نام (الف-ی)',
             'name_desc'   => 'نام (ی-الف)',
         ];
+    }
+
+    /**
+     * ساخت categories tree بدون فیلتر — برای حالت عمومی (کش می‌شود)
+     */
+    private function buildCategoriesTree(): \Illuminate\Database\Eloquent\Collection
+    {
+        return Category::query()
+            ->whereNull('parent_id')
+            ->where('is_active', true)
+            ->withCount(['products as total_products_count' => function ($q) {
+                $q->where('products.is_active', true)->where('products.status', 'active');
+            }])
+            ->with([
+                'children' => function ($q) {
+                    $q->where('is_active', true)->orderBy('sort_order')
+                      ->withCount(['products as total_products_count' => function ($sq) {
+                          $sq->where('products.is_active', true)->where('products.status', 'active');
+                      }])
+                      ->with([
+                          'children' => function ($sq) {
+                              $sq->where('is_active', true)->orderBy('sort_order')
+                                 ->withCount(['products as active_products_count' => function ($ssq) {
+                                     $ssq->where('products.is_active', true)->where('products.status', 'active');
+                                 }]);
+                          }
+                      ]);
+                }
+            ])
+            ->orderBy('sort_order')
+            ->get();
+    }
+
+    /**
+     * ساخت categories tree وابسته به یک یا چند supplier
+     * تعداد محصولات هر دسته فقط از محصولات آن supplierها محاسبه می‌شود.
+     */
+    private function buildCategoriesTreeForSuppliers(array $supplierIds): \Illuminate\Database\Eloquent\Collection
+    {
+        $supplierProductsConstraint = function ($q) use ($supplierIds) {
+            $q->where('products.is_active', true)
+              ->where('products.status', 'active')
+              ->where(function ($sub) use ($supplierIds) {
+                  $sub->whereIn('products.supplier_id', $supplierIds)
+                      ->orWhereExists(function ($ex) use ($supplierIds) {
+                          $ex->select(DB::raw(1))
+                             ->from('product_supplier')
+                             ->whereColumn('product_supplier.product_id', 'products.id')
+                             ->whereIn('product_supplier.supplier_id', $supplierIds)
+                             ->where('product_supplier.is_active', true);
+                      });
+              });
+        };
+
+        return Category::query()
+            ->whereNull('parent_id')
+            ->where('is_active', true)
+            ->withCount(['products as total_products_count' => $supplierProductsConstraint])
+            ->with([
+                'children' => function ($q) use ($supplierProductsConstraint) {
+                    $q->where('is_active', true)->orderBy('sort_order')
+                      ->withCount(['products as total_products_count' => $supplierProductsConstraint])
+                      ->with([
+                          'children' => function ($sq) use ($supplierProductsConstraint) {
+                              $sq->where('is_active', true)->orderBy('sort_order')
+                                 ->withCount(['products as active_products_count' => $supplierProductsConstraint]);
+                          }
+                      ]);
+                }
+            ])
+            ->orderBy('sort_order')
+            ->get();
     }
 
     /**
@@ -1160,12 +1508,22 @@ class ProductController extends Controller
             ];
         }
 
-        if ($request->filled('supplier')) {
-            $filters['supplier'] = [
-                'label' => 'تأمین‌کننده: ' . $request->supplier,
-                'key'   => 'supplier',
-                'value' => $request->supplier,
-            ];
+        if ($request->filled('supplier_id')) {
+            $supplierIds = $this->resolveSupplierIds($request);
+            if (!empty($supplierIds)) {
+                $supplierNames = \App\Models\Supplier::whereIn('id', $supplierIds)
+                    ->pluck('company_name', 'id');
+                foreach ($supplierIds as $sid) {
+                    $filters["supplier_id_{$sid}"] = [
+                        'label'      => 'تأمین‌کننده: ' . ($supplierNames[$sid] ?? $sid),
+                        'key'        => 'supplier_id',
+                        'remove_url' => route('products.index', array_merge(
+                            request()->except('page'),
+                            ['supplier_id' => array_values(array_filter($supplierIds, fn($id) => $id !== $sid))]
+                        )),
+                    ];
+                }
+            }
         }
 
         if ($request->filled('in_stock') && $request->in_stock == '1') {
@@ -1401,32 +1759,94 @@ private function getCategoryChain(Category $category): array
     // ══════════════════════════════════════════════════════════
 
     /**
-     * SEO برای صفحه محصول
+     * SEO برای صفحه محصول با Canonical URL صحیح
+     * ✅ پیش‌فرض: متمرکز بر عمده‌فروشی B2B
      */
     private function buildSeoData(Product $product, array $breadcrumbs): array
     {
         $categoryName = $product->category?->name ?? 'محصولات';
-        $siteName = config('app.name', 'فروشگاه B2B');
+        $siteName = config('app.name', 'عمده‌فروشی چن تا؟');
 
-        $primaryImage = $product->galleries?->where('is_primary', true)->first()
-            ?? $product->galleries?->first();
+        // ✅ اولویت تصویر SEO: is_seo_image > is_primary > اولین تصویر
+        $seoImage = $product->galleries?->where('is_seo_image', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('is_primary', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('file_type', 'image')->first();
 
-        $imageUrl = $primaryImage
-            ? asset('storage/' . $primaryImage->file_path)
-            : asset('images/default-product.jpg');
+        // ✅ استفاده از تصویر بهینه با fallback
+        $imageUrl = null;
+        if ($seoImage && method_exists($seoImage, 'getVersionUrl')) {
+            $imageUrl = $seoImage->getVersionUrl('md') ?: asset('storage/' . $seoImage->file_path);
+        } elseif ($seoImage) {
+            $imageUrl = asset('storage/' . $seoImage->file_path);
+        } else {
+            $imageUrl = asset('images/placeholders/product-default.svg');
+        }
+
+        // استفاده از alt_text تصویر SEO (اگر موجود باشد)
+        $imageAlt = $seoImage?->alt_text ?: ($product->title . ' - عمده‌فروشی ' . $siteName);
+
+        // ✅ جمع‌آوری قیمت‌های عمده برای SEO
+        $allPrices = collect();
+        if ($product->relationLoaded('productSuppliers')) {
+            foreach ($product->productSuppliers as $ps) {
+                if ($ps->relationLoaded('prices')) {
+                    $allPrices = $allPrices->merge(
+                        $ps->prices->where('is_active', true)->pluck('price')
+                    );
+                }
+            }
+        }
+        
+        // ✅ ساخت متن قیمت عمده برای description
+        $priceText = '';
+        if ($allPrices->isNotEmpty()) {
+            $lowestPrice = $allPrices->min();
+            $highestPrice = $allPrices->max();
+            
+            if ($lowestPrice == $highestPrice) {
+                $priceText = ' | قیمت عمده: ' . number_format($lowestPrice) . ' تومان';
+            } else {
+                $priceText = ' | قیمت عمده از ' . number_format($lowestPrice) . ' تومان';
+            }
+        } else {
+            // fallback: قیمت خرده‌فروشی (با تاکید بر عمده)
+            $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+            if ($retailPrice) {
+                $priceText = ' | قیمت از ' . number_format($retailPrice->retail_price) . ' تومان';
+            }
+        }
+
+        // ✅ توضیحات SEO با تمرکز بر عمده‌فروشی
+        if ($product->seo_description) {
+            $seoDescription = $product->seo_description;
+        } else {
+            $baseDescription = strip_tags($product->short_description ?? '');
+            if (empty($baseDescription)) {
+                // fallback: توضیحات خودکار با تمرکز B2B
+                $seoDescription = "خرید عمده {$product->title} با بهترین قیمت از {$siteName}. فروش عمده به صورت کارتن و پالت{$priceText}";
+            } else {
+                $seoDescription = mb_substr($baseDescription, 0, 100) . $priceText . ' | فروش عمده';
+            }
+        }
+
+        // ✅ Canonical URL: همیشه به URL بدون پارامتر اشاره می‌کند
+        $canonicalUrl = $product->seo_canonical_url ?? route('products.show', ['product' => $product->slug]);
+
+        // ✅ عنوان SEO با تمرکز بر عمده‌فروشی
+        $defaultTitle = $product->seo_title 
+            ?? "خرید عمده {$product->title} | {$categoryName} | {$siteName}";
+
+        // ✅ کلمات کلیدی با تمرکز B2B
+        $defaultKeywords = $product->seo_keywords
+            ?? "{$product->title} عمده,خرید عمده {$product->title},{$categoryName} عمده,قیمت عمده {$product->title},فروش کارتنی,فروش عمده";
 
         return [
-            'title'             => $product->seo_title
-                ?? $product->title . ' | ' . $categoryName . ' | ' . $siteName,
-            'description'       => $product->seo_description
-                ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 160),
-            'keywords'          => $product->seo_keywords
-                ?? $product->title . ',' . $categoryName,
-            'canonical_url'     => $product->seo_canonical_url
-                ?? url('/products/' . $product->slug),
-            'og_title'          => $product->seo_title ?? $product->title ?? '',
-            'og_description'    => $product->seo_description
-                ?? mb_substr(strip_tags($product->short_description ?? ''), 0, 160),
+            'title'             => $defaultTitle,
+            'description'       => mb_substr($seoDescription, 0, 160),
+            'keywords'          => $defaultKeywords,
+            'canonical_url'     => $canonicalUrl,
+            'og_title'          => $product->seo_title ?? "خرید عمده {$product->title}",
+            'og_description'    => mb_substr($seoDescription, 0, 200),
             'og_image'          => $imageUrl,
             'og_type'           => 'product',
             'og_url'            => url('/products/' . $product->slug),
@@ -1436,7 +1856,11 @@ private function getCategoryChain(Category $category): array
     }
 
     /**
-     * Schema.org Product JSON-LD
+     * ساخت Schema.org برای محصول با قیمت‌های عمده
+     * 
+     * @param Product $product
+     * @param array $breadcrumbs
+     * @return array
      */
     private function buildProductSchema(Product $product, array $breadcrumbs): array
     {
@@ -1444,20 +1868,31 @@ private function getCategoryChain(Category $category): array
             '@context'    => 'https://schema.org',
             '@type'       => 'Product',
             'name'        => $product->title ?? '',
-            'description' => strip_tags($product->short_description ?? ''),
+            'description' => strip_tags($product->short_description ?? 'خرید عمده ' . ($product->title ?? '')),
             'sku'         => $product->sku ?? '',
             'url'         => url('/products/' . $product->slug),
+            'productID'   => $product->sku ?? $product->id,
         ];
 
-        $primaryImage = $product->galleries?->where('is_primary', true)->first();
-        if ($primaryImage) {
-            $schema['image'] = asset('storage/' . $primaryImage->file_path);
+        // ✅ تصویر با اولویت SEO Image (نسخه sm برای سرعت بیشتر)
+        $seoImage = $product->galleries?->where('is_seo_image', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('is_primary', true)->where('file_type', 'image')->first()
+            ?? $product->galleries?->where('file_type', 'image')->first();
+            
+        if ($seoImage) {
+            if (method_exists($seoImage, 'getVersionUrl')) {
+                // استفاده از نسخه sm برای سرعت بیشتر در نتایج جستجو
+                $schema['image'] = $seoImage->getVersionUrl('sm') ?: $seoImage->getVersionUrl('md') ?: asset('storage/' . $seoImage->file_path);
+            } else {
+                $schema['image'] = asset('storage/' . $seoImage->file_path);
+            }
         }
 
         if ($product->category) {
             $schema['category'] = $product->category->name ?? '';
         }
 
+        // ✅ برند محصول
         if ($product->supplier) {
             $schema['brand'] = [
                 '@type' => 'Brand',
@@ -1465,14 +1900,99 @@ private function getCategoryChain(Category $category): array
             ];
         }
 
-        $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
-        if ($retailPrice) {
+        // ✅ جمع‌آوری قیمت‌های عمده از productSuppliers
+        $allPrices = collect();
+        
+        // بررسی اینکه آیا relation productSuppliers لود شده
+        if ($product->relationLoaded('productSuppliers')) {
+            foreach ($product->productSuppliers as $ps) {
+                if ($ps->relationLoaded('prices')) {
+                    $allPrices = $allPrices->merge(
+                        $ps->prices->where('is_active', true)->pluck('price')
+                    );
+                } elseif ($ps->prices) {
+                    $allPrices = $allPrices->merge(
+                        $ps->prices->pluck('price')
+                    );
+                }
+            }
+        }
+        
+        // اگر قیمت عمده داریم
+        if ($allPrices->isNotEmpty()) {
+            $lowestPrice = (float) $allPrices->min();
+            $highestPrice = (float) $allPrices->max();
+            
+            // ✅ تبدیل تومان به ریال برای ISO 4217 (IRR)
+            $lowestPriceRial = $lowestPrice * 10;
+            $highestPriceRial = $highestPrice * 10;
+            
             $schema['offers'] = [
-                '@type'         => 'Offer',
-                'priceCurrency' => 'IRR',
-                'price'         => $retailPrice->retail_price ?? 0,
-                'availability'  => 'https://schema.org/InStock',
+                '@type'         => 'AggregateOffer',
+                'priceCurrency' => 'IRR', // ✅ ریال ایران (کد رسمی ISO 4217)
+                'lowPrice'      => $lowestPriceRial,
+                'highPrice'     => $highestPriceRial,
+                'offerCount'    => $allPrices->count(),
+                'availability'  => $product->status === \App\Enums\ProductStatus::ACTIVE 
+                    ? 'https://schema.org/InStock' 
+                    : 'https://schema.org/OutOfStock',
                 'url'           => url('/products/' . $product->slug),
+                'priceValidUntil' => now()->addDay()->format('Y-m-d'), // ✅ اعتبار 1 روز
+                'businessFunction' => 'http://purl.org/goodrelations/v1#Sell',
+                'eligibleQuantity' => [
+                    '@type' => 'QuantitativeValue',
+                    'minValue' => 1,
+                    'unitText' => 'عدد'
+                ],
+                // ✅ اضافه کردن seller برای هر تأمین‌کننده
+                'seller' => $product->productSuppliers->map(function($ps) {
+                    return [
+                        '@type' => 'Organization',
+                        'name' => $ps->supplier->company_name ?? $ps->supplier->brand_name ?? 'تأمین‌کننده',
+                    ];
+                })->toArray(),
+            ];
+        } else {
+            // fallback: قیمت خرده‌فروشی
+            $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+            if ($retailPrice) {
+                // ✅ تبدیل تومان به ریال برای ISO 4217 (IRR)
+                $retailPriceRial = (float) $retailPrice->retail_price * 10;
+                
+                $schema['offers'] = [
+                    '@type'         => 'Offer',
+                    'priceCurrency' => 'IRR', // ✅ ریال ایران (کد رسمی ISO 4217)
+                    'price'         => $retailPriceRial,
+                    'availability'  => 'https://schema.org/InStock',
+                    'url'           => url('/products/' . $product->slug),
+                    'priceValidUntil' => now()->addDay()->format('Y-m-d'), // ✅ اعتبار 1 روز
+                ];
+            } else {
+                // ✅ اگر هیچ قیمتی نیست، حداقل یک placeholder بذاریم
+                $schema['offers'] = [
+                    '@type'         => 'AggregateOffer',
+                    'priceCurrency' => 'IRR', // ✅ ریال ایران (کد رسمی ISO 4217)
+                    'lowPrice'      => 0,
+                    'highPrice'     => 0,
+                    'offerCount'    => 0,
+                    'availability'  => 'https://schema.org/OutOfStock',
+                    'url'           => url('/products/' . $product->slug),
+                ];
+            }
+        }
+
+        // ✅ اضافه کردن audience برای B2B
+        $schema['audience'] = [
+            '@type' => 'BusinessAudience',
+            'audienceType' => 'خرده‌فروشان و مشاغل'
+        ];
+
+        // ✅ اضافه کردن aggregateRating اگر نظرات داریم
+        if ($product->reviews_count ?? 0 > 0) {
+            $schema['aggregateRating'] = [
+                '@type' => 'AggregateRating',
+                'ratingValue' => $product->average_rating ?? 0,
+                'reviewCount' => $product->reviews_count ?? 0,
             ];
         }
 
@@ -1503,30 +2023,31 @@ private function getCategoryChain(Category $category): array
 
     /**
      * SEO برای صفحه لیست
+     * ✅ پیش‌فرض: متمرکز بر عمده‌فروشی B2B
      */
     private function buildIndexSeo(Request $request): array
     {
-        $title = 'محصولات';
-        $description = 'لیست محصولات فروشگاه — مشاهده و مقایسه انواع محصولات با قیمت‌های رقابتی';
+        $title = 'فروش عمده محصولات';
+        $description = 'خرید عمده محصولات با بهترین قیمت از عمده‌فروشی چن تا؟ — مشاهده و مقایسه قیمت‌های عمده‌فروشی انواع محصولات';
 
         if ($request->filled('q')) {
-            $title = "جستجوی «{$request->q}» در محصولات";
-            $description = "نتایج جستجوی «{$request->q}» در فروشگاه";
+            $title = "خرید عمده {$request->q}";
+            $description = "قیمت عمده {$request->q} — مقایسه قیمت‌های عمده‌فروشی {$request->q} از چندین تامین‌کننده";
         }
 
         if ($request->filled('category')) {
             $category = Category::where('slug', $request->category)->first();
             if ($category) {
-                $title = "محصولات {$category->name}";
+                $title = "خرید عمده {$category->name}";
                 $description = $category->seo_description
-                    ?: "مشاهده تمام محصولات دسته‌بندی {$category->name}";
+                    ?: "قیمت عمده {$category->name} — مشاهده و خرید عمده محصولات {$category->name} با بهترین قیمت";
             }
         }
 
         return [
-            'title'       => $title . ' — ' . config('app.name'),
+            'title'       => $title . ' | ' . config('app.name'),
             'description' => mb_substr($description, 0, 160),
-            'keywords'    => $request->get('q', 'محصولات, خرید عمده, فروشگاه B2B'),
+            'keywords'    => $request->get('q', 'خرید عمده, قیمت عمده, فروش عمده, عمده‌فروشی'),
             'canonical'   => $request->fullUrlWithQuery(
                 array_diff_key($request->query(), ['page' => null])
             ),
@@ -1549,17 +2070,18 @@ private function getCategoryChain(Category $category): array
 
     /**
      * SEO برای صفحه دسته‌بندی
+     * ✅ پیش‌فرض: متمرکز بر عمده‌فروشی B2B
      */
     private function buildCategorySeo(Category $category): array
     {
-        $title       = $category->seo_title ?: "محصولات {$category->name}";
+        $title       = $category->seo_title ?: "خرید عمده {$category->name}";
         $description = $category->seo_description
-            ?: "مشاهده و خرید عمده محصولات دسته‌بندی {$category->name}";
+            ?: "قیمت عمده {$category->name} — خرید عمده و فروش کارتنی محصولات {$category->name} با بهترین قیمت از عمده‌فروشی چن تا؟";
 
         return [
-            'title'       => $title . ' — ' . config('app.name'),
+            'title'       => $title . ' | ' . config('app.name'),
             'description' => mb_substr($description, 0, 160),
-            'keywords'    => $category->seo_keywords ?: $category->name,
+            'keywords'    => $category->seo_keywords ?: "{$category->name} عمده,خرید عمده {$category->name},قیمت عمده {$category->name},فروش کارتنی",
             'canonical'   => route('categories.show', ['category' => $category->slug]),
             'robots'      => 'index, follow',
             'og' => [

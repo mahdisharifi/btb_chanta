@@ -1,16 +1,17 @@
 import './bootstrap';
-import '@splidejs/splide/css';
-import Splide from '@splidejs/splide';
+
+// ✅ Import slider utilities (shared components)
+import './components/slider-utils.js';
+import './components/formatted-price-input.js';
 
 // تعریف global برای استفاده در Blade
-window.Splide = Splide;
 
 // Auto-init برای اسلایدرها
 document.addEventListener('DOMContentLoaded', function() {
     // Hero Slider
     const heroSlider = document.querySelector('#hero-slider .splide');
-    if (heroSlider) {
-        new Splide(heroSlider, {
+    if (heroSlider && window.Splide) {
+        new window.Splide(heroSlider, {
             type: 'fade',
             direction: 'rtl',
             rewind: true,
@@ -34,6 +35,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }).mount();
     }
 });
-import mermaid from 'mermaid';
-mermaid.initialize({ startOnLoad: true, theme: 'default' });
-window.mermaid = mermaid; // برای استفاده در لایووایر
+// Mermaid به صورت lazy load فقط در صفحات مورد نیاز بارگذاری می‌شود
+// برای استفاده: window.loadMermaid().then(mermaid => { ... })
+window.loadMermaid = async function() {
+    if (!window.mermaid) {
+        const mermaid = await import('mermaid');
+        mermaid.default.initialize({ startOnLoad: false, theme: 'default' });
+        window.mermaid = mermaid.default;
+    }
+    return window.mermaid;
+};

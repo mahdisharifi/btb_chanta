@@ -258,7 +258,10 @@
                     </h3>
 
                     @php
-                    $selectedAttrModels = $allAttributes->whereIn('id', $selectedAttributes);
+                        $selectedAttrModels = $allAttributes
+                            ->whereIn('id', $selectedAttributes)
+                            ->sortBy(fn ($attribute) => (int) data_get($attributeSettings, $attribute->id.'.display_order', 0))
+                            ->values();
                     @endphp
 
                     <div class="flex flex-wrap gap-2 min-h-[45px] p-3 rounded-xl bg-gray-50 border border-gray-100">
@@ -267,14 +270,22 @@
                         @php
                         $hasProducts = ($attributeProductCounts[$selectedAttr->id] ?? 0) > 0;
                         @endphp
-                        <div class="inline-flex items-center gap-2 bg-black text-white text-xs px-3 py-1.5 rounded-lg border border-amber-500/20 {{ $hasProducts ? 'opacity-70' : '' }}">
-                            <span>{{ $selectedAttr->name }}</span>
+                        <div class="flex flex-wrap gap-2 bg-black text-white text-xs px-3 py-2 rounded-lg border border-amber-500/20 {{ $hasProducts ? 'opacity-70' : '' }}">
+                            <span class="w-full font-medium">{{ $selectedAttr->name }}</span>
+                            <label class="flex items-center gap-1 text-[11px] text-gray-200">
+                                ترتیب
+                                <input type="number" min="0" max="99999" onwheel="this.blur()" wire:model.live="attributeSettings.{{ $selectedAttr->id }}.display_order" class="w-16 rounded border-gray-500 bg-gray-800 px-1 py-0.5 text-center text-white">
+                            </label>
+                            <label class="flex items-center gap-1 text-[11px] text-gray-200">
+                                <input type="checkbox" wire:model.live="attributeSettings.{{ $selectedAttr->id }}.is_required" class="rounded border-gray-400 text-amber-500 focus:ring-amber-400">
+                                اجباری
+                            </label>
 
                             @if($hasProducts)
                             <span class="text-[10px] bg-amber-500/20 px-1 rounded">{{ $attributeProductCounts[$selectedAttr->id] }}</span>
                             <x-heroicon-o-lock-closed class="w-3.5 h-3.5 text-amber-500" title="دارای محصول" />
                             @else
-                            <button type="button" wire:click="removeAttribute({{ $selectedAttr->id }})" class="text-gray-400 hover:text-red-400 transition-colors">
+                            <button type="button" wire:click="removeAttribute({{ $selectedAttr->id }})" class="mr-auto text-gray-400 hover:text-red-400 transition-colors">
                                 <x-heroicon-o-x-mark class="w-3.5 h-3.5" />
                             </button>
                             @endif

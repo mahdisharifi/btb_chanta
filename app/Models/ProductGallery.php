@@ -68,10 +68,12 @@ class ProductGallery extends Model
         'file_name',
         'base_name',        // ✅ نام پایه برای نسخه‌ها
         'file_type',
+        'poster_path',      // ✅ اضافه شد - thumbnail ویدئو
         'title',
         'alt_text',
         'sort_order',
         'is_primary',
+        'is_seo_image',     // ✅ جدید - تصویر ویژه برای SEO و Schema.org
         'file_size',
         'mime_type',
         'width',
@@ -137,6 +139,21 @@ class ProductGallery extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function sourcedCompletionMedia(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductCompletionMedia::class, 'source_product_gallery_id');
+    }
+
+    public function publishedCompletionMedia(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductCompletionMedia::class, 'published_product_gallery_id');
+    }
+
+    public function completionSubmissionItems(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProductCompletionSubmissionMedia::class, 'product_gallery_id');
+    }
+
     // ══════════════════════════════════════════════════════════
     //  ACCESSORS ✅ اضافه شده
     // ══════════════════════════════════════════════════════════
@@ -182,7 +199,10 @@ class ProductGallery extends Model
                     : $version;
 
                 if ($path) {
-                    return asset('storage/' . $path);
+                    // ✅ بررسی وجود فایل فیزیکی
+                    if (Storage::disk(self::STORAGE_DISK)->exists($path)) {
+                        return asset('storage/' . $path);
+                    }
                 }
             }
         }
@@ -366,22 +386,38 @@ class ProductGallery extends Model
 
     /**
      * URL thumbnail ویدیو
+     * 
+     * اولویت:
+     * 1. poster_path (آپلود دستی کاربر)
+     * 2. auto-generated poster در posters/{filename}.jpg
+     * 3. fallback placeholder
      */
-    private function getVideoThumbnailUrl(): string
+    public function getVideoThumbnailUrl(): string
     {
-        if (empty($this->file_path)) {
-            return $this->getDefaultImageUrl();
+        // 1️⃣ اولویت اول: poster_path (آپلود دستی)
+        if (!empty($this->poster_path)) {
+            if (Str::startsWith($this->poster_path, ['http://', 'https://'])) {
+                return $this->poster_path;
+            }
+            
+            if (Storage::disk(self::STORAGE_DISK)->exists($this->poster_path)) {
+                return asset('storage/' . $this->poster_path);
+            }
         }
 
-        $directory = pathinfo($this->file_path, PATHINFO_DIRNAME);
-        $filename  = pathinfo($this->file_path, PATHINFO_FILENAME);
-        $posterPath = "{$directory}/posters/{$filename}.jpg";
+        // 2️⃣ اولویت دوم: auto-generated poster
+        if (!empty($this->file_path)) {
+            $directory = pathinfo($this->file_path, PATHINFO_DIRNAME);
+            $filename  = pathinfo($this->file_path, PATHINFO_FILENAME);
+            $posterPath = "{$directory}/posters/{$filename}.jpg";
 
-        if (Storage::disk(self::STORAGE_DISK)->exists($posterPath)) {
-            return asset('storage/' . $posterPath);
+            if (Storage::disk(self::STORAGE_DISK)->exists($posterPath)) {
+                return asset('storage/' . $posterPath);
+            }
         }
 
-        return asset('images/placeholders/video-default.png');
+        // 3️⃣ fallback: placeholder
+        return asset('images/placeholders/video-default.svg');
     }
 
     /**

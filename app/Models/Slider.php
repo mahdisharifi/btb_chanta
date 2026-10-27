@@ -17,6 +17,7 @@ class Slider extends Model
         'link_text',
         'link_target',
         'bg_color',
+        'bg_gradient',
         'text_color',
         'overlay_color',
         'text_position',
@@ -57,13 +58,13 @@ class Slider extends Model
 
     // ─── Accessors ───
 
-    public function getImageUrlAttribute(): string
+    public function getImageUrlAttribute(): ?string
     {
         if ($this->image_path) {
             return asset('storage/' . $this->image_path);
         }
 
-        return asset('images/default-slider.jpg');
+        return null;
     }
 
     public function getMobileImageUrlAttribute(): ?string

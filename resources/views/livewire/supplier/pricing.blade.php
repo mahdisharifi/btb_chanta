@@ -85,7 +85,7 @@
                                 </div>
                                 <x-input-error :messages="$errors->get('prices.' . $priceType->value . '.price')" class="mt-2" />
 
-                                {{-- فیلد حداقل تعداد در صورت نیاز --}}
+                                {{-- فیلد حداقل تعداد --}}
                                 <div class="mt-3">
                                     <x-input-label for="min-qty-{{ $priceType->value }}" value="حداقل تعداد سفارش" class="text-xs" />
                                     <x-text-input
@@ -95,6 +95,22 @@
                                         class="block w-full mt-1"
                                     />
                                 </div>
+
+                                {{-- فیلد تعداد ماه گارانتی (فقط برای قیمت WARRANTY) --}}
+                                @if($priceType->value === 'warranty')
+                                <div class="mt-3">
+                                    <x-input-label for="warranty-months-{{ $priceType->value }}" value="تعداد ماه گارانتی" class="text-xs" />
+                                    <x-text-input
+                                        wire:model="prices.{{ $priceType->value }}.warranty_months"
+                                        id="warranty-months-{{ $priceType->value }}"
+                                        type="number"
+                                        class="block w-full mt-1"
+                                        placeholder="مثلا: 12, 18, 24"
+                                    />
+                                    <x-input-error :messages="$errors->get('prices.' . $priceType->value . '.warranty_months')" class="mt-1" />
+                                    <p class="text-xs text-gray-500 mt-1">این عدد در کاتالوگ نمایش داده می‌شود</p>
+                                </div>
+                                @endif
                             </div>
                             @endforeach
                             @else

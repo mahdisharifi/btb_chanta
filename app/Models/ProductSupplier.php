@@ -74,6 +74,16 @@ class ProductSupplier extends Model
         'max_order_quantity',
         'lead_time_days',
         'warranty_info',
+        'warranty_type',          // نوع محاسبه هزینه (none/percentage/fixed/custom)
+        'warranty_value',         // مقدار درصد یا مبلغ
+        'has_warranty',           // آیا محصول با گارانتی است؟
+        'warranty_provider',      // ارائه‌دهنده گارانتی
+        'warranty_coverage_type', // نوع پوشش گارانتی
+        'warranty_type_coverage', // ✅ جدید: نوع گارانتی (test/limited/lifetime)
+        'warranty_duration_days', // مدت گارانتی
+        'auto_calculate_tiers',   // ✅ فعال/غیرفعال محاسبه خودکار
+        'tier_percentages',       // ✅ درصدهای تیراژها
+        'tier_enabled',           // ✅ وضعیت فعال/غیرفعال تیراژها
         'notes',
         'activated_at',
         'deactivated_at',
@@ -82,17 +92,23 @@ class ProductSupplier extends Model
     protected function casts(): array
     {
         return [
-            'is_primary'         => 'boolean',
-            'is_active'          => 'boolean',
-            'sort_order'         => 'integer',
-            'cost_price'         => 'integer',
-            'commission_rate'    => 'decimal:2',
-            'stock_quantity'     => 'integer',
-            'min_order_quantity' => 'integer',
-            'max_order_quantity' => 'integer',
-            'lead_time_days'     => 'integer',
-            'activated_at'       => 'datetime',
-            'deactivated_at'     => 'datetime',
+            'is_primary'              => 'boolean',
+            'is_active'               => 'boolean',
+            'sort_order'              => 'integer',
+            'cost_price'              => 'integer',
+            'commission_rate'         => 'decimal:2',
+            'stock_quantity'          => 'integer',
+            'min_order_quantity'      => 'integer',
+            'max_order_quantity'      => 'integer',
+            'lead_time_days'          => 'integer',
+            'warranty_value'          => 'decimal:2',
+            'has_warranty'            => 'boolean',     // ✅
+            'warranty_duration_days'  => 'integer',     // ✅
+            'auto_calculate_tiers'    => 'boolean',     // ✅
+            'tier_percentages'        => 'array',       // ✅
+            'tier_enabled'            => 'array',       // ✅
+            'activated_at'            => 'datetime',
+            'deactivated_at'          => 'datetime',
         ];
     }
 
@@ -326,7 +342,7 @@ class ProductSupplier extends Model
      */
     public function scopeWithPricesAndSupplier(Builder $query): Builder
     {
-        return $query->with(['activePrices', 'supplier:id,company_name,brand_name,logo_path,is_verified']);
+        return $query->with(['activePrices', 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified']);
     }
 
     /**
@@ -339,7 +355,7 @@ class ProductSupplier extends Model
             'validPrices'  => fn($q) => $q->orderBy('price'),
             'supplier'     => fn($q) => $q->select([
                 'id', 'user_id', 'company_name', 'company_name_en',
-                'brand_name', 'logo_path', 'phone', 'mobile',
+                'brand_name', 'logo_path', 'logo_versions', 'phone', 'mobile',
                 'email', 'city', 'province', 'is_verified', 'is_active',
             ]),
         ]);
@@ -444,6 +460,47 @@ class ProductSupplier extends Model
     }
 
     /**
+     * برچسب فارسی نوع واحد بسته‌بندی
+     */
+    public function getPackagingUnitLabelAttribute(): string
+    {
+        $labels = [
+            'carton'  => 'کارتن',
+            'jean'    => 'جین',
+            'jowab'   => 'جورب',
+            'package' => 'بسته',
+            'bundle'  => 'شیرینگ',
+            'roll'    => 'طاقه',
+            'piece'   => 'عدد',
+        ];
+
+        return $labels[$this->packaging_unit_type] ?? $this->packaging_unit_type;
+    }
+
+    /**
+     * نمایش کامل واحد بسته‌بندی (مثلاً: "4 عدد در کارتن")
+     */
+    public function getPackagingDisplayAttribute(): string
+    {
+        if (!$this->quantity_per_packaging || $this->quantity_per_packaging <= 1) {
+            return '';
+        }
+
+        $unitLabel = $this->packaging_unit_label;
+        $quantity = $this->quantity_per_packaging;
+
+        // برای واحد‌هایی که متر یا جفت دارند
+        $unitContents = [
+            'roll' => 'متر',   // طاقه = متر
+            'jowab' => 'جفت',  // جورب = جفت
+        ];
+
+        $contentUnit = $unitContents[$this->packaging_unit_type] ?? 'عدد';
+
+        return "{$quantity} {$contentUnit} در {$unitLabel}";
+    }
+
+    /**
      * محدوده قیمت فرمت‌شده (تومان)
      */
     public function getFormattedPriceRangeAttribute(): string
@@ -492,7 +549,7 @@ class ProductSupplier extends Model
     public function getSupplierLogoUrlAttribute(): string
     {
         if ($this->supplier?->logo_path) {
-            return asset('storage/' . $this->supplier->logo_path);
+            return $this->supplier->logoUrl('small');
         }
 
         return asset('images/placeholders/supplier-default.png');
@@ -657,6 +714,153 @@ class ProductSupplier extends Model
             'is_primary'  => $this->is_primary,
             'is_verified' => $this->is_verified_supplier,
         ];
+    }
+
+    /**
+     * محاسبه ارزش روزانه گارانتی (هزینه گارانتی / تعداد روزها)
+     * هر چه کمتر باشد، گارانتی منصفانه‌تر است
+     * 
+     * @return float|null null اگر گارانتی نداشته باشد
+     */
+    public function getWarrantyCostPerDay(): ?float
+    {
+        if (!$this->has_warranty || $this->warranty_type === 'none') {
+            return null;
+        }
+        
+        if (!$this->warranty_duration_days || $this->warranty_duration_days <= 0) {
+            return null;
+        }
+        
+        // برای گارانتی مادام‌العمر، تعداد روزها را خیلی بالا در نظر می‌گیریم
+        $days = $this->warranty_type_coverage === 'lifetime' ? 36500 : $this->warranty_duration_days;
+        
+        // محاسبه میانگین هزینه
+        if ($this->warranty_type === 'percentage') {
+            // برای درصدی، از درصد استفاده می‌کنیم (نسبی)
+            return $this->warranty_value / $days;
+        } elseif ($this->warranty_type === 'fixed') {
+            // برای ثابت، تقسیم بر روزها
+            return $this->warranty_value / $days;
+        } elseif ($this->warranty_type === 'custom') {
+            // برای custom، باید میانگین قیمت‌های گارانتی را محاسبه کنیم
+            $customPrices = $this->prices->where('priceType.code', 'warranty');
+            if ($customPrices->isEmpty()) {
+                return null;
+            }
+            $avgCost = $customPrices->avg('price');
+            return $avgCost / $days;
+        }
+        
+        return null;
+    }
+
+    /**
+     * محاسبه قیمت نهایی با احتساب هزینه گارانتی
+     * 
+     * @param int|float $basePrice قیمت پایه (بدون گارانتی)
+     * @return int|float قیمت نهایی (با گارانتی)
+     */
+    public function calculatePriceWithWarranty($basePrice)
+    {
+        // اگر گارانتی غیرفعال است
+        if (!$this->has_warranty || $this->warranty_type === 'none') {
+            return $basePrice;
+        }
+
+        // درصدی
+        if ($this->warranty_type === 'percentage') {
+            // اگر warranty_value خالی یا null باشد، هزینه‌ای اضافه نمی‌شود
+            if ($this->warranty_value === null || $this->warranty_value === '') {
+                return $basePrice;
+            }
+            return $basePrice * (1 + $this->warranty_value / 100);
+        }
+
+        // مبلغ ثابت
+        if ($this->warranty_type === 'fixed') {
+            // اگر warranty_value خالی یا null باشد، هزینه‌ای اضافه نمی‌شود
+            if ($this->warranty_value === null || $this->warranty_value === '') {
+                return $basePrice;
+            }
+            return $basePrice + $this->warranty_value;
+        }
+
+        // custom: هزینه گارانتی در جدول product_supplier_prices است
+        // در این حالت، محاسبه در view انجام می‌شود
+        return $basePrice;
+    }
+
+    /**
+     * دریافت توضیح گارانتی
+     */
+    public function getWarrantyDescriptionAttribute(): ?string
+    {
+        if (!$this->has_warranty) {
+            return 'بدون گارانتی';
+        }
+
+        $parts = [];
+        
+        // نوع گارانتی
+        $parts[] = match($this->warranty_provider) {
+            'manufacturer' => 'گارانتی شرکتی',
+            'seller' => 'گارانتی فروشنده',
+            default => 'گارانتی',
+        };
+        
+        // نوع پوشش
+        if ($this->warranty_coverage_type) {
+            $coverageLabel = match($this->warranty_coverage_type) {
+                'full' => 'کامل',
+                'limited' => 'محدود',
+                'parts_only' => 'فقط قطعات',
+                'service_only' => 'فقط خدمات',
+                default => '',
+            };
+            if ($coverageLabel) {
+                $parts[] = $coverageLabel;
+            }
+        }
+        
+        // ✅ نوع گارانتی (تست، مدت‌دار، مادام‌العمر)
+        if ($this->warranty_type_coverage) {
+            $typeLabel = match($this->warranty_type_coverage) {
+                'test' => 'تست',
+                'limited' => 'مدت‌دار',
+                'lifetime' => 'مادام‌العمر',
+                default => '',
+            };
+            if ($typeLabel) {
+                $parts[] = $typeLabel;
+            }
+        }
+        
+        // مدت گارانتی (فقط برای تست و مدت‌دار)
+        if ($this->warranty_duration_days && in_array($this->warranty_type_coverage, ['test', 'limited'])) {
+            if ($this->warranty_duration_days < 30) {
+                $parts[] = "{$this->warranty_duration_days} روز";
+            } elseif ($this->warranty_duration_days < 365) {
+                $months = round($this->warranty_duration_days / 30);
+                $parts[] = "{$months} ماه";
+            } else {
+                $years = round($this->warranty_duration_days / 365, 1);
+                $parts[] = "{$years} سال";
+            }
+        }
+        
+        $description = implode(' - ', $parts);
+        
+        // هزینه گارانتی (به عنوان آپشن اضافی)
+        if ($this->warranty_type === 'percentage' && $this->warranty_value) {
+            $description .= " | آپشن گارانتی: +{$this->warranty_value}%";
+        } elseif ($this->warranty_type === 'fixed' && $this->warranty_value) {
+            $description .= " | آپشن گارانتی: +" . number_format($this->warranty_value) . " تومان";
+        } elseif ($this->warranty_type === 'none') {
+            $description .= " | آپشن گارانتی: بدون هزینه اضافی";
+        }
+        
+        return $description;
     }
 
     // ══════════════════════════════════════════════════════════

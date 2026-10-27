@@ -5,89 +5,40 @@
 
 @php
     $canSeePrices = in_array($userRole, ['super_admin', 'supplier', 'retailer_premium', 'retailer_basic']);
+    $firstSlider = $sliders->first();
+    $sliderImageService = app(\App\Services\SliderImageService::class);
+    $desktopPath = $firstSlider ? data_get($firstSlider, 'image_path') : null;
+    $mobilePath = $firstSlider ? data_get($firstSlider, 'mobile_image_path') : null;
+    $desktopResponsiveSet = $sliderImageService->responsiveSet($desktopPath);
+    $mobileResponsiveSet = $sliderImageService->responsiveSet($mobilePath);
+    $desktopPreloadUrl = $desktopResponsiveSet['fallback'] ?? data_get($firstSlider, 'image_url');
+    $mobilePreloadUrl = $mobileResponsiveSet['fallback'] ?? data_get($firstSlider, 'mobile_image_url');
+    $hasDistinctMobileImage = filled($mobilePreloadUrl) && $mobilePreloadUrl !== $desktopPreloadUrl;
 @endphp
+
+@push('head')
+    @if($desktopPreloadUrl)
+        <link rel="preload" href="{{ $desktopPreloadUrl }}" as="image"
+            @if($desktopResponsiveSet['srcset'] ?? null) imagesrcset="{{ $desktopResponsiveSet['srcset'] }}" imagesizes="100vw" @endif
+            @if($hasDistinctMobileImage) media="(min-width: 640px)" @endif fetchpriority="high">
+    @endif
+    @if($hasDistinctMobileImage)
+        <link rel="preload" href="{{ $mobilePreloadUrl }}" as="image" media="(max-width: 639px)"
+            @if($mobileResponsiveSet['srcset'] ?? null) imagesrcset="{{ $mobileResponsiveSet['srcset'] }}" imagesizes="100vw" @endif fetchpriority="high">
+    @endif
+@endpush
 @section('content')
 <div class="min-h-screen bg-gray-50">
-    {{-- HEADER + HERO SECTION --}}
-
-    @php
-        $heroImage = asset('storage/' .'images/home/hero-b2b.jpg');
-    @endphp
-
-    <section class="relative overflow-hidden bg-slate-950" x-data="{ mobileMenuOpen: false }">
-        <div class="absolute inset-0">
-            <!-- اضافه کردن فیلتر blur به تصویر -->
-            <img
-                src="{{ $heroImage }}"
-                alt="پلتفرم عمده فروشی چن تا؟"
-                class="h-full w-full object-cover opacity-60 blur-[2px]"
-            >
-            <!-- گرادینت سنگین‌تر برای خوانایی بهتر -->
-            <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent"></div>
-        </div>
-
-        <div class="relative z-10">
-            <div class="container mx-auto px-4 py-24 md:py-32">
-                <div class="grid items-center gap-12 lg:grid-cols-12">
-                    <div class="lg:col-span-6 text-white">
-                        <div class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold backdrop-blur-md">
-                            <span class="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
-                            <span class="text-slate-200">شفافیت، سرعت و حذف واسطه‌ها</span>
-                        </div>
-
-                        <h1 class="mt-6 text-4xl leading-tight font-black sm:text-5xl lg:text-7xl">
-                            تجارت عمده <span class="text-amber-400">بدون واسطه</span>
-                            <span class="block mt-2 text-2xl font-bold text-slate-300 md:text-3xl">پلتفرم B2B چن‌تا؟</span>
-                        </h1>
-
-                        <p class="mt-6 max-w-xl text-lg leading-8 text-slate-300">
-                            اتصال مستقیم تأمین‌کنندگان و کسبه. جستجو، مقایسه و خرید عمده با تجربه کاربری مدرن.
-                        </p>
-
-                        <div class="mt-8 flex flex-col gap-4 sm:flex-row">
-                            <!-- دکمه اصلی با ظاهر متفاوت -->
-                            <a href="{{ route('products.index') }}" class="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-8 py-4 text-base font-bold text-slate-950 transition hover:bg-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.3)]">
-                                <x-heroicon-o-shopping-bag class="h-5 w-5" />
-                                مشاهده محصولات
-                            </a>
-
-                            <a href="{{ route('register') }}" class="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-8 py-4 text-base font-bold text-white backdrop-blur-md transition hover:bg-white/10">
-                                عضویت تأمین‌کننده
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="lg:col-span-6">
-                        <div class="grid gap-6 sm:grid-cols-2">
-                            <!-- کارت‌های شفاف با افکت Glassmorphism بهتر -->
-                            <div class="rounded-3xl border border-white/10 bg-white/5 p-6 text-white backdrop-blur-xl shadow-2xl transition hover:bg-white/10">
-                                <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 mb-4 border border-emerald-500/20">
-                                    <x-heroicon-o-arrows-right-left class="h-7 w-7" />
-                                </div>
-                                <h3 class="text-xl font-bold">خرید بدون واسطه</h3>
-                                <p class="mt-2 text-sm text-slate-400 leading-6">ارتباط مستقیم تأمین‌کننده و کاسب جهت کاهش قیمت و شفافیت.</p>
-                            </div>
-
-                            <div class="rounded-3xl border border-white/10 bg-white/5 p-6 text-white backdrop-blur-xl shadow-2xl transition hover:bg-white/10">
-                                <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400 mb-4 border border-amber-500/20">
-                                    <x-heroicon-o-magnifying-glass class="h-7 w-7" />
-                                </div>
-                                <h3 class="text-xl font-bold">جستجوی هوشمند</h3>
-                                <p class="mt-2 text-sm text-slate-400 leading-6">دسترسی سریع به دسته بندی‌ها و محصولات با فیلترهای پیشرفته.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
+    {{-- ═══════════════════════════════════════════════════════════
+         اسلایدر اصلی سایت (Main Site Slider)
+         ═══════════════════════════════════════════════════════════ --}}
+    <x-hero-slider :sliders="$sliders" />
 
     {{-- ══════════════════════════════════════════════════════════ --}}
     {{-- ═══════════════ MAIN CONTENT WRAPPER ═════════════════ --}}
     {{-- ══════════════════════════════════════════════════════════ --}}
 
-    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-0 pb-2 space-y-6 sm:space-y-8">
 
 
 
@@ -121,7 +72,7 @@
 
         @if($featuredProducts->isNotEmpty())
         <section>
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
                         <svg class="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
@@ -134,18 +85,19 @@
                     </div>
                 </div>
                 <a href="{{ route('products.index', ['featured' => 1]) }}"
-                   class="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 transition">
-                    مشاهده همه
+                   class="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 transition"
+                   aria-label="مشاهده همه محصولات ویژه">
+                    مشاهده همه محصولات ویژه
                     <svg class="w-4 h-4 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
                 </a>
             </div>
 
-            <div class="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide
+            <div class="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory scrollbar-hide
                         lg:grid lg:grid-cols-4 lg:overflow-visible lg:pb-0">
                 @foreach($featuredProducts as $product)
-                    <div class="min-w-[260px] sm:min-w-[280px] lg:min-w-0 snap-start">
+                    <div class="w-[calc(40%-0.3rem)] lg:min-w-0 snap-start">
                         @include('components.product-card-inline', ['product' => $product, 'badge' => 'featured'])
                     </div>
                 @endforeach
@@ -244,7 +196,7 @@
 
         @if($topSuppliers->isNotEmpty())
             <section>
-                <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center justify-between mb-4">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
                             <svg class="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -258,13 +210,13 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     @foreach($topSuppliers as $supplier)
                         <a href="{{ route('products.index', ['supplier' => $supplier->id ?: $supplier->id]) }}"
                            class="group bg-white rounded-2xl border border-gray-100 p-5 text-center hover:shadow-lg hover:border-purple-200 transition-all duration-300">
                             <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-50 border-2 border-gray-100 flex items-center justify-center overflow-hidden group-hover:border-purple-200 transition">
                                 @if($supplier->logo_path)
-                                    <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                                    <img src="{{ $supplier->logoUrl('small') }}"
                                          alt="{{ $supplier->brand_name ?: $supplier->company_name }}"
                                          class="w-12 h-12 object-contain" loading="lazy">
                                 @else
@@ -274,7 +226,7 @@
                                 @endif
                             </div>
                             <h3 class="text-sm font-bold text-gray-700 group-hover:text-purple-700 transition mb-1 line-clamp-1">
-                                {{ $supplier->company_name ?: $supplier->brand_name  }}
+                                {{ $supplier->brand_name ?: $supplier->company_name }}
                             </h3>
                             @if($supplier->city || $supplier->province)
                                 <p class="text-[11px] text-gray-400 mb-2">
@@ -306,73 +258,51 @@
         {{-- ═══════════ SECTION 11: WHY CHOOSE US ═══════════ --}}
         {{-- ═══════════════════════════════════════════════════ --}}
 
-        <section class="bg-white rounded-2xl border border-gray-100 p-8 sm:p-10">
-            <div class="text-center mb-8">
+        <section class="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
+            <div class="text-center mb-6">
                 <h2 class="text-xl sm:text-2xl font-extrabold text-gray-800">چرا {{ config('app.name') }}؟</h2>
-                <p class="text-sm text-gray-500 mt-2 max-w-xl mx-auto">بستری امن و حرفه‌ای برای تجارت عمده</p>
+                <p class="text-sm text-gray-500 mt-1.5 max-w-xl mx-auto">بستری امن و حرفه‌ای برای تجارت عمده</p>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-blue-50 rounded-2xl flex items-center justify-center group-hover:bg-blue-100 transition">
-                        <svg class="w-7 h-7 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-blue-50 rounded-xl flex items-center justify-center group-hover:bg-blue-100 transition">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">تأمین‌کنندگان تأییدشده</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">تأمین‌کنندگان تأییدشده</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">تمامی تأمین‌کنندگان پس از احراز هویت تأیید می‌شوند</p>
                 </div>
 
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-emerald-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition">
-                        <svg class="w-7 h-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-emerald-50 rounded-xl flex items-center justify-center group-hover:bg-emerald-100 transition">
+                        <svg class="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">قیمت‌های رقابتی</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">قیمت‌های رقابتی</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">مقایسه قیمت از چندین تأمین‌کننده</p>
                 </div>
 
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-purple-50 rounded-2xl flex items-center justify-center group-hover:bg-purple-100 transition">
-                        <svg class="w-7 h-7 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-purple-50 rounded-xl flex items-center justify-center group-hover:bg-purple-100 transition">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">سریع و آسان</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">سریع و آسان</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">فرایند سفارش ساده و پیگیری آسان</p>
                 </div>
 
                 <div class="text-center group">
-                    <div class="w-14 h-14 mx-auto mb-4 bg-amber-50 rounded-2xl flex items-center justify-center group-hover:bg-amber-100 transition">
-                        <svg class="w-7 h-7 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-amber-50 rounded-xl flex items-center justify-center group-hover:bg-amber-100 transition">
+                        <svg class="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/>
                         </svg>
                     </div>
-                    <h3 class="text-sm font-bold text-gray-800 mb-1.5">پشتیبانی ۲۴/۷</h3>
+                    <h3 class="text-sm font-bold text-gray-800 mb-1">پشتیبانی ۲۴/۷</h3>
                     <p class="text-xs text-gray-500 leading-relaxed">تیم پشتیبانی در تمام ساعات آماده پاسخگویی</p>
-                </div>
-            </div>
-        </section>
-        {{-- B2B VALUE PROPOSITION --}}
-        <section class="py-16">
-            <div class="container mx-auto px-4">
-                <div class="grid md:grid-cols-3 gap-8">
-                    <div class="p-6 text-center">
-                        <x-heroicon-s-truck class="w-12 h-12 text-blue-600 mx-auto mb-4" />
-                        <h3 class="font-bold text-lg">حذف واسطه‌ها</h3>
-                        <p class="text-gray-600 mt-2">خرید مستقیم از تأمین‌کنندگان دست‌اول، حذف دلالان و افزایش حاشیه سود.</p>
-                    </div>
-                    <div class="p-6 text-center">
-                        <x-heroicon-s-banknotes class="w-12 h-12 text-emerald-600 mx-auto mb-4" />
-                        <h3 class="font-bold text-lg">قیمت‌های رقابتی</h3>
-                        <p class="text-gray-600 mt-2">مشاهده شفاف قیمت‌های عمده‌فروشی برای صاحبان کسب‌وکار.</p>
-                    </div>
-                    <div class="p-6 text-center">
-                        <x-heroicon-s-shield-check class="w-12 h-12 text-orange-600 mx-auto mb-4" />
-                        <h3 class="font-bold text-lg">تأمین‌کنندگان معتبر</h3>
-                        <p class="text-gray-600 mt-2">همکاری با مجموعه‌های تأییدشده و معتبر در سراسر کشور.</p>
-                    </div>
                 </div>
             </div>
         </section>

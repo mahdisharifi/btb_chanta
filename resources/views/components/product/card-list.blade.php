@@ -26,10 +26,17 @@
 <div class="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:border-blue-300 transition-all duration-200 flex gap-4 p-3 relative">
 
     {{-- Image (لینک به محصول) --}}
-    <a href="{{ $productUrl }}" class="w-28 h-28 sm:w-36 sm:h-36 bg-gray-100 rounded-lg overflow-hidden shrink-0 block">
+    <a href="{{ $productUrl }}" class="w-28 h-28 sm:w-36 sm:h-36 bg-gray-100 rounded-lg overflow-hidden shrink-0 block"
+       x-data="{
+           handleError(event) {
+               event.target.src = '{{ asset('images/placeholders/product-default.svg') }}';
+               event.target.onerror = null;
+           }
+       }">
         <img src="{{ $imageUrl }}" alt="{{ $product->title }}"
              class="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300"
-             loading="lazy" onerror="this.onerror=null; this.src='{{ asset('images/placeholder-product.jpg') }}';">
+             loading="lazy" 
+             x-on:error="handleError($event)">
     </a>
 
     {{-- Info --}}
@@ -56,7 +63,7 @@
                    class="inline-flex items-center gap-1 mt-1 text-[11px] text-gray-400 hover:text-blue-600 transition-colors group/supplier"
                    title="مشاهده پروفایل {{ $supplier->company_name }}">
                     @if($supplier->logo_path)
-                        <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                        <img src="{{ $supplier->logoUrl('small') }}"
                              alt="{{ $supplier->company_name }}"
                              class="w-4 h-4 rounded-full object-cover border border-gray-200">
                     @endif

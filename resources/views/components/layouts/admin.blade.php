@@ -17,6 +17,8 @@
         body { font-family: 'Vazir', Tahoma, Arial, sans-serif; }
         [x-cloak] { display: none !important; }
     </style>
+
+    @stack('scripts')
 </head>
 <body class="bg-gray-50 text-gray-800 antialiased" x-data="{ sidebarOpen: false, profileOpen: false }">
 
@@ -50,11 +52,6 @@
     </x-admin-sidebar-link>
     <!-- Sidebar Links -->
     <nav class="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-        <!-- در جایگاه مناسب در سایدبار -->
-        <x-admin-sidebar-link :href="route('admin.catalogs.index')" :active="request()->routeIs('admin.catalogs.*')">
-            <x-heroicon-o-rectangle-stack class="w-5 h-5 mr-2" />
-            {{ __('مدیریت کاتالوگ‌ها') }}
-        </x-admin-sidebar-link>
         @php
         $navLinks = [
         ['route' => 'admin.dashboard', 'label' => 'داشبورد', 'icon' => 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'],
@@ -63,12 +60,25 @@
         ['route' => 'admin.categories.index', 'label' => 'دسته‌بندی‌ها', 'icon' => 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z'],
         ['route' => 'admin.attributes.index', 'label' => 'ویژگی‌ها', 'icon' => 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z'],
         ['route' => 'admin.products.index', 'label' => 'محصولات', 'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4'],
+        ['route' => 'admin.catalogs.manage', 'label' => 'مدیریت کاتالوگ‌ها', 'icon' => 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'],
         ['route' => 'admin.users.pending', 'label' => 'تایید کاربران جدید', 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'],
         ['route' => 'admin.suppliers.index', 'label' => 'تامین‌کنندگان', 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'],
         ['route' => 'admin.subscription-plans.index', 'label' => 'پنل های فروش', 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'],
+        ['route' => 'admin.sliders.index', 'label' => 'تنظیمات اسلایدر', 'icon' => 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z'],
+        ['route' => 'admin.settings.price-visibility', 'label' => 'دسترسی نمایش قیمت', 'icon' => 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z'],
         ['route' => 'admin.system.terminal', 'label' => 'دستورات سیستمی', 'icon' => 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'],
-
         ];
+
+        // لینک اطلاعات فروشگاه (برای ادمین که supplier هم هست)
+        $supplierEditLink = null;
+        if (auth()->user()?->supplier) {
+            $supplierEditLink = [
+                'route' => 'admin.suppliers.edit',
+                'params' => auth()->user()->supplier->id,
+                'label' => 'اطلاعات فروشگاه',
+                'icon' => 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+            ];
+        }
         @endphp
 
         @foreach ($navLinks as $link)
@@ -80,6 +90,34 @@
             {{ $link['label'] }}
         </a>
         @endforeach
+
+        @if(auth()->user()?->can('outsourcing.view_all_tasks') || auth()->user()?->can('outsourcing.manage_commission_rules') || auth()->user()?->can('outsourcing.view_all_commissions'))
+            <div class="mt-5 border-t border-gray-200 pt-4">
+                <p class="mb-2 px-3 text-xs font-semibold tracking-wide text-gray-400">برون‌سپاری محتوا</p>
+                @can('outsourcing.view_all_tasks')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.dashboard') }}">داشبورد برون‌سپاری</x-admin-sidebar-link>
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.tasks.index') }}">مدیریت تسک‌ها</x-admin-sidebar-link>
+                @endcan
+                @can('outsourcing.manage_commission_rules')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.commission-rules') }}">قوانین پورسانت</x-admin-sidebar-link>
+                @endcan
+                @can('outsourcing.view_all_commissions')
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.settlements') }}">تسویه حساب پیمانکاران</x-admin-sidebar-link>
+                    <x-admin-sidebar-link href="{{ route('admin.outsourcing.commissions') }}">مدیریت پورسانت‌ها</x-admin-sidebar-link>
+                @endcan
+            </div>
+        @endif
+
+        {{-- لینک اطلاعات فروشگاه برای ادمین --}}
+        @if($supplierEditLink)
+        <a href="{{ route($supplierEditLink['route'], $supplierEditLink['params']) }}"
+           class="flex items-center px-3 py-2.5 rounded-lg transition-colors duration-200 group {{ request()->routeIs($supplierEditLink['route'].'*') ? 'bg-green-50 text-green-600 font-semibold' : 'text-gray-600 hover:bg-green-50 hover:text-green-700' }}">
+            <svg class="w-5 h-5 ml-3 {{ request()->routeIs($supplierEditLink['route'].'*') ? 'text-green-600' : 'text-gray-400 group-hover:text-green-500' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $supplierEditLink['icon'] }}"></path>
+            </svg>
+            {{ $supplierEditLink['label'] }}
+        </a>
+        @endif
 
         {- ابزار حساس: ورود بدون پسورد — فقط برای مدیر ارشد --}}
         @can('super_admin')
@@ -171,5 +209,25 @@
 </div>
 @stack('scripts')
 @livewireScripts
+
+{{-- Lazy Load Mermaid فقط در صفحات ادمین --}}
+<script>
+    // تابع renderMermaid برای استفاده در Livewire
+    window.renderMermaid = async function(elementId, code) {
+        if (!code || !code.trim()) {
+            document.getElementById(elementId).innerHTML = '<p class="text-gray-400">کد فلوچارت خالی است</p>';
+            return;
+        }
+
+        try {
+            const mermaid = await window.loadMermaid();
+            const { svg } = await mermaid.render('mermaid-svg-' + Date.now(), code);
+            document.getElementById(elementId).innerHTML = svg;
+        } catch (error) {
+            console.error('Mermaid render error:', error);
+            document.getElementById(elementId).innerHTML = '<p class="text-red-500">خطا در رندر فلوچارت: ' + error.message + '</p>';
+        }
+    };
+</script>
 </body>
 </html>

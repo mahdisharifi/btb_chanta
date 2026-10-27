@@ -134,7 +134,7 @@ class RetailerController extends Controller
                             'category:id,name,slug,icon',
                             'galleries' => fn($gq) => $gq->where('file_type', 'image')
                                 ->orderByDesc('is_primary')->orderBy('sort_order')->limit(1),
-                            'supplier:id,company_name,brand_name,logo_path,is_verified',
+                            'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
                         ]);
                 },
             ]);

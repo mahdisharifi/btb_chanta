@@ -45,7 +45,52 @@ class Category extends Model
     {
         return SlugOptions::create()
             ->generateSlugsFrom('name')
-            ->saveSlugsTo('slug');
+            ->saveSlugsTo('slug')
+            ->doNotGenerateSlugsOnUpdate();
+    }
+
+
+    public function save(array $options = [])
+    {
+        // Serialize tree edits and slug history with the actual write, including non-Livewire writers.
+        return $this->getConnection()->transaction(function () use ($options) {
+            $connection = $this->getConnection();
+            $nodes = $connection->table('categories')->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            \App\Services\CategoryIntegrity::assertParent($this->exists ? (int) $this->id : null, $this->parent_id, $nodes);
+            if ($this->isDirty('icon') && $this->icon !== null && !in_array($this->icon, \App\Support\CategoryIcon::allowedValues(), true)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['icon' => 'آیکون انتخاب‌شده معتبر نیست.']);
+            }
+            $oldSlug = $this->exists ? ($nodes->get($this->id)?->slug) : null;
+            $saved = parent::save($options);
+            if (!$saved) {
+                return false;
+            }
+            if ($connection->table('category_slug_redirects')->where('old_slug', $this->slug)->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['slug' => 'این نامک قبلاً استفاده شده است؛ نامک دیگری انتخاب کنید.']);
+            }
+            if ($oldSlug && $oldSlug !== $this->slug) {
+                $connection->table('category_slug_redirects')->insert([
+                    'category_id' => $this->id, 'old_slug' => $oldSlug,
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+            return true;
+        });
+    }
+
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $category = $this->where($field ?? $this->getRouteKeyName(), $value)->first();
+        if ($category || !request()->routeIs('categories.show')) {
+            return $category;
+        }
+        $id = $this->getConnection()->table('category_slug_redirects')->where('old_slug', $value)->value('category_id');
+        if ($id && ($target = app(\App\Services\CategoryCatalog::class)->flatten()->get($id))) {
+            if ($target->slug !== $value) {
+                throw new \App\Exceptions\CategorySlugRedirectException($target->slug);
+            }
+        }
+        return null;
     }
 
     public function getRouteKeyName(): string
@@ -178,6 +223,9 @@ class Category extends Model
      */
     public function getTotalProductsCountAttribute(): int
     {
+        if (array_key_exists('total_products_count', $this->attributes)) {
+            return (int) $this->attributes['total_products_count'];
+        }
         // اگر از withCount لود شده
         if (array_key_exists('active_products_count', $this->attributes)) {
             $count = (int) $this->attributes['active_products_count'];
@@ -207,15 +255,29 @@ class Category extends Model
 
     public function getAllDescendantIdsRecursive(): Collection
     {
-        $ids = collect([$this->id]);
+        return $this->collectDescendantIds(false)->prepend($this->id);
+    }
 
-        $children = $this->allChildren;
-        foreach ($children as $child) {
-            $ids = $ids->merge($child->getAllDescendantIdsRecursive());
+    private function collectDescendantIds(bool $activeOnly): Collection
+    {
+        $query = self::query()->select('id', 'parent_id');
+        if ($activeOnly) $query->active();
+        $children = $query->get()->groupBy('parent_id');
+        $ids = collect();
+        $pending = [$this->id];
+        $seen = [$this->id => true];
+        while ($pending) {
+            $parent = array_pop($pending);
+            foreach ($children->get($parent, collect()) as $child) {
+                if (isset($seen[$child->id])) continue;
+                $seen[$child->id] = true;
+                $ids->push($child->id);
+                $pending[] = $child->id;
+            }
         }
-
         return $ids;
     }
+
     public function getHierarchicalNameAttribute(): string
     {
         $depth = $this->depth_level;
@@ -251,21 +313,7 @@ class Category extends Model
      */
     public function getDepthLevelAttribute(): int
     {
-        $depth = 0;
-        $current = $this;
-
-        while ($current->parent_id !== null) {
-            $depth++;
-            if ($this->relationLoaded('parent') || $this->relationLoaded('ancestors')) {
-                $current = $current->parent;
-                if (!$current) break;
-            } else {
-                $current = Category::find($current->parent_id);
-                if (!$current) break;
-            }
-        }
-
-        return $depth;
+        return $this->getAncestors()->count();
     }
 
     /**
@@ -322,31 +370,7 @@ class Category extends Model
      */
     public function getAllDescendantIds(): Collection
     {
-        $ids = collect();
-
-        // سطح ۱: فرزندان مستقیم
-        $childIds = self::where('parent_id', $this->id)
-                        ->where('is_active', true)
-                        ->pluck('id');
-        $ids = $ids->merge($childIds);
-
-        // سطح ۲: نوه‌ها
-        if ($childIds->isNotEmpty()) {
-            $grandChildIds = self::whereIn('parent_id', $childIds)
-                                 ->where('is_active', true)
-                                 ->pluck('id');
-            $ids = $ids->merge($grandChildIds);
-
-            // سطح ۳: نتیجه‌ها (در صورت نیاز)
-            if ($grandChildIds->isNotEmpty()) {
-                $greatGrandChildIds = self::whereIn('parent_id', $grandChildIds)
-                                          ->where('is_active', true)
-                                          ->pluck('id');
-                $ids = $ids->merge($greatGrandChildIds);
-            }
-        }
-
-        return $ids;
+        return $this->collectDescendantIds(true);
     }
 
     /**
@@ -356,25 +380,13 @@ class Category extends Model
     {
         $ancestors = collect();
         $current = $this;
-
-        // حداکثر ۱۰ سطح عمق برای جلوگیری از حلقه بی‌نهایت
-        $maxDepth = 10;
-        $depth = 0;
-
-        while ($current->parent_id !== null && $depth < $maxDepth) {
-            // استفاده از رابطه لود شده اگر موجود باشد
-            if ($current->relationLoaded('parent')) {
-                $current = $current->parent;
-            } else {
-                $current = self::find($current->parent_id);
-            }
-
+        $seen = [$this->id => true];
+        while ($current->parent_id !== null && !isset($seen[$current->parent_id])) {
+            $seen[$current->parent_id] = true;
+            $current = $current->relationLoaded('parent') ? $current->parent : self::find($current->parent_id);
             if (!$current) break;
-
             $ancestors->prepend($current);
-            $depth++;
         }
-
         return $ancestors;
     }
 
@@ -409,30 +421,8 @@ class Category extends Model
      */
     public static function getTreeWithProductCounts(): Collection
     {
-        return Cache::remember('category_tree_with_counts', now()->addDay(), function () {
-            return static::query()
-                ->active()
-                ->root()
-                ->ordered()
-                ->with([
-                    'children' => function ($q) {
-                        $q->active()
-                            ->ordered()
-                            ->withCount(['activeProducts'])
-                            ->with([
-                                'children' => function ($q2) {
-                                    $q2->active()
-                                        ->ordered()
-                                        ->withCount(['activeProducts']);
-                                }
-                            ]);
-                    }
-                ])
-                ->withCount(['activeProducts'])
-                ->get();
-        });
+        return app(\App\Services\CategoryCatalog::class)->tree();
     }
-
 
     /**
      * دریافت لیست مسطح (flat) برای dropdown
@@ -474,7 +464,77 @@ class Category extends Model
 
     public function attributes()
     {
-        return $this->belongsToMany(Attribute::class);
+        return $this->belongsToMany(Attribute::class)
+            ->withPivot(['display_order', 'is_required'])
+            ->orderByPivot('display_order')
+            ->orderBy('attributes.id');
+    }
+
+    /**
+     * دوره‌های چک مرتبط با این دسته‌بندی برای تامین‌کنندگان مختلف
+     */
+    public function checkPeriods()
+    {
+        return $this->belongsToMany(CheckPeriod::class, 'category_check_period')
+            ->withPivot(['supplier_id', 'percentage_increase', 'is_active'])
+            ->withTimestamps();
+    }
+
+    /**
+     * دریافت درصد افزایش برای یک دوره چک خاص و یک تامین‌کننده خاص
+     * 
+     * @param int $checkPeriodId
+     * @param int $supplierId
+     * @return float|null
+     */
+    public function getCheckPercentageForSupplier(int $checkPeriodId, int $supplierId): ?float
+    {
+        $pivot = \DB::table('category_check_period')
+            ->where('category_id', $this->id)
+            ->where('check_period_id', $checkPeriodId)
+            ->where('supplier_id', $supplierId)
+            ->where('is_active', true)
+            ->first();
+
+        return $pivot ? (float)$pivot->percentage_increase : null;
+    }
+
+    /**
+     * آیا این دسته‌بندی برای تامین‌کننده خاص تنظیمات دوره چک دارد؟
+     * 
+     * @param int $supplierId
+     * @return bool
+     */
+    public function hasCheckPeriodsForSupplier(int $supplierId): bool
+    {
+        return \DB::table('category_check_period')
+            ->where('category_id', $this->id)
+            ->where('supplier_id', $supplierId)
+            ->where('is_active', true)
+            ->exists();
+    }
+
+    /**
+     * دریافت تمام تنظیمات دوره چک برای یک تامین‌کننده خاص
+     * 
+     * @param int $supplierId
+     * @return \Illuminate\Support\Collection
+     */
+    public function getCheckPeriodsForSupplier(int $supplierId): \Illuminate\Support\Collection
+    {
+        return \DB::table('category_check_period')
+            ->join('check_periods', 'category_check_period.check_period_id', '=', 'check_periods.id')
+            ->where('category_check_period.category_id', $this->id)
+            ->where('category_check_period.supplier_id', $supplierId)
+            ->where('category_check_period.is_active', true)
+            ->select([
+                'check_periods.id',
+                'check_periods.name',
+                'check_periods.days',
+                'category_check_period.percentage_increase'
+            ])
+            ->orderBy('check_periods.days')
+            ->get();
     }
 
 }

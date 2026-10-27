@@ -6,8 +6,8 @@ namespace App\Enums;
 
 enum PriceType: string
 {
-    case SUB_CARTON = 'sub_carton';
     case CARTON = 'carton';
+    case SUB_CARTON = 'sub_carton';
     case WARRANTY = 'warranty';
     case CHECK_1_MONTH = 'check_1_month';
     case CHECK_2_MONTH = 'check_2_month';
@@ -17,8 +17,8 @@ enum PriceType: string
     public function label(): string
     {
         return match ($this) {
-            self::SUB_CARTON     => 'زیر کارتن',
             self::CARTON         => 'کارتن',
+            self::SUB_CARTON     => 'زیر کارتن',
             self::WARRANTY       => 'گارانتی‌دار',
             self::CHECK_1_MONTH  => 'چکی ۱ ماهه',
             self::CHECK_2_MONTH  => 'چکی ۲ ماهه',
@@ -30,8 +30,8 @@ enum PriceType: string
     public function color(): string
     {
         return match ($this) {
+            self::CARTON         => 'blue',        
             self::SUB_CARTON     => 'emerald',
-            self::CARTON         => 'blue',
             self::WARRANTY       => 'purple',
             self::CHECK_1_MONTH  => 'amber',
             self::CHECK_2_MONTH  => 'orange',
@@ -43,8 +43,8 @@ enum PriceType: string
     public function icon(): string
     {
         return match ($this) {
-            self::SUB_CARTON     => 'cube',
             self::CARTON         => 'archive-box',
+            self::SUB_CARTON     => 'cube',
             self::WARRANTY       => 'shield-check',
             self::CHECK_1_MONTH,
             self::CHECK_2_MONTH,

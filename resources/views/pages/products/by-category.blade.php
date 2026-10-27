@@ -210,7 +210,7 @@
                                                                 : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'">
                                                         {{-- Supplier Logo/Avatar --}}
                                                         @if($ps->supplier->logo_path)
-                                                            <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
+                                                            <img src="{{ $ps->supplier->logoUrl('small') }}"
                                                                  alt="{{ $ps->supplier->company_name }}"
                                                                  class="w-6 h-6 rounded-full object-cover">
                                                         @else
@@ -247,7 +247,7 @@
                                                     <div class="flex items-center justify-between">
                                                         <div class="flex items-center gap-3">
                                                             @if($ps->supplier->logo_path)
-                                                                <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
+                                                                <img src="{{ $ps->supplier->logoUrl('small') }}"
                                                                      alt="{{ $ps->supplier->company_name }}"
                                                                      class="w-10 h-10 rounded-lg object-cover border border-blue-200">
                                                             @else
@@ -378,7 +378,7 @@
                                                             <th class="text-center px-4 py-3 border-b border-blue-200 min-w-[160px]">
                                                                 <div class="flex flex-col items-center gap-1">
                                                                     @if($ps->supplier->logo_path)
-                                                                        <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
+                                                                        <img src="{{ $ps->supplier->logoUrl('small') }}"
                                                                              class="w-8 h-8 rounded-lg object-cover">
                                                                     @else
                                                                         <div class="w-8 h-8 rounded-lg bg-blue-200 flex items-center justify-center text-blue-600 font-bold text-xs">
@@ -509,7 +509,7 @@
                                     </h3>
                                     <div class="flex items-center gap-3">
                                         @if($mainSupplier->logo_path)
-                                            <img src="{{ asset('storage/' . $mainSupplier->logo_path) }}"
+                                            <img src="{{ $mainSupplier->logoUrl('small') }}"
                                                  alt="{{ $mainSupplier->company_name }}"
                                                  class="w-12 h-12 rounded-lg object-cover border border-purple-200">
                                         @else
@@ -661,7 +661,7 @@
                                         {{-- Supplier Header --}}
                                         <div class="flex items-center gap-3 mb-4">
                                             @if($ps->supplier->logo_path)
-                                                <img src="{{ asset('storage/' . $ps->supplier->logo_path) }}"
+                                                <img src="{{ $ps->supplier->logoUrl('small') }}"
                                                      alt="{{ $ps->supplier->company_name }}"
                                                      class="w-14 h-14 rounded-xl object-cover border border-gray-200">
                                             @else

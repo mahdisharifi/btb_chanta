@@ -26,13 +26,34 @@ return [
     'watermark_image_position' => 'P',
     'custom_font_dir'          => public_path('fonts/'), // مسیر پوشه فونت‌های شما
     'custom_font_data'         => [
-        'vazir' => [ // نام فونت که در استایل‌ها استفاده خواهید کرد
-            'R'          => 'Vazir-Regular-FD.ttf', // فونت معمولی
-            'B'          => 'Vazir-Bold-FD.ttf',    // فونت بولد
-            'useOTL'     => 0xFF,                   // ضروری برای فارسی
-            'useKashida' => 75,                     // کشیدگی متون فارسی
+        // فونت Vazir (پیش‌فرض)
+        'vazir' => [
+            'R'          => 'Vazir-Regular-FD.ttf',
+            'B'          => 'Vazir-Bold-FD.ttf',
+            'useOTL'     => 0xFF,
+            'useKashida' => 75,
         ],
-        // در صورت نیاز فونت‌های دیگر را اینجا اضافه کنید
+        // فونت Shabnam
+        'shabnam' => [
+            'R'          => 'Shabnam-FD.ttf',
+            'B'          => 'Shabnam-Bold-FD.ttf',
+            'useOTL'     => 0xFF,
+            'useKashida' => 75,
+        ],
+        // فونت Sahel
+        'sahel' => [
+            'R'          => 'Sahel-FD.ttf',
+            'B'          => 'Sahel-Bold-FD.ttf',
+            'useOTL'     => 0xFF,
+            'useKashida' => 75,
+        ],
+        // فونت IRANSans (اگر فایل‌های آن موجود است)
+        'iransans' => [
+            'R'          => 'IRANSans-Regular.ttf',
+            'B'          => 'IRANSans-Bold.ttf',
+            'useOTL'     => 0xFF,
+            'useKashida' => 75,
+        ],
     ],
     'auto_language_detection'  => false,
     'temp_dir'                 => storage_path('app/temp'), // پوشه تمپ برای پردازش PDF

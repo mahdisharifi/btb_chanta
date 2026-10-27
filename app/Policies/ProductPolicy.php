@@ -166,41 +166,22 @@ class ProductPolicy
     }
 
     /**
-     * Admin can approve/reject pending products.
+     * Product approval is an authorization decision; persistence belongs to an action/service.
      */
-    public function approve(Product $product)
+    public function approve(User $user, Product $product): bool
     {
-        $this->authorize('approve', $product);
-
-        $product->update([
-            'status' => ProductStatus::ACTIVE,
-            'approved_at' => now(),
-            'approved_by' => auth()->id(),
-        ]);
-
-        return redirect()->route('admin.products.index')
-            ->with('success', 'محصول با موفقیت تایید شد.');
+        return $user->can('access_admin_panel')
+            && $user->hasAnyPermission(['update_product', 'edit_product']);
     }
 
-    public function reject(Product $product)
+    public function reject(User $user, Product $product): bool
     {
-        $this->authorize('reject', $product);
-
-        $product->update([
-            'status' => ProductStatus::INACTIVE,
-            'rejected_at' => now(),
-            'rejected_by' => auth()->id(),
-        ]);
-
-        return redirect()->route('admin.products.index')
-            ->with('success', 'محصول رد شد.');
+        return $this->approve($user, $product);
     }
 
-    public function bulkAction(Request $request)
+    public function bulkAction(User $user): bool
     {
-        $this->authorize('bulkAction', Product::class);
-
-        // بقیه کد...
+        return $user->can('access_admin_panel')
+            && $user->hasAnyPermission(['update_product', 'edit_product']);
     }
-
 }

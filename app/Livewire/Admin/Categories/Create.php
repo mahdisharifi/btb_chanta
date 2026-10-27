@@ -27,7 +27,9 @@ class Create extends Component
     use WithFileUploads;
 
     public ?Category $category = null;
+    #[\Livewire\Attributes\Locked]
     public bool $isEditMode = false;
+    public bool $removeExistingImage = false;
 
     public $name;
     public $slug;
@@ -41,96 +43,17 @@ class Create extends Component
     public $seo_description;
     public $seo_keywords;
     public $selectedAttributes = [];
+
+    /** @var array<int, array{display_order: int, is_required: bool}> */
+    public array $attributeSettings = [];
+
     public bool $isLeafNode = true;
     public bool $autoGenerateSeo = false;
     public string $seoTemplate = 'commercial';
     public ?string $existingIcon = null;
     public ?string $existingImagePath = null;
 
-    public const ICONS = [
-        'squares-2x2',
-        'cube',
-        'cube-transparent',
-        'tag',
-        'shopping-bag',
-        'shopping-cart',
-        'gift',
-        'archive-box',
-        'building-storefront',
-        'building-office',
-        'truck',
-        'wrench',
-        'wrench-screwdriver',
-        'cog-6-tooth',
-        'cpu-chip',
-        'device-phone-mobile',
-        'computer-desktop',
-        'tv',
-        'camera',
-        'printer',
-        'bolt',
-        'light-bulb',
-        'fire',
-        'sparkles',
-        'beaker',
-        'paint-brush',
-        'scissors',
-        'home',
-        'home-modern',
-        'key',
-        'lock-closed',
-        'heart',
-        'star',
-        'sun',
-        'moon',
-        'cloud',
-        'globe-alt',
-        'map-pin',
-        'book-open',
-        'academic-cap',
-        'briefcase',
-        'banknotes',
-        'credit-card',
-        'chart-bar',
-        'clipboard-document-list',
-        'folder',
-        'document-text',
-        'musical-note',
-        'film',
-        'puzzle-piece',
-        'rocket-launch',
-        'trophy',
-        'wallet',
-        'phone',
-        'envelope',
-        'bell',
-        'calendar',
-        'clock',
-        'user-group',
-        'swatch',
-        'rectangle-stack',
-        'circle-stack',
-        'wifi',
-        'funnel',
-        'cake',
-        'photo',
-        'newspaper',
-        'megaphone',
-        'shield-check',
-        'ticket',
-        'eye',
-        'link',
-        'server',
-        'identification',
-        'arrow-path',
-        'bookmark',
-        'calendar-days',
-        'check-badge',
-        'flag',
-        'map',
-        'presentation-chart-bar',
-        'video-camera',
-    ];
+    public const ICONS = \App\Support\CategoryIcon::NAMES;
 
     public function mount(?Category $category = null): void
     {
@@ -152,7 +75,16 @@ class Create extends Component
             $this->seo_title = $category->seo_title;
             $this->seo_description = $category->seo_description;
             $this->seo_keywords = $category->seo_keywords;
-            $this->selectedAttributes = $category->attributes()->pluck('attributes.id')->toArray();
+            $categoryAttributes = $category->attributes()->get();
+            $this->selectedAttributes = $categoryAttributes->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $this->attributeSettings = $categoryAttributes
+                ->mapWithKeys(static fn (Attribute $attribute): array => [
+                    $attribute->id => [
+                        'display_order' => (int) $attribute->pivot->display_order,
+                        'is_required' => (bool) $attribute->pivot->is_required,
+                    ],
+                ])
+                ->all();
 
             $this->isLeafNode = $category->children()->doesntExist();
         }
@@ -219,14 +151,14 @@ class Create extends Component
                         $fail('دسته‌بندی نمی‌تواند والد خودش باشد.');
                     }
 
-                    $descendantIds = $this->category->allChildren()->pluck('id')->toArray();
+                    $descendantIds = $this->category->getAllDescendantIdsRecursive()->all();
                     if (in_array((int) $value, array_map('intval', $descendantIds), true)) {
                         $fail('نمی‌توانید یکی از زیرمجموعه‌های همین دسته‌بندی را به عنوان والد انتخاب کنید.');
                     }
                 },
             ],
             'description' => ['nullable', 'string'],
-            'icon' => ['nullable', 'string', 'max:255'],
+            'icon' => ['nullable', 'string', Rule::in(\App\Support\CategoryIcon::allowedValues())],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'sort_order' => ['required', 'integer', 'min:0'],
             'is_active' => ['boolean'],
@@ -235,6 +167,9 @@ class Create extends Component
             'seo_keywords' => ['nullable', 'string', 'max:255'],
             'selectedAttributes' => ['nullable', 'array'],
             'selectedAttributes.*' => ['integer', 'exists:attributes,id'],
+            'attributeSettings' => ['nullable', 'array'],
+            'attributeSettings.*.display_order' => ['required', 'integer', 'min:0', 'max:99999'],
+            'attributeSettings.*.is_required' => ['required', 'boolean'],
             'autoGenerateSeo' => ['boolean'],
             'seoTemplate' => ['required', 'string', Rule::in(['standard', 'commercial', 'technical'])],
 
@@ -264,11 +199,8 @@ class Create extends Component
 
     public function removeImage(): void
     {
-        // حذف فیزیکی فایل تصویر در صورت اقدام در فرم جهت بهینگی مصرف هاست اشتراکی
-        if ($this->existingImagePath) {
-            Storage::disk('public')->delete($this->existingImagePath);
-            $this->existingImagePath = null;
-        }
+        $this->removeExistingImage = true;
+        $this->existingImagePath = null;
         $this->image = null;
     }
 
@@ -278,6 +210,14 @@ class Create extends Component
 
         if (! in_array($attributeId, $this->selectedAttributes, true)) {
             $this->selectedAttributes[] = $attributeId;
+            $lastDisplayOrder = collect($this->attributeSettings)
+                ->pluck('display_order')
+                ->map(static fn (mixed $order): int => (int) $order)
+                ->max() ?? 0;
+            $this->attributeSettings[$attributeId] = [
+                'display_order' => $lastDisplayOrder + 1,
+                'is_required' => false,
+            ];
         }
 
         $this->resetErrorBag('attribute_remove');
@@ -300,6 +240,7 @@ class Create extends Component
             $this->selectedAttributes,
             fn ($id) => (int) $id !== $attributeId
         ));
+        unset($this->attributeSettings[$attributeId]);
 
         $this->resetErrorBag('attribute_error');
     }
@@ -307,10 +248,19 @@ class Create extends Component
 // ۳. متد save بازنگری شده و کاملاً ایمن
     public function save()
     {
+        $this->isEditMode = (bool) $this->category?->exists;
+        \Illuminate\Support\Facades\Gate::authorize($this->isEditMode ? 'update' : 'create', $this->isEditMode ? $this->category : Category::class);
         $validated = $this->validate();
+        $newImagePath = null;
+        $commitStarted = false;
 
         try {
             DB::beginTransaction();
+            Category::withTrashed()->orderBy('id')->lockForUpdate()->get(['id']);
+            if ($this->isEditMode) {
+                $this->category = Category::findOrFail($this->category->id);
+            }
+            $oldImagePath = $this->category?->image_path;
 
             $categoryData = [
                 'name' => $validated['name'],
@@ -326,15 +276,11 @@ class Create extends Component
             ];
 
             if ($this->image) {
-                if ($this->isEditMode && $this->category && $this->category->image_path) {
-                    Storage::disk('public')->delete($this->category->image_path);
-                }
-                $categoryData['image_path'] = $this->image->store('categories', 'public');
-            } else {
-                if ($this->isEditMode && !$this->existingImagePath && $this->category && $this->category->image_path) {
-                    Storage::disk('public')->delete($this->category->image_path);
-                    $categoryData['image_path'] = null;
-                }
+                $newImagePath = $this->image->store('categories', 'public');
+                if (!$newImagePath) throw new \RuntimeException('Category image could not be stored.');
+                $categoryData['image_path'] = $newImagePath;
+            } elseif ($this->removeExistingImage) {
+                $categoryData['image_path'] = null;
             }
 
             if ($this->isEditMode) {
@@ -389,12 +335,27 @@ class Create extends Component
                     }
                 }
 
-                $category->attributes()->sync($selectedAttributeIds->all());
+                $syncData = [];
+
+                foreach ($selectedAttributeIds as $attributeId) {
+                    $settings = $validated['attributeSettings'][$attributeId] ?? $this->attributeSettings[$attributeId] ?? [];
+                    $syncData[$attributeId] = [
+                        'display_order' => (int) ($settings['display_order'] ?? 0),
+                        'is_required' => (bool) ($settings['is_required'] ?? false),
+                    ];
+                }
+
+                $category->attributes()->sync($syncData);
             } else {
                 $category->attributes()->sync([]);
             }
 
+            if ($oldImagePath && ($newImagePath || $this->removeExistingImage)) {
+                DB::afterCommit(fn () => \App\Services\CategoryImageStorage::delete($oldImagePath));
+            }
+            $commitStarted = true;
             DB::commit();
+            $this->removeExistingImage = false;
 
             session()->flash(
                 'success',
@@ -404,9 +365,11 @@ class Create extends Component
             return $this->redirectRoute('admin.categories.index', navigate: true);
         } catch (ValidationException $e) {
             DB::rollBack();
+            if (!$commitStarted) \App\Services\CategoryImageStorage::delete($newImagePath);
             throw $e;
         } catch (\Throwable $e) {
             DB::rollBack();
+            if (!$commitStarted) \App\Services\CategoryImageStorage::delete($newImagePath);
             report($e);
             $this->addError('attribute_error', 'خطا در ذخیره اطلاعات رخ داد. لطفاً دوباره تلاش کنید.');
         }

@@ -13,7 +13,7 @@ class SitemapController extends Controller
     {
         $xml = Cache::remember('sitemap_index', now()->addHours(6), function () {
             $productsLastmod   = Product::active()->max('updated_at');
-            $categoriesLastmod = Category::active()->max('updated_at');
+            $categoriesLastmod = app(\App\Services\CategoryCatalog::class)->flatten()->max('updated_at');
 
             return view('sitemap.index', [
                 'sitemaps' => [
@@ -65,9 +65,7 @@ class SitemapController extends Controller
     public function categories(): Response
     {
         $xml = Cache::remember('sitemap_categories', now()->addHours(6), function () {
-            $urls = Category::active()
-                ->select('slug', 'updated_at', 'image_path')
-                ->get()
+            $urls = app(\App\Services\CategoryCatalog::class)->flatten()
                 ->map(fn($c) => [
                     'loc'     => route('categories.show', $c->slug),
                     'lastmod' => $c->updated_at->toAtomString(),

@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RolePermissionSeeder::class,  // 1. Roles & Permissions first
+            ProductCompletionSeeder::class, // Inactive base commission rules
             CategorySeeder::class,        // 2. Categories (needed by products)
             UserSeeder::class,            // 3. Users with role assignments
             SupplierSeeder::class,        // 4. Supplier profiles (needs supplier users)
@@ -23,6 +24,9 @@ class DatabaseSeeder extends Seeder
             CountrySeeder::class,
             ProvinceSeeder::class,
             CitySeeder::class,
+            PriceTypeSeeder::class,       // انواع قیمت‌ها (نقدی، چکی، گارانتی)
+            CheckPeriodSeeder::class,     // دوره‌های پیشفرض چک
+            SocialNetworkSeeder::class,   // شبکه‌های اجتماعی
 
         ]);
 

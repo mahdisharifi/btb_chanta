@@ -87,7 +87,6 @@ if (app()->environment('local')) {
             $users = \App\Models\User::with('roles')->orderBy('id', 'desc')->get();
             return view('dev.force-login-select', compact('users'));
         })->name('dev.force-login.select');
-
 // مرحله 4: اجرای لاگین
         Route::post('/dev/force-login/execute/{id}', function ($id) {
             if (!session('dev_authenticated')) {
@@ -124,10 +123,13 @@ require __DIR__.'/auth.php';
 
 // Home
 Route::get('/', [HomeController::class, 'index'])->name('home');
+        Route::get('/search', [SearchController::class, 'index'])->name('search');
 
 // Products
 Route::prefix('products')->name('products.')->group(function () {
     Route::get('/', [ProductController::class, 'index'])->name('index');
+    Route::get('/filters/category-counts', [ProductController::class, 'getCategoryCounts'])->name('category-counts');
+    Route::get('/filters/suppliers', [ProductController::class, 'getFilteredSuppliers'])->name('filtered-suppliers');
     Route::get('/{product:slug}', [ProductController::class, 'show'])->name('show');
 });
 
@@ -137,8 +139,16 @@ Route::prefix('categories')->name('categories.')->group(function () {
     Route::get('/{category:slug}', [CategoryController::class, 'show'])->name('show');
 });
 
-// Search
-Route::get('/search', [SearchController::class, 'index'])->name('search');
+// Suppliers (Public)
+Route::prefix('suppliers')->name('suppliers.')->group(function () {
+    Route::get('/', [SupplierPublicController::class, 'index'])->name('index');
+    Route::get('/profile/{supplier}', [SupplierPublicController::class, 'showById'])->name('show.legacy');
+    Route::get('/{slug}', \App\Livewire\Web\SupplierProducts::class)
+        ->middleware(\App\Http\Middleware\RedirectLegacySupplierSlug::class)
+        ->name('show');
+});
+
+
 
 // Static Pages
 Route::view('/about', 'pages.about')->name('about');
@@ -148,7 +158,8 @@ Route::view('/privacy', 'pages.privacy')->name('privacy');
 
 // Slider Click Tracking
 Route::post('/sliders/{slider}/click', function (Slider $slider) {
-    $slider->increment('clicks');
+    abort_unless(Slider::active()->whereKey($slider->getKey())->exists(), 404);
+    $slider->increment('click_count');
     return response()->json(['success' => true]);
 })->middleware('throttle:30,1')->name('sliders.click');
 
@@ -163,6 +174,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         return match(true) {
             $user->hasRole('super_admin') => redirect()->route('admin.dashboard'),
+            $user->hasRole('admin') => redirect()->route('admin.outsourcing.dashboard'),
+            $user->hasRole('outsourcer') => redirect()->route('outsourcer.tasks.index'),
+            $user->hasRole('reviewer') => redirect()->route('reviewer.outsourcing.tasks.index'),
+            $user->hasRole('finance_manager') => redirect()->route('admin.outsourcing.commissions'),
             $user->hasRole('supplier') || $user->hasRole('regular_supplier') => redirect()->route('supplier.dashboard'),
             $user->hasRole('retailer_premium') || $user->hasRole('retailer_basic')
             => redirect()->route('retailer.dashboard'),
@@ -171,11 +186,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         };
 
     })->name('dashboard');
-
-    // Supplier Public Profile (Premium Retailers Only)
-    Route::get('/suppliers/profile/{supplier:id}', [\App\Http\Controllers\Web\SupplierPublicController::class, 'show'])
-        ->middleware('can:view_supplier_info')
-        ->name('suppliers.show');
 });
 
 // ⚠️ مسیرهای /admin و /admin/seo به routes/admin.php منتقل شده‌اند.
@@ -258,3 +268,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Volt::route('/test-volt', 'test-page')->name('test.volt');
 Route::any('/payment/verify', [PaymentController::class, 'verify'])->name('payment.verify');
 Route::get('/payment/callback', [PaymentCallbackController::class, 'verify'])->name('payment.callback');
+
+// Catalog Progress Tracking (استفاده از Cache به جای Session)
+Route::middleware(['auth'])->get('/catalog/progress/{key}', function ($key) {
+    $progress = \Illuminate\Support\Facades\Cache::get($key, ['percent' => 0, 'message' => 'آماده‌سازی...']);
+    return response()->json($progress);
+})->name('catalog.progress');

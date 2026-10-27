@@ -1,29 +1,59 @@
-*.log
-.DS_Store
-.env.backup
-.env.production
-.phpactor.json
+# Laravel Specific
+/.env
+/.env.backup
+/.env.production
+/.env.local
 .phpunit.result.cache
+auth.json
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+
+# IDE & Editors
 /.fleet
 /.idea
 /.nova
 /.phpunit.cache
 /.vscode
 /.zed
-/auth.json
+.phpactor.json
+
+# Dependencies
 /node_modules
+/vendor
+
+# Build & Compiled
 /public/build
 /public/hot
 /public/storage
+
+# Storage (keep structure, ignore contents)
 /storage/*.key
+/storage/app/*
+!/storage/app/.gitignore
+!/storage/app/public
+/storage/app/public/*
+!/storage/app/public/.gitignore
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/testing/*
+!/storage/framework/testing/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
 /storage/pail
-/vendor
-Homestead.json
-Homestead.yaml
+
+# OS Specific
+.DS_Store
 Thumbs.db
-/.vagrant
+*.log
 
 # Laravel 4 specific
+/.vagrant
 bootstrap/compiled.php
 app/storage/
 
@@ -31,4 +61,30 @@ app/storage/
 public_html/storage
 public_html/hot
 
-.env
+# Backup & Temporary Files
+*~
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# AI & Backup Directories
+/Hosh Masnoei
+
+# Kiro IDE
+/.kiro/reports/
+
+# GapGPT Backup Files
+*.gapgpt-backup
+
+# Project ZIP Archives
+*.zip
+
+# Documentation Directory
+/docs/
+
+# Semantic Review Directory
+/semantic-review/
+
+# Deploy Script Copies
+* - Copy.*

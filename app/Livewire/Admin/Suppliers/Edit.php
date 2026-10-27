@@ -2,129 +2,154 @@
 
 namespace App\Livewire\Admin\Suppliers;
 
-use App\Models\User;
+use App\Livewire\User\RegisterSupplier;
 use App\Models\Supplier;
-use Livewire\Component;
-use Livewire\Attributes\Layout;
-use Livewire\WithFileUploads;
+use App\Services\SupplierSlugService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Layout;
 
 #[Layout('components.layouts.admin')]
-class Edit extends Component
+class Edit extends RegisterSupplier
 {
-    use WithFileUploads;
-
-    public Supplier $supplier;
-
-    // فیلدهای کاربر
-    public $user_id;
-
-    // فیلدهای تامین‌کننده
-    public $company_name;
-    public $brand_name;
-    public $national_id;
-    public $tax_id;
-    public $phone;
-    public $province;
-    public $city;
-    public $address;
-    public $is_active;
-    public $is_verified;
-
-    // فیلدهای لوگو
-    public $logo; // برای آپلود فایل جدید
-    public $current_logo; // برای نمایش لوگوی فعلی
-
-    public function mount(Supplier $supplier)
+    public function mount()
     {
-        $this->supplier = $supplier;
-
-        $this->user_id = $supplier->user_id;
-        $this->company_name = $supplier->company_name;
-        $this->brand_name = $supplier->brand_name;
-        $this->national_id = $supplier->national_id;
-        $this->tax_id = $supplier->tax_id;
-        $this->phone = $supplier->phone;
-        $this->province = $supplier->province;
-        $this->city = $supplier->city;
-        $this->address = $supplier->address;
-        $this->is_active = (bool) $supplier->is_active;
-        $this->is_verified = (bool) $supplier->is_verified;
-        $this->current_logo = $supplier->logo_path;
-    }
-
-    protected function rules()
-    {
-        return [
-            // کاربر باید وجود داشته باشد و در جدول suppliers یکتا باشد (به جز خود این تامین‌کننده)
-            'user_id' => 'required|exists:users,id|unique:suppliers,user_id,' . $this->supplier->id,
-            'company_name' => 'required|string|max:255',
-            'brand_name' => 'nullable|string|max:255',
-            'national_id' => 'nullable|string|max:50',
-            'tax_id' => 'nullable|string|max:50',
-            'phone' => 'nullable|string|max:20',
-            'province' => 'nullable|string|max:255',
-            'city' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
-            'is_active' => 'boolean',
-            'is_verified' => 'boolean',
-            'logo' => 'nullable|image|max:2048',
-        ];
-    }
-
-    protected function messages()
-    {
-        return [
-            'user_id.required' => 'لطفاً یک کاربر را انتخاب کنید.',
-            'user_id.unique' => 'کاربر انتخاب شده در حال حاضر یک پروفایل تامین‌کننده دیگر دارد.',
-        ];
-    }
-
-    public function update()
-    {
-        $validated = $this->validate();
-
-        // مدیریت آپلود لوگوی جدید
-        if ($this->logo) {
-            // حذف لوگوی قبلی در صورت وجود
-            if ($this->supplier->logo_path) {
-                Storage::disk('public')->delete($this->supplier->logo_path);
+        // دریافت supplier از route parameter
+        $supplierId = request()->route('supplier');
+        $this->supplier = Supplier::findOrFail($supplierId);
+        Gate::authorize('update', $this->supplier);
+        
+        // بررسی دسترسی: فقط ادمین یا خود تامین‌کننده
+        $user = auth()->user();
+        if (!$user->hasRole(['super_admin', 'admin'])) {
+            // اگر تامین‌کننده است، فقط می‌تونه پروفایل خودش رو ویرایش کنه
+            if (!$user->supplier || $user->supplier->id !== $this->supplier->id) {
+                abort(403, 'شما اجازه دسترسی به این صفحه را ندارید.');
             }
-            $validated['logo_path'] = $this->logo->store('suppliers/logos', 'public');
         }
+        
+        $this->editMode = true;
 
-        // تنظیم خودکار تاریخ تایید
-        if ($this->is_verified && !$this->supplier->is_verified) {
-            $validated['verified_at'] = now();
-        } elseif (!$this->is_verified) {
-            $validated['verified_at'] = null;
+        // فراخوانی mount والد برای بارگذاری استان‌ها و شبکه‌های اجتماعی
+        parent::mount();
+
+        // بارگذاری اطلاعات supplier
+        $this->loadSupplierData();
+    }
+
+    public function register()
+    {
+        Gate::authorize('update', $this->supplier);
+        $requestedSlug = $this->slug ?: $this->supplier->slug;
+        if ($requestedSlug !== $this->supplier->slug) {
+            Gate::authorize('updateSlug', $this->supplier);
         }
+        // Override برای ریدایرکت به لیست تامین‌کنندگان ادمین
+        $this->validate();
+        $logoImages = app(\App\Services\SupplierLogoImageService::class);
+        $newLogo = null;
+        $databaseSaved = false;
+        $newDocuments = [];
 
-        // جلوگیری از ثبت آبجکت فایل در دیتابیس
-        unset($validated['logo']);
+        try {
+            $data = [
+                'company_name' => $this->company_name,
+                'company_name_en' => $this->company_name_en,
+                'brand_name' => $this->brand_name,
+                'description' => $this->description,
+                'phone' => $this->phone,
+                'mobile' => $this->mobile,
+                'email' => $this->email,
+                'website' => $this->website,
+                'address' => $this->address,
+                'postal_code' => $this->postal_code,
+                'province_id' => $this->province_id,
+                'city_id' => $this->city_id,
+                'national_id' => $this->national_id,
+                'tax_id' => $this->tax_id,
+            ];
 
-        $this->supplier->update($validated);
+            // ذخیره لوگو
+            if ($this->logo) {
+                $newLogo = $logoImages->processUpload($this->logo);
+                $data = array_merge($data, $newLogo);
+            }
 
-        // اطمینان از اینکه کاربر تخصیص داده شده، نقش تامین‌کننده را دارد
-        $user = User::find($this->user_id);
-        if ($user && !$user->hasRole('supplier')) {
-            $user->assignRole('supplier');
+            // ذخیره مدارک احراز هویت
+            if ($this->national_card_file) {
+                $newDocuments['national_card_file'] = $data['national_card_file'] = $this->national_card_file->store('suppliers/documents', 'public');
+                if (! $data['national_card_file']) {
+                    throw new \RuntimeException('Unable to store national card.');
+                }
+            }
+
+            if ($this->business_license_file) {
+                $newDocuments['business_license_file'] = $data['business_license_file'] = $this->business_license_file->store('suppliers/documents', 'public');
+                if (! $data['business_license_file']) {
+                    throw new \RuntimeException('Unable to store business license.');
+                }
+            }
+
+            // ذخیره شبکه‌های اجتماعی
+            $data['social_networks'] = array_filter($this->social_networks);
+
+            // ادمین می‌تونه همه فیلدها رو ویرایش کنه (بدون قفل)
+            $oldLogoPath = $this->supplier->logo_path;
+            $oldLogoVersions = $this->supplier->logo_versions;
+            $oldDocuments = DB::transaction(function () use ($data, $requestedSlug, $newDocuments): array {
+                $supplier = Supplier::query()->lockForUpdate()->findOrFail($this->supplier->getKey());
+                Gate::authorize('update', $supplier);
+                $oldDocuments = array_filter(array_map(
+                    fn (string $column) => $supplier->getRawOriginal($column),
+                    array_keys($newDocuments),
+                ));
+                if ($requestedSlug !== $supplier->slug) {
+                    Gate::authorize('updateSlug', $supplier);
+                    $supplier = app(SupplierSlugService::class)->change($supplier, $requestedSlug);
+                }
+                $supplier->update($data);
+                $this->supplier = $supplier;
+
+                return array_diff($oldDocuments, array_filter([
+                    $supplier->national_card_file,
+                    $supplier->business_license_file,
+                ]));
+            }, 3);
+            $databaseSaved = true;
+            DB::afterCommit(function () use ($oldDocuments, $newLogo, $oldLogoPath, $oldLogoVersions, $logoImages): void {
+                if ($oldDocuments) {
+                    Storage::disk('public')->delete($oldDocuments);
+                }
+                if ($newLogo && $oldLogoPath) {
+                    $logoImages->delete($oldLogoPath, $oldLogoVersions);
+                }
+            });
+
+            session()->flash('success', 'اطلاعات تامین‌کننده با موفقیت به‌روزرسانی شد.');
+
+            return $this->redirectRoute('admin.suppliers.index', navigate: true);
+
+        } catch (\Throwable $e) {
+            if (! $databaseSaved) {
+                if ($newDocuments) {
+                    Storage::disk('public')->delete(array_filter($newDocuments));
+                }
+                if ($newLogo) {
+                    $logoImages->delete($newLogo['logo_path'] ?? null, $newLogo['logo_versions'] ?? null);
+                }
+            }
+            if ($e instanceof ValidationException || $e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                throw $e;
+            }
+            session()->flash('error', 'خطا در به‌روزرسانی اطلاعات: ' . $e->getMessage());
         }
-
-        session()->flash('success', 'تامین‌کننده با موفقیت ویرایش شد.');
-
-        return $this->redirectRoute('admin.suppliers.index', navigate: true);
     }
 
     public function render()
     {
-        // دریافت کاربرانی که تامین‌کننده نیستند + کاربر فعلی همین تامین‌کننده
-        $users = User::whereDoesntHave('supplier')
-            ->orWhere('id', $this->supplier->user_id)
-            ->get();
-
-        return view('livewire.admin.suppliers.edit', [
-            'users' => $users
-        ]);
+        // استفاده از همان view کامپوننت RegisterSupplier
+        return view('livewire.user.register-supplier');
     }
 }

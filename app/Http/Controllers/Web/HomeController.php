@@ -22,6 +22,7 @@ class HomeController extends Controller
 
     private const CACHE_TTL_SHORT  = 600;    // 10 دقیقه
     private const CACHE_TTL_MEDIUM = 1800;   // 30 دقیقه
+    private const CACHE_TTL_SLIDER = 45;
     private const CACHE_TTL_LONG   = 3600;   // 1 ساعت
 
     private const FEATURED_PRODUCTS_LIMIT  = 12;
@@ -96,7 +97,7 @@ class HomeController extends Controller
      */
     private function getActiveSliders(): Collection
     {
-        return Cache::remember('home:sliders:active', self::CACHE_TTL_MEDIUM, function () {
+        return Cache::remember('home:sliders:active:v2', self::CACHE_TTL_SLIDER, function () {
             // ── بررسی وجود جدول sliders ──
             if (!\Schema::hasTable('sliders')) {
                 return $this->getFallbackSliders();
@@ -115,6 +116,7 @@ class HomeController extends Controller
                     'link_text',
                     'link_target',
                     'bg_color',
+                    'bg_gradient',
                     'text_color',
                     'overlay_color',
                     'text_position',
@@ -252,7 +254,7 @@ class HomeController extends Controller
 
     private function getFeaturedProducts(): Collection
     {
-        return Cache::remember('home:products:featured', self::CACHE_TTL_SHORT, function () {
+        return Cache::remember('home:products:featured:priced-first-v2', self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.is_featured', true)
                 ->orderByDesc('products.updated_at')
@@ -263,7 +265,7 @@ class HomeController extends Controller
 
     private function getLatestProducts(): Collection
     {
-        return Cache::remember('home:products:latest', self::CACHE_TTL_SHORT, function () {
+        return Cache::remember('home:products:latest:priced-first-v2', self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->orderByDesc('products.created_at')
                 ->limit(self::LATEST_PRODUCTS_LIMIT)
@@ -273,7 +275,7 @@ class HomeController extends Controller
 
     private function getPopularProducts(): Collection
     {
-        return Cache::remember('home:products:popular', self::CACHE_TTL_MEDIUM, function () {
+        return Cache::remember('home:products:popular:priced-first-v2', self::CACHE_TTL_MEDIUM, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.view_count', '>', 0)
                 ->orderByDesc('products.view_count')
@@ -285,6 +287,7 @@ class HomeController extends Controller
     private function buildHomeProductQuery()
     {
         return Product::query()
+            ->pricedFirst()
             ->select([
                 'products.id',
                 'products.title',
@@ -303,33 +306,34 @@ class HomeController extends Controller
             ->where('products.status', ProductStatus::ACTIVE)
             ->with([
                 'category:id,name,slug',
-                'supplier:id,company_name,brand_name,slug,logo_path,is_verified',
+                'supplier:id,company_name,brand_name,slug,logo_path,logo_versions,is_verified',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
-                        'sort_order', 'is_primary',
+                        'sort_order', 'is_primary', 'file_type', 'versions', 'base_name',
                     ])
                         ->where('file_type', 'image')
                         ->orderByDesc('is_primary')
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                'prices' => function ($q) {
-                    $q->select([
-                        'id', 'product_id', 'price_type', 'price',
-                        'min_quantity', 'is_active',
-                    ])
-                        ->where('is_active', true)
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
-                        })
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_from')
-                                ->orWhere('valid_from', '<=', now());
-                        })
-                        ->orderBy('price', 'asc');
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices (فقط فعال)
+                'productSuppliers' => function ($q) {
+                    $q->where('is_active', true) // ✅ فقط productSuppliers فعال
+                      ->with(['prices' => function ($q) {
+                          $q->where('is_active', true)
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_until')
+                                      ->orWhere('valid_until', '>=', now()->startOfDay());
+                              })
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_from')
+                                      ->orWhere('valid_from', '<=', now());
+                              });
+                      }]);
                 },
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'retail_price', 'is_published',
@@ -346,10 +350,11 @@ class HomeController extends Controller
         return Cache::remember('home:suppliers:top', self::CACHE_TTL_LONG, function () {
             return Supplier::query()
                 ->where('is_active', true)
+                ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                 ->where('is_verified', true)
                 ->select([
                     'id', 'user_id', 'company_name', 'brand_name',
-                    'logo_path', 'city', 'province', 'is_verified',
+                    'logo_path', 'logo_versions', 'city', 'province', 'is_verified',
                     'description',
                 ])
                 ->withCount(['products as active_products_count' => function ($q) {
@@ -374,10 +379,12 @@ class HomeController extends Controller
                 'total_categories' => Category::where('is_active', true)->count(),
 
                 'total_suppliers' => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->where('is_verified', true)
                     ->count(),
 
                 'total_brands' => Supplier::where('is_active', true)
+                    ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->where('is_verified', true)
                     ->whereNotNull('brand_name')
                     ->distinct('brand_name')
@@ -415,33 +422,34 @@ class HomeController extends Controller
             ->where('products.status', ProductStatus::ACTIVE)
             ->with([
                 'category:id,name,slug',
-                'supplier:id,company_name,slug,logo_path,is_verified',
+                'supplier:id,company_name,slug,logo_path,logo_versions,is_verified',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
-                        'sort_order', 'is_primary',
+                        'sort_order', 'is_primary', 'file_type', 'versions', 'base_name',
                     ])
                         ->where('file_type', 'image')
                         ->orderByDesc('is_primary')
                         ->orderBy('sort_order')
                         ->limit(1);
                 },
-                'prices' => function ($q) {
-                    $q->select([
-                        'id', 'product_id', 'price_type', 'price',
-                        'min_quantity', 'is_active',
-                    ])
-                        ->where('is_active', true)
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
-                        })
-                        ->where(function ($sub) {
-                            $sub->whereNull('valid_from')
-                                ->orWhere('valid_from', '<=', now());
-                        })
-                        ->orderBy('price', 'asc');
+                // ✅ استفاده از ساختار جدید: productSuppliers با prices (فقط فعال)
+                'productSuppliers' => function ($q) {
+                    $q->where('is_active', true) // ✅ فقط productSuppliers فعال
+                      ->with(['prices' => function ($q) {
+                          $q->where('is_active', true)
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_until')
+                                      ->orWhere('valid_until', '>=', now()->startOfDay());
+                              })
+                              ->where(function ($sub) {
+                                  $sub->whereNull('valid_from')
+                                      ->orWhere('valid_from', '<=', now());
+                              });
+                      }]);
                 },
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'retail_price', 'is_published',

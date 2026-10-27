@@ -7,11 +7,9 @@ use App\Livewire\Admin\Flowcharts\Index;
 use App\Livewire\Admin\Flowcharts\Form;
 use App\Livewire\Admin\Dashboard;
 use App\Livewire\Admin\Users\Index as UsersIndex;
-use App\Livewire\Admin\Users\Create as UsersCreate;
-use App\Livewire\Admin\Users\Edit as UsersEdit;
+use App\Livewire\Admin\Users\Form as UsersForm;
 use App\Livewire\Admin\Products\Index as AdminProductIndex;
 use App\Livewire\Admin\Products\Create as AdminProductCreate;
-use App\Livewire\Admin\Products\Edit as AdminProductEdit;
 use App\Livewire\Admin\Products\Show as AdminProductShow;
 use App\Livewire\Admin\Categories\Index as CategoriesIndex;
 use App\Livewire\Admin\Categories\Create as CategoryCreate;
@@ -25,12 +23,13 @@ use App\Livewire\Admin\Seo\Index as SeoIndex;
 use App\Livewire\Admin\Geography\Manager as GeographyManager;
 use App\Livewire\Admin\Categories\Create;
 
-use App\Livewire\Admin\Catalogs\Index as CatalogIndex;
-use App\Livewire\Admin\Catalogs\Form as CatalogForm;
 use App\Livewire\Supplier\Catalog\Preview as CatalogPreview;
 
 Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')->group(function () {
-    // ... سایر روت ها
+    // استفاده از همان کامپوننت تامین‌کننده برای ادمین
+    Route::get('/catalogs/manage', \App\Livewire\Supplier\Catalog\Index::class)
+        ->name('catalogs.manage');
+    
     Route::get('/catalogs/{catalog}/preview', CatalogPreview::class)
         ->name('catalogs.preview');
 });
@@ -43,15 +42,10 @@ Route::middleware(['auth', 'role:super_admin'])
         // داشبورد
         Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
-        Route::prefix('catalogs')->name('catalogs.')->group(function () {
-            Route::get('/', CatalogIndex::class)->name('index');
-            Route::get('/create', CatalogForm::class)->name('create');
-            Route::get('/{catalogTemplate}/edit', CatalogForm::class)->name('edit');
-        });
         // کاربران
         Route::get('/users', UsersIndex::class)->name('users.index');
-        Route::get('/users/create', UsersCreate::class)->name('users.create');
-        Route::get('/users/{user}/edit', UsersEdit::class)->name('users.edit');
+        Route::get('/users/create', UsersForm::class)->name('users.create');
+        Route::get('/users/{user}/edit', UsersForm::class)->name('users.edit');
 
         // محصولات
         Route::get('products', AdminProductIndex::class)->name('products.index');
@@ -73,7 +67,11 @@ Route::middleware(['auth', 'role:super_admin'])
         // تامین‌کنندگان
         Route::get('/suppliers', SupplierIndex::class)->name('suppliers.index');
         Route::get('/suppliers/create', SupplierCreate::class)->name('suppliers.create');
-        Route::get('/suppliers/{supplier:id}/edit', SupplierEdit::class)->name('suppliers.edit');
+        
+        // ویرایش تامین‌کننده (ادمین + تامین‌کننده خودش)
+        Route::middleware(['auth', 'role:super_admin|supplier|regular_supplier'])
+            ->get('/suppliers/{supplier:id}/edit', SupplierEdit::class)
+            ->name('suppliers.edit');
 //        Route::get('/suppliers/pending', \App\Livewire\Admin\Suppliers\Pending::class)
 //            ->name('suppliers.pending');
 //        Route::get('/suppliers/pending', \App\Livewire\Admin\Suppliers\Pending::class)
@@ -102,9 +100,24 @@ Route::middleware(['auth', 'role:super_admin'])
             Route::get('/{flowchart}/edit', Form::class)->name('edit');
         });
         Route::get('/system/terminal', ArtisanRunner::class)->name('system.terminal');
+        Route::get('/system/error-preview/{status}', function (int $status) {
+            abort_unless($status >= 400 && $status <= 599, 404);
+
+            return response()->view('errors.page', [
+                'status' => $status,
+                'maintenancePreview' => $status === 503,
+            ])->header('Cache-Control', 'no-store, private');
+        })->whereNumber('status')->name('system.error-preview');
 
 
         Route::get('/geography', GeographyManager::class)->name('geography.index');
 
-    });
+        // تنظیمات دسترسی نمایش قیمت
+        Route::get('/settings/price-visibility', \App\Livewire\Admin\Settings\ManagePriceVisibility::class)
+            ->name('settings.price-visibility');
 
+        // مدیریت اسلایدر اصلی
+        Route::get('/sliders', \App\Livewire\Admin\SliderManagement::class)
+            ->name('sliders.index');
+
+    });

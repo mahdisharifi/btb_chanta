@@ -247,7 +247,7 @@
                         {{-- Supplier Logo --}}
                         <div class="w-16 h-16 mx-auto mb-3 bg-gray-50 rounded-full flex items-center justify-center overflow-hidden">
                             @if($supplier->logo_path)
-                                <img src="{{ asset('storage/' . $supplier->logo_path) }}"
+                                <img src="{{ $supplier->logoUrl('small') }}"
                                      alt="{{ $supplier->company_name }}"
                                      class="w-12 h-12 object-contain">
                             @else

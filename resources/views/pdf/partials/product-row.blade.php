@@ -1,3 +1,12 @@
+{{--
+    ⚠️ DEPRECATED - این فایل دیگر استفاده نمی‌شود
+    
+    این template برای سیستم قدیمی قیمت‌گذاری بود که از $product->prices استفاده می‌کرد.
+    سیستم جدید از ProductSupplier و ProductSupplierPrice استفاده می‌کند.
+    
+    @deprecated از تاریخ 2026-08-25
+--}}
+
 <tr>
     @foreach($chunk as $product)
     @php
@@ -57,7 +66,7 @@
             @endfor
 
             @if($prices->isEmpty())
-            <div style="text-align: center; color: #cbd5e1; font-size: 10px; margin-top: 10px;">بدون قیمت‌گذاری</div>
+            <x-product-unpriced-label style="display: block; text-align: center; color: #cbd5e1; font-size: 10px; margin-top: 10px;" />
             @endif
         </div>
     </td>

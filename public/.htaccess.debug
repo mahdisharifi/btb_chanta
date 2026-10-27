@@ -1,0 +1,56 @@
+# ============================================
+# DEBUG MODE - نمایش خطاها
+# این فایل را به .htaccess تغییر نام دهید برای عیب‌یابی
+# بعد از رفع مشکل، فایل اصلی .htaccess را برگردانید
+# ============================================
+
+# فعال‌سازی نمایش خطاها
+php_flag display_errors on
+php_flag display_startup_errors on
+php_value error_reporting E_ALL
+
+# لاگ خطاها
+php_flag log_errors on
+php_value error_log /home/username/public_html/storage/logs/php_errors.log
+
+# افزایش محدودیت‌ها
+php_value memory_limit 512M
+php_value max_execution_time 300
+php_value upload_max_filesize 50M
+php_value post_max_size 50M
+
+# ============================================
+# URL REWRITING & LARAVEL
+# ============================================
+
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Redirect Trailing Slashes If Not A Folder...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Send Requests To Front Controller...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# ============================================
+# SECURITY (موقتاً غیرفعال برای عیب‌یابی)
+# ============================================
+
+# جلوگیری از دسترسی به فایل‌های حساس
+<FilesMatch "^\.env|composer\.(json|lock)|package\.json">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

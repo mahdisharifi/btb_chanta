@@ -17,7 +17,7 @@ use Illuminate\Support\Collection;
 
 class Product extends Model
 {
-    use SoftDeletes;
+    use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes;
 
     protected $fillable = [
         'supplier_id',
@@ -30,6 +30,9 @@ class Product extends Model
         'specifications',
         'weight',
         'dimensions',
+        'quantity_tiers', // تیراژهای محصول
+        'packaging_unit_type', // ✅ نوع واحد فروش
+        'quantity_per_packaging', // ✅ تعداد در هر واحد
         'is_active',
         'is_featured',
         'status',
@@ -38,18 +41,33 @@ class Product extends Model
         'seo_description',
         'seo_keywords',
         'seo_canonical_url',
-        'legacy_id', // اضافه شد
-
+        'legacy_id',
+        'allows_outsourcing_correction',
     ];
 
     protected $casts = [
         'specifications' => 'array',
         'dimensions'     => 'array',
+        'quantity_tiers' => 'array', // تیراژها به صورت JSON
+        'quantity_per_packaging' => 'integer', // ✅ تعداد در هر واحد
         'is_active'      => 'boolean',
         'is_featured'    => 'boolean',
         'status'         => ProductStatus::class,
         'view_count'     => 'integer',
+        'content_version' => 'integer',
+        'content_updated_at' => 'datetime',
+        'allows_outsourcing_correction' => 'boolean',
     ];
+
+    public function completionTasks(): HasMany
+    {
+        return $this->hasMany(ProductCompletionTask::class);
+    }
+
+    public function completionAudits(): HasMany
+    {
+        return $this->hasMany(ProductCompletionAudit::class);
+    }
 
     public function getRouteKeyName(): string
     {
@@ -208,6 +226,25 @@ class Product extends Model
     {
         return $query->where('is_active', true)
                      ->where('status', ProductStatus::ACTIVE);
+    }
+
+    /** Put products with a current price from an active supplier first in catalog results. */
+    public function scopePricedFirst(Builder $query): Builder
+    {
+        return $query->orderByRaw("CASE WHEN EXISTS (
+            SELECT 1
+            FROM product_supplier as priced_ps
+            INNER JOIN suppliers as priced_supplier
+                ON priced_supplier.id = priced_ps.supplier_id
+                AND priced_supplier.is_active = 1
+            INNER JOIN product_prices as priced_price
+                ON priced_price.product_supplier_id = priced_ps.id
+                AND priced_price.is_active = 1
+            WHERE priced_ps.product_id = products.id
+                AND priced_ps.is_active = 1
+                AND (priced_price.valid_from IS NULL OR priced_price.valid_from <= CURRENT_DATE)
+                AND (priced_price.valid_until IS NULL OR priced_price.valid_until >= CURRENT_DATE)
+        ) THEN 0 ELSE 1 END ASC");
     }
 
     /**
@@ -454,6 +491,16 @@ class Product extends Model
     }
 
     /**
+     * تمام مدیای محصول (images + videos) - مرتب شده
+     */
+    public function allMediaSorted(): HasMany
+    {
+        return $this->hasMany(ProductGallery::class)
+            ->orderBy('sort_order')
+            ->orderByDesc('is_primary');
+    }
+
+    /**
      * دریافت تمام تصاویر در سایز مشخص (xs|sm|md|lg|xl|main) با سورت
      */
     public function imagesBySize(string $size = 'md'): Collection
@@ -466,5 +513,56 @@ class Product extends Model
                 'title'    => $gallery->title,
             ]);
     }
+    
+    /**
+     * ✅ برچسب فارسی نوع واحد بسته‌بندی
+     */
+    public function getPackagingUnitLabelAttribute(): string
+    {
+        $labels = [
+            'carton'  => 'کارتن',
+            'jean'    => 'جین',
+            'jowab'   => 'جورب',
+            'package' => 'بسته',
+            'bundle'  => 'شیرینگ',
+            'roll'    => 'طاقه',
+            'piece'   => 'عدد',
+        ];
 
+        return $labels[$this->packaging_unit_type] ?? $this->packaging_unit_type;
+    }
+
+    /**
+     * ✅ نمایش کامل واحد بسته‌بندی (مثلاً: "4 عدد در کارتن")
+     */
+    public function getPackagingDisplayAttribute(): string
+    {
+        if (!$this->quantity_per_packaging || $this->quantity_per_packaging <= 1) {
+            return '';
+        }
+
+        $unitLabel = $this->packaging_unit_label;
+        $quantity = $this->quantity_per_packaging;
+
+        // برای واحد‌هایی که متر یا جفت دارند
+        $unitContents = [
+            'roll' => 'متر',   // طاقه = متر
+            'jowab' => 'جفت',  // جورب = جفت
+        ];
+
+        $contentUnit = $unitContents[$this->packaging_unit_type] ?? 'عدد';
+
+        return "{$quantity} {$contentUnit} در {$unitLabel}";
+    }
+
+    /**
+     * Mark a direct admin/supplier content mutation for optimistic concurrency.
+     */
+    public function markContentUpdated(): void
+    {
+        $this->forceFill([
+            'content_version' => (int) $this->content_version + 1,
+            'content_updated_at' => now(),
+        ])->saveQuietly();
+    }
 }

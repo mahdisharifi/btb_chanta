@@ -15,6 +15,7 @@ return new class extends Migration
         Schema::create('attributes', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('unit', 50)->nullable();
             $table->string('type')->default('text'); // text, select, boolean
             $table->boolean('is_filterable')->default(false);
             $table->timestamps();
@@ -55,6 +56,8 @@ return new class extends Migration
         Schema::dropIfExists('attribute_product');
         Schema::dropIfExists('attribute_category');
         Schema::dropIfExists('attribute_values');
+        Schema::dropIfExists('unit');
+
         Schema::dropIfExists('attributes');
     }
 };

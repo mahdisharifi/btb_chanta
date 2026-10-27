@@ -1,3 +1,21 @@
+@php
+    // Resolve settings: اگر source_catalog_id دارد، از تنظیمات کاتالوگ source استفاده کن
+    $resolvedSettings = $settings ?? [];
+    if (isset($settings['custom_cover']['source_catalog_id']) && $settings['custom_cover']['source_catalog_id']) {
+        $sourceCatalogId = $settings['custom_cover']['source_catalog_id'];
+        $sourceCatalog = \App\Models\CatalogTemplate::find($sourceCatalogId);
+        
+        if ($sourceCatalog && isset($sourceCatalog->settings['custom_cover'])) {
+            // استفاده از تنظیمات کاتالوگ source
+            $resolvedSettings['custom_cover'] = $sourceCatalog->settings['custom_cover'];
+        }
+    }
+    $settings = $resolvedSettings;
+    
+    // دریافت فونت کاتالوگ
+    $catalogFont = $settings['catalog_font'] ?? $settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir';
+@endphp
+
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -5,7 +23,7 @@
     <title>{{ $template->name ?? 'کاتالوگ محصولات' }}</title>
     <style>
         body {
-            font-family: 'vazir', sans-serif;
+            font-family: '{{ $catalogFont }}', sans-serif;
             background-color: #ffffff;
             color: #1f2937;
             margin: 0;
@@ -138,13 +156,100 @@
 
 {{-- فراخوانی کاور در صورت فعال بودن تنظیمات --}}
 @if($showCoverPage)
-@include('pdf.supplier-catalog-cover', [
-'supplierName' => $supplierName,
-'supplierLogo' => $supplierLogo ?? null,
-'catalogTitle' => $template->title ?? null,
-'supplier'     => $supplier ?? null
-])
+@switch($coverTheme ?? 'default')
+    @case('modern')
+        @include('pdf.supplier-catalog-cover-modern', [
+            'supplierName'     => $supplierName,
+            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+            'supplierLogoPath' => $supplierLogoPath ?? null,
+            'forPdf'           => $forPdf ?? true,
+            'catalogTitle'     => $template->title ?? null,
+            'supplier'         => $supplier ?? null,
+            'contactPhones'    => $contactPhones ?? [],
+        ])
+        @break
+    
+    @case('creative')
+        @include('pdf.supplier-catalog-cover-creative', [
+            'supplierName'     => $supplierName,
+            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+            'supplierLogoPath' => $supplierLogoPath ?? null,
+            'forPdf'           => $forPdf ?? true,
+            'catalogTitle'     => $template->title ?? null,
+            'supplier'         => $supplier ?? null,
+            'contactPhones'    => $contactPhones ?? [],
+        ])
+        @break
+    
+    @case('corporate')
+        @include('pdf.supplier-catalog-cover-corporate', [
+            'supplierName'     => $supplierName,
+            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+            'supplierLogoPath' => $supplierLogoPath ?? null,
+            'forPdf'           => $forPdf ?? true,
+            'catalogTitle'     => $template->title ?? null,
+            'supplier'         => $supplier ?? null,
+            'contactPhones'    => $contactPhones ?? [],
+        ])
+        @break
+    
+    @case('custom')
+        {{-- بررسی کدام سیستم استفاده شده --}}
+        @if(isset($settings['custom_cover_table']))
+            @include('pdf.supplier-catalog-cover-table', [
+                'supplierName'     => $supplierName,
+                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                'supplierLogoPath' => $supplierLogoPath ?? null,
+                'forPdf'           => $forPdf ?? true,
+                'catalogTitle'     => $template->title ?? null,
+                'supplier'         => $supplier ?? null,
+                'contactPhones'    => $contactPhones ?? [],
+                'settings'         => $settings ?? [],
+            ])
+        @else
+            @include('pdf.supplier-catalog-cover-custom', [
+                'supplierName'     => $supplierName,
+                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+                'supplierLogoPath' => $supplierLogoPath ?? null,
+                'forPdf'           => $forPdf ?? true,
+                'catalogTitle'     => $template->title ?? null,
+                'supplier'         => $supplier ?? null,
+                'contactPhones'    => $contactPhones ?? [],
+                'settings'         => $settings ?? [],
+            ])
+        @endif
+        @break
+    
+    @default
+        @include('pdf.supplier-catalog-cover', [
+            'supplierName'     => $supplierName,
+            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
+            'supplierLogoPath' => $supplierLogoPath ?? null,
+            'forPdf'           => $forPdf ?? true,
+            'catalogTitle'     => $template->title ?? null,
+            'supplier'         => $supplier ?? null,
+            'contactPhones'    => $contactPhones ?? [],
+        ])
+@endswitch
+
+{{-- page break بین کاور و محصولات --}}
+@php
+    $coverPageBreak = true; // پیش‌فرض
+    
+    // بررسی در تنظیمات کاتالوگ (اولویت اول)
+    if(isset($settings['cover_page_break'])) {
+        $coverPageBreak = $settings['cover_page_break'];
+    }
+    // بررسی در تنظیمات کاور قدیمی
+    elseif(isset($settings['custom_cover']['page_break'])) {
+        $coverPageBreak = $settings['custom_cover']['page_break'];
+    }
+@endphp
+
+@if($coverPageBreak)
 <pagebreak />
+@endif
+
 @endif
 
 @forelse($groupedProducts as $categoryName => $products)
@@ -182,7 +287,11 @@ $restChunks = array_slice($productChunks, 1);
     @if(count($firstChunk) > 0)
     <tr>
         @foreach($firstChunk as $product)
-        @include('pdf.partials.product-cell', ['product' => $product])
+        @include('pdf.partials.product-cell', [
+            'product' => $product,
+            'selectedPriceTypes' => $selectedPriceTypes,
+            'includeWarranty' => $includeWarranty ?? false,
+        ])
         @endforeach
 
         @for($i = count($firstChunk); $i < 4; $i++)
@@ -198,7 +307,11 @@ $restChunks = array_slice($productChunks, 1);
     @foreach($restChunks as $rowProducts)
     <tr>
         @foreach($rowProducts as $product)
-        @include('pdf.partials.product-cell', ['product' => $product])
+        @include('pdf.partials.product-cell', [
+            'product' => $product,
+            'selectedPriceTypes' => $selectedPriceTypes,
+            'includeWarranty' => $includeWarranty ?? false,
+        ])
         @endforeach
 
         @for($i = count($rowProducts); $i < 4; $i++)

@@ -29,13 +29,8 @@ class Preview2 extends Component
     {
         $supplier = Auth::user()->supplier;
 
-        $this->supplierLogoUrl = $supplier->logo_path
-            ? asset('storage/' . ltrim($supplier->logo_path, '/'))
-            : null;
-
-        $this->supplierLogoPath = $supplier->logo_path
-            ? storage_path('app/public/' . ltrim($supplier->logo_path, '/'))
-            : null;
+        $this->supplierLogoUrl = $supplier->logoUrl('medium');
+        $this->supplierLogoPath = $supplier->logoAbsolutePath('pdf');
 
         $this->supplier=Auth::user()->supplier;
         $this->supplierName = Auth::user()->supplier->title ?? Auth::user()->name;
@@ -202,7 +197,10 @@ class Preview2 extends Component
             'template'           => $this->template,
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
-            'supplierLogo'=>Auth::user()->supplier->logo_path,
+            'supplierLogo' => $this->supplierLogoPath,
+            'supplierLogoUrl' => $this->supplierLogoUrl,
+            'supplierLogoPath' => $this->supplierLogoPath,
+            'forPdf' => true,
             'supplier'=>Auth::user()->supplier,
         ])
             ->withBrowsershot(function ($browsershot) {
@@ -236,7 +234,10 @@ class Preview2 extends Component
             'template'           => $this->template,
             'separateCategories' => $this->separateCategories,
             'showCoverPage'      => $this->showCoverPage,
-            'supplierLogo'=>Auth::user()->supplier->logo_path,
+            'supplierLogo' => $this->supplierLogoPath,
+            'supplierLogoUrl' => $this->supplierLogoUrl,
+            'supplierLogoPath' => $this->supplierLogoPath,
+            'forPdf' => true,
             'supplier'=>Auth::user()->supplier,
         ])
             ->withBrowsershot(function ($browsershot) {
