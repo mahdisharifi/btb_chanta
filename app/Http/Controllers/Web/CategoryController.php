@@ -16,113 +16,102 @@ class CategoryController extends Controller
 
     public function index(): View
     {
-        $categories = Cache::remember(self::CACHE_KEY_TREE, 3600, function () {
-            $categories = Category::query()
-                ->whereNull('parent_id')
-                ->where('is_active', true)
-                ->with(['children' => function ($query) {
-                    $query->where('is_active', true)
-                        ->orderBy('sort_order')
-                        ->withCount(['products' => fn($q) => $q->where('is_active', true)->where('status', 'active')])
-                        ->with(['children' => function ($q) {
-                            $q->where('is_active', true)
-                                ->orderBy('sort_order')
-                                ->withCount(['products' => fn($qq) => $qq->where('is_active', true)->where('status', 'active')]);
-                        }]);
-                }])
-                ->withCount(['products' => fn($q) => $q->where('is_active', true)->where('status', 'active')])
-                ->orderBy('sort_order')
-                ->get();
-
-            // محاسبه مجموع تجمیعی محصولات (دسته + زیردسته‌ها + زیرِ زیردسته‌ها)
-            foreach ($categories as $category) {
-                $sum = (int) ($category->products_count ?? 0);
-
-                foreach ($category->children as $child) {
-                    $childSum = (int) ($child->products_count ?? 0);
-
-                    foreach ($child->children ?? collect() as $grandChild) {
-                        $childSum += (int) ($grandChild->products_count ?? 0);
-                    }
-
-                    $child->total_products_count = $childSum;
-                    $sum += $childSum;
-                }
-
-                $category->total_products_count = $sum;
-            }
-
-            return $categories;
-        });
-
+        $categories = app(\App\Services\CategoryCatalog::class)->tree();
         $totalProducts = (int) $categories->sum('total_products_count');
+        $pageTitle = 'دسته‌بندی محصولات';
+        $seoDescription = 'مرور محصولات بر اساس دسته‌بندی؛ مشاهده دسته‌ها، زیردسته‌ها و تعداد محصولات هر بخش.';
+        $canonical = route('categories.index');
+        $ogTitle = $pageTitle.' — '.config('app.name');
+        $ogImage = asset('images/og-default.jpg');
+        $structuredData = $this->schema($pageTitle, $seoDescription, $canonical, [
+            ['name' => 'خانه', 'url' => url('/')],
+            ['name' => 'دسته‌بندی‌ها', 'url' => $canonical],
+        ], $categories->map(fn ($category) => [
+            'name' => $category->name, 'url' => route('categories.show', $category->slug),
+        ])->values()->all());
 
-        return view('pages.categories.index', [
-            'categories'     => $categories,
-            'totalProducts'  => $totalProducts,
-            'pageTitle'      => 'دسته‌بندی محصولات',
-            'seoDescription' => 'مرور محصولات بر اساس دسته‌بندی؛ مشاهده دسته‌ها، زیردسته‌ها و تعداد محصولات هر بخش.',
-            'canonical'      => route('categories.index'),
-            'ogImage'        => asset('images/og-default.jpg'),
-        ]);
+        return view('pages.categories.index', compact('categories', 'totalProducts', 'pageTitle', 'seoDescription', 'canonical', 'ogTitle', 'ogImage', 'structuredData'));
     }
 
     public function show(Category $category): View
     {
-        abort_unless($category->is_active, 404);
-
-        // Load children
-        $category->load(['children' => function ($query) {
-            $query->where('is_active', true)
-                ->orderBy('sort_order')
-                ->withCount(['products' => fn($q) => $q->where('is_active', true)->where('status', 'active')]);
-        }]);
-
-        // Get all descendant IDs including self
-        $categoryIds = $category->descendants()->pluck('id')->push($category->id);
+        $catalog = app(\App\Services\CategoryCatalog::class);
+        $published = $catalog->flatten();
+        $category = $published->get($category->id);
+        abort_unless($category, 404);
+        $subcategories = $category->getRelation('children');
+        $categoryIds = $catalog->flatten(collect([$category]))->keys();
+        $requestedSort = request()->query('sort', 'newest');
+        $sort = is_string($requestedSort) && in_array($requestedSort, ['newest', 'oldest', 'name_asc', 'name_desc'], true)
+            ? $requestedSort : 'newest';
 
         // Products in this category and subcategories
         $products = \App\Models\Product::query()
-            ->pricedFirst()
             ->whereIn('category_id', $categoryIds)
             ->where('is_active', true)
             ->where('status', 'active')
             ->with([
                 'category:id,name,slug,parent_id',
-                'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
+                'supplier:id,company_name,brand_name,slug,is_active,logo_path,logo_versions,is_verified',
                 'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text', 'versions', 'base_name'])
                     ->where('file_type', 'image')
                     ->orderByDesc('is_primary')
                     ->orderBy('sort_order')
                     ->limit(1),
                 // ✅ اضافه شد: eager loading برای قیمت‌های عمده
-                'productSuppliers' => fn($q) => $q->where('is_active', true),
-                'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
-                    })
-                    ->where(function ($sub) {
-                        $sub->whereNull('valid_from')
-                            ->orWhere('valid_from', '<=', now());
-                    }),
-                'productSuppliers.supplier:id,company_name,brand_name',
+                'productSuppliers' => fn($q) => $q->where('is_active', true)->whereHas('supplier', fn ($s) => $s->where('is_active', true)),
+                'productSuppliers.prices' => fn ($q) => $q->activeAndValid()->with('priceType'),
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
                 // ✅ اضافه شد: قیمت‌های خرده‌فروشی
                 'retailPrices' => fn($q) => $q->select(['id', 'product_id', 'user_id', 'retail_price', 'is_published'])
                     ->where('is_published', true)
                     ->orderBy('retail_price', 'asc'),
             ])
-            ->latest()
-            ->paginate(16);
+            ->when($sort === 'oldest', fn ($q) => $q->orderBy('products.created_at'))
+            ->when($sort === 'name_asc', fn ($q) => $q->orderBy('products.title'))
+            ->when($sort === 'name_desc', fn ($q) => $q->orderByDesc('products.title'))
+            ->when($sort === 'newest', fn ($q) => $q->orderByDesc('products.created_at'))
+            ->orderBy('products.id')
+            ->paginate(16)
+            ->appends($sort !== 'newest' ? ['sort' => $sort] : []);
 
-        // Breadcrumb
-        $breadcrumb = [];
-        $ancestors = $category->ancestors ?? collect();
+        $breadcrumb = [['name' => 'دسته‌بندی‌ها', 'url' => route('categories.index')]];
+        $ancestors = collect();
+        $parentId = $category->parent_id;
+        $visited = [];
+        while ($parentId && !isset($visited[$parentId]) && ($ancestor = $published->get($parentId))) {
+            $visited[$parentId] = true;
+            $ancestors->prepend($ancestor);
+            $parentId = $ancestor->parent_id;
+        }
         foreach ($ancestors as $ancestor) {
             $breadcrumb[] = ['name' => $ancestor->name, 'url' => route('categories.show', $ancestor->slug)];
         }
         $breadcrumb[] = ['name' => $category->name, 'url' => null];
+        $pageTitle = $category->seo_title ?: $category->name;
+        $seoDescription = $category->seo_description ?: 'مشاهده و مقایسهٔ محصولات '.$category->name.' و قیمت‌های تأمین‌کنندگان';
+        $canonical = route('categories.show', $category->slug).($products->currentPage() > 1 ? '?page='.$products->currentPage() : '');
+        $ogTitle = $pageTitle.' — '.config('app.name');
+        $ogImage = $category->image_url ?: asset('images/og-default.jpg');
+        $schemaCrumbs = array_merge([['name' => 'خانه', 'url' => url('/')]], $breadcrumb);
+        $schemaCrumbs[array_key_last($schemaCrumbs)]['url'] = route('categories.show', $category->slug);
+        $structuredData = $this->schema($category->name, $seoDescription, $canonical, $schemaCrumbs,
+            $products->getCollection()->map(fn ($product) => ['name' => $product->title, 'url' => route('products.show', $product->slug)])->all());
 
-        return view('pages.categories.show', compact('category', 'products', 'breadcrumb'));
+        return view('pages.categories.show', compact('category', 'products', 'breadcrumb', 'subcategories', 'sort', 'pageTitle', 'seoDescription', 'canonical', 'ogTitle', 'ogImage', 'structuredData'));
+    }
+
+    private function schema(string $name, string $description, string $url, array $breadcrumbs, array $items): array
+    {
+        return [
+            '@context' => 'https://schema.org', '@type' => 'CollectionPage',
+            'name' => $name, 'description' => $description, 'url' => $url,
+            'breadcrumb' => ['@type' => 'BreadcrumbList', 'itemListElement' => array_map(
+                fn ($item, $index) => ['@type' => 'ListItem', 'position' => $index + 1, 'name' => $item['name'], 'item' => $item['url']],
+                $breadcrumbs, array_keys($breadcrumbs))],
+            'mainEntity' => ['@type' => 'ItemList', 'numberOfItems' => count($items), 'itemListElement' => array_map(
+                fn ($item, $index) => ['@type' => 'ListItem', 'position' => $index + 1, 'name' => $item['name'], 'url' => $item['url']],
+                $items, array_keys($items))],
+        ];
     }
 }

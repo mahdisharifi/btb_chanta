@@ -254,7 +254,7 @@ class HomeController extends Controller
 
     private function getFeaturedProducts(): Collection
     {
-        return Cache::remember('home:products:featured:priced-first-v1', self::CACHE_TTL_SHORT, function () {
+        return Cache::remember('home:products:featured:priced-first-v2', self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.is_featured', true)
                 ->orderByDesc('products.updated_at')
@@ -265,7 +265,7 @@ class HomeController extends Controller
 
     private function getLatestProducts(): Collection
     {
-        return Cache::remember('home:products:latest:priced-first-v1', self::CACHE_TTL_SHORT, function () {
+        return Cache::remember('home:products:latest:priced-first-v2', self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->orderByDesc('products.created_at')
                 ->limit(self::LATEST_PRODUCTS_LIMIT)
@@ -275,7 +275,7 @@ class HomeController extends Controller
 
     private function getPopularProducts(): Collection
     {
-        return Cache::remember('home:products:popular:priced-first-v1', self::CACHE_TTL_MEDIUM, function () {
+        return Cache::remember('home:products:popular:priced-first-v2', self::CACHE_TTL_MEDIUM, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.view_count', '>', 0)
                 ->orderByDesc('products.view_count')
@@ -324,7 +324,7 @@ class HomeController extends Controller
                           $q->where('is_active', true)
                               ->where(function ($sub) {
                                   $sub->whereNull('valid_until')
-                                      ->orWhere('valid_until', '>=', now());
+                                      ->orWhere('valid_until', '>=', now()->startOfDay());
                               })
                               ->where(function ($sub) {
                                   $sub->whereNull('valid_from')
@@ -332,7 +332,8 @@ class HomeController extends Controller
                               });
                       }]);
                 },
-                'productSuppliers.supplier:id,company_name,brand_name',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'retail_price', 'is_published',
@@ -439,7 +440,7 @@ class HomeController extends Controller
                           $q->where('is_active', true)
                               ->where(function ($sub) {
                                   $sub->whereNull('valid_until')
-                                      ->orWhere('valid_until', '>=', now());
+                                      ->orWhere('valid_until', '>=', now()->startOfDay());
                               })
                               ->where(function ($sub) {
                                   $sub->whereNull('valid_from')
@@ -447,7 +448,8 @@ class HomeController extends Controller
                               });
                       }]);
                 },
-                'productSuppliers.supplier:id,company_name,brand_name',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'retail_price', 'is_published',

@@ -89,6 +89,8 @@ class AppServiceProvider extends ServiceProvider
         |--------------------------------------------------------------------------
         */
         Supplier::observe(SupplierObserver::class);
+        Category::observe(\App\Observers\CategoryCatalogObserver::class);
+        Product::observe(\App\Observers\CategoryCatalogObserver::class);
 
         /*
         |--------------------------------------------------------------------------

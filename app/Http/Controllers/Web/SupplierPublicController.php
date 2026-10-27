@@ -217,6 +217,8 @@ class SupplierPublicController extends Controller
                 'category:id,name,slug,icon',
                 'galleries' => fn($q) => $q->where('file_type', 'image')
                     ->orderByDesc('is_primary')->orderBy('sort_order')->limit(1),
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => fn($q) => $q->where('is_published', true)
                     ->orderBy('retail_price')->limit(1),
                 // بارگذاری تامین‌کننده و قیمت‌های این supplier
@@ -224,7 +226,7 @@ class SupplierPublicController extends Controller
                     ->with([
                         'prices' => fn($priceQ) => $priceQ->where('is_active', true)
                             ->where(function ($sub) {
-                                $sub->whereNull('valid_until')->orWhere('valid_until', '>=', now());
+                                $sub->whereNull('valid_until')->orWhere('valid_until', '>=', now()->startOfDay());
                             })
                             ->orderBy('price')
                     ]),

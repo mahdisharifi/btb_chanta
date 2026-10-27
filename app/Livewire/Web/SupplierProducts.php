@@ -265,6 +265,8 @@ class SupplierProducts extends Component
                 'galleries' => fn($q) => $q->where('file_type', 'image')
                     ->orderByDesc('is_primary')->orderBy('sort_order')->limit(1),
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true),
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => fn($q) => $q->where('is_published', true),
             ]);
 

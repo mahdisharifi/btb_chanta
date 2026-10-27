@@ -8,8 +8,12 @@ Disallow: /livewire/
 
 Disallow: /api/
 
+# Category pagination is independently canonical; sort variants stay excluded.
+Allow: /categories/*?page=
+Disallow: /categories/*?page=*&sort=
 Disallow: /*?
 
+Allow: /storage/categories/
 Disallow: /storage/
 Sitemap: https://chanta.ir/sitemap.xml
 

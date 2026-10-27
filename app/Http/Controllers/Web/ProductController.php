@@ -609,14 +609,15 @@ class ProductController extends Controller
                     $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
+                                ->orWhere('valid_until', '>=', now()->startOfDay());
                         })
                         ->where(function ($sub) {
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
                         });
                 },
-                'productSuppliers.supplier:id,company_name,brand_name',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'user_id', 'retail_price', 'is_published',
@@ -739,7 +740,7 @@ class ProductController extends Controller
             $priceQuery->where('is_active', true)
                 ->where(function ($sub) {
                     $sub->whereNull('valid_until')
-                        ->orWhere('valid_until', '>=', now());
+                        ->orWhere('valid_until', '>=', now()->startOfDay());
                 });
 
             if ($minPrice !== null) {
@@ -824,7 +825,7 @@ class ProductController extends Controller
                     $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
+                                ->orWhere('valid_until', '>=', now()->startOfDay());
                         });
                 });
         }
@@ -944,7 +945,7 @@ class ProductController extends Controller
                     ->where('product_prices.is_active', true)
                     ->where(function ($sub) {
                         $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
+                            ->orWhere('valid_until', '>=', now()->startOfDay());
                     })
                     ->limit(1),
             ]);
@@ -1179,7 +1180,7 @@ class ProductController extends Controller
      */
     private function getRelatedProducts(Product $product, int $limit = 8): Collection
     {
-        $cacheKey = "web:product:{$product->id}:related:priced-first-v1:{$limit}";
+        $cacheKey = "web:product:{$product->id}:related:priced-first-v2:{$limit}";
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SHORT, function () use ($product, $limit) {
             return Product::query()->pricedFirst()->where('category_id', $product->category_id)
@@ -1200,13 +1201,14 @@ class ProductController extends Controller
                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
-                                ->orWhere('valid_until', '>=', now());
+                                ->orWhere('valid_until', '>=', now()->startOfDay());
                         })
                         ->where(function ($sub) {
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
                         }),
-                    'productSuppliers.supplier:id,company_name,brand_name',
+                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
                 ])
                 ->inRandomOrder()
                 ->limit($limit)
@@ -1260,13 +1262,14 @@ class ProductController extends Controller
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
                     ->where(function ($sub) {
                         $sub->whereNull('valid_until')
-                            ->orWhere('valid_until', '>=', now());
+                            ->orWhere('valid_until', '>=', now()->startOfDay());
                     })
                     ->where(function ($sub) {
                         $sub->whereNull('valid_from')
                             ->orWhere('valid_from', '<=', now());
                     }),
-                'productSuppliers.supplier:id,company_name,brand_name',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.prices.priceType',
             ])
             ->get()
             ->sortBy(function ($product) use ($recentIds) {

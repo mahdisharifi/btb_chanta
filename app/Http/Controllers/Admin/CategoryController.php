@@ -69,7 +69,7 @@ class CategoryController extends Controller
             'name' => ['required','string','max:255','unique:categories,name'],
             'parent_id' => ['nullable','exists:categories,id'],
             'description' => ['nullable','string','max:1000'],
-            'icon' => ['nullable','string','max:50'],
+            'icon' => ['nullable','string', Rule::in(\App\Support\CategoryIcon::allowedValues())],
             'sort_order' => ['integer','min:0'],
             'is_active' => ['boolean'],
             'seo_title' => ['nullable','string','max:60'],
@@ -176,7 +176,7 @@ class CategoryController extends Controller
             ],
             'parent_id' => ['nullable','exists:categories,id'],
             'description' => ['nullable','string','max:1000'],
-            'icon' => ['nullable','string','max:50'],
+            'icon' => ['nullable','string', Rule::in(\App\Support\CategoryIcon::allowedValues())],
             'sort_order' => ['integer','min:0'],
             'is_active' => ['boolean'],
             'seo_title' => ['nullable','string','max:60'],
@@ -268,8 +268,7 @@ class CategoryController extends Controller
 
             foreach ($validated['order'] as $item) {
 
-                Category::where('id',$item['id'])
-                    ->update(['sort_order'=>$item['sort_order']]);
+                Category::findOrFail($item['id'])->update(['sort_order' => $item['sort_order']]);
             }
 
             DB::commit();

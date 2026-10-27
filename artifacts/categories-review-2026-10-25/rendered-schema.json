@@ -1,0 +1,45 @@
+{
+  "parsed": {
+    "<?php $__contextArgs = [];\nif (context()->has($__contextArgs[0])) :\nif (isset($value)) { $__contextPrevious[] = $value; }\n$value = context()->get($__contextArgs[0]); ?>": "https://schema.org",
+    "@type": "CollectionPage",
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "item": "http://127.0.0.1:8000",
+          "name": "خانه",
+          "position": 1
+        },
+        {
+          "@type": "ListItem",
+          "item": "http://127.0.0.1:8000/categories",
+          "name": "دسته‌بندی‌ها",
+          "position": 2
+        }
+      ]
+    },
+    "description": "مرور محصولات بر اساس دسته‌بندی؛ مشاهده دسته‌ها، زیردسته‌ها و تعداد محصولات هر بخش.",
+    "mainEntity": {
+      "@type": "ItemList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "name": "لوازم الکترونیک",
+          "position": 1,
+          "url": "http://127.0.0.1:8000/categories/loazm-alktronyk-6a422c4b9dac4"
+        },
+        {
+          "@type": "ListItem",
+          "name": "لوازم خانگی برقی",
+          "position": 2,
+          "url": "http://127.0.0.1:8000/categories/loazm-khangy-brky"
+        }
+      ],
+      "numberOfItems": 2
+    },
+    "name": "دسته‌بندی محصولات",
+    "url": "http://127.0.0.1:8000/categories"
+  },
+  "raw": "\n    {\"\\u003C?php $__contextArgs = [];\\nif (context()-\\u003Ehas($__contextArgs[0])) :\\nif (isset($value)) { $__contextPrevious[] = $value; }\\n$value = context()-\\u003Eget($__contextArgs[0]); ?\\u003E\":\"https://schema.org\",\"@type\":\"CollectionPage\",\"name\":\"دسته‌بندی محصولات\",\"description\":\"مرور محصولات بر اساس دسته‌بندی؛ مشاهده دسته‌ها، زیردسته‌ها و تعداد محصولات هر بخش.\",\"url\":\"http://127.0.0.1:8000/categories\",\"breadcrumb\":{\"@type\":\"BreadcrumbList\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"خانه\",\"item\":\"http://127.0.0.1:8000\"},{\"@type\":\"ListItem\",\"position\":2,\"name\":\"دسته‌بندی‌ها\",\"item\":\"http://127.0.0.1:8000/categories\"}]},\"mainEntity\":{\"@type\":\"ItemList\",\"numberOfItems\":2,\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"لوازم الکترونیک\",\"url\":\"http://127.0.0.1:8000/categories/loazm-alktronyk-6a422c4b9dac4\"},{\"@type\":\"ListItem\",\"position\":2,\"name\":\"لوازم خانگی برقی\",\"url\":\"http://127.0.0.1:8000/categories/loazm-khangy-brky\"}]}}\n"
+}

@@ -67,6 +67,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return $response;
         });
+        $exceptions->render(function (\App\Exceptions\CategorySlugRedirectException $e, \Illuminate\Http\Request $request) {
+            $query = [];
+            $page = filter_var($request->query('page'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($page && $page > 1) $query['page'] = $page;
+            $sort = $request->query('sort');
+            if (is_string($sort) && in_array($sort, ['oldest', 'name_asc', 'name_desc'], true)) $query['sort'] = $sort;
+            return redirect()->to(route('categories.show', $e->newSlug).($query ? '?'.http_build_query($query) : ''), 301);
+        });
         $exceptions->render(function (\App\Exceptions\ProductSlugRedirectException $e) {
             return redirect()->route('products.show', $e->newSlug, 301);
         });

@@ -183,9 +183,43 @@ class PriceVisibilityService
 
         // فیلتر کردن
         return $prices->filter(function ($price) use ($allowedTypes) {
-            $priceTypeCode = $price->priceType?->code ?? 'cash';
-            return in_array($priceTypeCode, $allowedTypes, true);
+            $priceTypeCode = $price->priceType?->code;
+            return $priceTypeCode !== null && in_array($priceTypeCode, $allowedTypes, true);
         });
+    }
+
+    public function getCardPrices(Product $product, ?User $user = null, ?\App\Models\Supplier $supplier = null): array
+    {
+        $retail = null;
+        if ($this->canSeeRetailPrice($user, $product) && $product->relationLoaded('retailPrices')) {
+            $retail = $product->getRelation('retailPrices')->where('is_published', true)->sortBy('retail_price')->first();
+        }
+        $prices = collect();
+        $supplierIds = [];
+        if ($this->canSeeWholesalePrice($user, $product) && $product->relationLoaded('productSuppliers')) {
+            $today = now()->toDateString();
+            foreach ($product->getRelation('productSuppliers') as $pivot) {
+                $pivotSupplier = $pivot->relationLoaded('supplier') ? $pivot->getRelation('supplier') : null;
+                if (!$pivot->is_active || !$pivotSupplier?->is_active || !$pivot->relationLoaded('prices')
+                    || ($supplier && (int) $pivot->supplier_id !== (int) $supplier->id)) continue;
+                $valid = $pivot->getRelation('prices')->filter(function ($price) use ($today) {
+                    return $price->is_active
+                        && (!$price->valid_from || \Carbon\Carbon::parse($price->valid_from)->toDateString() <= $today)
+                        && (!$price->valid_until || \Carbon\Carbon::parse($price->valid_until)->toDateString() >= $today);
+                });
+                $settings = $this->getSettings($user);
+                $allowed = $settings?->getAllowedPriceTypes();
+                if ($allowed !== null) {
+                    $valid = $valid->filter(fn ($price) => $price->relationLoaded('priceType') && $price->getRelation('priceType')
+                        && in_array($price->getRelation('priceType')->code, $allowed, true));
+                }
+                if ($valid->isNotEmpty()) {
+                    $prices = $prices->merge($valid);
+                    $supplierIds[(int) $pivot->supplier_id] = true;
+                }
+            }
+        }
+        return ['retail' => $retail, 'wholesale' => $prices, 'suppliers_count' => count($supplierIds)];
     }
 
     /**

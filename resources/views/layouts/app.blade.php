@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" class="scroll-smooth">
+<html lang="fa" dir="rtl" class="scroll-smooth motion-reduce:scroll-auto">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,7 +16,7 @@
     <meta property="og:title" content="{{ $ogTitle ?? $seoTitle ?? config('app.name') }}">
     <meta property="og:description" content="{{ $ogDescription ?? $seoDescription ?? '' }}">
     <meta property="og:image" content="{{ $ogImage ?? asset('images/og-default.jpg') }}">
-    <meta property="og:url" content="{{ url()->current() }}">
+    <meta property="og:url" content="{{ $canonical ?? url()->current() }}">
     <meta property="og:locale" content="fa_IR">
 
     {{-- Canonical --}}
@@ -63,7 +63,7 @@
             {{-- Logo --}}
             <div class="flex-shrink-0">
                 <a href="{{ route('home') }}" class="flex items-center gap-2">
-                    <span class="text-xl font-bold text-gray-800 hidden sm:block">پلتفرم چن تا؟</span>
+                    <span class="text-xl font-bold text-gray-800 hidden sm:block">{{ config('app.name') }}</span>
                     <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
                         <span class="text-white font-bold text-lg">B2B</span>
                     </div>
@@ -292,7 +292,7 @@
                     <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
                         <span class="text-white font-bold text-lg">B2B</span>
                     </div>
-                    <span class="text-xl font-bold text-white">مارکت‌پلیس</span>
+                    <span class="text-xl font-bold text-white">{{ config('app.name') }}</span>
                 </div>
                 <p class="text-sm text-gray-400 leading-7">
                     بزرگ‌ترین پلتفرم تجارت عمده ایران.
@@ -371,7 +371,7 @@
     {{-- Copyright Bar --}}
     <div class="border-t border-gray-700">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center text-sm text-gray-300">
-            <span>© {{ date('Y') }} مارکت‌پلیس B2B — تمامی حقوق محفوظ است.</span>
+            <span>© {{ date('Y') }} {{ config('app.name') }} — تمامی حقوق محفوظ است.</span>
             <span class="mt-2 sm:mt-0">توسعه با ❤️ در ایران</span>
         </div>
     </div>
@@ -389,7 +389,7 @@
         x-on:scroll.window="show = window.scrollY > 500"
         x-show="show"
         x-transition
-        @click="window.scrollTo({ top: 0, behavior: 'smooth' })"
+        @click="window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })"
         class="fixed bottom-6 left-6 z-50 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-indigo-700 transition"
         style="display: none;"
         aria-label="بازگشت به بالای صفحه">
