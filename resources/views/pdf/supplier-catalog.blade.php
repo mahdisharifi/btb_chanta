@@ -319,9 +319,9 @@
         </td>
         <td class="product-name">
             <div>{{ $product['title'] }}</div>
-            @if(!empty($product['attribute_value']))
-                <div style="font-size: 10px; color: #6b7280; margin-top: 4px; direction: ltr !important; unicode-bidi: bidi-override;">
-                    {!! $product['attribute_value'] !!}
+            @if(!empty($product['attribute_value_pdf']))
+                <div dir="rtl" style="font-size: 10px; color: #6b7280; margin-top: 4px; direction: rtl;">
+                    {{ $product['attribute_value_pdf'] }}
                 </div>
             @endif
             

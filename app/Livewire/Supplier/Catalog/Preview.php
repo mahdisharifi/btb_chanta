@@ -14,6 +14,8 @@ use PDF;
 
 class Preview extends Component
 {
+    private const CATALOG_DATA_CACHE_VERSION = 2;
+
     public bool $isAdmin = false;
 
     public $catalog;
@@ -196,6 +198,7 @@ class Preview extends Component
         // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات + timestamp تغییرات
         // نکته: selected_supplier_ids هم اضافه می‌شود تا با تغییر تامین‌کننده‌ها کش رفرش شود
         $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
+            'payload_version' => self::CATALOG_DATA_CACHE_VERSION,
             'supplier_ids' => $selectedSupplierIds, // تغییر مهم: استفاده از supplier_ids به جای supplier_id
             'settings' => $this->settings,
             'selected_prices' => $this->selectedPriceTypes,
@@ -474,6 +477,7 @@ class Preview extends Component
             // دریافت مقدار attribute عمومی و اختصاصی
             // بهینه‌سازی: استفاده از eager loaded data برای جلوگیری از N+1
             $attributeValues = [];
+            $pdfAttributeValues = [];
             $categoryId = $product->category_id;
             $showLabels = $this->settings['show_attribute_labels'] ?? true;
             
@@ -493,8 +497,10 @@ class Preview extends Component
                     $attrName = $attrValue->attribute?->name ?? '';
                     if ($showLabels) {
                         $attributeValues[] = $fixTextDirection('(' . $attrName . ': ' . $attrValue->value . ')');
+                        $pdfAttributeValues[] = self::formatPdfAttribute($attrName, (string) $attrValue->value);
                     } else {
                         $attributeValues[] = $fixTextDirection('(' . $attrValue->value . ')');
+                        $pdfAttributeValues[] = self::formatPdfAttribute(null, (string) $attrValue->value);
                     }
                 }
             }
@@ -511,8 +517,10 @@ class Preview extends Component
                         $attrName = $attrValue->attribute?->name ?? '';
                         if ($showLabels) {
                             $attributeValues[] = $fixTextDirection('(' . $attrName . ': ' . $attrValue->value . ')');
+                            $pdfAttributeValues[] = self::formatPdfAttribute($attrName, (string) $attrValue->value);
                         } else {
                             $attributeValues[] = $fixTextDirection('(' . $attrValue->value . ')');
+                            $pdfAttributeValues[] = self::formatPdfAttribute(null, (string) $attrValue->value);
                         }
                     }
                 }
@@ -547,6 +555,7 @@ class Preview extends Component
                 'created_at'       => $product->created_at?->timestamp ?? 0,
                 'price_updated_at' => $product->productSuppliers->max('price_updated_at')?->timestamp ?? 0,
                 'attribute_value'  => $attributeValue,
+                'attribute_value_pdf' => !empty($pdfAttributeValues) ? implode(' ', $pdfAttributeValues) : null,
             ];
 
         }
@@ -599,6 +608,25 @@ class Preview extends Component
         ], now()->addHours(2));
         
         $this->updateProgress(30, 'داده‌ها آماده شدند، در حال تولید PDF...');
+    }
+
+    private static function formatPdfAttribute(?string $label, string $value): string
+    {
+        $rtlMark = "\u{200F}";
+        $text = $label !== null ? self::withPdfLtrMark($label) . ': ' : '';
+
+        return $rtlMark . '(' . $text . self::withPdfLtrMark($value) . ')' . $rtlMark;
+    }
+
+    private static function withPdfLtrMark(string $text): string
+    {
+        $ltrMark = "\u{200E}";
+
+        return preg_replace_callback(
+            '~[A-Za-z][A-Za-z0-9._:+/-]*~',
+            static fn (array $matches): string => $ltrMark . $matches[0] . $ltrMark,
+            $text,
+        ) ?? $text;
     }
 
     private function compareItems($a, $b, $sortKey, $dir)

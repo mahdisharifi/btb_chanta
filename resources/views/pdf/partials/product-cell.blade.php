@@ -26,9 +26,9 @@
     </div>
     
     {{-- مشخصات محصول (در خط جداگانه) --}}
-    @if(!empty($product['attribute_value']))
-        <div style="font-size: 10px; color: #6b7280; margin-top: 4px; text-align: center; direction: ltr !important; unicode-bidi: bidi-override;">
-            {!! $product['attribute_value'] !!}
+    @if(!empty($product['attribute_value_pdf']))
+        <div dir="rtl" style="font-size: 10px; color: #6b7280; margin-top: 4px; text-align: center; direction: rtl;">
+            {{ $product['attribute_value_pdf'] }}
         </div>
     @endif
 

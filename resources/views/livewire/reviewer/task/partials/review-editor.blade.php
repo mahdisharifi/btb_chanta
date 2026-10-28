@@ -138,6 +138,9 @@
                             @else
                                 <p class="py-4 text-sm text-slate-500">پیش‌نمایش تصویر در دسترس نیست.</p>
                             @endif
+                            @if(!$isRemoval && $reviewMediaItem->is_primary)
+                                <p class="mt-2 inline-flex rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800">تصویر اصلی</p>
+                            @endif
                             <p class="mt-2 break-words text-xs text-slate-500">شناسهٔ تصویر: {{ $reviewMediaItem->product_gallery_id ?? $reviewMediaItem->media_id }}؛ ردیف ارسال: {{ $reviewMediaItem->id }}</p>
                             <label for="review-media-decision-{{ $reviewMediaItem->id }}" class="mb-1 mt-3 block text-sm">تصمیم دربارهٔ تصویر {{ $loop->iteration }}</label>
                             <select id="review-media-decision-{{ $reviewMediaItem->id }}" wire:model="reviewDecisions.media:{{ $reviewMediaItem->id }}" class="min-h-11 w-full rounded-lg border-slate-300">

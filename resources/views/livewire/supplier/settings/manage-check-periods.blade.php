@@ -571,22 +571,23 @@
                                         <label class="block text-sm font-bold text-gray-700 mb-2">
                                             درصد افزایش برای هر دوره <span class="text-red-500">*</span>
                                         </label>
-                                        <div class="grid grid-cols-2 gap-3">
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             @foreach($activePeriods as $period)
                                                 @if($period->is_enabled_for_supplier)
-                                                    <div class="bg-white border border-indigo-200 rounded-lg p-3">
-                                                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                    <div wire:key="add-category-period-{{ $period->id }}" class="bg-white border border-indigo-200 rounded-lg p-3">
+                                                        <label for="add-category-period-{{ $period->id }}-percentage" class="block text-xs font-medium text-gray-600 mb-1">
                                                             {{ $period->display_name }}
                                                         </label>
                                                         <div class="relative">
                                                             <input 
-                                                                wire:model="categoryPercentages.{{ $period->id }}"
+                                                                id="add-category-period-{{ $period->id }}-percentage"
+                                                                wire:model="newCategoryPercentages.{{ $period->id }}"
                                                                 type="number"
                                                                 min="0"
                                                                 max="100"
                                                                 step="0.01"
                                                                 onwheel="this.blur()"
-                                                                class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
+                                                                class="min-h-11 w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
                                                                 placeholder="مثال: 5.5"
                                                             />
                                                             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-bold">%</span>
@@ -595,7 +596,7 @@
                                                 @endif
                                             @endforeach
                                         </div>
-                                        <x-input-error :messages="$errors->get('categoryPercentages')" class="mt-1" />
+                                        <x-input-error :messages="$errors->get('newCategoryPercentages')" class="mt-1" />
                                         <p class="text-xs text-gray-500 mt-2">💡 فقط دوره‌هایی که فعال کرده‌اید نمایش داده می‌شود</p>
                                     </div>
 
@@ -630,22 +631,23 @@
                                                 ویرایش: {{ $cat['category_name'] }}
                                             </h4>
 
-                                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                                                 @foreach($activePeriods as $period)
                                                     @if($period->is_enabled_for_supplier)
-                                                        <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                                                            <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                        <div wire:key="edit-category-{{ $cat['category_id'] }}-period-{{ $period->id }}" class="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                                                            <label for="edit-category-{{ $cat['category_id'] }}-period-{{ $period->id }}-percentage" class="block text-xs font-medium text-gray-600 mb-1">
                                                                 {{ $period->display_name }}
                                                             </label>
                                                             <div class="relative">
                                                                 <input 
+                                                                    id="edit-category-{{ $cat['category_id'] }}-period-{{ $period->id }}-percentage"
                                                                     wire:model="categoryPercentages.{{ $period->id }}"
                                                                     type="number"
                                                                     min="0"
                                                                     max="100"
                                                                     step="0.01"
                                                                     onwheel="this.blur()"
-                                                                    class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
+                                                                    class="min-h-11 w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
                                                                 />
                                                                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-bold">%</span>
                                                             </div>
@@ -658,13 +660,13 @@
                                             <div class="flex items-center gap-2 pt-3 border-t border-gray-200">
                                                 <button 
                                                     wire:click="saveCategoryEdit"
-                                                    class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                                    class="min-h-11 flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
                                                     <x-heroicon-o-check class="w-4 h-4"/>
                                                     ذخیره
                                                 </button>
                                                 <button 
                                                     wire:click="cancelCategoryEdit"
-                                                    class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">
+                                                    class="min-h-11 flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">
                                                     لغو
                                                 </button>
                                             </div>

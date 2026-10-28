@@ -31,6 +31,7 @@ class ManageCheckPeriods extends Component
     
     // مدیریت دسته‌بندی‌ها
     public $selectedCategoryId = null;
+    public $newCategoryPercentages = []; // ['check_period_id' => percentage]
     public $categoryPercentages = []; // ['check_period_id' => percentage]
     public $editingCategoryId = null;
     
@@ -584,16 +585,16 @@ class ManageCheckPeriods extends Component
     {
         $this->validate([
             'selectedCategoryId' => ['required', 'exists:categories,id'],
-            'categoryPercentages' => ['required', 'array', 'min:1'],
-            'categoryPercentages.*' => ['required', 'numeric', 'min:0', 'max:100'],
+            'newCategoryPercentages' => ['required', 'array', 'min:1'],
+            'newCategoryPercentages.*' => ['required', 'numeric', 'min:0', 'max:100'],
         ], [
             'selectedCategoryId.required' => 'لطفاً یک دسته‌بندی انتخاب کنید.',
             'selectedCategoryId.exists' => 'دسته‌بندی انتخاب شده معتبر نیست.',
-            'categoryPercentages.required' => 'لطفاً حداقل یک درصد تعیین کنید.',
-            'categoryPercentages.min' => 'لطفاً حداقل یک درصد تعیین کنید.',
-            'categoryPercentages.*.numeric' => 'درصد باید یک عدد باشد.',
-            'categoryPercentages.*.min' => 'درصد نمی‌تواند منفی باشد.',
-            'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
+            'newCategoryPercentages.required' => 'لطفاً حداقل یک درصد تعیین کنید.',
+            'newCategoryPercentages.min' => 'لطفاً حداقل یک درصد تعیین کنید.',
+            'newCategoryPercentages.*.numeric' => 'درصد باید یک عدد باشد.',
+            'newCategoryPercentages.*.min' => 'درصد نمی‌تواند منفی باشد.',
+            'newCategoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
         $supplierId = Auth::user()->supplier->id;
@@ -615,7 +616,7 @@ class ManageCheckPeriods extends Component
         
         // افزودن رکوردها
         DB::transaction(function () use ($supplierId, $categoryId) {
-            foreach ($this->categoryPercentages as $checkPeriodId => $percentage) {
+            foreach ($this->newCategoryPercentages as $checkPeriodId => $percentage) {
                 if ($percentage !== null && $percentage !== '') {
                     DB::table('category_check_period')->insert([
                         'supplier_id' => $supplierId,
@@ -630,7 +631,7 @@ class ManageCheckPeriods extends Component
             }
         });
         
-        $this->reset(['selectedCategoryId', 'categoryPercentages']);
+        $this->reset(['selectedCategoryId', 'newCategoryPercentages']);
         $this->loadCategoryPeriods();
         
         $this->dispatch('notify',

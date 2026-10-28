@@ -302,7 +302,12 @@ class ProductCompletionMediaService
             $galleryAlreadyCurrent = data_get($submission->approval_selection_json, 'schema_version') === 2
                 && ($conflict->mergedPayload['gallery'] ?? null) != ($publicationPayload['gallery'] ?? null);
             if (data_get($lockedTask->scope_json, 'gallery', false) !== false && ! $galleryAlreadyCurrent) {
-                $this->applyManifest($lockedTask, $product, $submission);
+                $this->applyManifest(
+                    $lockedTask,
+                    $product,
+                    $submission,
+                    data_get($publicationPayload, 'gallery.items', []),
+                );
                 $product->forceFill([
                     'content_version' => (int) $product->content_version + 1,
                     'content_updated_at' => now(),
@@ -591,8 +596,16 @@ class ProductCompletionMediaService
         ProductCompletionTask $task,
         Product $product,
         ProductCompletionSubmission $submission,
+        array $approvedGalleryItems,
     ): void {
         $items = $this->reviewedMediaItems($submission);
+        $primaryItems = collect($approvedGalleryItems)
+            ->filter(static fn (array $item): bool => ($item['action'] ?? null) !== 'remove' && ! empty($item['is_primary']))
+            ->values();
+        if ($primaryItems->count() !== 1) {
+            throw ValidationException::withMessages(['submission' => 'گالری تأییدشده باید دقیقاً یک تصویر اصلی داشته باشد.']);
+        }
+        $approvedPrimary = $primaryItems->first();
         $product->galleries()->where('file_type', 'image')->update([
             'is_primary' => false,
         ]);
@@ -606,7 +619,8 @@ class ProductCompletionMediaService
             if ($item->action === 'keep') {
                 $item->productGallery?->update([
                     'sort_order' => $item->sort_order,
-                    'is_primary' => $item->is_primary,
+                    'is_primary' => ($approvedPrimary['action'] ?? null) === 'keep'
+                        && (int) ($approvedPrimary['product_gallery_id'] ?? 0) === (int) $item->product_gallery_id,
                     'title' => $item->title,
                     'alt_text' => $item->alt_text,
                 ]);
@@ -626,7 +640,8 @@ class ProductCompletionMediaService
                 'title' => $item->title,
                 'alt_text' => $item->alt_text,
                 'sort_order' => $item->sort_order,
-                'is_primary' => $item->is_primary,
+                'is_primary' => ($approvedPrimary['action'] ?? null) === 'add'
+                    && (string) ($approvedPrimary['media_public_id'] ?? '') === (string) $media->public_id,
                 'file_size' => $media->file_size,
                 'mime_type' => 'image/webp',
                 'width' => $media->width,
@@ -638,6 +653,10 @@ class ProductCompletionMediaService
                 'status' => ProductCompletionMediaStatus::PUBLISHED,
                 'published_at' => now(),
             ])->save();
+        }
+
+        if ($product->galleries()->where('file_type', 'image')->where('is_primary', true)->count() !== 1) {
+            throw new ProductCompletionMediaException('انتشار گالری باید دقیقاً یک تصویر اصلی داشته باشد.');
         }
     }
 
