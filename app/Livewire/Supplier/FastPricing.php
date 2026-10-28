@@ -72,11 +72,38 @@ class FastPricing extends Component
         try {
             DB::beginTransaction();
 
+            // The supplier-level currency is authoritative during currency
+            // transitions; a product row may still carry its old pivot value.
+            $supplier = \App\Models\Supplier::query()
+                ->whereKey($supplier->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $data = $this->pricingData[$productId];
 
             $productSupplier = ProductSupplier::where('supplier_id', $supplier->id)
                 ->where('product_id', $productId)
+                ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($supplier->pricing_currency !== 'TOM' || $productSupplier->price_currency !== 'TOM') {
+                foreach ($data['prices'] ?? [] as $type => $priceData) {
+                    $existing = $productSupplier->prices()->where('price_type', $type)->first();
+                    $newPrice = $priceData['price'] ?? null;
+                    $unchanged = $existing
+                        ? ($newPrice !== null && $newPrice !== '' && (float) $newPrice === (float) $existing->price)
+                        : ($newPrice === null || $newPrice === '');
+
+                    if (!$unchanged) {
+                        DB::rollBack();
+                        $this->dispatch('notify', [
+                            'type' => 'error',
+                            'message' => 'ارز پایهٔ تامین‌کننده ارزی است؛ برای تغییر قیمت از صفحهٔ ماتریس قیمت استفاده کنید.',
+                        ]);
+                        return;
+                    }
+                }
+            }
 
             $productSupplier->update([
                 'is_active' => $data['is_active'] ?? false,
@@ -104,7 +131,14 @@ class FastPricing extends Component
                 }
             }
 
+            app(\App\Services\ProductPriceRevisionService::class)
+                ->increment((int) $productSupplier->product_id);
             DB::commit();
+
+            \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+                (int) $productSupplier->supplier_id,
+                [(int) $productSupplier->id],
+            );
 
             $this->dispatch('notify', [
                 'type' => 'success',

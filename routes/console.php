@@ -4,6 +4,7 @@ use App\Jobs\CleanupProductCompletionMediaJob;
 use App\Jobs\ExpireProductCompletionTasksJob;
 use App\Jobs\ExpireSubscriptionsJob;
 use App\Jobs\RecoverProductCompletionOperationsJob;
+use App\Jobs\RefreshDueForeignCurrencyPrices;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -25,6 +26,12 @@ Schedule::job(new RecoverProductCompletionOperationsJob())
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->name('recover-product-completion-operations');
+
+// Due supplier/currency settings refresh one shared quote and enqueue bounded product chunks.
+Schedule::job(new RefreshDueForeignCurrencyPrices())
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->name('refresh-due-foreign-currency-prices');
 
 // Use the scheduler's PHP binary and consume both configured and legacy default queues.
 $queueConnection = (string) config('queue.default');
@@ -49,3 +56,8 @@ Schedule::command('queue:work', [
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('prices:refresh-exchange-rates', function (ExchangeRateRefreshService $service) {
+    $service->refresh();
+    $this->info('Latest USD, CNY and AED rates have been stored.');
+})->purpose('Fetch current USD, CNY and AED rates from the configured direct provider');

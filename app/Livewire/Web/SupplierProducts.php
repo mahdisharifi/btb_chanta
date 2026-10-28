@@ -135,7 +135,8 @@ class SupplierProducts extends Component
 
     protected function loadSupplierStats(): void
     {
-        $cacheKey = "web:supplier:{$this->supplier->id}:stats";
+        $statsVersion = Cache::get("web:supplier:{$this->supplier->id}:stats:version", 'initial');
+        $cacheKey = "web:supplier:{$this->supplier->id}:stats:{$statsVersion}";
 
         $this->supplierStats = Cache::remember($cacheKey, 600, function () {
             // آمار محصولات (شامل هر دو مسیر)

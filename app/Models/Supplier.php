@@ -71,6 +71,9 @@ class Supplier extends Model
 
         'is_verified' => 'boolean',
         'is_active' => 'boolean',
+        'pricing_currency_revision' => 'integer',
+        'tier_pricing_revision' => 'integer',
+        'supplier_tier_discount_revision' => 'integer',
         'verified_at' => 'datetime',
         'social_networks' => 'array',
         'verification_documents' => 'array',

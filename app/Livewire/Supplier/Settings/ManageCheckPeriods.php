@@ -789,15 +789,43 @@ class ManageCheckPeriods extends Component
         $productSupplierIds = DB::table('product_supplier')
             ->where('supplier_id', $supplierId)
             ->pluck('id');
+        $affectedProductSupplierIds = collect();
         
         if ($productSupplierIds->isNotEmpty()) {
             // غیرفعال کردن تمام قیمت\u200cهای چکی این دوره
-            DB::table('product_prices')
-                ->whereIn('product_supplier_id', $productSupplierIds)
-                ->where('check_period_id', $periodId)
-                ->update(['is_active' => false]);
+            $affectedProductSupplierIds = DB::transaction(function () use ($productSupplierIds, $periodId) {
+                $affectedIds = DB::table('product_prices')
+                    ->whereIn('product_supplier_id', $productSupplierIds)
+                    ->where('check_period_id', $periodId)
+                    ->where('is_active', true)
+                    ->distinct()
+                    ->pluck('product_supplier_id');
+
+                DB::table('product_prices')
+                    ->whereIn('product_supplier_id', $productSupplierIds)
+                    ->where('check_period_id', $periodId)
+                    ->update(['is_active' => false]);
+
+                $productIds = DB::table('product_supplier')
+                    ->whereIn('id', $affectedIds)
+                    ->distinct()
+                    ->pluck('product_id');
+
+                foreach ($productIds as $productId) {
+                    app(\App\Services\ProductPriceRevisionService::class)->increment((int) $productId);
+                }
+
+                return $affectedIds;
+            });
         }
         
+        if ($affectedProductSupplierIds->isNotEmpty()) {
+            \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+                (int) $supplierId,
+                $affectedProductSupplierIds->all(),
+            );
+        }
+
         $this->loadPeriods();
         
         $this->dispatch('notify',

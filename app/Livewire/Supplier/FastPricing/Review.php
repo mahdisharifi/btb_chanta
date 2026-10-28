@@ -41,7 +41,9 @@ class Review extends Component
 
         DB::beginTransaction();
         try {
-            \App\Models\Supplier::query()
+            $changedProductSupplierIds = [];
+
+            $supplier = \App\Models\Supplier::query()
                 ->whereKey($supplierId)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -88,6 +90,7 @@ class Review extends Component
                 // ۱. بروزرسانی قیمت‌ها با ساختار ماتریس جدید
                 // ═══════════════════════════════════════════════════════════
                 if (is_array($item->new_prices) && !empty($item->new_prices)) {
+                    $changedProductSupplierIds[] = (int) $productSupplier->id;
                     // ✅ دریافت تنظیمات auto-calculate
                     $autoCalculate = $productSupplier->auto_calculate_tiers ?? false;
                     $tierPercentages = $productSupplier->tier_percentages ?? [];
@@ -141,6 +144,18 @@ class Review extends Component
                         // ✅ شناسایی قیمت نقدی (price_type_id = 1 معمولاً نقدی است)
                         // بهتر است با code چک کنیم
                         $priceType = \App\Models\PriceType::find($priceTypeId);
+                        if (($supplier->pricing_currency !== 'TOM' || $productSupplier->price_currency !== 'TOM')
+                            && $priceType?->code === 'cash') {
+                            if ($currentPrice && $cleanPrice > 0 && (int) $currentPrice->price === (int) $cleanPrice) {
+                                continue;
+                            }
+
+                            throw new RuntimeException(
+                                'قیمت نقدی این کالا بر پایهٔ ارز ' . $supplier->pricing_currency
+                                . ' است؛ مبلغ ارزی را در صفحهٔ ماتریس قیمت تغییر دهید.'
+                            );
+                        }
+
                         if ($priceType && $priceType->code === 'cash' && $cleanPrice > 0) {
                             $cashPrices[$tierIndex] = $cleanPrice;
                         }
@@ -161,6 +176,17 @@ class Review extends Component
                         } else {
                             // ✅ رند کردن قیمت manual هم
                             $roundedManualPrice = \App\Helpers\PriceRoundingHelper::round($cleanPrice, $productSupplier->supplier_id);
+
+                            $priceAttributes = [
+                                'product_id' => $productSupplier->product_id,
+                                'price' => (int)$roundedManualPrice, // ✅ قیمت رند شده
+                                'is_active' => true,
+                            ];
+
+                            if ($priceType?->code === 'check') {
+                                $priceAttributes['calculation_mode'] = 'manual';
+                                $priceAttributes['percentage_override'] = null;
+                            }
                             
                             // ثبت یا بروزرسانی قیمت معتبر
                             ProductPrice::updateOrCreate(
@@ -170,11 +196,7 @@ class Review extends Component
                                     'price_type_id' => (int)$priceTypeId,
                                     'check_period_id' => $checkPeriodId,
                                 ],
-                                [
-                                    'product_id' => $productSupplier->product_id,
-                                    'price' => (int)$roundedManualPrice, // ✅ قیمت رند شده
-                                    'is_active' => true,
-                                ]
+                                $priceAttributes
                             );
                         }
                     }
@@ -295,6 +317,9 @@ class Review extends Component
                 }
 
                 $productSupplier->save();
+                $changedProductSupplierIds[(int) $productSupplier->id] = (int) $productSupplier->id;
+                app(\App\Services\ProductPriceRevisionService::class)
+                    ->increment((int) $productSupplier->product_id);
             }
 
             $batch->update([
@@ -302,6 +327,13 @@ class Review extends Component
             ]);
             
             DB::commit();
+
+            if ($changedProductSupplierIds !== []) {
+                \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+                    $supplierId,
+                    array_values($changedProductSupplierIds),
+                );
+            }
 
             session()->flash('success', 'تغییرات با موفقیت بر روی محصولات اعمال شد.');
             return $this->redirect(route('supplier.product-selection'), navigate: true);

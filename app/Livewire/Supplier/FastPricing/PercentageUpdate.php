@@ -87,7 +87,7 @@ class PercentageUpdate extends Component
 
         try {
             $batchId = DB::transaction(function () use ($supplierId, $percentage): int {
-                Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+                $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
 
                 $existingBatch = PriceUpdateBatch::query()
                     ->where('supplier_id', $supplierId)
@@ -308,10 +308,11 @@ class PercentageUpdate extends Component
         }
 
         $supplierId = $this->supplierId();
+        $changedProductSupplierIds = [];
 
         try {
-            DB::transaction(function () use ($supplierId): void {
-                Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+            DB::transaction(function () use ($supplierId, &$changedProductSupplierIds): void {
+                $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
                 $batch = $this->lockOwnedPendingBatch();
                 $batch->update(['status' => 'processing']);
 
@@ -349,6 +350,7 @@ class PercentageUpdate extends Component
                     $currentPrices = ProductPrice::query()
                         ->where('product_supplier_id', $productSupplier->id)
                         ->where('price', '>', 0)
+                        ->with('priceType:id,code')
                         ->orderBy('id')
                         ->lockForUpdate()
                         ->get()
@@ -367,15 +369,33 @@ class PercentageUpdate extends Component
                             throw new RuntimeException('یکی از قیمت‌ها پس از ساخت پیش‌نمایش تغییر کرده است. پیش‌نویس را لغو و دوباره ایجاد کنید.');
                         }
 
+                        if (($supplier->pricing_currency !== 'TOM' || $productSupplier->price_currency !== 'TOM')
+                            && $price->priceType?->code === 'cash'
+                            && (int) $priceData['price'] !== (int) $oldPriceData['price']) {
+                            throw new RuntimeException(
+                                'قیمت نقدی این کالا از مبلغ ارزی محاسبه می‌شود؛ برای تغییر آن از صفحهٔ ماتریس قیمت ارزی استفاده کنید.'
+                            );
+                        }
+
                         $price->update(['price' => (int) $priceData['price']]);
                     }
 
                     $productSupplier->is_active = (bool) $item->new_is_active;
                     $productSupplier->save();
+                    $changedProductSupplierIds[(int) $productSupplier->id] = (int) $productSupplier->id;
+                    app(\App\Services\ProductPriceRevisionService::class)
+                        ->increment((int) $productSupplier->product_id);
                 }
 
                 $batch->update(['status' => 'completed']);
             }, 3);
+
+            if ($changedProductSupplierIds !== []) {
+                \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+                    $supplierId,
+                    array_values($changedProductSupplierIds),
+                );
+            }
 
             session()->flash('success', 'قیمت‌ها و وضعیت کالاها با موفقیت بروزرسانی شدند.');
             return $this->redirect(route('supplier.product-selection'), navigate: true);

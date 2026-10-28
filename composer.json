@@ -19,6 +19,7 @@
         "morilog/jalali": "^3.5",
         "openspout/openspout": "^4.28",
         "phpoffice/phpspreadsheet": "^1.30",
+        "pusher/pusher-php-server": "^7.3",
         "shetabit/payment": "^6.4",
         "spatie/laravel-medialibrary": "11.*",
         "spatie/laravel-pdf": "^2.11",

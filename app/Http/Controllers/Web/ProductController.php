@@ -299,6 +299,7 @@ class ProductController extends Controller
         // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده با ساختار ماتریسی ───
         $productSuppliers = $product->productSuppliers()
             ->active()
+            ->verifiedSupplier()
             ->select([
                 'id', 'product_id', 'supplier_id', 'is_primary', 'sort_order',
                 // ✅ فیلدهای گارانتی
@@ -326,6 +327,23 @@ class ProductController extends Controller
         // ✅ فیلتر کردن تامین‌کنندگانی که حداقل یک قیمت فعال دارند
         $productSuppliers = $productSuppliers->filter(function($ps) {
             return $ps->prices->isNotEmpty();
+        })->values();
+
+        $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+        $canSeeWholesalePrices = $priceVisibilityService->canSeeWholesalePrice(Auth::user(), $product);
+        $allowedPriceTypes = $priceVisibilityService->getSettings(Auth::user())?->getAllowedPriceTypes();
+        $productSuppliers = $productSuppliers->map(function ($productSupplier) use ($canSeeWholesalePrices, $allowedPriceTypes) {
+            $visiblePrices = $canSeeWholesalePrices
+                ? $productSupplier->prices->filter(function ($price) use ($allowedPriceTypes) {
+                    $type = $price->priceType?->code ?? 'cash';
+
+                    return $allowedPriceTypes === null || in_array($type, $allowedPriceTypes, true);
+                })->values()
+                : collect();
+
+            $productSupplier->setRelation('prices', $visiblePrices);
+
+            return $productSupplier;
         })->values();
 
         // ✅ سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
@@ -384,10 +402,6 @@ class ProductController extends Controller
         $userRole = $this->resolveUserRole();
         $roleData = $this->resolveVisibleDataByRole($product, $userRole);
 
-        if ($usePivotPrices && in_array($userRole, ['retailer_premium', 'super_admin', 'supplier'])) {
-            $roleData['showWholesalePrices'] = true;
-        }
-
         $showWholesalePrices = $roleData['showWholesalePrices'] ?? false;
         $showSupplierInfo    = $roleData['showSupplierInfo'] ?? false;
         $canViewSupplierInfo = $roleData['showSupplierInfo'] ?? false;
@@ -443,6 +457,7 @@ class ProductController extends Controller
             'canViewSupplierInfo'   => $canViewSupplierInfo,
             'showWholesalePrices'   => $showWholesalePrices,
             'showSupplierInfo'      => $showSupplierInfo,
+            'allowedPriceTypes'     => $allowedPriceTypes,
 
             'supplierInfo'          => $roleData['supplierInfo'] ?? null,
             'wholesalePrices'       => $roleData['wholesalePrices'] ?? collect(),
@@ -451,8 +466,7 @@ class ProductController extends Controller
             'profitMargin'          => $roleData['profitMargin'] ?? null,
             'canSetRetailPrice'     => $roleData['canSetRetailPrice'] ?? false,
         ])
-        ->header('Cache-Control', 'max-age=1800, public, must-revalidate')
-        ->header('Expires', now()->addMinutes(30)->toRfc7231String());
+        ->header('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
     }
 
 
@@ -603,7 +617,7 @@ class ProductController extends Controller
                 },
                 // ✅ استفاده از ساختار جدید: productSuppliers با prices
                 'productSuppliers' => function ($q) {
-                    $q->where('is_active', true);
+                    $q->where('is_active', true)->verifiedSupplier();
                 },
                 'productSuppliers.prices' => function ($q) {
                     $q->where('is_active', true)
@@ -1180,7 +1194,8 @@ class ProductController extends Controller
      */
     private function getRelatedProducts(Product $product, int $limit = 8): Collection
     {
-        $cacheKey = "web:product:{$product->id}:related:priced-first-v2:{$limit}";
+        $priceVersion = Cache::get('products.prices.version', 'initial');
+        $cacheKey = "web:product:{$product->id}:related:priced-first-v2:{$limit}:{$priceVersion}";
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SHORT, function () use ($product, $limit) {
             return Product::query()->pricedFirst()->where('category_id', $product->category_id)
@@ -1197,7 +1212,7 @@ class ProductController extends Controller
                         ->limit(1),
                     'category:id,name,slug',
                     // ✅ اضافه شده: eager loading برای قیمت‌های عمده
-                    'productSuppliers' => fn($q) => $q->where('is_active', true),
+                    'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
@@ -1258,7 +1273,7 @@ class ProductController extends Controller
                     ->limit(1),
                 'category:id,name,slug',
                 // ✅ اضافه شده: eager loading برای قیمت‌های عمده
-                'productSuppliers' => fn($q) => $q->where('is_active', true),
+                'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
                     ->where(function ($sub) {
                         $sub->whereNull('valid_until')
@@ -1299,7 +1314,8 @@ class ProductController extends Controller
             });
         }
 
-        $priceRange = Cache::remember('products.price_range', now()->addHours(1), function () {
+        $priceVersion = Cache::get('products.prices.version', 'initial');
+        $priceRange = Cache::remember("products.price_range:{$priceVersion}", now()->addHours(1), function () {
             return [
                 'min' => \App\Models\ProductPrice::query()->where('is_active', true)->min('price') ?? 0,
                 'max' => \App\Models\ProductPrice::query()->where('is_active', true)->max('price') ?? 0,
@@ -1766,6 +1782,8 @@ private function getCategoryChain(Category $category): array
     {
         $categoryName = $product->category?->name ?? 'محصولات';
         $siteName = config('app.name', 'عمده‌فروشی چن تا؟');
+        $priceVisibility = app(\App\Services\PriceVisibilityService::class);
+        $canSeeRetailPrice = $priceVisibility->canSeeRetailPrice(Auth::user(), $product);
 
         // ✅ اولویت تصویر SEO: is_seo_image > is_primary > اولین تصویر
         $seoImage = $product->galleries?->where('is_seo_image', true)->where('file_type', 'image')->first()
@@ -1810,7 +1828,9 @@ private function getCategoryChain(Category $category): array
             }
         } else {
             // fallback: قیمت خرده‌فروشی (با تاکید بر عمده)
-            $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+            $retailPrice = $canSeeRetailPrice
+                ? $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first()
+                : null;
             if ($retailPrice) {
                 $priceText = ' | قیمت از ' . number_format($retailPrice->retail_price) . ' تومان';
             }
@@ -1864,6 +1884,10 @@ private function getCategoryChain(Category $category): array
      */
     private function buildProductSchema(Product $product, array $breadcrumbs): array
     {
+        $priceVisibility = app(\App\Services\PriceVisibilityService::class);
+        $user = Auth::user();
+        $canSeeSupplierInfo = $priceVisibility->canSeeSupplierInfo($user, $product);
+        $canSeeRetailPrice = $priceVisibility->canSeeRetailPrice($user, $product);
         $schema = [
             '@context'    => 'https://schema.org',
             '@type'       => 'Product',
@@ -1893,7 +1917,13 @@ private function getCategoryChain(Category $category): array
         }
 
         // ✅ برند محصول
-        if ($product->supplier) {
+        if (
+            $product->supplier
+            && $product->supplier->is_active
+            && $product->supplier->is_verified
+            && $product->supplier->verification_status === 'approved'
+            && $canSeeSupplierInfo
+        ) {
             $schema['brand'] = [
                 '@type' => 'Brand',
                 'name'  => $product->supplier->brand_name ?? $product->supplier->company_name ?? config('app.name'),
@@ -1944,17 +1974,23 @@ private function getCategoryChain(Category $category): array
                     'minValue' => 1,
                     'unitText' => 'عدد'
                 ],
-                // ✅ اضافه کردن seller برای هر تأمین‌کننده
-                'seller' => $product->productSuppliers->map(function($ps) {
-                    return [
+            ];
+
+            if ($canSeeSupplierInfo) {
+                $schema['offers']['seller'] = $product->productSuppliers
+                    ->filter(fn ($ps) => $ps->is_active && $ps->supplier?->is_active && $ps->supplier?->is_verified)
+                    ->map(fn ($ps) => [
                         '@type' => 'Organization',
                         'name' => $ps->supplier->company_name ?? $ps->supplier->brand_name ?? 'تأمین‌کننده',
-                    ];
-                })->toArray(),
-            ];
+                    ])
+                    ->values()
+                    ->all();
+            }
         } else {
             // fallback: قیمت خرده‌فروشی
-            $retailPrice = $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first();
+            $retailPrice = $canSeeRetailPrice
+                ? $product->retailPrices?->where('is_published', true)->sortBy('retail_price')->first()
+                : null;
             if ($retailPrice) {
                 // ✅ تبدیل تومان به ریال برای ISO 4217 (IRR)
                 $retailPriceRial = (float) $retailPrice->retail_price * 10;

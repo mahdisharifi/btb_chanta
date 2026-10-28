@@ -4,6 +4,8 @@
 use App\Helpers\PriceHelper;
 
 $ps = $productSupplier;
+$allowedPriceTypes = app(\App\Services\PriceVisibilityService::class)->getSettings(auth()->user())?->getAllowedPriceTypes();
+$canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $allowedPriceTypes, true);
 
 // اگر allProductSuppliers پاس نشده، فقط خود این تامین‌کننده را در نظر بگیریم
 $allSuppliers = $allProductSuppliers ?? collect([$ps]);
@@ -26,14 +28,14 @@ if ($basePrices->isEmpty()) {
 }
 
 // محاسبه قیمت‌های با گارانتی
-$hasWarranty = $ps->has_warranty ?? false;
+$hasWarranty = $canSeeWarrantyPrices && ($ps->has_warranty ?? false);
 $warrantyType = $ps->warranty_type ?? 'none';
 $warrantyValue = $ps->warranty_value;
 
 // بررسی اینکه آیا واقعاً گارانتی داریم یا نه
 // نکته 1: warranty_type = 'none' یعنی گارانتی رایگان (بدون هزینه اضافه) و معتبر است!
 // نکته 2: warranty_value = 0 هم معتبر است (گارانتی رایگان)
-$hasWarrantyWithCost = $hasWarranty 
+$hasWarrantyWithCost = $canSeeWarrantyPrices && $hasWarranty
     && ($warrantyType === 'none' || $warrantyType === 'custom' || $warrantyValue !== null);
 
 // استخراج تیراژها
@@ -71,6 +73,7 @@ $priceTypes = $basePrices
             'code' => $code,
             'name' => $name,
             'check_period_name' => $checkPeriodName,
+            'check_period_id' => $checkPeriodId ?: null,
             'sort_key' => $sortKey,
             'display_label' => $checkPeriodName ? "{$name} ({$checkPeriodName})" : $name,
         ];
@@ -175,7 +178,13 @@ $supplierId = $ps->supplier->id;
 @endphp
 
 {{-- Wrapper با Alpine.js برای مدیریت state --}}
-<div @if($hasWarrantyWithCost) x-data="{ showWithWarranty: false }" @endif>
+<div class="js-live-price-matrix"
+     data-live-price-product="{{ $product->id }}"
+     data-live-price-channel-role="{{ app(\App\Services\PriceVisibilityService::class)->getUserRole(auth()->user()) }}"
+     data-live-price-snapshot-url="{{ route('products.price-snapshot', $product->id) }}"
+     data-live-price-supplier="{{ $ps->id }}"
+     data-live-price-supplier-container="{{ $ps->id }}"
+     @if($hasWarrantyWithCost) x-data="{ showWithWarranty: false }" @endif>
 
 {{-- Toggle برای نمایش قیمت با گارانتی - با بهبود Accessibility --}}
 @if($hasWarrantyWithCost)
@@ -218,7 +227,7 @@ $supplierId = $ps->supplier->id;
 {{-- جدول با بهبودهای Responsive و Accessibility --}}
 <div class="relative">
     {{-- Scrollbar indicator برای موبایل --}}
-    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-lg
+    <div tabindex="0" role="region" aria-label="ماتریس قیمت تأمین‌کننده؛ برای دیدن ستون‌های بیشتر افقی پیمایش کنید" class="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-lg
                 shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)] 
                 md:shadow-none">
         <table class="min-w-full divide-y divide-gray-200">
@@ -286,6 +295,9 @@ $supplierId = $ps->supplier->id;
                             
                             <td 
                                 id="{{ $anchorId }}"
+                                data-live-price-product="{{ $product->id }}"
+                                data-live-price-supplier-id="{{ $ps->supplier_id }}"
+                                data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}"
                                 class="px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 text-xs sm:text-sm md:text-base text-center border-r border-gray-100 transition-all duration-300"
                             >
                                 @if($cell)
@@ -296,25 +308,33 @@ $supplierId = $ps->supplier->id;
                                     
                                     <div 
                                         class="transition-all duration-200 @if(!$hasWarrantyPrice && $cell['is_lowest']) bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 @elseif(!$hasWarrantyPrice) text-gray-800 @endif"
+                                        data-live-price-cell-highlight
+                                        data-live-price-product="{{ $product->id }}"
+                                        data-live-price-supplier="{{ $ps->id }}"
+                                        data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}"
                                         @if($hasWarrantyPrice)
                                             :class="{
                                                 'bg-purple-50 border border-purple-200 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5 text-purple-800': showWithWarranty,
-                                                'bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5': !showWithWarranty && {{ $cell['is_lowest'] ? 'true' : 'false' }},
-                                                'text-gray-800': !showWithWarranty && !{{ $cell['is_lowest'] ? 'true' : 'false' }}
+                                                'bg-green-50 text-green-800 font-bold ring-2 ring-green-500 rounded-lg px-1.5 py-1 sm:px-2 sm:py-1.5': !$el.dataset.livePriceBestCleared && !showWithWarranty && {{ $cell['is_lowest'] ? 'true' : 'false' }},
+                                                'text-gray-800': $el.dataset.livePriceBestCleared || (!showWithWarranty && !{{ $cell['is_lowest'] ? 'true' : 'false' }})
                                             }"
                                         @endif
                                     >
                                         <span class="text-base sm:text-lg md:text-xl lg:text-2xl font-semibold tabular-nums leading-tight tracking-tight">
                                             @if($hasWarrantyPrice)
-                                                <span x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
-                                                <span x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
+                                                <span data-live-price-product="{{ $product->id }}" data-live-price-supplier="{{ $ps->id }}" data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}" data-live-price-variant="base" x-show="!showWithWarranty">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
+                                                <span data-live-price-product="{{ $product->id }}" data-live-price-supplier="{{ $ps->id }}" data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}" data-live-price-variant="warranty" x-show="showWithWarranty" x-cloak>{{ PriceHelper::formatNumber($cell['warranty_amount']) }}</span>
                                             @else
-                                                {{ PriceHelper::formatNumber($cell['base_amount']) }}
+                                                <span data-live-price-product="{{ $product->id }}" data-live-price-supplier="{{ $ps->id }}" data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}" data-live-price-variant="base">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
                                             @endif
                                         </span>
                                     @if($cell['is_lowest'])
                                         <div 
                                             class="text-[10px] sm:text-xs md:text-sm text-green-700 mt-0.5 leading-tight"
+                                            data-live-price-best-label
+                                            data-live-price-product="{{ $product->id }}"
+                                            data-live-price-supplier="{{ $ps->id }}"
+                                            data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}"
                                             @if($hasWarrantyPrice) x-show="!showWithWarranty" @endif
                                         >
                                             ✓ بهترین
@@ -323,12 +343,20 @@ $supplierId = $ps->supplier->id;
                                     
                                     @if($hasWarrantyPrice)
                                         <div x-show="showWithWarranty" x-cloak class="text-xs text-purple-600 mt-0.5">
-                                            (پایه: {{ PriceHelper::formatNumber($cell['base_amount']) }})
+                                            پایه:
+                                            <span data-live-price-product="{{ $product->id }}"
+                                                  data-live-price-supplier="{{ $ps->id }}"
+                                                  data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}"
+                                                  data-live-price-variant="base">{{ PriceHelper::formatNumber($cell['base_amount']) }}</span>
                                         </div>
                                     @endif
                                 </div>
                             @else
-                                <span class="text-gray-400">—</span>
+                                <span class="text-gray-400"
+                                      data-live-price-product="{{ $product->id }}"
+                                      data-live-price-supplier="{{ $ps->id }}"
+                                      data-live-price-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] ?? 0 }}"
+                                      data-live-price-variant="base">—</span>
                             @endif
                         </td>
                     @endforeach

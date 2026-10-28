@@ -341,8 +341,9 @@ class SupplierPublicController extends Controller
         }
 
         // ─── آمار تأمین‌کننده ───
+        $statsVersion = Cache::get("web:supplier:{$supplier->id}:stats:version", 'initial');
         $supplierStats = Cache::remember(
-            "web:supplier:{$supplier->id}:stats",
+            "web:supplier:{$supplier->id}:stats:{$statsVersion}",
             self::CACHE_TTL_SHORT,
             function () use ($supplier) {
                 // ✅ اصلاح شده: شامل هر دو مسیر supplier_id مستقیم + pivot

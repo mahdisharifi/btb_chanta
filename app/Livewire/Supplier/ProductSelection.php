@@ -143,27 +143,37 @@ class ProductSelection extends Component
 
         $supplier = Auth::user()->supplier;
 
-        // ایجاد یا آپدیت اتصال تامین‌کننده به محصول
-        $productSupplier = ProductSupplier::updateOrCreate(
-            [
-                'product_id' => $this->quickProductId,
-                'supplier_id' => $supplier->id,
-            ],
-            [
-                'stock_quantity' => $this->quickStock,
-                'status' => 'active',
-            ]
-        );
+        $productSupplier = \Illuminate\Support\Facades\DB::transaction(function () use ($supplier): ProductSupplier {
+            $productSupplier = ProductSupplier::updateOrCreate(
+                [
+                    'product_id' => $this->quickProductId,
+                    'supplier_id' => $supplier->id,
+                ],
+                [
+                    'stock_quantity' => $this->quickStock,
+                    'status' => 'active',
+                ]
+            );
 
-        // ایجاد یا آپدیت قیمت (با استفاده از اینام صحیح)
-        ProductPrice::updateOrCreate(
-            [
-                'product_supplier_id' => $productSupplier->id,
-                'price_type' => PriceType::custom->value,
-            ],
-            [
-                'price' => $this->quickPrice,
-            ]
+            ProductPrice::updateOrCreate(
+                [
+                    'product_supplier_id' => $productSupplier->id,
+                    'price_type' => PriceType::custom->value,
+                ],
+                [
+                    'price' => $this->quickPrice,
+                ]
+            );
+
+            app(\App\Services\ProductPriceRevisionService::class)
+                ->increment((int) $productSupplier->product_id);
+
+            return $productSupplier;
+        });
+
+        \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+            (int) $productSupplier->supplier_id,
+            [(int) $productSupplier->id],
         );
 
         $this->showQuickPriceModal = false;

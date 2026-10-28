@@ -82,9 +82,36 @@ class Pricing extends Component
     {
         $this->validate();
 
+        $supplierId = (int) Auth::user()->supplier->id;
+        $blockedByCurrency = false;
+
         // استفاده از تراکنش برای جلوگیری از ثبت ناقص اطلاعات در دو جدول
-        DB::transaction(function () {
-            $this->productSupplier->update([
+        $saved = DB::transaction(function () use ($supplierId, &$blockedByCurrency): bool {
+            $supplier = \App\Models\Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+            $productSupplier = ProductSupplier::query()
+                ->whereKey($this->productSupplier->getKey())
+                ->where('supplier_id', $supplierId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($supplier->pricing_currency !== 'TOM' || $productSupplier->price_currency !== 'TOM') {
+                foreach (PriceType::cases() as $type) {
+                    $typeValue = $type->value;
+                    $priceData = $this->prices[$typeValue] ?? [];
+                    $existing = $productSupplier->prices()->where('price_type', $typeValue)->first();
+                    $newPrice = $priceData['price'] ?? null;
+                    $unchanged = $existing
+                        ? ($newPrice !== null && $newPrice !== '' && (float) $newPrice === (float) $existing->price)
+                        : ($newPrice === null || $newPrice === '');
+
+                    if (!$unchanged) {
+                        $blockedByCurrency = true;
+                        return false;
+                    }
+                }
+            }
+
+            $productSupplier->update([
                 'sku' => $this->sku,
                 'stock_quantity' => $this->stock_quantity,
                 'is_active' => $this->is_active,
@@ -95,7 +122,7 @@ class Pricing extends Component
                 $priceData = $this->prices[$typeValue] ?? null;
 
                 if (!empty($priceData['price']) && is_numeric($priceData['price'])) {
-                    $this->productSupplier->prices()->updateOrCreate(
+                    $productSupplier->prices()->updateOrCreate(
                         ['price_type' => $typeValue],
                         [
                             'product_id' => $this->product->id,
@@ -105,10 +132,25 @@ class Pricing extends Component
                         ]
                     );
                 } else {
-                    $this->productSupplier->prices()->where('price_type', $typeValue)->delete();
+                    $productSupplier->prices()->where('price_type', $typeValue)->delete();
                 }
             }
+            app(\App\Services\ProductPriceRevisionService::class)
+                ->increment((int) $productSupplier->product_id);
+
+            $this->productSupplier = $productSupplier;
+            return true;
         });
+
+        if (!$saved && $blockedByCurrency) {
+            $this->addError('prices', 'قیمت نقدی این کالا از ارز پایهٔ تامین‌کننده پیروی می‌کند؛ برای تغییر قیمت از صفحهٔ ماتریس قیمت استفاده کنید.');
+            return;
+        }
+
+        \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+            (int) $this->productSupplier->supplier_id,
+            [(int) $this->productSupplier->id],
+        );
 
         session()->flash('success', 'اطلاعات قیمت و موجودی با موفقیت ذخیره شد.');
 

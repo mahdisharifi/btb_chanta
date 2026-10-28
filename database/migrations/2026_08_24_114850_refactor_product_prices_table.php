@@ -16,6 +16,15 @@ return new class extends Migration
         Schema::table('product_prices', function (Blueprint $table) {
             // حذف ستون قدیمی
             if (Schema::hasColumn('product_prices', 'price_type')) {
+                foreach ([
+                    'product_prices_search_idx',
+                    'product_prices_product_id_price_type_is_active_index',
+                ] as $legacyIndex) {
+                    if (Schema::hasIndex('product_prices', $legacyIndex)) {
+                        $table->dropIndex($legacyIndex);
+                    }
+                }
+
                 $table->dropColumn('price_type');
             }
             

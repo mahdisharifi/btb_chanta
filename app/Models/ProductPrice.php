@@ -19,6 +19,7 @@ class ProductPrice extends Model
         'tier_index',
         'check_period_id',
         'percentage_override',
+        'calculation_mode',
         'price',
         'warranty_type',
         'warranty_duration',
@@ -32,6 +33,7 @@ class ProductPrice extends Model
     protected $casts = [
         'tier_index'           => 'integer',
         'percentage_override'  => 'float',
+        'calculation_mode'     => 'string',
         'price'                => 'integer',
         'warranty_duration'    => 'integer',
         'warranty_price'       => 'integer',

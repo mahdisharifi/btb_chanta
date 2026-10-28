@@ -10,6 +10,7 @@
 
 @php
 use App\Helpers\PriceHelper;
+$canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $allowedPriceTypes, true);
 @endphp
 
 @section('seo')
@@ -93,7 +94,7 @@ use App\Helpers\PriceHelper;
                         {{ $product->category->name }}
                     </a>
                     @endif
-                    <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 leading-tight">
+                    <h1 data-live-price-product-title-id="{{ $product->id }}" data-live-price-product-title="{{ $product->title }}" class="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 leading-tight">
                         {{ $product->title }}
                     </h1>
                     @if($product->sku)
@@ -140,14 +141,14 @@ use App\Helpers\PriceHelper;
             <div class="flex items-center justify-between mb-3">
                 <h3 class="text-lg sm:text-xl font-semibold text-gray-700 flex items-center gap-2">
                     <svg class="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
-                    قیمت‌های عمده تأمین‌کنندگان
-                    @if($hasMultipleSuppliers)
+                    {{ $canViewSupplierInfo ? 'قیمت‌های عمده تأمین‌کنندگان' : 'قیمت عمده محصول' }}
+                    @if($canViewSupplierInfo && $hasMultipleSuppliers)
                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                                         {{ $productSuppliers->count() }} تأمین‌کننده
                                     </span>
                     @endif
                 </h3>
-                @if($hasMultipleSuppliers && $usePivotPrices)
+                @if($canViewSupplierInfo && $hasMultipleSuppliers && $usePivotPrices)
                 <button @click="compareMode = !compareMode; if(compareMode) { setTimeout(() => { const el = document.getElementById('price-comparison-section'); const yOffset = -80; const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset; window.scrollTo({top: y, behavior: 'smooth'}); }, 150); }"
                         class="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all border"
                         :class="compareMode
@@ -160,29 +161,35 @@ use App\Helpers\PriceHelper;
             </div>
 
             {{-- ✅ اصلاح #4 تا #7: نوار آمار سریع --}}
-            @if($hasMultipleSuppliers && !empty($supplierStats))
+            @if(!empty($supplierStats) && ($hasMultipleSuppliers || !$canViewSupplierInfo))
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                 <div class="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-center">
                     <div class="text-xs sm:text-sm font-medium text-green-600">ارزان‌ترین قیمت</div>
-                    <div class="text-base sm:text-lg md:text-xl font-extrabold text-green-700 tabular-nums">{{ PriceHelper::formatNumber($supplierStats['lowest_price'] ?? 0) }}</div>
+                    <div data-live-price-product="{{ $product->id }}" data-live-price-channel-role="{{ app(\App\Services\PriceVisibilityService::class)->getUserRole(auth()->user()) }}" data-live-price-snapshot-url="{{ route('products.price-snapshot', $product->id) }}" data-live-price-range="product" data-live-price-range-kind="min" class="text-base sm:text-lg md:text-xl font-extrabold text-green-700 tabular-nums">{{ PriceHelper::formatNumber($supplierStats['lowest_price'] ?? 0) }}</div>
                     <div class="text-[10px] sm:text-xs text-green-500">تومان</div>
                 </div>
                 <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-center">
                     <div class="text-xs sm:text-sm font-medium text-red-600">گران‌ترین</div>
-                    <div class="text-base sm:text-lg md:text-xl font-extrabold text-red-700 tabular-nums">{{ PriceHelper::formatNumber($supplierStats['highest_price'] ?? 0) }}</div>
+                    <div data-live-price-product="{{ $product->id }}" data-live-price-range="product" data-live-price-range-kind="max" class="text-base sm:text-lg md:text-xl font-extrabold text-red-700 tabular-nums">{{ PriceHelper::formatNumber($supplierStats['highest_price'] ?? 0) }}</div>
                     <div class="text-[10px] sm:text-xs text-red-500">تومان</div>
                 </div>
                 <div class="bg-blue-50 border border-blue-200 rounded-lg px-2 py-1.5 text-center">
                     <div class="text-xs sm:text-sm font-medium text-blue-600">میانگین</div>
-                    <div class="text-base sm:text-lg md:text-xl font-extrabold text-blue-700 tabular-nums">{{ PriceHelper::formatNumber($supplierStats['avg_price'] ?? 0) }}</div>
+                    <div data-live-price-product="{{ $product->id }}" data-live-price-range="product" data-live-price-range-kind="average" class="text-base sm:text-lg md:text-xl font-extrabold text-blue-700 tabular-nums">{{ PriceHelper::formatNumber($supplierStats['avg_price'] ?? 0) }}</div>
                     <div class="text-[10px] sm:text-xs text-blue-500">تومان</div>
                 </div>
                 <div class="bg-purple-50 border border-purple-200 rounded-lg px-2 py-1.5 text-center">
                     <div class="text-xs sm:text-sm font-medium text-purple-600">اختلاف قیمت</div>
-                    <div class="text-base sm:text-lg md:text-xl font-extrabold text-purple-700 tabular-nums">{{ PriceHelper::formatNumber(($supplierStats['highest_price'] ?? 0) - ($supplierStats['lowest_price'] ?? 0)) }}</div>
+                    <div data-live-price-product="{{ $product->id }}" data-live-price-snapshot-url="{{ route('products.price-snapshot', $product->id) }}" data-live-price-range-difference class="text-base sm:text-lg md:text-xl font-extrabold text-purple-700 tabular-nums">{{ PriceHelper::formatNumber(($supplierStats['highest_price'] ?? 0) - ($supplierStats['lowest_price'] ?? 0)) }}</div>
                     <div class="text-[10px] sm:text-xs text-purple-500">تومان</div>
                 </div>
             </div>
+            @endif
+
+            @if($showSupplierInfo)
+            <p data-live-price-refresh-notice="{{ $product->id }}" hidden class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs sm:text-sm text-amber-800">
+                قیمت‌ها به‌روزرسانی شدند؛ برای محاسبهٔ دوبارهٔ بهترین قیمت‌ها و پیوندهای مقایسه، صفحه را تازه کنید.
+            </p>
             @endif
             
             {{-- ✅ بررسی تیراژهای فعال --}}
@@ -203,7 +210,7 @@ use App\Helpers\PriceHelper;
             ══════════════════════════════════════════ --}}
             
             {{-- 🔍 DEBUG: چک کردن شرایط --}}
-            @if(!$hasMatrixPricing)
+            @if(!$hasMatrixPricing && $canViewSupplierInfo && app()->environment('local'))
                 <div class="mb-6 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4">
                     <div class="font-bold text-yellow-800 mb-2">🔍 DEBUG: چرا ماتریس نمایش داده نمی‌شود؟</div>
                     <div class="text-sm text-yellow-700 space-y-1">
@@ -368,7 +375,7 @@ use App\Helpers\PriceHelper;
                     @php
                         // بررسی اینکه آیا حداقل یک تامین‌کننده گارانتی دارد
                         // نکته: warranty_value = 0 معتبر است (گارانتی رایگان)
-                        $hasAnyWarranty = $productSuppliers->contains(function($ps) {
+                        $hasAnyWarranty = $canSeeWarrantyPrices && $productSuppliers->contains(function($ps) {
                             return $ps->has_warranty 
                                 && ($ps->warranty_type === 'none' || $ps->warranty_type === 'custom' || $ps->warranty_value !== null);
                         });
@@ -452,7 +459,7 @@ use App\Helpers\PriceHelper;
                 {{-- ماتریس بهترین قیمت‌ها - بهینه‌سازی شده --}}
                 <div class="relative">
                     {{-- Scrollbar indicator --}}
-                    <div class="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-lg border border-gray-200 bg-white
+                    <div tabindex="0" role="region" aria-label="ماتریس مقایسه قیمت‌ها؛ برای دیدن ستون‌های بیشتر افقی پیمایش کنید" class="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 rounded-lg border border-gray-200 bg-white
                                 shadow-[inset_-10px_0_10px_-10px_rgba(0,0,0,0.1)] 
                                 md:shadow-none">
                         <table class="min-w-full divide-y divide-gray-200">
@@ -581,6 +588,8 @@ use App\Helpers\PriceHelper;
                                         
                                         return [
                                             'key' => "{$code}_{$checkPeriodId}",
+                                            'code' => $code,
+                                            'check_period_id' => $checkPeriodId,
                                             'name' => $name,
                                             'check_period_name' => $checkPeriodName,
                                             'check_period_days' => $checkPeriodDays,
@@ -628,14 +637,14 @@ use App\Helpers\PriceHelper;
                                                     $key = "{$code}_{$checkPeriodId}";
                                                     // فقط قیمت‌های غیر warranty
                                                     return $code !== 'warranty' && $key === $priceType['key'] && $price->tier_index == $tier;
-                                                })->map(function($price) use ($ps, $tier) {
+                                                })->map(function($price) use ($ps, $tier, $canSeeWarrantyPrices) {
                                                     // محاسبه قیمت با گارانتی
                                                     $baseAmount = $price->price;
                                                     $warrantyAmount = null;
                                                     
                                                     // نکته 1: warranty_type = 'none' یعنی گارانتی رایگان (بدون هزینه اضافه) و معتبر است!
                                                     // نکته 2: warranty_value = 0 هم معتبر است (گارانتی رایگان)
-                                                    $hasWarrantyWithCost = $ps->has_warranty 
+                                                    $hasWarrantyWithCost = $canSeeWarrantyPrices && $ps->has_warranty
                                                         && ($ps->warranty_type === 'none' || $ps->warranty_type === 'custom' || $ps->warranty_value !== null);
                                                     
                                                     if ($hasWarrantyWithCost) {
@@ -725,20 +734,26 @@ use App\Helpers\PriceHelper;
                                                         $anchorId = "supplier-{$supplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
                                                         $hasMultipleBest = $bestPriceSuppliers->count() > 1;
                                                     @endphp
-                                                    <a href="#{{ $anchorId }}" 
+                                                    @if($showSupplierInfo)
+                                                    <a href="#{{ $anchorId }}"
+                                                       data-live-price-best-summary
                                                        class="block bg-green-50 hover:bg-green-100 text-green-800 font-bold px-2 py-1.5 sm:px-3 sm:py-2 rounded-md transition-all duration-200 ring-2 ring-green-400 hover:ring-green-500 cursor-pointer group relative"
                                                        onclick="event.preventDefault(); document.getElementById('{{ $anchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-green-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-green-100'), 2000);">
-                                        <div class="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestPrice['amount']) }}</div>
+                                                    @else
+                                                    <div class="block bg-green-50 text-green-800 font-bold px-2 py-1.5 sm:px-3 sm:py-2 rounded-md ring-2 ring-green-400">
+                                                    @endif
+                                        <div data-live-price-product="{{ $product->id }}" data-live-price-product-matrix-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] }}" data-live-price-variant="base" class="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestPrice['amount']) }}</div>
                                                         @if($showSupplierInfo && !$hasMultipleBest)
-                                                            <div class="text-[10px] sm:text-xs md:text-sm text-green-700 mt-0.5 font-medium leading-tight">
+                                                            <div data-live-price-best-summary-label class="text-[10px] sm:text-xs md:text-sm text-green-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestPrice['supplier']->brand_name ?? $bestPrice['supplier']->company_name }}
                                                             </div>
-                                                        @elseif($hasMultipleBest)
-                                                            <div class="text-[10px] sm:text-xs md:text-sm text-green-700 mt-0.5 font-medium leading-tight">
+                                                        @elseif($hasMultipleBest && $showSupplierInfo)
+                                                            <div data-live-price-best-summary-label class="text-[10px] sm:text-xs md:text-sm text-green-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestPriceSuppliers->count() }} تامین‌کننده
                                                             </div>
                                                             {{-- Tooltip --}}
-                                                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
+                                                            @if($showSupplierInfo)
+                                                            <div data-live-price-best-summary-tooltip class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
                                                                 <div class="bg-gray-900 text-white text-[10px] rounded-lg py-2 px-3 shadow-lg">
                                                                     <div class="font-semibold mb-1.5">تامین‌کنندگان با قیمت یکسان:</div>
                                                                     <ul class="space-y-1">
@@ -754,10 +769,11 @@ use App\Helpers\PriceHelper;
                                                                     <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                                                                 </div>
                                                             </div>
+                                                            @endif
                                                         @endif
-                                                    </a>
+                                                    @if($showSupplierInfo)</a>@else</div>@endif
                                                 @else
-                                                    <span class="text-gray-300 text-sm sm:text-base">—</span>
+                                                    <span class="text-gray-300 text-sm sm:text-base" data-live-price-product="{{ $product->id }}" data-live-price-product-matrix-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] }}" data-live-price-variant="base">—</span>
                                                 @endif
                                             </div>
                                             
@@ -770,25 +786,31 @@ use App\Helpers\PriceHelper;
                                                         $wAnchorId = "supplier-{$wSupplierId}-tier-{$tier}-type-" . str_replace('_', '-', $priceType['key']);
                                                         $hasMultipleBestWarranty = $bestWarrantySuppliers->count() > 1;
                                                     @endphp
-                                                    <a href="#{{ $wAnchorId }}" 
+                                                    @if($showSupplierInfo)
+                                                    <a href="#{{ $wAnchorId }}"
+                                                       data-live-price-best-summary
                                                        class="block bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold px-2 py-1.5 sm:px-3 sm:py-2 rounded-md transition-all duration-200 ring-2 ring-purple-400 hover:ring-purple-500 cursor-pointer group relative"
                                                        onclick="event.preventDefault(); document.getElementById('{{ $wAnchorId }}').scrollIntoView({behavior: 'smooth', block: 'center'}); this.classList.add('ring-4', 'bg-purple-100'); setTimeout(() => this.classList.remove('ring-4', 'bg-purple-100'), 2000);">
+                                                    @else
+                                                    <div class="block bg-purple-50 text-purple-800 font-bold px-2 py-1.5 sm:px-3 sm:py-2 rounded-md ring-2 ring-purple-400">
+                                                    @endif
                                                         <div class="flex items-center justify-center gap-1">
                                                             <svg class="w-3 h-3 sm:w-4 sm:h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                                                             </svg>
-                                                            <div class="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
+                                                            <div data-live-price-product="{{ $product->id }}" data-live-price-product-matrix-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] }}" data-live-price-variant="warranty" class="text-base sm:text-lg md:text-xl lg:text-2xl font-extrabold tabular-nums leading-tight tracking-tight">{{ number_format($bestWarrantyPrice['warranty_amount']) }}</div>
                                                         </div>
                                                         @if($showSupplierInfo && !$hasMultipleBestWarranty)
-                                                            <div class="text-[10px] sm:text-xs md:text-sm text-purple-700 mt-0.5 font-medium leading-tight">
+                                                            <div data-live-price-best-summary-label class="text-[10px] sm:text-xs md:text-sm text-purple-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestWarrantyPrice['supplier']->brand_name ?? $bestWarrantyPrice['supplier']->company_name }}
                                                             </div>
-                                                        @elseif($hasMultipleBestWarranty)
-                                                            <div class="text-[10px] sm:text-xs md:text-sm text-purple-700 mt-0.5 font-medium leading-tight">
+                                                        @elseif($hasMultipleBestWarranty && $showSupplierInfo)
+                                                            <div data-live-price-best-summary-label class="text-[10px] sm:text-xs md:text-sm text-purple-700 mt-0.5 font-medium leading-tight">
                                                                 {{ $bestWarrantySuppliers->count() }} تامین‌کننده
                                                             </div>
                                                             {{-- Tooltip --}}
-                                                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
+                                                            @if($showSupplierInfo)
+                                                            <div data-live-price-best-summary-tooltip class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10 w-48">
                                                                 <div class="bg-gray-900 text-white text-[10px] rounded-lg py-2 px-3 shadow-lg">
                                                                     <div class="font-semibold mb-1.5">تامین‌کنندگان با بهترین گارانتی:</div>
                                                                     <ul class="space-y-1">
@@ -804,10 +826,11 @@ use App\Helpers\PriceHelper;
                                                                     <div class="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                                                                 </div>
                                                             </div>
+                                                            @endif
                                                         @endif
-                                                    </a>
+                                                    @if($showSupplierInfo)</a>@else</div>@endif
                                                 @else
-                                                    <span class="text-gray-400 text-sm">گارانتی موجود نیست</span>
+                                                    <span class="text-gray-400 text-sm" data-live-price-product="{{ $product->id }}" data-live-price-product-matrix-cell="{{ $priceType['code'] }}:{{ $tier }}:{{ $priceType['check_period_id'] }}" data-live-price-variant="warranty">گارانتی موجود نیست</span>
                                                 @endif
                                             </div>
                                         </td>
@@ -845,16 +868,20 @@ use App\Helpers\PriceHelper;
                             <div class="w-3 h-3 bg-green-50 ring-2 ring-green-400 rounded flex-shrink-0"></div>
                             <span class="text-xs sm:text-sm text-gray-600">بهترین قیمت</span>
                         </div>
+                        @if($canSeeWarrantyPrices)
                         <div class="flex items-center gap-1.5" x-show="showWarrantyPrices" x-cloak>
                             <div class="w-3 h-3 bg-purple-50 ring-2 ring-purple-400 rounded flex-shrink-0"></div>
                             <span class="text-xs sm:text-sm text-gray-600">بهترین قیمت با گارانتی</span>
                         </div>
+                        @endif
+                        @if($showSupplierInfo)
                         <div class="flex items-center gap-1.5">
                             <svg class="w-3 h-3 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
                             </svg>
                             <span class="text-xs sm:text-sm text-gray-600">کلیک → جزئیات تامین‌کننده</span>
                         </div>
+                        @endif
                         <div class="flex items-center gap-1.5">
                             <svg class="w-3 h-3 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -864,6 +891,7 @@ use App\Helpers\PriceHelper;
                     </div>
                 </div>
                 
+                @if($canViewSupplierInfo)
                 {{-- 📞 CTA: تماس با تأمین‌کننده برای تعداد دقیق --}}
                 <div class="mt-4 bg-gradient-to-l from-amber-50 to-orange-50 border-2 border-amber-400 rounded-xl p-4 shadow-md">
                     <div class="flex items-start gap-4">
@@ -901,11 +929,13 @@ use App\Helpers\PriceHelper;
                         </div>
                     </div>
                 </div>
+                @endif
             </div>
             @else
             {{-- بخش زرد قبلی حذف شد چون حالا DEBUG جدید داریم --}}
             @endif
 
+            @if($canViewSupplierInfo)
             {{-- ══════════════════════════════════════════
             STACKED VIEW — همه تأمین‌کنندگان زیر هم
             ══════════════════════════════════════════ --}}
@@ -915,6 +945,7 @@ use App\Helpers\PriceHelper;
                     @foreach($productSuppliers as $psIndex => $ps)
                     <div class="border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-md"
                          data-supplier-card
+                         data-live-price-supplier-container="{{ $ps->id }}"
                          id="supplier-card-{{ $ps->supplier->id }}"
                          x-data="{ expanded: {{ $psIndex === 0 ? 'true' : ($productSuppliers->count() <= 3 ? 'true' : 'false') }} }">
 
@@ -1000,10 +1031,14 @@ use App\Helpers\PriceHelper;
                                         <div class="text-[11px] text-gray-500 mb-0.5">محدوده قیمت</div>
                                         <div class="text-base font-extrabold text-blue-700">
                                             @php
-                                            $psMinPrice = $ps->activePrices->min('price');
-                                            $psMaxPrice = $ps->activePrices->max('price');
+                                            $psMinPrice = $ps->prices->min('price');
+                                            $psMaxPrice = $ps->prices->max('price');
                                             @endphp
-                                            {{ PriceHelper::formatRange($psMinPrice, $psMaxPrice) }}
+                                            <span data-live-price-product="{{ $product->id }}" data-live-price-range="supplier" data-live-price-supplier-id="{{ $ps->supplier_id }}" data-live-price-range-kind="min">{{ $psMinPrice === null ? '—' : PriceHelper::formatNumber($psMinPrice) }}</span>
+                                            @if($psMinPrice !== $psMaxPrice)
+                                            – <span data-live-price-product="{{ $product->id }}" data-live-price-range="supplier" data-live-price-supplier-id="{{ $ps->supplier_id }}" data-live-price-range-kind="max">{{ $psMaxPrice === null ? '—' : PriceHelper::formatNumber($psMaxPrice) }}</span>
+                                            @endif
+                                            <span class="text-xs">تومان</span>
                                         </div>
                                         @if($ps->stock_quantity !== null)
                                         <div class="mt-1">
@@ -1136,7 +1171,7 @@ use App\Helpers\PriceHelper;
             {{-- ══════════════════════════════════════════
             COMPARE VIEW — جدول مقایسه‌ای تفکیک شده به تیراژ
             ══════════════════════════════════════════ --}}
-            @if($hasMultipleSuppliers && $usePivotPrices)
+            @if($canViewSupplierInfo && $hasMultipleSuppliers && $usePivotPrices)
             <div x-show="compareMode"
                  x-transition:enter="transition ease-out duration-300"
                  x-transition:enter-start="opacity-0 translate-y-4"
@@ -1292,7 +1327,7 @@ use App\Helpers\PriceHelper;
                                     <p class="text-sm text-yellow-700">هیچ تامین‌کننده‌ای برای این تیراژ قیمت فعال ندارد</p>
                                 </div>
                             @else
-                            <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                            <div tabindex="0" role="region" aria-label="قیمت‌های تأمین‌کنندگان؛ برای دیدن ستون‌های بیشتر افقی پیمایش کنید" class="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded-lg border border-gray-200 bg-white shadow-sm">
                                 <table class="w-full text-sm">
                                     <thead>
                                         <tr class="bg-gray-50">
@@ -1443,6 +1478,7 @@ use App\Helpers\PriceHelper;
                     </div>
                 </div>
             </div>
+            @endif
             @endif
         </div>
         @endif

@@ -9,7 +9,9 @@ return new class extends Migration
     public function up(): void
     {
         // تغییر مستقیم enum بدون drop ستون (داده‌ها حفظ می‌شوند)
-        DB::statement("ALTER TABLE suppliers MODIFY COLUMN verification_status ENUM('pending', 'under_review', 'approved', 'rejected') DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE suppliers MODIFY COLUMN verification_status ENUM('pending', 'under_review', 'approved', 'rejected') DEFAULT 'pending'");
+        }
 
         // اضافه کردن ایندکس اگر نیاز است
         if (!Schema::hasIndex('suppliers', ['verification_status'])) {
@@ -21,6 +23,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE suppliers MODIFY COLUMN verification_status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE suppliers MODIFY COLUMN verification_status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending'");
+        }
     }
 };

@@ -12,18 +12,22 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('supplier_price_rounding_ranges', function (Blueprint $table) {
-            // حذف priority (معنی نداره چون رنج‌ها با min_price مرتب می‌شوند)
-            $table->dropColumn('priority');
-            
-            // اضافه sort_order برای ترتیب نمایش در لیست (اختیاری)
-            $table->unsignedInteger('sort_order')->default(0)->after('is_active')
-                ->comment('ترتیب نمایش در لیست - پیش‌فرض: مرتب بر اساس min_price');
-        });
-        
-        // حذف index قدیمی و ایجاد index جدید
-        Schema::table('supplier_price_rounding_ranges', function (Blueprint $table) {
-            $table->dropIndex('idx_supplier_priority');
-            $table->index(['supplier_id', 'sort_order'], 'idx_supplier_sort');
+            if (Schema::hasIndex('supplier_price_rounding_ranges', 'idx_supplier_priority')) {
+                $table->dropIndex('idx_supplier_priority');
+            }
+
+            if (Schema::hasColumn('supplier_price_rounding_ranges', 'priority')) {
+                $table->dropColumn('priority');
+            }
+
+            if (!Schema::hasColumn('supplier_price_rounding_ranges', 'sort_order')) {
+                $table->unsignedInteger('sort_order')->default(0)->after('is_active')
+                    ->comment('ترتیب نمایش در لیست - پیش‌فرض: مرتب بر اساس min_price');
+            }
+
+            if (!Schema::hasIndex('supplier_price_rounding_ranges', 'idx_supplier_sort')) {
+                $table->index(['supplier_id', 'sort_order'], 'idx_supplier_sort');
+            }
         });
     }
 

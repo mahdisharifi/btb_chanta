@@ -52,6 +52,18 @@ class SupplierTierDiscount extends Model
         3 => 'بار',
     ];
 
+    public const DEFAULT_PERCENTAGES = [
+        0 => 5.0,
+        1 => 0.0,
+        2 => -5.0,
+        3 => -10.0,
+    ];
+
+    public static function defaultPercentage(int $tierIndex): float
+    {
+        return (float) (self::DEFAULT_PERCENTAGES[$tierIndex] ?? 0.0);
+    }
+
     // ══════════════════════════════════════════════════════════
     //  ACCESSORS
     // ══════════════════════════════════════════════════════════

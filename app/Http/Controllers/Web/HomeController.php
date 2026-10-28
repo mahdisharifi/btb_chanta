@@ -254,7 +254,9 @@ class HomeController extends Controller
 
     private function getFeaturedProducts(): Collection
     {
-        return Cache::remember('home:products:featured:priced-first-v2', self::CACHE_TTL_SHORT, function () {
+        $priceVersion = Cache::get('products.prices.version', 'initial');
+
+        return Cache::remember("home:products:featured:priced-first-v2:{$priceVersion}", self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.is_featured', true)
                 ->orderByDesc('products.updated_at')
@@ -265,7 +267,9 @@ class HomeController extends Controller
 
     private function getLatestProducts(): Collection
     {
-        return Cache::remember('home:products:latest:priced-first-v2', self::CACHE_TTL_SHORT, function () {
+        $priceVersion = Cache::get('products.prices.version', 'initial');
+
+        return Cache::remember("home:products:latest:priced-first-v2:{$priceVersion}", self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->orderByDesc('products.created_at')
                 ->limit(self::LATEST_PRODUCTS_LIMIT)
@@ -275,7 +279,9 @@ class HomeController extends Controller
 
     private function getPopularProducts(): Collection
     {
-        return Cache::remember('home:products:popular:priced-first-v2', self::CACHE_TTL_MEDIUM, function () {
+        $priceVersion = Cache::get('products.prices.version', 'initial');
+
+        return Cache::remember("home:products:popular:priced-first-v2:{$priceVersion}", self::CACHE_TTL_MEDIUM, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.view_count', '>', 0)
                 ->orderByDesc('products.view_count')

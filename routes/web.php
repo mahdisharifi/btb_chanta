@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\Web\HomeController;
 use App\Http\Controllers\Web\ProductController;
+use App\Http\Controllers\Web\ProductPriceSnapshotController;
 use App\Http\Controllers\Web\CategoryController;
 use App\Http\Controllers\Web\SearchController;
 use App\Http\Controllers\Web\SupplierPublicController;
@@ -19,6 +20,11 @@ Route::get('/sitemap.xml',            [SitemapController::class, 'index'])->name
 Route::get('/sitemap-products.xml',   [SitemapController::class, 'products'])->name('sitemap.products');
 Route::get('/sitemap-categories.xml', [SitemapController::class, 'categories'])->name('sitemap.categories');
 Route::get('/sitemap-static.xml',     [SitemapController::class, 'static'])->name('sitemap.static');
+
+Route::middleware(['auth', 'throttle:60,1'])->get(
+    '/products/{product:id}/prices/snapshot',
+    ProductPriceSnapshotController::class
+)->name('products.price-snapshot');
 
 /*
 |--------------------------------------------------------------------------
