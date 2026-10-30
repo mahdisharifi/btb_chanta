@@ -84,6 +84,7 @@ class ProductSupplier extends Model
         'auto_calculate_tiers',   // ✅ فعال/غیرفعال محاسبه خودکار
         'tier_percentages',       // ✅ درصدهای تیراژها
         'tier_enabled',           // ✅ وضعیت فعال/غیرفعال تیراژها
+        'branch_price_percentage',
         'notes',
         'activated_at',
         'deactivated_at',
@@ -107,6 +108,7 @@ class ProductSupplier extends Model
             'auto_calculate_tiers'    => 'boolean',     // ✅
             'tier_percentages'        => 'array',       // ✅
             'tier_enabled'            => 'array',       // ✅
+            'branch_price_percentage' => 'decimal:12',
             'activated_at'            => 'datetime',
             'deactivated_at'          => 'datetime',
         ];

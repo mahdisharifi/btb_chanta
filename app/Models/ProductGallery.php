@@ -108,7 +108,6 @@ class ProductGallery extends Model
         'thumbnail_url',
         'is_image',
         'is_video',
-        'version_urls',     // ✅ اضافه شد - دسترسی به URL نسخه‌ها
     ];
 
     // ──────────────────────────────────────────────────────────

@@ -54,7 +54,7 @@ class Import extends Component
         $this->errorRows = [];
         $this->importErrors = [];
 
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         if (!$supplier) {
             $this->addError('file', 'تامین کننده یافت نشد.');
             $this->isProcessing = false;
@@ -446,7 +446,7 @@ class Import extends Component
      */
     public function downloadTemplate($tierIndex = null)
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         if (!$supplier) {
             abort(403, 'تامین کننده یافت نشد.');
         }

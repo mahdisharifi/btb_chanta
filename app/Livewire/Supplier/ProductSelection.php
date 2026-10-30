@@ -8,9 +8,11 @@ use App\Models\ProductSupplier;
 use App\Models\ProductPrice;
 use App\Enums\ProductStatus;
 use App\Enums\PriceType;
+use App\Services\SupplierBranchProductCopyService;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ProductSelection extends Component
 {
@@ -68,13 +70,20 @@ class ProductSelection extends Component
 
     protected function getProductsQuery()
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         $query = Product::query()
+            ->canonical()
             ->with(['category', 'galleries' => function($q) {
                 $q->orderBy('sort_order');
             }])
-            ->withCount('suppliers as competitors_count') // محاسبه تعداد رقبا
+            ->addSelect([
+                'competitors_count' => DB::table('product_supplier as ps')
+                    ->join('products as family_member', 'family_member.id', '=', 'ps.product_id')
+                    ->join('suppliers as offer_supplier', 'offer_supplier.id', '=', 'ps.supplier_id')
+                    ->selectRaw('COUNT(DISTINCT COALESCE(offer_supplier.parent_supplier_id, offer_supplier.id))')
+                    ->whereColumn('family_member.family_product_id', 'products.family_product_id'),
+            ])
             ->where('status', ProductStatus::ACTIVE->value);
 
         // اعمال فیلتر جستجو
@@ -92,11 +101,11 @@ class ProductSelection extends Component
 
         // اعمال فیلتر وضعیت فروش
         if ($this->pricingStatus === 'priced') {
-            $query->whereHas('suppliers', function($q) use ($supplier) {
+            $query->whereHas('familyProducts.productSuppliers', function($q) use ($supplier) {
                 $q->where('supplier_id', $supplier->id);
             });
         } elseif ($this->pricingStatus === 'unpriced') {
-            $query->whereDoesntHave('suppliers', function($q) use ($supplier) {
+            $query->whereDoesntHave('familyProducts.productSuppliers', function($q) use ($supplier) {
                 $q->where('supplier_id', $supplier->id);
             });
         }
@@ -131,7 +140,7 @@ class ProductSelection extends Component
         $this->showQuickPriceModal = true;
     }
 
-    public function saveQuickPrice()
+    public function saveQuickPrice(SupplierBranchProductCopyService $copyService)
     {
         $this->validate([
             'quickPrice' => 'required|numeric|min:100',
@@ -141,30 +150,27 @@ class ProductSelection extends Component
             'quickStock.required' => 'وارد کردن موجودی الزامی است.',
         ]);
 
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
+        $product = Product::query()
+            ->canonical()
+            ->whereKey($this->quickProductId)
+            ->where('status', ProductStatus::ACTIVE->value)
+            ->firstOrFail();
 
-        // ایجاد یا آپدیت اتصال تامین‌کننده به محصول
-        $productSupplier = ProductSupplier::updateOrCreate(
-            [
-                'product_id' => $this->quickProductId,
-                'supplier_id' => $supplier->id,
-            ],
-            [
-                'stock_quantity' => $this->quickStock,
-                'status' => 'active',
-            ]
-        );
+        if ($supplier->isBranch()) {
+            $copyService->copyForBranch($product, $supplier, function (Product $branchProduct) use ($supplier): void {
+                $this->saveQuickOffer($branchProduct, $supplier);
+            });
+        } else {
+            $alreadyOwned = (int) $product->supplier_id === (int) $supplier->id;
+            $hasOffer = ProductSupplier::query()
+                ->where('product_id', $product->id)
+                ->where('supplier_id', $supplier->id)
+                ->exists();
 
-        // ایجاد یا آپدیت قیمت (با استفاده از اینام صحیح)
-        ProductPrice::updateOrCreate(
-            [
-                'product_supplier_id' => $productSupplier->id,
-                'price_type' => PriceType::custom->value,
-            ],
-            [
-                'price' => $this->quickPrice,
-            ]
-        );
+            abort_unless($alreadyOwned || $hasOffer, 403, 'این محصول برای قیمت‌گذاری در دسترس شما نیست.');
+            $this->saveQuickOffer($product, $supplier);
+        }
 
         $this->showQuickPriceModal = false;
         $this->reset(['quickProductId', 'quickPrice', 'quickStock']);
@@ -197,17 +203,22 @@ class ProductSelection extends Component
 
     public function render()
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         // دریافت ID محصولاتی که این تامین کننده قبلا قیمت‌گذاری کرده است
-        $pricedProductIds = $supplier->products()->pluck('products.id')->toArray();
+        $pricedProductIds = Product::query()
+            ->whereHas('familyProducts.productSuppliers', fn ($query) => $query->where('supplier_id', $supplier->id))
+            ->pluck('family_product_id')
+            ->unique()
+            ->values()
+            ->all();
         $categories = Category::all();
 
         $products = $this->getProductsQuery()->paginate(12);
 
         // کوئری گرفتن برای اطلاعات داخل مودال‌ها در صورت باز بودن
-        $quickProduct = $this->quickProductId ? Product::with('galleries')->find($this->quickProductId) : null;
-        $viewingProduct = $this->viewingProductId ? Product::with(['category', 'galleries'])->find($this->viewingProductId) : null;
+        $quickProduct = $this->quickProductId ? Product::canonical()->with('galleries')->find($this->quickProductId) : null;
+        $viewingProduct = $this->viewingProductId ? Product::canonical()->with(['category', 'galleries'])->find($this->viewingProductId) : null;
 
         return view('livewire.supplier.product-selection', [
             'products' => $products,
@@ -216,5 +227,26 @@ class ProductSelection extends Component
             'quickProduct' => $quickProduct,
             'viewingProduct' => $viewingProduct,
         ])->layout('components.layouts.supplier');
+    }
+
+    private function saveQuickOffer(Product $product, \App\Models\Supplier $supplier): void
+    {
+        $productSupplier = ProductSupplier::query()->firstOrCreate(
+            ['product_id' => $product->id, 'supplier_id' => $supplier->id],
+            ['is_active' => true, 'status' => 'active']
+        );
+        $productSupplier->update([
+            'stock_quantity' => $this->quickStock,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+
+        ProductPrice::updateOrCreate(
+            [
+                'product_supplier_id' => $productSupplier->id,
+                'price_type' => PriceType::custom->value,
+            ],
+            ['price' => $this->quickPrice]
+        );
     }
 }

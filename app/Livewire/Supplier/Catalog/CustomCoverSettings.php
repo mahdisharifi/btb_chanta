@@ -86,8 +86,8 @@ class CustomCoverSettings extends Component
         // بررسی مالکیت
         $user = Auth::user();
         $isAdmin = $user->hasRole('super_admin');
-        
-        if (!$isAdmin && $this->catalogTemplate->supplier_id !== $user->supplier->id) {
+
+        if (!$isAdmin && (int) $this->catalogTemplate->supplier_id !== (int) $user->currentSupplier()?->id) {
             abort(403, 'شما مجاز به ویرایش این کاتالوگ نیستید.');
         }
         
@@ -398,7 +398,7 @@ class CustomCoverSettings extends Component
     protected function updateDependentCatalogs($coverData)
     {
         $user = Auth::user();
-        $supplierId = $user->supplier->id ?? null;
+        $supplierId = $user->currentSupplier()?->id;
         
         // فقط کاتالوگ‌هایی که وابسته هستند (source_catalog_id دارند)
         $dependentCatalogs = CatalogTemplate::where('supplier_id', $supplierId)

@@ -4,6 +4,7 @@ namespace App\Livewire\Supplier\Settings;
 
 use App\Models\Category;
 use App\Models\CheckPeriod;
+use App\Services\SupplierBranchPublicCacheInvalidator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
@@ -42,8 +43,8 @@ class ManageCheckPeriods extends Component
     
     public function loadPeriods()
     {
-        $supplierId = Auth::user()->supplier->id;
-        
+        $supplierId = Auth::user()->currentSupplier()->id;
+
         // دوره‌های پیش‌فرض (global) با اطلاعات فعال‌سازی و درصد از pivot
         $this->globalPeriods = CheckPeriod::select('check_periods.*')
             ->selectRaw('COALESCE(scp.percentage_increase, 0) as supplier_percentage')
@@ -113,10 +114,10 @@ class ManageCheckPeriods extends Component
         
         // Unique validation for inline editing
         if ($this->editingInline) {
-            $rules['inlineDays'][] = 'unique:check_periods,days,' . $this->editingInline . ',id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL');
+            $rules['inlineDays'][] = 'unique:check_periods,days,' . $this->editingInline . ',id,supplier_id,' . (Auth::user()->currentSupplier()->id ?? 'NULL');
             $rules['inlinePercentage'] = ['required', 'numeric', 'min:0', 'max:100'];
         } else {
-            $rules['days'][] = 'unique:check_periods,days,NULL,id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL');
+            $rules['days'][] = 'unique:check_periods,days,NULL,id,supplier_id,' . (Auth::user()->currentSupplier()->id ?? 'NULL');
         }
         
         return $rules;
@@ -148,7 +149,7 @@ class ManageCheckPeriods extends Component
         $this->validate();
         
         // امنیت: دریافت supplier_id از کاربر احراز هویت شده
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // امنیت: Sanitize inputs
         $sanitizedName = $this->sanitizeInput($this->name);
@@ -224,7 +225,7 @@ class ManageCheckPeriods extends Component
     public function startInlineEdit($id)
     {
         // امنیت: بررسی مالکیت دوره
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($id);
         
         // بارگذاری درصد از pivot
@@ -267,7 +268,7 @@ class ManageCheckPeriods extends Component
             'inlinePercentage.max' => 'درصد افزایش نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($this->editingInline);
         
         // بروزرسانی دوره
@@ -336,7 +337,7 @@ class ManageCheckPeriods extends Component
      */
     public function toggleSupplierPeriod($periodId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($periodId);
         
         // بررسی: اگر دوره فعال است، هشدار نمایش بده
@@ -367,7 +368,12 @@ class ManageCheckPeriods extends Component
      */
     public function toggleGlobalPeriod($periodId, $percentage)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        if (!CheckPeriod::global()->where('is_active', true)->whereKey($periodId)->exists()) {
+            $this->dispatch('notify', message: 'دورهٔ سراسری معتبر نیست.', type: 'error');
+            return;
+        }
         
         // بررسی: آیا این دوره قبلاً فعال شده؟
         $existing = DB::table('supplier_check_period')
@@ -474,7 +480,12 @@ class ManageCheckPeriods extends Component
             return;
         }
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        if (!CheckPeriod::global()->where('is_active', true)->whereKey($periodId)->exists()) {
+            $this->dispatch('notify', message: 'دورهٔ سراسری معتبر نیست.', type: 'error');
+            return;
+        }
         
         DB::table('supplier_check_period')->updateOrInsert(
             [
@@ -534,7 +545,7 @@ class ManageCheckPeriods extends Component
      */
     public function loadCategoryPeriods()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // دریافت تمام تنظیمات
         $records = DB::table('category_check_period as ccp')
@@ -596,8 +607,13 @@ class ManageCheckPeriods extends Component
             'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = (int)$this->selectedCategoryId;
+
+        if (!$this->categoryPeriodIdsAreAllowed($supplierId)) {
+            $this->addError('categoryPercentages', 'یکی از دوره‌های انتخابی برای این شعبه معتبر نیست.');
+            return;
+        }
         
         // بررسی: آیا این دسته‌بندی قبلاً اضافه شده؟
         $existing = DB::table('category_check_period')
@@ -647,7 +663,7 @@ class ManageCheckPeriods extends Component
      */
     public function removeCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         DB::table('category_check_period')
             ->where('supplier_id', $supplierId)
@@ -670,7 +686,7 @@ class ManageCheckPeriods extends Component
      */
     public function startEditCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // بارگذاری درصدهای فعلی
         $existing = DB::table('category_check_period')
@@ -703,8 +719,13 @@ class ManageCheckPeriods extends Component
             'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->editingCategoryId;
+
+        if (!$this->categoryPeriodIdsAreAllowed($supplierId)) {
+            $this->addError('categoryPercentages', 'یکی از دوره‌های انتخابی برای این شعبه معتبر نیست.');
+            return;
+        }
         
         DB::transaction(function () use ($supplierId, $categoryId) {
             // حذف تنظیمات قبلی
@@ -755,14 +776,16 @@ class ManageCheckPeriods extends Component
      */
     public function confirmDeactivatePeriod($periodId)
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        // 1. پیدا کردن دوره برای تشخیص نوع (global یا supplier)
-        $period = CheckPeriod::find($periodId);
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        // فقط دورهٔ اختصاصی همین شعبه یا دورهٔ سراسری فعال‌شده برای همین شعبه مجاز است.
+        $period = CheckPeriod::availableToSupplier($supplierId)
+            ->whereKey($periodId)
+            ->first();
         
         if (!$period) {
             $this->dispatch('notify',
-                message: 'دوره چکی یافت نشد.',
+                message: 'دوره چکی یافت نشد یا به این شعبه تعلق ندارد.',
                 type: 'error'
             );
             return;
@@ -796,6 +819,8 @@ class ManageCheckPeriods extends Component
                 ->whereIn('product_supplier_id', $productSupplierIds)
                 ->where('check_period_id', $periodId)
                 ->update(['is_active' => false]);
+
+            app(SupplierBranchPublicCacheInvalidator::class)->invalidate((int) $supplierId);
         }
         
         $this->loadPeriods();
@@ -823,12 +848,49 @@ class ManageCheckPeriods extends Component
             ->toArray();
         
         // دریافت دوره‌های فعال برای نمایش در فرم
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $activePeriods = CheckPeriod::getActiveForSupplier($supplierId);
         
         return view('livewire.supplier.settings.manage-check-periods', [
             'categories' => $categories,
             'activePeriods' => $activePeriods,
         ]);
+    }
+
+    private function categoryPeriodIdsAreAllowed(int $supplierId): bool
+    {
+        $submittedPeriodIds = array_keys($this->categoryPercentages);
+        $periodIds = [];
+        foreach ($submittedPeriodIds as $periodId) {
+            if (!is_string($periodId) && !is_int($periodId)) {
+                return false;
+            }
+
+            $periodId = (string) $periodId;
+            if ($periodId === '' || !ctype_digit($periodId)) {
+                return false;
+            }
+
+            $periodIds[] = (int) $periodId;
+        }
+
+        $periodIds = array_values(array_unique($periodIds));
+        if ($periodIds === [] || count($periodIds) !== count($submittedPeriodIds)) {
+            return false;
+        }
+
+        $allowedCount = CheckPeriod::query()
+            ->where('is_active', true)
+            ->where(function ($query) use ($supplierId): void {
+                $query->where('scope', 'global')
+                    ->orWhere(function ($supplierQuery) use ($supplierId): void {
+                        $supplierQuery->where('scope', 'supplier')
+                            ->where('supplier_id', $supplierId);
+                    });
+            })
+            ->whereIn('id', $periodIds)
+            ->count();
+
+        return $allowedCount === count($periodIds);
     }
 }

@@ -90,6 +90,17 @@ class CheckPeriod extends Model
         return $query->where('scope', 'global');
     }
 
+    public function scopeAvailableToSupplier(Builder $query, int $supplierId): Builder
+    {
+        return $query->where(function (Builder $query) use ($supplierId): void {
+            $query->forSupplier($supplierId)
+                ->orWhere(function (Builder $globalQuery) use ($supplierId): void {
+                    $globalQuery->global()
+                        ->whereHas('suppliers', fn ($suppliers) => $suppliers->whereKey($supplierId));
+                });
+        });
+    }
+
     // ══════════════════════════════════════════════════════════
     //  ACCESSORS
     // ══════════════════════════════════════════════════════════

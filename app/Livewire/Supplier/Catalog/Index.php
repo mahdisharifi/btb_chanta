@@ -110,7 +110,7 @@ class Index extends Component
                 $q->whereIn('supplier_id', $supplierIds);
             });
         } else {
-            $supplierId = Auth::user()->supplier->id;
+            $supplierId = Auth::user()->currentSupplier()->id;
             
             $query = Category::whereHas('products.suppliers', function ($q) use ($supplierId) {
                 $q->where('supplier_id', $supplierId);
@@ -187,7 +187,7 @@ class Index extends Component
                 ->get();
         } else {
             // تامین‌کننده: فقط دوره‌های فعال شده (is_enabled_for_supplier = true)
-            $supplierId = Auth::user()->supplier->id;
+            $supplierId = Auth::user()->currentSupplier()->id;
             return \App\Models\CheckPeriod::getActiveForSupplier($supplierId)
                 ->where('is_enabled_for_supplier', true)
                 ->values(); // بازنشانی کلیدهای collection
@@ -451,7 +451,7 @@ class Index extends Component
      */
     protected function findDefaultTemplateCatalog()
     {
-        $supplierId = Auth::user()->supplier->id ?? null;
+        $supplierId = Auth::user()->currentSupplier()->id ?? null;
         if (!$supplierId) {
             return null;
         }
@@ -531,7 +531,7 @@ class Index extends Component
     public function editTemplate($id)
     {
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         $template = CatalogTemplate::where('id', $id)
             ->where('supplier_id', $supplierId)
@@ -724,8 +724,8 @@ class Index extends Component
         
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ است)
         $supplierId = $this->isAdmin 
-            ? Auth::user()->supplier->id  // ادمین از supplier خودش استفاده می‌کند
-            : Auth::user()->supplier->id;
+            ? Auth::user()->currentSupplier()->id  // ادمین از supplier خودش استفاده می‌کند
+            : Auth::user()->currentSupplier()->id;
         
         // اگر ادمین است، supplier_ids را در config ذخیره کن
         $config = [];
@@ -796,7 +796,7 @@ class Index extends Component
     public function deleteTemplate(CatalogTemplate $template)
     {
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         if ($template->supplier_id === $supplierId) {
             $template->delete();
@@ -877,7 +877,7 @@ class Index extends Component
         $layout = $this->isAdmin ? 'components.layouts.admin' : 'components.layouts.supplier';
         
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
-        $supplierId = Auth::user()->supplier->id ?? null;
+        $supplierId = Auth::user()->currentSupplier()->id ?? null;
         
         // لیست تمام suppliers تایید شده (برای ادمین)
         if ($this->isAdmin) {

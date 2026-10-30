@@ -21,7 +21,7 @@ class MyProducts extends Component
 
     public function deleteProduct($productId)
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         if ($supplier) {
             $supplier->products()->detach($productId);
@@ -31,7 +31,7 @@ class MyProducts extends Component
 
     public function render()
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         $products = $supplier->products()
             ->when($this->search, function ($query) {

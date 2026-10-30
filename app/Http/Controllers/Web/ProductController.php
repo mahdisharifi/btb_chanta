@@ -235,6 +235,7 @@ class ProductController extends Controller
         $suppliers = Supplier::query()
             ->select('id', 'company_name', 'brand_name', 'is_verified')
             ->where('is_active', true)
+            ->whereNull('parent_supplier_id')
             ->whereIn('id', $supplierIds)
             ->orderBy('company_name')
             ->get()
@@ -261,8 +262,19 @@ class ProductController extends Controller
      * - استفاده از select برای محدود کردن ستون‌ها
      * - بهینه‌سازی محاسبات قیمت
      */
-    public function show(Product $product): \Illuminate\Http\Response
+    public function show(Product $product): \Illuminate\Http\Response|\Illuminate\Http\RedirectResponse
     {
+        if ($product->family_product_id && (int) $product->family_product_id !== (int) $product->id) {
+            $canonicalProduct = Product::query()
+                ->canonical()
+                ->where('family_product_id', $product->family_product_id)
+                ->first();
+
+            if ($canonicalProduct && (int) $canonicalProduct->id !== (int) $product->id) {
+                return redirect()->route('products.show', $canonicalProduct->slug, 301);
+            }
+        }
+
         // ─── 1. اطمینان از فعال بودن محصول ───
         abort_unless(
             $product->is_active && $product->status === \App\Enums\ProductStatus::ACTIVE,
@@ -297,18 +309,31 @@ class ProductController extends Controller
         ]);
 
         // ─── 5. چند تأمین‌کننده: بارگذاری از جدول واسط - بهینه‌شده با ساختار ماتریسی ───
-        $productSuppliers = $product->productSuppliers()
-            ->active()
+        $productSuppliers = $product->familyProductSuppliers()
+            ->where('product_supplier.is_active', true)
             ->select([
-                'id', 'product_id', 'supplier_id', 'is_primary', 'sort_order',
+                'product_supplier.id as id',
+                'product_supplier.product_id as product_id',
+                'product_supplier.supplier_id as supplier_id',
+                'product_supplier.is_primary as is_primary',
+                'product_supplier.sort_order as sort_order',
+                'product_supplier.branch_price_percentage as branch_price_percentage',
                 // ✅ فیلدهای گارانتی
-                'has_warranty', 'warranty_type', 'warranty_value', 'warranty_provider',
-                'warranty_coverage_type', 'warranty_type_coverage', 'warranty_duration_days',
+                'product_supplier.has_warranty as has_warranty',
+                'product_supplier.warranty_type as warranty_type',
+                'product_supplier.warranty_value as warranty_value',
+                'product_supplier.warranty_provider as warranty_provider',
+                'product_supplier.warranty_coverage_type as warranty_coverage_type',
+                'product_supplier.warranty_type_coverage as warranty_type_coverage',
+                'product_supplier.warranty_duration_days as warranty_duration_days',
                 // ✅ فیلدهای تیراژها
-                'tier_enabled', 'tier_percentages', 'auto_calculate_tiers'
+                'product_supplier.tier_enabled as tier_enabled',
+                'product_supplier.tier_percentages as tier_percentages',
+                'product_supplier.auto_calculate_tiers as auto_calculate_tiers',
             ])
             ->with([
-                'supplier:id,user_id,company_name,company_name_en,brand_name,logo_path,logo_versions,phone,mobile,email,website,city,province,is_verified,is_active,slug',
+                'supplier:id,user_id,parent_supplier_id,branch_name,company_name,company_name_en,brand_name,logo_path,logo_versions,phone,mobile,email,website,city,province,is_verified,is_active,slug',
+                'supplier.parentSupplier:id,slug,company_name',
                 // بارگذاری قیمت‌های ماتریسی جدید با relations (با fallback به ساختار قدیمی)
                 'prices' => fn($q) => $q->select(['id', 'product_supplier_id', 'price', 'price_type_id', 'tier_index', 'check_period_id', 'is_active', 'valid_from', 'valid_until'])
                     ->activeAndValid()
@@ -323,10 +348,17 @@ class ProductController extends Controller
             ->orderBy('sort_order')
             ->get();
 
-        // ✅ فیلتر کردن تامین‌کنندگانی که حداقل یک قیمت فعال دارند
+        // قیمت‌نداشتن موقت یک شعبه نباید نام، شهر و درصد آن را از صفحه جزئیات حذف کند.
         $productSuppliers = $productSuppliers->filter(function($ps) {
-            return $ps->prices->isNotEmpty();
+            return $ps->supplier?->is_active
+                && ($ps->prices->isNotEmpty() || $ps->supplier->isBranch());
         })->values();
+
+        $competitorCount = $productSuppliers
+            ->filter(fn ($offer) => $offer->prices->isNotEmpty())
+            ->map(fn ($offer) => (int) ($offer->supplier?->parent_supplier_id ?: $offer->supplier_id))
+            ->unique()
+            ->count();
 
         // ✅ سورت تامین‌کنندگان بر اساس تعداد بهترین قیمت‌ها
         if ($productSuppliers->count() > 1) {
@@ -368,7 +400,7 @@ class ProductController extends Controller
         $supplierStats = [];
         if ($usePivotPrices && $productSuppliers->isNotEmpty()) {
             $supplierStats = [
-                'total_suppliers'   => $productSuppliers->count(),
+                'total_suppliers'   => $competitorCount,
                 'lowest_price'      => $overallLowestPrice,
                 'highest_price'     => $overallHighestPrice,
                 'avg_price'         => (int) round($allSupplierPrices->avg('price')),
@@ -569,8 +601,10 @@ class ProductController extends Controller
     private function buildBaseProductQuery(): Builder
     {
         return Product::query()
+            ->canonical()
             ->select([
                 'products.id',
+                'products.family_product_id',
                 'products.title',
                 'products.slug',
                 'products.short_description',
@@ -590,6 +624,10 @@ class ProductController extends Controller
                 'category:id,name,slug,icon,parent_id',
 
                 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'file_type',
@@ -616,7 +654,7 @@ class ProductController extends Controller
                                 ->orWhere('valid_from', '<=', now());
                         });
                 },
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
@@ -736,7 +774,7 @@ class ProductController extends Controller
         $minPrice = $request->filled('min_price') ? (int) $request->min_price : null;
         $maxPrice = $request->filled('max_price') ? (int) $request->max_price : null;
 
-        $query->whereHas('prices', function ($priceQuery) use ($minPrice, $maxPrice) {
+        $query->whereHas('familyProductSuppliers.prices', function ($priceQuery) use ($minPrice, $maxPrice) {
             $priceQuery->where('is_active', true)
                 ->where(function ($sub) {
                     $sub->whereNull('valid_until')
@@ -777,14 +815,18 @@ class ProductController extends Controller
             return $query;
         }
 
+        $rootIds = Supplier::query()->whereIn('id', $supplierIds)->get(['id', 'parent_supplier_id'])
+            ->map(fn ($supplier) => (int) ($supplier->parent_supplier_id ?: $supplier->id))
+            ->unique()->values();
+        $supplierIds = Supplier::query()
+            ->whereIn('id', $rootIds)
+            ->orWhereIn('parent_supplier_id', $rootIds)
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+
         $query->where(function ($q) use ($supplierIds) {
             $q->whereIn('products.supplier_id', $supplierIds)
-              ->orWhereExists(function ($sub) use ($supplierIds) {
-                  $sub->select(DB::raw(1))
-                      ->from('product_supplier')
-                      ->whereColumn('product_supplier.product_id', 'products.id')
-                      ->whereIn('product_supplier.supplier_id', $supplierIds)
-                      ->where('product_supplier.is_active', true);
+              ->orWhereHas('familyProductSuppliers', function ($offers) use ($supplierIds) {
+                  $offers->whereIn('supplier_id', $supplierIds)->where('is_active', true);
               });
         });
 
@@ -821,7 +863,7 @@ class ProductController extends Controller
 
         if ($request->in_stock == '1') {
             $query->where('products.status', '!=', ProductStatus::OUT_OF_STOCK)
-                ->whereHas('prices', function ($q) {
+                ->whereHas('familyProductSuppliers.prices', function ($q) {
                     $q->where('is_active', true)
                         ->where(function ($sub) {
                             $sub->whereNull('valid_until')
@@ -941,7 +983,10 @@ class ProductController extends Controller
             $query->addSelect([
                 'sort_price' => DB::table('product_prices')
                     ->selectRaw('MIN(price)')
-                    ->whereColumn('product_prices.product_id', 'products.id')
+                    ->join('product_supplier as priced_ps', 'product_prices.product_supplier_id', '=', 'priced_ps.id')
+                    ->join('products as priced_product', 'priced_product.id', '=', 'priced_ps.product_id')
+                    ->whereColumn('priced_product.family_product_id', 'products.id')
+                    ->where('priced_ps.is_active', true)
                     ->where('product_prices.is_active', true)
                     ->where(function ($sub) {
                         $sub->whereNull('valid_until')
@@ -1180,10 +1225,11 @@ class ProductController extends Controller
      */
     private function getRelatedProducts(Product $product, int $limit = 8): Collection
     {
-        $cacheKey = "web:product:{$product->id}:related:priced-first-v2:{$limit}";
+        $generation = Cache::get(\App\Services\SupplierBranchPublicCacheInvalidator::GENERATION_KEY, 'initial');
+        $cacheKey = "web:product:{$product->id}:related:priced-first-v2:{$limit}:{$generation}";
 
         return Cache::remember($cacheKey, self::CACHE_TTL_SHORT, function () use ($product, $limit) {
-            return Product::query()->pricedFirst()->where('category_id', $product->category_id)
+            return Product::query()->canonical()->pricedFirst()->where('category_id', $product->category_id)
                 ->where('id', '!=', $product->id)
                 ->where('is_active', true)
                 ->where('status', ProductStatus::ACTIVE)
@@ -1196,6 +1242,10 @@ class ProductController extends Controller
                         ->orderBy('retail_price')
                         ->limit(1),
                     'category:id,name,slug',
+                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                    'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                     // ✅ اضافه شده: eager loading برای قیمت‌های عمده
                     'productSuppliers' => fn($q) => $q->where('is_active', true),
                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
@@ -1207,7 +1257,7 @@ class ProductController extends Controller
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
                         }),
-                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 ])
                 ->inRandomOrder()
@@ -1245,7 +1295,7 @@ class ProductController extends Controller
             return collect();
         }
 
-        return Product::whereIn('id', $recentIds)
+        return Product::canonical()->whereIn('id', $recentIds)
             ->where('is_active', true)
             ->where('status', ProductStatus::ACTIVE)
             ->with([
@@ -1257,6 +1307,10 @@ class ProductController extends Controller
                     ->orderBy('retail_price')
                     ->limit(1),
                 'category:id,name,slug',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 // ✅ اضافه شده: eager loading برای قیمت‌های عمده
                 'productSuppliers' => fn($q) => $q->where('is_active', true),
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
@@ -1268,7 +1322,7 @@ class ProductController extends Controller
                         $sub->whereNull('valid_from')
                             ->orWhere('valid_from', '<=', now());
                     }),
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
             ])
             ->get()
@@ -1312,6 +1366,7 @@ class ProductController extends Controller
             ? Supplier::query()
                 ->select('id', 'company_name', 'brand_name', 'logo_path', 'logo_versions', 'is_verified')
                 ->where('is_active', true)
+                ->whereNull('parent_supplier_id')
                 ->selectSub(
                     DB::table('products')
                         ->selectRaw('COUNT(*)')
@@ -1413,19 +1468,22 @@ class ProductController extends Controller
             ->whereNull('parent_id')
             ->where('is_active', true)
             ->withCount(['products as total_products_count' => function ($q) {
-                $q->where('products.is_active', true)->where('products.status', 'active');
+                $q->where('products.is_active', true)->where('products.status', 'active')
+                        ->whereColumn('products.family_product_id', 'products.id');
             }])
             ->with([
                 'children' => function ($q) {
                     $q->where('is_active', true)->orderBy('sort_order')
                       ->withCount(['products as total_products_count' => function ($sq) {
-                          $sq->where('products.is_active', true)->where('products.status', 'active');
+                          $sq->where('products.is_active', true)->where('products.status', 'active')
+                              ->whereColumn('products.family_product_id', 'products.id');
                       }])
                       ->with([
                           'children' => function ($sq) {
                               $sq->where('is_active', true)->orderBy('sort_order')
                                  ->withCount(['products as active_products_count' => function ($ssq) {
-                                     $ssq->where('products.is_active', true)->where('products.status', 'active');
+                                 $ssq->where('products.is_active', true)->where('products.status', 'active')
+                                     ->whereColumn('products.family_product_id', 'products.id');
                                  }]);
                           }
                       ]);
@@ -1444,6 +1502,7 @@ class ProductController extends Controller
         $supplierProductsConstraint = function ($q) use ($supplierIds) {
             $q->where('products.is_active', true)
               ->where('products.status', 'active')
+              ->whereColumn('products.family_product_id', 'products.id')
               ->where(function ($sub) use ($supplierIds) {
                   $sub->whereIn('products.supplier_id', $supplierIds)
                       ->orWhereExists(function ($ex) use ($supplierIds) {

@@ -27,16 +27,16 @@ class Preview2 extends Component
 
     public function mount($catalog)
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         $this->supplierLogoUrl = $supplier->logoUrl('medium');
         $this->supplierLogoPath = $supplier->logoAbsolutePath('pdf');
 
-        $this->supplier=Auth::user()->supplier;
-        $this->supplierName = Auth::user()->supplier->title ?? Auth::user()->name;
+        $this->supplier=Auth::user()->currentSupplier();
+        $this->supplierName = Auth::user()->currentSupplier()->title ?? Auth::user()->name;
 
         $this->template = CatalogTemplate::where('id', $catalog)
-            ->where('supplier_id', Auth::user()->supplier->id)
+            ->where('supplier_id', Auth::user()->currentSupplier()->id)
             ->firstOrFail();
 
         $this->settings = $this->template->settings ?? [];
@@ -58,7 +58,7 @@ class Preview2 extends Component
             $this->selectedPriceTypes = PriceType::values();
         }
 
-        $this->loadCatalogData(Auth::user()->supplier->id);
+        $this->loadCatalogData(Auth::user()->currentSupplier()->id);
     }
 
     private function loadCatalogData($supplierId)
@@ -182,7 +182,7 @@ class Preview2 extends Component
     // این متد برای جلوگیری از خطای wire:click روی دکمه PDF اضافه شد
     public function downloadPdf()
     {
-        $supplierName = Auth::user()->supplier->title ?? Auth::user()->name;
+        $supplierName = Auth::user()->currentSupplier()->title ?? Auth::user()->name;
         $fileName = 'list-' . jdate(now())->format('Y-m-d') . '.pdf';
 
         // مسیر ذخیره موقت فایل
@@ -201,7 +201,7 @@ class Preview2 extends Component
             'supplierLogoUrl' => $this->supplierLogoUrl,
             'supplierLogoPath' => $this->supplierLogoPath,
             'forPdf' => true,
-            'supplier'=>Auth::user()->supplier,
+            'supplier'=>Auth::user()->currentSupplier(),
         ])
             ->withBrowsershot(function ($browsershot) {
                 // استفاده از دابل بک‌اسلش برای مسیر ویندوز
@@ -219,7 +219,7 @@ class Preview2 extends Component
     }
     public function downloadPdf2()
     {
-        $supplierName = Auth::user()->supplier->title ?? Auth::user()->name;
+        $supplierName = Auth::user()->currentSupplier()->title ?? Auth::user()->name;
         $fileName = 'catalog-' . jdate(now())->format('Y-m-d') . '.pdf';
 
         // مسیر ذخیره موقت فایل
@@ -238,7 +238,7 @@ class Preview2 extends Component
             'supplierLogoUrl' => $this->supplierLogoUrl,
             'supplierLogoPath' => $this->supplierLogoPath,
             'forPdf' => true,
-            'supplier'=>Auth::user()->supplier,
+            'supplier'=>Auth::user()->currentSupplier(),
         ])
             ->withBrowsershot(function ($browsershot) {
                 // استفاده از دابل بک‌اسلش برای مسیر ویندوز

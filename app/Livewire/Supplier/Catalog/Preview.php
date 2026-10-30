@@ -59,7 +59,7 @@ class Preview extends Component
             abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
         } else {
             // تامین‌کننده: فقط کاتالوگ خودش
-            $this->supplier = $user->supplier;
+            $this->supplier = $user->currentSupplier();
             abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
 
             // بررسی مالکیت
@@ -696,6 +696,9 @@ class Preview extends Component
 
     private function generatePdfResponse($view, $prefix)
     {
+        // mPDF can exceed PHP's common 30-second request limit while rendering Persian fonts.
+        set_time_limit(180);
+
         // فعال کردن progress برای PDF generation
         $this->enableProgress = true;
         

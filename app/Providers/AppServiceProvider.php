@@ -8,6 +8,8 @@ use App\Listeners\UpdateAffectedCheckPrices;
 use App\Models\Category;
 use App\Models\CommissionRule;
 use App\Models\Product;
+use App\Models\ProductPrice;
+use App\Models\ProductSupplier;
 use App\Models\ProductCompletionCommission;
 use App\Models\ProductCompletionMedia;
 use App\Models\ProductCompletionSubmission;
@@ -91,6 +93,8 @@ class AppServiceProvider extends ServiceProvider
         Supplier::observe(SupplierObserver::class);
         Category::observe(\App\Observers\CategoryCatalogObserver::class);
         Product::observe(\App\Observers\CategoryCatalogObserver::class);
+        ProductSupplier::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
+        ProductPrice::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
 
         /*
         |--------------------------------------------------------------------------

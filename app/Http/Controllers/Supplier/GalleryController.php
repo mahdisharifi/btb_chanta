@@ -14,7 +14,7 @@ class GalleryController extends Controller
 {
     private function getSupplier(): Supplier
     {
-        return Supplier::where('user_id', auth()->id())->firstOrFail();
+        return auth()->user()->currentSupplier();
     }
 
     public function index(): View
@@ -45,8 +45,9 @@ class GalleryController extends Controller
         ]);
 
         // Verify product belongs to supplier
-        $product = \App\Models\Product::findOrFail($validated['product_id']);
-        abort_unless($product->supplier_id === $supplier->id, 403);
+        $product = \App\Models\Product::query()
+            ->where('supplier_id', $supplier->id)
+            ->findOrFail($validated['product_id']);
 
         $lastOrder = $product->galleries()->max('sort_order') ?? 0;
 

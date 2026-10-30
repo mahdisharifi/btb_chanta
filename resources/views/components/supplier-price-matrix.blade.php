@@ -21,7 +21,7 @@ $customWarrantyPrices = $ps->prices->filter(function($price) {
 });
 
 if ($basePrices->isEmpty()) {
-    echo '<div class="px-5 py-6 text-center text-gray-400 text-sm">قیمتی برای این تأمین‌کننده ثبت نشده است</div>';
+    echo '<div class="px-5 py-6 text-center text-gray-400 text-sm">در حال حاضر قیمت فعالی برای این تأمین‌کننده وجود ندارد</div>';
     return;
 }
 

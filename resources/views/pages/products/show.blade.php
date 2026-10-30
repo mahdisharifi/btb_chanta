@@ -143,7 +143,7 @@ use App\Helpers\PriceHelper;
                     قیمت‌های عمده تأمین‌کنندگان
                     @if($hasMultipleSuppliers)
                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                        {{ $productSuppliers->count() }} تأمین‌کننده
+                                        {{ $supplierStats['total_suppliers'] ?? $productSuppliers->count() }} تأمین‌کننده
                                     </span>
                     @endif
                 </h3>
@@ -274,7 +274,10 @@ use App\Helpers\PriceHelper;
                                                     @if($ps->supplier)
                                                     <div class="flex items-center gap-2 text-sm">
                                                         <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                                        <span class="font-semibold">{{ $ps->supplier->company_name }}</span>
+                                                        <span class="font-semibold">{{ $ps->supplier->company_name }} — {{ $ps->supplier->branchLabel() }} ({{ $ps->supplier->city ?: 'شهر ثبت نشده' }})</span>
+                                                        @if($ps->supplier->isBranch())
+                                                            <span class="text-xs font-medium text-indigo-700">({{ (float) $ps->branch_price_percentage > 0 ? '+' : '' }}{{ rtrim(rtrim(number_format((float) $ps->branch_price_percentage, 2, '.', ''), '0'), '.') }}٪)</span>
+                                                        @endif
                                                         @if($ps->supplier->mobile)
                                                             <span class="text-gray-600">— {{ $ps->supplier->mobile }}</span>
                                                         @endif
@@ -925,7 +928,7 @@ use App\Helpers\PriceHelper;
                                 <div class="flex items-center gap-3">
                                     {{-- لوگو + لینک به فروشگاه تأمین‌کننده --}}
                                     @if($ps->supplier && $ps->supplier->slug)
-                                    <a href="{{ route('suppliers.show', $ps->supplier->slug) }}"
+                                    <a href="{{ route('suppliers.show', $ps->supplier->rootSupplier()->slug) }}"
                                        class="relative group/supplier shrink-0"
                                        target="_blank"
                                        rel="noopener noreferrer"
@@ -955,17 +958,23 @@ use App\Helpers\PriceHelper;
                                         <div class="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
                                             {{-- لینک نام شرکت به فروشگاه تأمین‌کننده --}}
                                             @if($ps->supplier && $ps->supplier->slug)
-                                            <a href="{{ route('suppliers.show', $ps->supplier->slug) }}"
+                                            <a href="{{ route('suppliers.show', $ps->supplier->rootSupplier()->slug) }}"
                                                class="inline-flex items-center gap-1 hover:text-blue-600 transition-colors border-b-2 border-transparent hover:border-blue-300 cursor-pointer group/supplier-name"
                                                target="_blank"
                                                rel="noopener noreferrer"
                                                title="مشاهده فروشگاه {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
                                                onclick="event.stopPropagation()">
-                                                <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}</span>
+                                                <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }} — {{ $ps->supplier->branchLabel() }} ({{ $ps->supplier->city ?: 'شهر ثبت نشده' }})</span>
+                                                @if($ps->supplier->isBranch())
+                                                    <span class="text-xs font-medium text-indigo-700">{{ (float) $ps->branch_price_percentage > 0 ? '+' : '' }}{{ rtrim(rtrim(number_format((float) $ps->branch_price_percentage, 2, '.', ''), '0'), '.') }}٪</span>
+                                                @endif
                                                 <x-heroicon-o-arrow-top-right-on-square class="w-3.5 h-3.5 text-gray-400 group-hover/supplier-name:text-blue-500 transition-colors" />
                                             </a>
                                             @else
-                                            <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}</span>
+                                            <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }} — {{ $ps->supplier->branchLabel() }} ({{ $ps->supplier->city ?: 'شهر ثبت نشده' }})</span>
+                                            @if($ps->supplier->isBranch())
+                                                <span class="text-xs font-medium text-indigo-700">{{ (float) $ps->branch_price_percentage > 0 ? '+' : '' }}{{ rtrim(rtrim(number_format((float) $ps->branch_price_percentage, 2, '.', ''), '0'), '.') }}٪</span>
+                                            @endif
                                             @endif
                                             @if($ps->supplier && $ps->supplier->is_verified)
                                             <span class="inline-flex items-center gap-1 text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">

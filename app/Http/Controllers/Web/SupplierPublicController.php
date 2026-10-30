@@ -53,11 +53,13 @@ class SupplierPublicController extends Controller
 
         $query = Supplier::query()
             ->where('is_active', true)
+            ->whereNull('parent_supplier_id')
             ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
             ->addSelect([
                 'total_products_count' => Product::selectRaw('COUNT(DISTINCT products.id)')
                     ->where('products.is_active', true)
                     ->where('products.status', ProductStatus::ACTIVE)
+                    ->whereColumn('products.family_product_id', 'products.id')
                     ->where(function ($q) {
                         $q->whereColumn('products.supplier_id', 'suppliers.id')
                           ->orWhereIn('products.id', function ($sub) {
@@ -105,6 +107,7 @@ class SupplierPublicController extends Controller
         // ─── داده‌های جانبی ───
         $provinces = Cache::remember('web:suppliers:provinces', self::CACHE_TTL_LONG, function () {
             return Supplier::where('is_active', true)
+                ->whereNull('parent_supplier_id')
                 ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                 ->whereNotNull('province')
                 ->select('province')
@@ -121,6 +124,7 @@ class SupplierPublicController extends Controller
                 self::CACHE_TTL_LONG, 
                 function () use ($request) {
                     return Supplier::where('is_active', true)
+                        ->whereNull('parent_supplier_id')
                         ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                         ->where('province', $request->province)
                         ->whereNotNull('city')
@@ -135,18 +139,22 @@ class SupplierPublicController extends Controller
         $stats = Cache::remember('web:suppliers:stats', self::CACHE_TTL_MEDIUM, function () {
             $totalProducts = Product::where('is_active', true)
                 ->where('status', ProductStatus::ACTIVE)
+                ->canonical()
                 ->distinct('id')
                 ->count('id');
             
             return [
                 'total'          => Supplier::where('is_active', true)
+                    ->whereNull('parent_supplier_id')
                     ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->count(),
                 'verified'       => Supplier::where('is_active', true)
+                    ->whereNull('parent_supplier_id')
                     ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->where('is_verified', true)
                     ->count(),
                 'cities'         => Supplier::where('is_active', true)
+                    ->whereNull('parent_supplier_id')
                     ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                     ->whereNotNull('city')
                     ->distinct('city')
@@ -187,6 +195,7 @@ class SupplierPublicController extends Controller
     {
         $supplier = Supplier::where('slug', $slug)
             ->where('is_active', true)
+            ->whereNull('parent_supplier_id')
             ->withCount([
                 'products as products_count' => fn($q) => $q
                     ->where('products.is_active', true)
@@ -194,30 +203,34 @@ class SupplierPublicController extends Controller
             ])
             ->firstOrFail();
 
+        $branchSupplierIds = $supplier->branches()->where('is_active', true)->pluck('id')->prepend($supplier->id)->map(fn ($id) => (int) $id)->values();
+        $branchSupplierIdsSql = $branchSupplierIds->implode(',');
+
         // ─── تشخیص نقش کاربر ───
         $userRole = $this->resolveUserRole();
         $canViewContact = in_array($userRole, ['retailer_premium', 'supplier', 'super_admin']);
 
         // ─── محصولات تأمین‌کننده (هر دو مسیر: supplier_id مستقیم + pivot) ───
         $productsQuery = Product::query()
+            ->canonical()
             ->pricedFirst()
             ->where('is_active', true)
             ->where('status', ProductStatus::ACTIVE)
-            ->where(function ($q) use ($supplier) {
+            ->where(function ($q) use ($supplier, $branchSupplierIds) {
                 $q->where('supplier_id', $supplier->id)
-                  ->orWhereExists(function ($sub) use ($supplier) {
-                      $sub->select(DB::raw(1))
-                          ->from('product_supplier')
-                          ->whereColumn('product_supplier.product_id', 'products.id')
-                          ->where('product_supplier.supplier_id', $supplier->id)
-                          ->where('product_supplier.is_active', true);
+                  ->orWhereHas('familyProductSuppliers', function ($offers) use ($branchSupplierIds) {
+                      $offers->whereIn('supplier_id', $branchSupplierIds)->where('is_active', true);
                   });
             })
             ->with([
                 'category:id,name,slug,icon',
                 'galleries' => fn($q) => $q->where('file_type', 'image')
                     ->orderByDesc('is_primary')->orderBy('sort_order')->limit(1),
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'productSuppliers.prices.priceType',
                 'retailPrices' => fn($q) => $q->where('is_published', true)
                     ->orderBy('retail_price')->limit(1),
@@ -259,13 +272,10 @@ class SupplierPublicController extends Controller
             $minPrice = $request->get('min_price');
             $maxPrice = $request->get('max_price');
             
-            $productsQuery->whereHas('productSuppliers.prices', function ($q) use ($minPrice, $maxPrice, $supplier) {
+            $productsQuery->whereHas('familyProductSuppliers.prices', function ($q) use ($minPrice, $maxPrice, $branchSupplierIds) {
                 $q->where('is_active', true)
-                  ->where('product_supplier_id', function ($sub) use ($supplier) {
-                      $sub->select('id')
-                          ->from('product_supplier')
-                          ->whereColumn('product_supplier_id', 'product_supplier.id')
-                          ->where('supplier_id', $supplier->id);
+                  ->whereIn('product_supplier_id', function ($sub) use ($branchSupplierIds) {
+                      $sub->select('id')->from('product_supplier')->whereIn('supplier_id', $branchSupplierIds);
                   });
                 
                 if ($minPrice) {
@@ -282,8 +292,8 @@ class SupplierPublicController extends Controller
             $productsQuery->where('is_featured', true);
         }
         if ($request->in_stock == '1') {
-            $productsQuery->whereHas('productSuppliers', function ($q) use ($supplier) {
-                $q->where('supplier_id', $supplier->id)
+            $productsQuery->whereHas('familyProductSuppliers', function ($q) use ($branchSupplierIds) {
+                $q->whereIn('supplier_id', $branchSupplierIds)
                   ->where('is_active', true)
                   ->whereHas('prices', function ($sub) {
                       $sub->where('is_active', true);
@@ -297,8 +307,8 @@ class SupplierPublicController extends Controller
             'latest'      => $productsQuery->orderByDesc('created_at'),
             'oldest'      => $productsQuery->orderBy('created_at'),
             'popular'     => $productsQuery->orderByDesc('view_count'),
-            'price_low'   => $productsQuery->orderByRaw('(SELECT MIN(price) FROM product_prices WHERE product_prices.product_supplier_id IN (SELECT id FROM product_supplier WHERE product_supplier.product_id = products.id AND supplier_id = ' . $supplier->id . ') AND is_active = 1) ASC'),
-            'price_high'  => $productsQuery->orderByRaw('(SELECT MIN(price) FROM product_prices WHERE product_prices.product_supplier_id IN (SELECT id FROM product_supplier WHERE product_supplier.product_id = products.id AND supplier_id = ' . $supplier->id . ') AND is_active = 1) DESC'),
+            'price_low'   => $productsQuery->orderByRaw('(SELECT MIN(pp.price) FROM product_prices as pp INNER JOIN product_supplier as ps ON ps.id = pp.product_supplier_id INNER JOIN products as fp ON fp.id = ps.product_id WHERE fp.family_product_id = products.id AND ps.supplier_id IN (' . $branchSupplierIdsSql . ') AND ps.is_active = 1 AND pp.is_active = 1) ASC'),
+            'price_high'  => $productsQuery->orderByRaw('(SELECT MIN(pp.price) FROM product_prices as pp INNER JOIN product_supplier as ps ON ps.id = pp.product_supplier_id INNER JOIN products as fp ON fp.id = ps.product_id WHERE fp.family_product_id = products.id AND ps.supplier_id IN (' . $branchSupplierIdsSql . ') AND ps.is_active = 1 AND pp.is_active = 1) DESC'),
             'name_asc'    => $productsQuery->orderBy('title'),
             default       => $productsQuery->orderByDesc('created_at'),
         };

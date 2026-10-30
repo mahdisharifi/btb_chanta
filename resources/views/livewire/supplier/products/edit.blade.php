@@ -2,7 +2,11 @@
     <div class="mb-6 flex justify-between items-center">
         <div>
             <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">ویرایش محصول: {{ $title }}</h1>
-            <p class="mt-1 text-sm text-yellow-600 dark:text-yellow-500">توجه: شما فقط مجاز به ویرایش محصولاتی هستید که در وضعیت <strong>پیش‌نویس</strong> قرار دارند.</p>
+            @if($isBranchCopy)
+                <p class="mt-1 text-sm text-indigo-700 dark:text-indigo-300">این محصول نسخهٔ مستقل همین شعبه است؛ تغییر دسته‌بندی و مشخصات فقط روی این شعبه اعمال می‌شود.</p>
+            @else
+                <p class="mt-1 text-sm text-yellow-600 dark:text-yellow-500">توجه: شما فقط مجاز به ویرایش محصولاتی هستید که در وضعیت <strong>پیش‌نویس</strong> قرار دارند.</p>
+            @endif
         </div>
         <a href="{{ route('supplier.products.index') }}" wire:navigate class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
             &larr; بازگشت به محصولات

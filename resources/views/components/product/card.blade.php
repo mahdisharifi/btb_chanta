@@ -109,6 +109,65 @@ $supplierUrl = ($canSeeSupplier && $productSupplier && $productSupplier->slug)
 ? route('suppliers.show', $productSupplier->slug)
 : null;
 
+$branchRows = collect();
+if ($product->relationLoaded('familyProducts')) {
+    $branchOwner = $supplier ?: ($product->relationLoaded('supplier') ? $product->supplier : null);
+    $branchOwnerId = $branchOwner ? (int) ($branchOwner->parent_supplier_id ?: $branchOwner->id) : null;
+    $seenBranchIds = [];
+
+    if ($branchOwnerId) {
+        foreach ($product->familyProducts as $familyProduct) {
+            if (!$familyProduct->is_active || $familyProduct->status?->value !== 'active') {
+                continue;
+            }
+
+            $addBranchRow = function ($branchSupplier, $offer) use (&$branchRows, &$seenBranchIds, $branchOwnerId, $canSeeWholesalePrice) {
+                if (!$branchSupplier || !$branchSupplier->is_active) {
+                    return;
+                }
+
+                $familyOwnerId = (int) ($branchSupplier->parent_supplier_id ?: $branchSupplier->id);
+                if ($familyOwnerId !== $branchOwnerId || isset($seenBranchIds[$branchSupplier->id])) {
+                    return;
+                }
+
+                $seenBranchIds[$branchSupplier->id] = true;
+                $prices = $offer && $offer->relationLoaded('prices')
+                    ? $offer->prices->where('is_active', true)
+                    : collect();
+
+                $branchRows->push([
+                    'label' => $branchSupplier->parent_supplier_id
+                        ? ($branchSupplier->branch_name ?: $branchSupplier->company_name)
+                        : 'شعبه اصلی',
+                    'city' => $branchSupplier->city,
+                    'is_primary' => $branchSupplier->parent_supplier_id === null,
+                    'percentage' => (float) ($offer?->branch_price_percentage ?? 0),
+                    'exists' => true,
+                    'price' => $canSeeWholesalePrice && $prices->isNotEmpty()
+                        ? $prices->filter(fn ($price) => $price->isValid())->min('price')
+                        : null,
+                    'can_view_price' => $canSeeWholesalePrice,
+                ]);
+            };
+
+            $ownerSupplier = $familyProduct->supplier;
+            if ($ownerSupplier && (int) ($ownerSupplier->parent_supplier_id ?: $ownerSupplier->id) === $branchOwnerId) {
+                $ownerOffer = $familyProduct->relationLoaded('productSuppliers')
+                    ? $familyProduct->productSuppliers->firstWhere('supplier_id', $ownerSupplier->id)
+                    : null;
+                $addBranchRow($ownerSupplier, $ownerOffer);
+            }
+
+            if ($familyProduct->relationLoaded('productSuppliers')) {
+                foreach ($familyProduct->productSuppliers as $offer) {
+                    $addBranchRow($offer->supplier, $offer);
+                }
+            }
+        }
+    }
+}
+
 $categoryName = $category?->name;
 $categorySlug = $category?->slug;
 @endphp
@@ -164,6 +223,8 @@ $categorySlug = $category?->slug;
             @if($product->sku)
             <span class="text-[10px] text-gray-600 font-medium">کد: {{ $product->sku }}</span>
             @endif
+
+            @include('components.product.branch-lines')
         </div>
 
         <div class="mt-3 flex items-end justify-between border-t border-gray-50 pt-3">
@@ -349,6 +410,8 @@ $categorySlug = $category?->slug;
                 {{ $product->title }}
             </h3>
         </a>
+
+        @include('components.product.branch-lines')
 
         {{-- Divider --}}
         <div class="border-t border-gray-100 mb-2"></div>

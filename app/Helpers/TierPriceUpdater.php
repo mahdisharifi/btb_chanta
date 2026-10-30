@@ -4,9 +4,12 @@ namespace App\Helpers;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Models\ProductPrice;
 use App\Models\Supplier;
 use App\Models\SupplierTierDiscount;
 use App\Models\PriceType;
+use App\Services\SupplierBranchPriceSyncService;
+use App\Services\SupplierBranchPublicCacheInvalidator;
 
 class TierPriceUpdater
 {
@@ -21,6 +24,7 @@ class TierPriceUpdater
     {
         $updated = 0;
         $errors = 0;
+        $updatedPriceIds = [];
         
         try {
             DB::beginTransaction();
@@ -36,6 +40,7 @@ class TierPriceUpdater
             
             if ($tierDiscounts->isEmpty()) {
                 Log::info("No tier discounts found for supplier {$supplierId}");
+                DB::rollBack();
                 return ['updated' => 0, 'errors' => 0];
             }
             
@@ -114,11 +119,13 @@ class TierPriceUpdater
                                     'price' => $roundedPrice,
                                     'updated_at' => now(),
                                 ]);
+                            $updatedPriceIds[] = (int) $existingPrice->id;
                             
                             $updated++;
                         } else {
                             // ایجاد قیمت جدید
-                            DB::table('product_prices')->insert([
+                            $updatedPriceIds[] = (int) DB::table('product_prices')->insertGetId([
+                                'product_id' => $productSupplier->product_id,
                                 'product_supplier_id' => $productSupplier->id,
                                 'price_type_id' => $cashPriceTypeId,
                                 'tier_index' => $tierIndex,
@@ -137,8 +144,24 @@ class TierPriceUpdater
                     Log::error("Error updating prices for product_supplier {$productSupplier->id}: " . $e->getMessage());
                 }
             }
+
+            if ($updatedPriceIds !== []) {
+                $updatedPrices = ProductPrice::query()
+                    ->whereIn('id', array_values(array_unique($updatedPriceIds)))
+                    ->orderBy('product_id')
+                    ->orderBy('product_supplier_id')
+                    ->orderBy('id')
+                    ->get();
+
+                app(SupplierBranchPriceSyncService::class)
+                    ->syncBranchesForPrimaryPrices($updatedPrices);
+            }
             
             DB::commit();
+
+            if ($updatedPriceIds !== []) {
+                app(SupplierBranchPublicCacheInvalidator::class)->invalidate($supplierId);
+            }
             
         } catch (\Exception $e) {
             DB::rollBack();

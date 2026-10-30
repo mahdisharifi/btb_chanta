@@ -63,7 +63,7 @@ class FastPricing extends Component
 
     public function save($productId)
     {
-        $supplier = auth()->user()->supplier;
+        $supplier = auth()->user()->currentSupplier();
 
         if (!isset($this->pricingData[$productId])) {
             return;
@@ -123,7 +123,7 @@ class FastPricing extends Component
 
     public function render()
     {
-        $supplier = auth()->user()->supplier;
+        $supplier = auth()->user()->currentSupplier();
 
         $products = ProductSupplier::with(['product.primaryImage', 'prices'])
             ->where('supplier_id', $supplier->id)

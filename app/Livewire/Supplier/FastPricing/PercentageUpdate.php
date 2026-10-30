@@ -434,7 +434,7 @@ class PercentageUpdate extends Component
 
     private function supplierId(): int
     {
-        $supplierId = Auth::user()?->supplier?->id;
+        $supplierId = Auth::user()?->currentSupplier()?->id;
         abort_unless($supplierId, 403, 'تأمین‌کننده یافت نشد.');
 
         return (int) $supplierId;

@@ -18,7 +18,7 @@ class ManagePriceRounding extends Component
 
     public function mount()
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         $this->price_rounding_type = $supplier->price_rounding_type ?? 'nearest_1';
         $this->updateSamples();
         $this->calculateAffectedPrices();
@@ -47,7 +47,7 @@ class ManagePriceRounding extends Component
      */
     public function calculateAffectedPrices()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
 
         // تعداد قیمت‌های default
         $defaultCount = DB::table('product_supplier_prices as psp')
@@ -100,7 +100,7 @@ class ManagePriceRounding extends Component
         $this->showConfirmModal = false;
         
         // بازگشت به مقدار قبلی
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         $this->price_rounding_type = $supplier->price_rounding_type ?? 'nearest_1';
         $this->updateSamples();
     }
@@ -110,7 +110,7 @@ class ManagePriceRounding extends Component
      */
     public function save()
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         $oldRoundingType = $supplier->price_rounding_type;
 
         // اگر تغییری نکرده

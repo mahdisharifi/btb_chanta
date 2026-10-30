@@ -1,3 +1,8 @@
+@php
+    $branchPrimarySupplier = auth()->user()?->supplier;
+    $branchCurrentSupplier = auth()->user()?->currentSupplier();
+    $branchOptions = $branchPrimarySupplier?->branches()->get() ?? collect();
+@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="rtl">
 <head>
@@ -36,6 +41,18 @@
                class="{{ request()->routeIs('supplier.dashboard') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
                 <x-heroicon-o-home class="{{ request()->routeIs('supplier.dashboard') ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
                 داشبورد
+            </a>
+
+            <a href="{{ route('supplier.branches.index') }}"
+               class="{{ request()->routeIs('supplier.branches.index') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
+                <x-heroicon-o-building-office-2 class="ml-3 h-6 w-6 flex-shrink-0 text-gray-400" />
+                مدیریت شعبه‌ها
+            </a>
+
+            <a href="{{ route('supplier.branches.transfers') }}"
+               class="{{ request()->routeIs('supplier.branches.transfers') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
+                <x-heroicon-o-clipboard-document-check class="ml-3 h-6 w-6 flex-shrink-0 text-gray-400" />
+                بررسی محصولات شعبه
             </a>
 
             <!-- اطلاعات فروشگاه -->
@@ -111,21 +128,36 @@
     <main class="flex-1 flex flex-col h-screen overflow-hidden">
 
         <!-- Topbar -->
-        <header class="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between px-4 sm:px-6 z-10">
+        <header class="min-h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 z-10">
 
             <!-- سمت راست (دکمه موبایل و عنوان صفحه) -->
             <div class="flex items-center gap-4">
                 <button @click="sidebarOpen = true" class="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none">
                     <x-heroicon-o-bars-3-bottom-right class="w-6 h-6" />
                 </button>
-                <h2 class="text-xl font-semibold text-gray-800 dark:text-white">{{ $header ?? '' }}</h2>
+                <h2 class="max-w-[28vw] truncate text-base font-semibold text-gray-800 dark:text-white sm:max-w-none sm:text-xl">{{ $header ?? '' }}</h2>
             </div>
 
             <!-- سمت چپ (پروفایل و خروج) -->
-            <div class="flex items-center gap-3 sm:gap-5">
+            <div class="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-5">
+
+                @if($branchPrimarySupplier)
+                    <form method="POST" action="{{ route('supplier.branches.switch') }}" class="flex min-w-0 items-center gap-1.5">
+                        @csrf
+                        <label for="active-supplier-branch" class="sr-only">انتخاب شعبه</label>
+                        <select id="active-supplier-branch" name="branch_id" class="min-h-11 max-w-[42vw] rounded-lg border-gray-300 bg-white py-2 pl-7 pr-2 text-xs font-medium text-gray-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white sm:max-w-56 sm:text-sm">
+                            <option value="{{ $branchPrimarySupplier->id }}" @selected((int) $branchCurrentSupplier->id === (int) $branchPrimarySupplier->id)>{{ $branchPrimarySupplier->branchLabel() }}</option>
+                            @foreach($branchOptions as $branchOption)
+                                <option value="{{ $branchOption->id }}" @selected((int) $branchCurrentSupplier->id === (int) $branchOption->id)>{{ $branchOption->branchLabel() }}</option>
+                            @endforeach
+                        </select>
+                        <input type="hidden" name="return_to" value="{{ url()->current() }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}">
+                        <button type="submit" class="min-h-11 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 sm:text-sm">جابجایی</button>
+                    </form>
+                @endif
 
                 <!-- اطلاعات پروفایل -->
-                <div class="flex items-center gap-3 border-l border-gray-200 dark:border-gray-700 pl-3 sm:pl-5">
+                <div class="hidden items-center gap-3 border-l border-gray-200 dark:border-gray-700 pl-3 sm:flex sm:pl-5">
                     <div class="hidden sm:flex flex-col text-left">
                         <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ auth()->user()->name ?? 'کاربر تامین‌کننده' }}</span>
                         <span class="text-xs text-gray-500 dark:text-gray-400">تامین‌کننده</span>

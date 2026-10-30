@@ -19,7 +19,7 @@ class SupplierObserver
      */
     public function created(Supplier $supplier): void
     {
-        $this->clearSupplierCaches();
+        $this->clearSupplierCaches($supplier->id);
         
         Log::info('Supplier created, cache cleared', [
             'supplier_id' => $supplier->id,
@@ -32,7 +32,7 @@ class SupplierObserver
      */
     public function updated(Supplier $supplier): void
     {
-        $this->clearSupplierCaches();
+        $this->clearSupplierCaches($supplier->id);
         
         // اگر استان یا شهر تغییر کرد، لیست provinces هم باید بروز شود
         if ($supplier->isDirty('province') || $supplier->isDirty('city')) {
@@ -50,7 +50,7 @@ class SupplierObserver
      */
     public function deleted(Supplier $supplier): void
     {
-        $this->clearSupplierCaches();
+        $this->clearSupplierCaches($supplier->id);
         $this->clearGeographyCaches();
         
         Log::info('Supplier deleted, cache cleared', [
@@ -64,7 +64,7 @@ class SupplierObserver
      */
     public function restored(Supplier $supplier): void
     {
-        $this->clearSupplierCaches();
+        $this->clearSupplierCaches($supplier->id);
         
         Log::info('Supplier restored, cache cleared', [
             'supplier_id' => $supplier->id,
@@ -76,7 +76,7 @@ class SupplierObserver
      */
     public function forceDeleted(Supplier $supplier): void
     {
-        $this->clearSupplierCaches();
+        $this->clearSupplierCaches($supplier->id);
         $this->clearGeographyCaches();
         
         Log::info('Supplier force deleted, cache cleared', [
@@ -91,11 +91,12 @@ class SupplierObserver
     /**
      * پاک کردن کش‌های مرتبط با تأمین‌کنندگان
      */
-    private function clearSupplierCaches(): void
+    private function clearSupplierCaches(int $supplierId): void
     {
         // کش‌های صفحه لیست تأمین‌کنندگان
         Cache::forget('web:suppliers:stats');
         Cache::forget('home:suppliers:top'); // صفحه اصلی
+        app(\App\Services\SupplierBranchPublicCacheInvalidator::class)->invalidate($supplierId);
         
         // نکته: کش‌های filtered results با pattern 'suppliers:list:*' 
         // در Laravel با database driver قابل حذف گروهی نیستند
