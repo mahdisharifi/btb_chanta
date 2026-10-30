@@ -216,6 +216,7 @@ class ManageCheckPeriods extends Component
             $this->showPriceUpdateWarning();
         }
         
+        $this->invalidateCatalogSnapshot($supplierId);
         $this->reset(['name', 'days', 'percentage_increase']);
         $this->is_active = true;
         $this->loadPeriods();
@@ -289,6 +290,7 @@ class ManageCheckPeriods extends Component
             ]
         );
         
+        $this->invalidateCatalogSnapshot($supplierId);
         $this->cancelInlineEdit();
         $this->loadPeriods();
         
@@ -446,6 +448,7 @@ class ManageCheckPeriods extends Component
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
             
             $this->dispatch('notify',
                 message: 'دوره چک فعال شد.',
@@ -456,6 +459,7 @@ class ManageCheckPeriods extends Component
             $this->showPriceUpdateWarning();
         }
         
+        $this->invalidateCatalogSnapshot($supplierId);
         $this->loadPeriods();
     }
     
@@ -489,6 +493,7 @@ class ManageCheckPeriods extends Component
             ]
         );
         
+        $this->invalidateCatalogSnapshot($supplierId);
         $this->loadPeriods();
         
         $this->dispatch('notify',
@@ -526,6 +531,12 @@ class ManageCheckPeriods extends Component
     }
 
     // ══════════════════════════════════════════════════════════
+    private function invalidateCatalogSnapshot(int $supplierId): void
+    {
+        app(\App\Services\CatalogSnapshotRevisionService::class)
+            ->invalidateSupplier($supplierId);
+    }
+
     //  CATEGORY MANAGEMENT
     // ══════════════════════════════════════════════════════════
 
@@ -628,6 +639,8 @@ class ManageCheckPeriods extends Component
                     ]);
                 }
             }
+
+            $this->invalidateCatalogSnapshot($supplierId);
         });
         
         $this->reset(['selectedCategoryId', 'categoryPercentages']);
@@ -649,10 +662,14 @@ class ManageCheckPeriods extends Component
     {
         $supplierId = Auth::user()->supplier->id;
         
-        DB::table('category_check_period')
-            ->where('supplier_id', $supplierId)
-            ->where('category_id', $categoryId)
-            ->delete();
+        DB::transaction(function () use ($supplierId, $categoryId): void {
+            DB::table('category_check_period')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->delete();
+
+            $this->invalidateCatalogSnapshot($supplierId);
+        });
         
         $this->loadCategoryPeriods();
         
@@ -727,6 +744,8 @@ class ManageCheckPeriods extends Component
                     ]);
                 }
             }
+
+            $this->invalidateCatalogSnapshot($supplierId);
         });
         
         $this->cancelCategoryEdit();
@@ -779,6 +798,8 @@ class ManageCheckPeriods extends Component
                     'percentage_increase' => 0,
                     'updated_at' => now(),
                 ]);
+
+            $this->invalidateCatalogSnapshot($supplierId);
         } else {
             // دوره اختصاصی: غیرفعال کردن در خود جدول check_periods
             $period->update(['is_active' => false]);
@@ -793,7 +814,8 @@ class ManageCheckPeriods extends Component
         
         if ($productSupplierIds->isNotEmpty()) {
             // غیرفعال کردن تمام قیمت\u200cهای چکی این دوره
-            $affectedProductSupplierIds = DB::transaction(function () use ($productSupplierIds, $periodId) {
+            $affectedProductSupplierIds = DB::transaction(function () use ($productSupplierIds, $periodId, $supplierId) {
+                return app(\App\Services\CatalogSnapshotRevisionService::class)->batch(function () use ($productSupplierIds, $periodId, $supplierId) {
                 $affectedIds = DB::table('product_prices')
                     ->whereIn('product_supplier_id', $productSupplierIds)
                     ->where('check_period_id', $periodId)
@@ -812,10 +834,11 @@ class ManageCheckPeriods extends Component
                     ->pluck('product_id');
 
                 foreach ($productIds as $productId) {
-                    app(\App\Services\ProductPriceRevisionService::class)->increment((int) $productId);
+                    app(\App\Services\ProductPriceRevisionService::class)->increment((int) $productId, (int) $supplierId);
                 }
 
                 return $affectedIds;
+                });
             });
         }
         

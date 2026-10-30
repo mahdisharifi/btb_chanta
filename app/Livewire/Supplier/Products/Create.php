@@ -192,6 +192,7 @@ class Create extends Component
         $validAttributeValues = array_filter($this->attributeValues);
         if (!empty($validAttributeValues)) {
             $product->attributeValues()->sync($validAttributeValues);
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
         }
 
         // ذخیره تصویر اصلی

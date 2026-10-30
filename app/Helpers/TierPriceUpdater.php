@@ -348,6 +348,11 @@ class TierPriceUpdater
                         $updated += count($checkUpsertRows);
                     }
 
+                    if ($upsertRows !== [] || $checkUpsertRows !== []) {
+                        app(\App\Services\CatalogSnapshotRevisionService::class)
+                            ->invalidateSupplier($supplierId);
+                    }
+
                     return ['stop' => false, 'settings_changed' => false, 'last_id' => $nextId];
                 });
 

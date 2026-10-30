@@ -233,6 +233,7 @@ class Edit extends Component
         // اتصال ویژگی‌ها
         $validAttributeValues = array_filter($this->attributeValues);
         $this->product->attributeValues()->sync($validAttributeValues);
+        app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
 
         // ذخیره تصویر اصلی در صورت تغییر
         if ($this->primary_image) {

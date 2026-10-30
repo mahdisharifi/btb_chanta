@@ -312,6 +312,7 @@ class PercentageUpdate extends Component
 
         try {
             DB::transaction(function () use ($supplierId, &$changedProductSupplierIds): void {
+                app(\App\Services\CatalogSnapshotRevisionService::class)->batch(function () use ($supplierId, &$changedProductSupplierIds): void {
                 $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
                 $batch = $this->lockOwnedPendingBatch();
                 $batch->update(['status' => 'processing']);
@@ -384,10 +385,11 @@ class PercentageUpdate extends Component
                     $productSupplier->save();
                     $changedProductSupplierIds[(int) $productSupplier->id] = (int) $productSupplier->id;
                     app(\App\Services\ProductPriceRevisionService::class)
-                        ->increment((int) $productSupplier->product_id);
+                        ->increment((int) $productSupplier->product_id, (int) $productSupplier->supplier_id);
                 }
 
                 $batch->update(['status' => 'completed']);
+                });
             }, 3);
 
             if ($changedProductSupplierIds !== []) {

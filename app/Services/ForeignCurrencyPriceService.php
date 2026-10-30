@@ -370,6 +370,15 @@ class ForeignCurrencyPriceService
             &$changedProductSupplierIds,
             $expectedTierPricingRevision,
         ): bool {
+            return app(CatalogSnapshotRevisionService::class)->batch(function () use (
+                $productSupplierId,
+                $supplierId,
+                $currency,
+                $expectedRevision,
+                $priceTypes,
+                &$changedProductSupplierIds,
+                $expectedTierPricingRevision,
+            ): bool {
             // Lock the supplier before product and rate rows, matching all
             // settings writers so each product sees one tier-pricing revision.
             $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->first();
@@ -564,13 +573,17 @@ class ForeignCurrencyPriceService
                 'foreign_price_revision' => ((int) $productSupplier->foreign_price_revision) + 1,
             ])->save();
 
-            app(ProductPriceRevisionService::class)->increment((int) $productSupplier->product_id);
+            app(ProductPriceRevisionService::class)->increment(
+                (int) $productSupplier->product_id,
+                (int) $productSupplier->supplier_id,
+            );
 
             DB::afterCommit(function () use ($productSupplier, &$changedProductSupplierIds): void {
                 $changedProductSupplierIds[] = (int) $productSupplier->id;
             });
 
             return true;
+            });
         }, 3);
     }
 

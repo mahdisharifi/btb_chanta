@@ -274,6 +274,7 @@ class ImportLegacyCatalog extends Command
                         $bar->advance();
                     }
 
+                    app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
                     DB::commit();
                 } catch (\Exception $e) {
                     DB::rollBack();
@@ -288,6 +289,10 @@ class ImportLegacyCatalog extends Command
 
         } catch (\Exception $e) {
             $this->error('Fatal Error: ' . $e->getMessage());
+        } finally {
+            // This command also writes product attributes and galleries directly
+            // through the query builder, bypassing model observers.
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
         }
     }
 

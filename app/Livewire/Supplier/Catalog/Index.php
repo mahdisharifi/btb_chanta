@@ -6,6 +6,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use App\Models\Category;
 use App\Models\CatalogTemplate;
 use App\Models\Supplier;
@@ -18,10 +19,13 @@ class Index extends Component
     use WithPagination;
     
     // پراپرتی برای تشخیص ادمین
+    #[Locked]
     public bool $isAdmin = false;
     
     // پراپرتی انتخاب چند supplier (فقط برای ادمین)
     public array $selectedSuppliers = [];
+
+    public string $priceDisplayCurrency = 'toman';
     
     public $show_cover_page = true;
     
@@ -72,7 +76,7 @@ class Index extends Component
     public function mount()
     {
         // تشخیص ادمین
-        $this->isAdmin = Auth::user()->hasRole('super_admin');
+        $this->isAdmin = $this->authenticatedUserIsAdmin();
         
         if ($this->isAdmin) {
             // بررسی وجود supplier برای ادمین
@@ -89,6 +93,64 @@ class Index extends Component
         }
         
         $this->resetForm();
+    }
+
+    private function authenticatedUserIsAdmin(): bool
+    {
+        $user = Auth::user();
+
+        return $user !== null && (
+            $user->hasRole('admin')
+            || $user->hasRole('super_admin')
+            || $user->hasRole('super-admin')
+        );
+    }
+
+    private function eligibleSupplierCurrencyCode(): ?string
+    {
+        if ($this->authenticatedUserIsAdmin()) {
+            $supplierIds = array_values(array_unique(array_map('intval', $this->selectedSuppliers)));
+            if (count($supplierIds) !== 1 || $supplierIds[0] < 1) {
+                return null;
+            }
+
+            $supplier = Supplier::query()
+                ->where('verification_status', 'approved')
+                ->find($supplierIds[0]);
+        } else {
+            $supplier = Auth::user()?->supplier;
+        }
+
+        $currency = $supplier?->pricing_currency;
+
+        return app(\App\Services\CatalogPriceFormatter::class)
+            ->isSupportedForeignCurrency($currency) ? $currency : null;
+    }
+
+    #[Computed]
+    public function supplierCurrencyLabel(): ?string
+    {
+        return app(\App\Services\CatalogPriceFormatter::class)
+            ->label($this->eligibleSupplierCurrencyCode());
+    }
+
+    #[Computed]
+    public function supplierCurrencyUnavailableMessage(): string
+    {
+        if ($this->authenticatedUserIsAdmin() && count(array_unique($this->selectedSuppliers)) !== 1) {
+            return 'برای نمایش ارزی، دقیقاً یک تأمین‌کننده انتخاب کنید. کاتالوگ چندتأمین‌کننده فقط با تومان نمایش داده می‌شود.';
+        }
+
+        return 'ابتدا ارز پایهٔ دلار، یوان یا درهم را در تنظیمات قیمت‌گذاری تأمین‌کننده فعال کنید.';
+    }
+
+    public function updatedSelectedSuppliers(): void
+    {
+        if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
+            $this->priceDisplayCurrency = 'toman';
+        }
+
+        $this->resetValidation('priceDisplayCurrency');
     }
 
     #[Computed]
@@ -530,6 +592,8 @@ class Index extends Component
 
     public function editTemplate($id)
     {
+        $this->selectedSuppliers = [];
+
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
         $supplierId = Auth::user()->supplier->id;
         
@@ -541,8 +605,11 @@ class Index extends Component
         $this->name = $template->name;
         
         // اگر ادمین است و supplier_ids در config وجود دارد
-        if ($this->isAdmin && isset($template->config['supplier_ids'])) {
-            $this->selectedSuppliers = $template->config['supplier_ids'];
+        if ($this->authenticatedUserIsAdmin()) {
+            $configuredSupplierIds = $template->config['supplier_ids'] ?? [];
+            $this->selectedSuppliers = is_array($configuredSupplierIds)
+                ? array_values($configuredSupplierIds)
+                : [];
         }
 
         $settings = $template->settings ?? [];
@@ -564,6 +631,11 @@ class Index extends Component
         $this->globalAttribute = $settings['global_attribute'] ?? '';
         $this->showAttributeLabels = $settings['show_attribute_labels'] ?? true;
         $this->includeWarranty = $settings['include_warranty'] ?? false; // ✅ بارگذاری نمایش گارانتی
+        $this->priceDisplayCurrency = in_array(
+            $settings['price_display_currency'] ?? 'toman',
+            ['toman', 'supplier'],
+            true
+        ) ? ($settings['price_display_currency'] ?? 'toman') : 'toman';
         
         // بارگذاری مشخصات اختصاصی دسته‌بندی‌ها
         if (isset($settings['category_attributes']) && is_array($settings['category_attributes'])) {
@@ -676,7 +748,9 @@ class Index extends Component
             'cover_page_break' => 'boolean',
             'imageQuality' => 'required|string|in:sm,md,lg,original',
             'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom',
-            'selectedSuppliers' => $this->isAdmin ? 'array' : 'nullable',
+            'priceDisplayCurrency' => 'required|in:toman,supplier',
+            'selectedSuppliers' => $this->authenticatedUserIsAdmin() ? 'array' : 'nullable',
+            'selectedSuppliers.*' => $this->authenticatedUserIsAdmin() ? 'required|integer|min:1' : 'nullable',
             'globalAttribute' => 'nullable|string',
             'showAttributeLabels' => 'boolean',
             'categoryAttributes' => 'nullable|array',
@@ -684,6 +758,26 @@ class Index extends Component
             'contactPhones.*.label' => 'nullable|string|max:50',
             'contactPhones.*.number' => 'nullable|string|max:20',
         ]);
+
+        if ($this->authenticatedUserIsAdmin() && !empty($this->selectedSuppliers)) {
+            $selectedSupplierIds = array_values(array_unique(array_map('intval', $this->selectedSuppliers)));
+            $approvedSupplierCount = Supplier::query()
+                ->where('verification_status', 'approved')
+                ->whereIn('id', $selectedSupplierIds)
+                ->count();
+
+            if ($approvedSupplierCount !== count($selectedSupplierIds)) {
+                $this->addError('selectedSuppliers', 'فقط تأمین‌کنندگان تأییدشده قابل انتخاب هستند.');
+                return;
+            }
+
+            $this->selectedSuppliers = $selectedSupplierIds;
+        }
+
+        if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
+            $this->addError('priceDisplayCurrency', $this->supplierCurrencyUnavailableMessage());
+            return;
+        }
         
         // فیلتر کردن شماره‌های تماس خالی
         $filteredPhones = array_filter($this->contactPhones, function($phone) {
@@ -707,6 +801,7 @@ class Index extends Component
             'prices' => $this->selectAllPrices ? 'all' : (object)$this->selectedPrices, // ✅ تبدیل به object برای حفظ کلیدها
             'check_periods' => (object)$this->selectedCheckPeriods, // ✅ ذخیره دوره‌های چک (object)
             'include_warranty' => $this->includeWarranty, // ✅ نمایش گارانتی
+            'price_display_currency' => $this->priceDisplayCurrency,
             'sort_level1' => $this->sortLevel1,
             'sort_level1_dir' => $this->sortLevel1Dir,
             'sort_level2' => $this->sortLevel2,
@@ -723,13 +818,13 @@ class Index extends Component
         ];
         
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ است)
-        $supplierId = $this->isAdmin 
+        $supplierId = $this->authenticatedUserIsAdmin()
             ? Auth::user()->supplier->id  // ادمین از supplier خودش استفاده می‌کند
             : Auth::user()->supplier->id;
         
         // اگر ادمین است، supplier_ids را در config ذخیره کن
         $config = [];
-        if ($this->isAdmin && !empty($this->selectedSuppliers)) {
+        if ($this->authenticatedUserIsAdmin() && !empty($this->selectedSuppliers)) {
             $config['supplier_ids'] = $this->selectedSuppliers;
         }
 
@@ -830,14 +925,17 @@ class Index extends Component
      */
     public function resetForm()
     {
+        $this->selectedSuppliers = [];
+        $this->priceDisplayCurrency = 'toman';
         $this->editingTemplateId = null;
         $this->name = '';
         $this->description = '';
         $this->categorySearch = '';
 
         $this->selectAllCategories = true;
-        $availableCategories = $this->availableCategories;
-        $this->selectedCategories = array_keys($availableCategories);
+        // Defer category lookup until the user opens the form. This avoids
+        // querying the product/category graph on every catalog-list page load.
+        $this->selectedCategories = [];
 
         $this->selectAllPrices = true;
         

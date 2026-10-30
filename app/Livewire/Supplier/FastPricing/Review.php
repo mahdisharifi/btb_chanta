@@ -319,7 +319,7 @@ class Review extends Component
                 $productSupplier->save();
                 $changedProductSupplierIds[(int) $productSupplier->id] = (int) $productSupplier->id;
                 app(\App\Services\ProductPriceRevisionService::class)
-                    ->increment((int) $productSupplier->product_id);
+                    ->increment((int) $productSupplier->product_id, (int) $productSupplier->supplier_id);
             }
 
             $batch->update([

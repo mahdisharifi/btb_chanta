@@ -965,7 +965,14 @@ class ProductSupplier extends Model
      */
     public function deactivateAllPrices(): int
     {
-        return $this->prices()->update(['is_active' => false]);
+        $updated = $this->prices()->update(['is_active' => false]);
+
+        if ($updated > 0) {
+            app(\App\Services\CatalogSnapshotRevisionService::class)
+                ->invalidateSupplier((int) $this->supplier_id);
+        }
+
+        return $updated;
     }
 
     /**
@@ -973,7 +980,14 @@ class ProductSupplier extends Model
      */
     public function activateAllPrices(): int
     {
-        return $this->prices()->update(['is_active' => true]);
+        $updated = $this->prices()->update(['is_active' => true]);
+
+        if ($updated > 0) {
+            app(\App\Services\CatalogSnapshotRevisionService::class)
+                ->invalidateSupplier((int) $this->supplier_id);
+        }
+
+        return $updated;
     }
 
     /**

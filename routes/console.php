@@ -8,6 +8,7 @@ use App\Jobs\RefreshDueForeignCurrencyPrices;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Facades\Storage;
 
 // اجرای Job انقضای اشتراک‌ها
 Schedule::job(new ExpireSubscriptionsJob())->dailyAt('00:05')->name('process-expired-subscriptions');
@@ -32,6 +33,25 @@ Schedule::job(new RefreshDueForeignCurrencyPrices())
     ->everyMinute()
     ->withoutOverlapping()
     ->name('refresh-due-foreign-currency-prices');
+
+Schedule::call(function (): void {
+    $disk = Storage::disk('local');
+    $directory = 'catalog-pdf-downloads';
+    if (!$disk->exists($directory)) {
+        return;
+    }
+
+    // Keep completed exports long enough for slow clients; bound abandoned-file retention.
+    $expiredBefore = now()->subHours(2)->getTimestamp();
+    foreach ($disk->files($directory) as $temporaryFile) {
+        if ($disk->lastModified($temporaryFile) < $expiredBefore) {
+            $disk->delete($temporaryFile);
+        }
+    }
+})
+    ->everyFifteenMinutes()
+    ->name('cleanup-catalog-pdf-downloads')
+    ->withoutOverlapping();
 
 // Use the scheduler's PHP binary and consume both configured and legacy default queues.
 $queueConnection = (string) config('queue.default');

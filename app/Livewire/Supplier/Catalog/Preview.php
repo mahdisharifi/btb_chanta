@@ -3,47 +3,78 @@
 namespace App\Livewire\Supplier\Catalog;
 
 use App\Enums\ProductStatus;
+use App\Enums\PriceType;
 use Livewire\Component;
+use Livewire\Attributes\Renderless;
 use App\Models\CatalogTemplate;
 use App\Models\Product;
-use App\Enums\PriceType;
+use Livewire\Attributes\Locked;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Str;
 use PDF;
 
 class Preview extends Component
 {
+    #[Locked]
     public bool $isAdmin = false;
 
+    #[Locked]
     public $catalog;
+    #[Locked]
     public $supplierLogoUrl;
+    #[Locked]
     public $supplierLogoPath;
+    #[Locked]
     public $supplier;
+    #[Locked]
     public $supplierName;
+    #[Locked]
     public $template;
+    #[Locked]
     public $settings = [];
-    public $groupedProducts = [];
+    #[Locked]
+    public ?string $catalogDataCacheKey = null;
+    #[Locked]
+    public bool $catalogSnapshotBusy = false;
+    #[Locked]
     public $selectedPriceTypes = [];
+    #[Locked]
     public $selectedCheckPeriods = []; // ✅ دوره‌های چک انتخاب شده
+    #[Locked]
     public $includeWarranty = false; // ✅ نمایش گارانتی
+    #[Locked]
+    public ?string $displayCurrencyCode = 'TOM';
+    #[Locked]
+    public ?string $displayCurrencyLabel = 'تومان';
+    #[Locked]
+    public ?array $exchangeRateBasis = null;
+    #[Locked]
+    public bool $currencySnapshotWarning = false;
+    #[Locked]
     public $separateCategories = false;
+    #[Locked]
     public $showCoverPage = true;
+    #[Locked]
     public $priceLabels = [];
+    #[Locked]
     public $progressKey = null;
+    #[Locked]
+    public ?string $pdfDownloadToken = null;
     private $enableProgress = false;
 
     public function mount($catalog)
     {
         // تولید کلید یونیک برای tracking progress در ابتدا
-        $this->progressKey = 'catalog_progress_' . session()->getId() . '_' . time();
+        $this->progressKey = 'catalog_progress_' . (string) Str::uuid();
         
         $user = Auth::user();
-        $this->isAdmin = $user->hasRole('admin')
-            || $user->hasRole('super_admin')
-            || $user->hasRole('super-admin');
+        $this->isAdmin = $this->authenticatedUserIsAdmin();
 
         $this->template = CatalogTemplate::findOrFail($catalog);
+        $this->authorizeCurrentTemplate();
 
         if ($this->isAdmin) {
             // ادمین: supplier صاحب کاتالوگ را بگیر (برای صفحه اول)
@@ -75,6 +106,8 @@ class Preview extends Component
         
         // Resolve settings: اگر source_catalog_id دارد، از تنظیمات کاتالوگ source استفاده کن
         $this->resolveSettings();
+
+        $this->refreshCurrencyDisplayState();
 
         $this->separateCategories = filter_var($this->settings['separate_categories'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $this->showCoverPage = filter_var(
@@ -150,7 +183,82 @@ class Preview extends Component
         $this->includeWarranty = $this->settings['include_warranty'] ?? false;
 
         // بارگذاری داده‌ها برای preview (بدون progress)
-        $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
+        $this->loadCatalogData($this->authorizedSupplierScope());
+    }
+
+    private function authenticatedUserIsAdmin(): bool
+    {
+        $user = Auth::user();
+
+        return $user !== null && (
+            $user->hasRole('admin')
+            || $user->hasRole('super_admin')
+            || $user->hasRole('super-admin')
+        );
+    }
+
+    private function authorizeCurrentTemplate(): void
+    {
+        abort_if(!Auth::check(), 403);
+
+        if ($this->authenticatedUserIsAdmin()) {
+            return;
+        }
+
+        $supplierId = Auth::user()?->supplier?->id;
+        abort_if(!$supplierId || (int) $this->template?->supplier_id !== (int) $supplierId, 403);
+    }
+
+    private function authorizedSupplierScope(): ?int
+    {
+        if ($this->authenticatedUserIsAdmin()) {
+            return null;
+        }
+
+        $supplierId = Auth::user()?->supplier?->id;
+        abort_if(!$supplierId, 403, 'پروفایل تأمین‌کننده پیدا نشد.');
+        abort_if((int) $this->template->supplier_id !== (int) $supplierId, 403);
+
+        return (int) $supplierId;
+    }
+
+    private function refreshCurrencyDisplayState(): void
+    {
+        $supplier = $this->resolveCurrencySupplier();
+        $currency = ($this->settings['price_display_currency'] ?? 'toman') === 'supplier'
+            ? $supplier?->pricing_currency
+            : 'TOM';
+
+        $this->displayCurrencyCode = $currency === 'TOM'
+            ? 'TOM'
+            : (app(\App\Services\CatalogPriceFormatter::class)
+                ->isSupportedForeignCurrency($currency) ? strtoupper((string) $currency) : null);
+        $this->displayCurrencyLabel = app(\App\Services\CatalogPriceFormatter::class)
+            ->label($this->displayCurrencyCode);
+        $this->exchangeRateBasis = $supplier
+            ? app(\App\Services\CatalogExchangeRateBasisResolver::class)->resolve($supplier)
+            : null;
+    }
+
+    private function resolveCurrencySupplier(): ?\App\Models\Supplier
+    {
+        if ($this->authenticatedUserIsAdmin()) {
+            $supplierIds = $this->template->config['supplier_ids'] ?? [];
+            if (!is_array($supplierIds)) {
+                return null;
+            }
+
+            $supplierIds = array_values(array_unique(array_filter(array_map('intval', $supplierIds))));
+            if (count($supplierIds) !== 1) {
+                return null;
+            }
+
+            return \App\Models\Supplier::query()
+                ->where('verification_status', 'approved')
+                ->find($supplierIds[0]);
+        }
+
+        return \App\Models\Supplier::query()->find($this->authorizedSupplierScope());
     }
 
     /**
@@ -169,52 +277,60 @@ class Preview extends Component
         }
     }
     
-    private function loadCatalogData($supplierId = null)
+    private function loadCatalogData($supplierId = null): array
     {
-        // تعیین supplier_ids برای فیلتر (قبل از ساخت کلید کش)
-        $selectedSupplierIds = [];
-        
-        // اگر ادمین است و supplier_ids در config وجود دارد و خالی نیست
-        if ($this->isAdmin && !empty($this->template->config['supplier_ids']) && is_array($this->template->config['supplier_ids'])) {
-            $selectedSupplierIds = $this->template->config['supplier_ids'];
-        } elseif ($supplierId) {
-            // اگر supplier_id مشخص است (تامین‌کننده)
-            $selectedSupplierIds = [$supplierId];
+        $this->authorizeCurrentTemplate();
+        $isAdmin = $this->authenticatedUserIsAdmin();
+        if (!$isAdmin) {
+            $supplierId = $this->authorizedSupplierScope();
         }
-        
-        // دریافت timestamp آخرین تغییرات برای تشخیص نیاز به رفرش کش
-        // این timestampها باعث می‌شوند وقتی داده‌ها تغییر کنند، کش خودکار رفرش شود
-        $productsUpdatedAt = \App\Models\Product::max('updated_at');
-        $pricesUpdatedAt = \App\Models\ProductPrice::max('updated_at');
-        $supplierUpdatedAt = \App\Models\Supplier::whereIn('id', $selectedSupplierIds)->max('updated_at');
-        
-        // اضافه کردن timestamp برای داده‌های مرتبط دیگر
-        $categoriesUpdatedAt = \App\Models\Category::max('updated_at');
-        $attributesUpdatedAt = \App\Models\AttributeValue::max('updated_at');
-        $imagesUpdatedAt = \App\Models\ProductGallery::max('updated_at');
-        
-        // تولید کلید کش یونیک برای این کاتالوگ و تنظیمات + timestamp تغییرات
-        // نکته: selected_supplier_ids هم اضافه می‌شود تا با تغییر تامین‌کننده‌ها کش رفرش شود
-        $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
-            'supplier_ids' => $selectedSupplierIds, // تغییر مهم: استفاده از supplier_ids به جای supplier_id
-            'settings' => $this->settings,
-            'selected_prices' => $this->selectedPriceTypes,
-            'products_updated' => $productsUpdatedAt,
-            'prices_updated' => $pricesUpdatedAt,
-            'supplier_updated' => $supplierUpdatedAt,
-            'categories_updated' => $categoriesUpdatedAt,
-            'attributes_updated' => $attributesUpdatedAt,
-            'images_updated' => $imagesUpdatedAt,
-        ]));
+
+        $cacheIdentity = $this->catalogCacheIdentity($supplierId);
+        $selectedSupplierIds = $cacheIdentity['supplier_ids'];
+        $cacheKey = $cacheIdentity['cache_key'];
         
         // تلاش برای دریافت از کش
         $cached = Cache::get($cacheKey);
         if ($cached && isset($cached['grouped_products'])) {
-            $this->groupedProducts = $cached['grouped_products'];
+            $this->catalogDataCacheKey = $cacheKey;
+            $this->catalogSnapshotBusy = false;
+            $this->applyCatalogSnapshotWarning($cached);
             $this->updateProgress(30, 'داده‌ها از کش بازیابی شدند');
-            return;
+            return $cached;
         }
-        
+
+        $releaseBuildLock = $this->acquireCatalogSnapshotBuildLock($cacheKey);
+        if ($releaseBuildLock === null) {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached) && isset($cached['grouped_products'])) {
+                $this->catalogDataCacheKey = $cacheKey;
+                $this->catalogSnapshotBusy = false;
+                $this->applyCatalogSnapshotWarning($cached);
+
+                return $cached;
+            }
+
+            $this->catalogDataCacheKey = $cacheKey;
+            $this->catalogSnapshotBusy = true;
+
+            return [];
+        }
+
+        try {
+            // Another request may have finished the same cold build while this
+            // request was waiting for the shared lock.
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached) && isset($cached['grouped_products'])) {
+                $this->catalogDataCacheKey = $cacheKey;
+                $this->catalogSnapshotBusy = false;
+                $this->applyCatalogSnapshotWarning($cached);
+
+                return $cached;
+            }
+
+            $this->catalogDataCacheKey = $cacheKey;
+            $this->catalogSnapshotBusy = false;
+
         $categoryIds = $this->settings['categories']
             ?? $this->template->selected_categories
             ?? 'all';
@@ -257,11 +373,13 @@ class Preview extends Component
             'category',
             'primaryImage',
             'attributeValues.attribute', // eager load برای جلوگیری از N+1
-            'productSuppliers' => function ($q) use ($selectedSupplierIds, $supplierId) {
+            'productSuppliers' => function ($q) use ($selectedSupplierIds, $supplierId, $isAdmin) {
                 if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
                     $q->whereIn('supplier_id', $selectedSupplierIds);
                 } elseif ($supplierId) {
                     $q->where('supplier_id', $supplierId);
+                } elseif (!$isAdmin) {
+                    $q->whereRaw('1 = 0');
                 }
 
                 $q->where('is_active', true)
@@ -275,6 +393,50 @@ class Preview extends Component
 
         // ساخت آرایه محصولات با محاسبه کمترین قیمت از همه تامین‌کنندگان
         $allItems = [];
+        // Resolve price types and check periods once, outside the product/tier loops.
+        // These lookups used to repeat for every product and caused cold-cache N+1 queries.
+        $priceTypes = \App\Models\PriceType::query()
+            ->ordered()
+            ->get(['id', 'code', 'name', 'is_active']);
+        $priceTypesById = $priceTypes->keyBy('id');
+        $allActivePriceTypeIds = $priceTypes
+            ->where('is_active', true)
+            ->where('code', '!=', 'warranty')
+            ->pluck('id')
+            ->map(static fn ($id) => (int) $id)
+            ->all();
+        $warrantyPriceTypeId = $priceTypes->firstWhere('code', 'warranty')?->id;
+
+        $selectedPriceTypeIds = $this->selectedPriceTypes === 'all'
+            ? $allActivePriceTypeIds
+            : collect($this->selectedPriceTypes ?? [])
+                ->flatten()
+                ->map(static fn ($id) => (int) $id)
+                ->unique()
+                ->filter(static function (int $id) use ($priceTypesById): bool {
+                    $priceType = $priceTypesById->get($id);
+
+                    return $priceType !== null
+                        && $priceType->is_active
+                        && $priceType->code !== 'warranty';
+                })
+                ->values()
+                ->all();
+        $usesCheckPrices = collect($selectedPriceTypeIds)->contains(
+            fn ($priceTypeId) => ($priceTypesById[$priceTypeId]?->code ?? null) === 'check'
+        );
+        $checkPeriodsBySupplier = collect();
+        if ($usesCheckPrices) {
+            $supplierIds = $products
+                ->flatMap(static fn ($product) => $product->productSuppliers->pluck('supplier_id'))
+                ->filter()
+                ->unique()
+                ->values();
+
+            $checkPeriodsBySupplier = \App\Models\CheckPeriod::getActiveForSuppliers($supplierIds->all())
+                ->groupBy(static fn ($period) => (int) $period->resolved_supplier_id)
+                ->map(static fn ($periods) => $periods->values());
+        }
         $totalProducts = $products->count();
         $processedProducts = 0;
 
@@ -299,14 +461,20 @@ class Preview extends Component
             if ($this->selectedPriceTypes === 'all') {
                 // همه تیراژها (0-3) با همه انواع قیمت
                 $selectedTiers = [0, 1, 2, 3];
-                $allPriceTypes = PriceType::values();
+                $allPriceTypes = $allActivePriceTypeIds;
                 foreach ($selectedTiers as $tierIndex) {
                     $selectedPriceTypesByTier[$tierIndex] = $allPriceTypes;
                 }
             } elseif (is_array($this->selectedPriceTypes)) {
                 // ساختار: ['tier_index' => [price_type_ids]]
                 $selectedTiers = array_keys($this->selectedPriceTypes);
-                $selectedPriceTypesByTier = $this->selectedPriceTypes;
+                $selectedPriceTypesByTier = collect($this->selectedPriceTypes)
+                    ->map(static fn ($priceTypeIds) => collect($priceTypeIds)
+                        ->map(static fn ($id) => (int) $id)
+                        ->filter(static fn (int $id) => in_array($id, $allActivePriceTypeIds, true))
+                        ->values()
+                        ->all())
+                    ->all();
             }
             
             // ✅ برای هر تامین‌کننده، قیمت‌های این محصول را از جدول product_prices بخوان
@@ -364,9 +532,8 @@ class Preview extends Component
                                         case 'custom':
                                             // ✅ مبلغ متفاوت برای هر تیراژ - باید از product_prices بخوانیم
                                             // پیدا کردن price_type با code = warranty
-                                            $warrantyPriceType = \App\Models\PriceType::where('code', 'warranty')->first();
-                                            if ($warrantyPriceType) {
-                                                $warrantyKey = "{$tierIndex}_{$warrantyPriceType->id}_null";
+                                            if ($warrantyPriceTypeId) {
+                                                $warrantyKey = "{$tierIndex}_{$warrantyPriceTypeId}_null";
                                                 $warrantyRecord = $pricesGrouped->get($warrantyKey)?->first();
                                                 $warrantyPrice = $warrantyRecord ? (int)$warrantyRecord->price : 0;
                                             }
@@ -376,6 +543,8 @@ class Preview extends Component
                                 
                                 $prices[$storeKey] = [
                                     'price' => (int)$priceRecord->price,
+                                    'foreign_price_rate' => $ps->foreign_price_rate,
+                                    'foreign_price_applied_currency' => $ps->foreign_price_applied_currency,
                                     'tier_index' => (int)$tierIndex,
                                     'price_type_id' => (int)$priceTypeId,
                                     'warranty_type' => $warrantyType,
@@ -386,29 +555,22 @@ class Preview extends Component
                         }
                         
                         // ✅ اگر نوع قیمت "چک" است، قیمت‌های چکی را هم بررسی کن
-                        $priceType = \App\Models\PriceType::find($priceTypeId);
-                        if ($priceType && $priceType->code === 'check') {
+                        $priceType = $priceTypesById[$priceTypeId] ?? null;
+                        if (($priceType?->code ?? null) === 'check') {
                             // ✅ دریافت دوره‌های چک انتخاب شده برای این تیراژ
                             $selectedCheckPeriodsForTier = $this->selectedCheckPeriods[$tierIndex] ?? [];
                             
+                            $activeSupplierPeriods = $checkPeriodsBySupplier[(int) $ps->supplier_id] ?? collect();
                             if (!empty($selectedCheckPeriodsForTier)) {
-                                // ✅ فقط دوره‌های انتخاب شده و فعال شده توسط supplier را بخوان
-                                $activeSupplierPeriods = \App\Models\CheckPeriod::getActiveForSupplier($ps->supplier_id)
-                                    ->where('is_enabled_for_supplier', true)
-                                    ->pluck('id')
-                                    ->toArray();
-                                
-                                // تلاقی دوره‌های انتخاب شده با دوره‌های فعال
-                                $validPeriodIds = array_intersect($selectedCheckPeriodsForTier, $activeSupplierPeriods);
-                                
-                                $checkPeriods = \App\Models\CheckPeriod::whereIn('id', $validPeriodIds)
-                                    ->active()
-                                    ->orderBy('days')
-                                    ->get();
+                                // Intersect selected periods with the supplier's preloaded active periods.
+                                $activePeriodIds = $activeSupplierPeriods->pluck('id')->all();
+                                $validPeriodIds = array_intersect($selectedCheckPeriodsForTier, $activePeriodIds);
+                                $checkPeriods = $activeSupplierPeriods
+                                    ->whereIn('id', $validPeriodIds)
+                                    ->sortBy('days')
+                                    ->values();
                             } else {
-                                // اگر دوره‌ای انتخاب نشده، همه دوره‌های فعال شده توسط supplier را بخوان
-                                $checkPeriods = \App\Models\CheckPeriod::getActiveForSupplier($ps->supplier_id)
-                                    ->where('is_enabled_for_supplier', true);
+                                $checkPeriods = $activeSupplierPeriods;
                             }
                             
                             foreach ($checkPeriods as $period) {
@@ -437,9 +599,8 @@ class Preview extends Component
                                                     $warrantyPrice = (int)$ps->warranty_value;
                                                     break;
                                                 case 'custom':
-                                                    $warrantyPriceType = \App\Models\PriceType::where('code', 'warranty')->first();
-                                                    if ($warrantyPriceType) {
-                                                        $warrantyKey = "{$tierIndex}_{$warrantyPriceType->id}_null";
+                                                    if ($warrantyPriceTypeId) {
+                                                        $warrantyKey = "{$tierIndex}_{$warrantyPriceTypeId}_null";
                                                         $warrantyRecord = $pricesGrouped->get($warrantyKey)?->first();
                                                         $warrantyPrice = $warrantyRecord ? (int)$warrantyRecord->price : 0;
                                                     }
@@ -449,6 +610,8 @@ class Preview extends Component
                                         
                                         $prices[$checkStoreKey] = [
                                             'price' => (int)$checkPriceRecord->price,
+                                            'foreign_price_rate' => $ps->foreign_price_rate,
+                                            'foreign_price_applied_currency' => $ps->foreign_price_applied_currency,
                                             'tier_index' => (int)$tierIndex,
                                             'price_type_id' => (int)$priceTypeId,
                                             'check_period_id' => (int)$period->id,
@@ -590,15 +753,173 @@ class Preview extends Component
             $grouped['all'] = $allItems;
         }
 
-        $this->groupedProducts = $grouped;
+        $this->catalogDataCacheKey = $cacheKey;
         
         // ذخیره در کش برای استفاده‌های بعدی (2 ساعت)
-        Cache::put($cacheKey, [
-            'grouped_products' => $this->groupedProducts,
+        $snapshot = [
+            'grouped_products' => $grouped,
+            'price_types_by_id' => $priceTypes->mapWithKeys(static fn ($priceType): array => [
+                (int) $priceType->id => [
+                    'code' => (string) $priceType->code,
+                    'name' => (string) $priceType->name,
+                ],
+            ])->all(),
             'generated_at' => now()->toDateTimeString(),
-        ], now()->addHours(2));
+        ];
+        $this->applyCatalogSnapshotWarning($snapshot, false);
+        Cache::put($cacheKey, $snapshot, now()->addHours(2));
         
         $this->updateProgress(30, 'داده‌ها آماده شدند، در حال تولید PDF...');
+
+        return $snapshot;
+            } finally {
+                $releaseBuildLock();
+            }
+    }
+
+    /**
+     * @return array{supplier_ids:array<int, int>,cache_key:string}
+     */
+    private function catalogCacheIdentity(?int $supplierId): array
+    {
+        $isAdmin = $this->authenticatedUserIsAdmin();
+        if (!$isAdmin) {
+            $supplierId = $this->authorizedSupplierScope();
+        }
+
+        $selectedSupplierIds = [];
+        if ($isAdmin && !empty($this->template->config['supplier_ids']) && is_array($this->template->config['supplier_ids'])) {
+            $selectedSupplierIds = array_values(array_unique(array_map('intval', $this->template->config['supplier_ids'])));
+        } elseif ($supplierId) {
+            $selectedSupplierIds = [(int) $supplierId];
+        }
+
+        $sourceRevision = app(\App\Services\CatalogSnapshotRevisionService::class)
+            ->signatureFor($selectedSupplierIds);
+        $catalogVersion = Cache::get('catalog_version_' . $this->template->id, 0);
+        $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
+            'supplier_ids' => $selectedSupplierIds,
+            'settings' => $this->settings,
+            'selected_prices' => $this->selectedPriceTypes,
+            'source_revision' => $sourceRevision,
+            'catalog_version' => $catalogVersion,
+            'display_currency_code' => $this->displayCurrencyCode,
+        ]));
+
+        return ['supplier_ids' => $selectedSupplierIds, 'cache_key' => $cacheKey];
+    }
+
+    private function refreshCatalogSnapshotIfStale(?int $supplierId): void
+    {
+        $currentCacheKey = $this->catalogCacheIdentity($supplierId)['cache_key'];
+        if ($currentCacheKey !== $this->catalogDataCacheKey) {
+            $this->loadCatalogData($supplierId);
+        }
+    }
+
+    private function acquireCatalogSnapshotBuildLock(string $cacheKey): ?\Closure
+    {
+        $waitSeconds = max(0, (int) config('catalog.snapshot_lock_wait_seconds', 3));
+        $connection = DB::connection();
+
+        if ($connection->getDriverName() === 'mysql') {
+            // MySQL releases named locks automatically when the connection dies,
+            // so an interrupted snapshot build cannot leave a long cache lease.
+            $lockName = 'catalog_snapshot_' . substr(hash('sha256', $cacheKey), 0, 40);
+            $result = $connection->selectOne('SELECT GET_LOCK(?, ?) AS acquired', [$lockName, $waitSeconds]);
+
+            if ((int) ($result->acquired ?? 0) !== 1) {
+                return null;
+            }
+
+            return static function () use ($connection, $lockName): void {
+                $connection->selectOne('SELECT RELEASE_LOCK(?) AS released', [$lockName]);
+            };
+        }
+
+        // SQLite and other local/test drivers keep the portable cache-lock path.
+        $leaseSeconds = max(120, (int) config('catalog.snapshot_lock_lease_seconds', 120));
+        $lock = Cache::lock('catalog_snapshot_build_' . $cacheKey, $leaseSeconds);
+
+        try {
+            $lock->block($waitSeconds);
+        } catch (LockTimeoutException) {
+            return null;
+        }
+
+        return static function () use ($lock): void {
+            $lock->release();
+        };
+    }
+
+    private function refreshCurrencySnapshotWarning(array $groupedProducts): void
+    {
+        $this->currencySnapshotWarning = false;
+
+        if (!$this->displayCurrencyCode) {
+            return;
+        }
+
+        $configuredCurrency = $this->exchangeRateBasis['currency'] ?? null;
+        $configuredRate = $this->exchangeRateBasis['rate_value'] ?? null;
+
+        if ($this->displayCurrencyCode !== 'TOM' && $configuredCurrency !== $this->displayCurrencyCode) {
+            $this->currencySnapshotWarning = true;
+            return;
+        }
+
+        if (!$configuredCurrency || !is_numeric($configuredRate) || (float) $configuredRate <= 0) {
+            if ($this->displayCurrencyCode !== 'TOM') {
+                $this->currencySnapshotWarning = true;
+            }
+
+            return;
+        }
+
+        foreach ($groupedProducts as $items) {
+            foreach ($items as $item) {
+                foreach (($item['prices'] ?? []) as $priceData) {
+                    if (!is_array($priceData)
+                        || ($priceData['foreign_price_applied_currency'] ?? null) !== $configuredCurrency
+                        || !is_numeric($priceData['foreign_price_rate'] ?? null)
+                        || (float) $priceData['foreign_price_rate'] <= 0
+                        || abs((float) $priceData['foreign_price_rate'] - (float) $configuredRate) >= 0.00005) {
+                        $this->currencySnapshotWarning = true;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Reuse the warning stored with a catalog snapshot. The full product walk is
+     * only repeated when its currency/rate basis changes.
+     *
+     * @param array<string, mixed> $snapshot
+     */
+    private function applyCatalogSnapshotWarning(array &$snapshot, bool $persist = true): void
+    {
+        $signature = hash('sha256', (string) json_encode([
+            'display_currency' => $this->displayCurrencyCode,
+            'basis_currency' => $this->exchangeRateBasis['currency'] ?? null,
+            'basis_rate' => $this->exchangeRateBasis['rate_value'] ?? null,
+        ]));
+
+        if (($snapshot['exchange_rate_basis_signature'] ?? null) === $signature
+            && array_key_exists('currency_snapshot_warning', $snapshot)) {
+            $this->currencySnapshotWarning = (bool) $snapshot['currency_snapshot_warning'];
+
+            return;
+        }
+
+        $this->refreshCurrencySnapshotWarning($snapshot['grouped_products'] ?? []);
+        $snapshot['exchange_rate_basis_signature'] = $signature;
+        $snapshot['currency_snapshot_warning'] = $this->currencySnapshotWarning;
+
+        if ($persist && $this->catalogDataCacheKey) {
+            Cache::put($this->catalogDataCacheKey, $snapshot, now()->addHours(2));
+        }
     }
 
     private function compareItems($a, $b, $sortKey, $dir)
@@ -649,12 +970,16 @@ class Preview extends Component
 
     public function downloadPdf()
     {
+        $this->authorizeCurrentTemplate();
+
         // استفاده از progressKey که در mount ساخته شده
         return $this->generatePdfResponse('pdf.supplier-catalog', 'list-');
     }
 
     public function downloadPdf2()
     {
+        $this->authorizeCurrentTemplate();
+
         // استفاده از progressKey که در mount ساخته شده
         return $this->generatePdfResponse('pdf.supplier-catalog2', 'catalog-');
     }
@@ -662,7 +987,7 @@ class Preview extends Component
     /**
      * بروزرسانی درصد پیشرفت در Cache
      */
-    private function updateProgress($percent, $message = '')
+    private function updateProgress($percent, $message = '', string $status = 'processing')
     {
         // اگر progress غیرفعال است یا progressKey وجود ندارد، کاری نکن
         if (!$this->enableProgress || empty($this->progressKey)) {
@@ -672,11 +997,14 @@ class Preview extends Component
         $data = [
             'percent' => $percent,
             'message' => $message,
+            'status' => $status,
+            'user_id' => Auth::id(),
             'timestamp' => time()
         ];
         
-        // استفاده از Cache به جای Session برای جلوگیری از lock
-        Cache::put($this->progressKey, $data, now()->addMinutes(5));
+        // وضعیت لحظه‌ای progress را روی فایل بنویس تا polling چندمرحله‌ای PDF
+        // روی SQLite/کش دیتابیسی قفل نوشتن ایجاد نکند.
+        Cache::store('file')->put($this->progressKey, $data, now()->addMinutes(5));
         
         // حذف تاخیر مصنوعی برای کاهش فشار CPU
         // usleep(100000); // حذف شد - در production نیازی به تاخیر نیست
@@ -684,101 +1012,219 @@ class Preview extends Component
         \Log::info("📈 Progress: {$percent}% - {$message}");
     }
 
-    /**
-     * پاک کردن اطلاعات progress
-     */
-    private function clearProgress()
-    {
-        if (!empty($this->progressKey)) {
-            Cache::forget($this->progressKey);
-        }
-    }
-
     private function generatePdfResponse($view, $prefix)
     {
-        // فعال کردن progress برای PDF generation
-        $this->enableProgress = true;
-        
-        \Log::info("🚀 Progress enabled for PDF generation");
-        
-        // شروع progress
-        $this->updateProgress(0, 'آماده‌سازی...');
-
+        $this->authorizeCurrentTemplate();
+        $this->resetErrorBag('pdfExport');
         $fileName = $prefix . jdate(now())->format('Y-m-d') . '.pdf';
+        $startedAt = microtime(true);
+        $format = $prefix === 'list-' ? 'list' : 'catalog';
+        $productCount = 0;
+        $this->enableProgress = true;
 
-        $this->updateProgress(3, 'در حال بارگذاری داده‌های کاتالوگ...');
-        
-        \Log::info('=== Before loadCatalogData ===');
-        
-        // بارگذاری مجدد داده‌های محصولات با progress tracking
-        $this->loadCatalogData($this->isAdmin ? null : $this->supplier->id);
+        try {
+            $this->refreshCurrencyDisplayState();
+            $supplierId = $this->authenticatedUserIsAdmin() ? null : $this->authorizedSupplierScope();
+            $this->refreshCatalogSnapshotIfStale($supplierId);
 
-        \Log::info('=== After loadCatalogData ===');
+            $this->updateProgress(3, 'در حال آماده‌سازی اطلاعات کاتالوگ...');
+            // Release the session before the expensive work so progress polling
+            // can read the latest state while the PDF request is running.
+            session()->save();
 
-        $this->updateProgress(40, 'در حال آماده‌سازی اطلاعات کاتالوگ...');
+            if (!$this->catalogDataCacheKey) {
+                throw new \RuntimeException('Catalog preview data key is unavailable.');
+            }
 
-        $data = [
-            'supplierName'       => $this->supplierName,
-            'groupedProducts'    => $this->groupedProducts,
-            'selectedPriceTypes' => $this->selectedPriceTypes,
-            'priceLabels'        => $this->priceLabels,
-            'settings'           => $this->settings,
-            'template'           => $this->template,
-            'separateCategories' => $this->separateCategories,
-            'showCoverPage'      => $this->showCoverPage,
-            'supplierLogoUrl'    => $this->supplierLogoUrl,
-            'supplierLogoPath'   => $this->supplierLogoPath,
-            'forPdf'             => true,
-            'supplier'           => $this->supplier,
-            'contactPhones'      => $this->settings['contact_phones'] ?? [],
-            'globalAttribute'    => $this->settings['global_attribute'] ?? null,
-            'coverTheme'         => $this->settings['cover_theme'] ?? 'default',
-            'catalogFont'        => $this->settings['catalog_font'] ?? $this->settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir',
-            'includeWarranty'    => $this->includeWarranty ?? false, // ✅ نمایش قیمت با گارانتی
-        ];
-        
-        $this->updateProgress(45, 'در حال آماده‌سازی قالب PDF...');
-        
-        // آزاد کردن session برای جلوگیری از timeout
-        session()->save();
-        
-        $this->updateProgress(50, 'در حال رندر کردن صفحات PDF...');
-        
-        // دریافت فونت کاتالوگ
-        $catalogFont = $this->settings['catalog_font'] ?? $this->settings['custom_cover_table']['settings']['catalog_font'] ?? 'vazir';
-        
-        $pdf = PDF::loadView($view, $data, [], [
-            'format'        => 'A4',
-            'margin_left'   => 6,
-            'margin_right'  => 6,
-            'margin_top'    => 6,
-            'margin_bottom' => 6,
-            'mode'          => 'utf-8',
-            'default_font'  => $catalogFont, // اعمال فونت انتخابی
-        ]);
-        
-        $this->updateProgress(75, 'در حال پردازش فایل PDF...');
-        
-        // تولید خروجی PDF
-        $pdfOutput = $pdf->output();
-        
-        $this->updateProgress(90, 'در حال نهایی‌سازی کاتالوگ...');
-        
-        $this->updateProgress(100, 'کاتالوگ آماده است!');
-        
-        // پاک کردن progress بعد از 2 ثانیه
-        sleep(2);
-        $this->clearProgress();
-        
-        return response()->streamDownload(function () use ($pdfOutput) {
-            echo $pdfOutput;
-        }, $fileName);
+            // Reuse the preview snapshot when it is still available so normal
+            // downloads do not query and regroup every product again.
+            $catalogSnapshot = Cache::get($this->catalogDataCacheKey);
+            if (!is_array($catalogSnapshot) || !isset($catalogSnapshot['grouped_products'])) {
+                $this->updateProgress(8, 'پیش‌نمایش قدیمی شده؛ در حال تازه‌سازی اطلاعات...');
+                $this->refreshCurrencyDisplayState();
+            }
+
+            if (($this->settings['price_display_currency'] ?? 'toman') === 'supplier'
+                && $this->displayCurrencyCode === null) {
+                throw new \RuntimeException('Supplier currency is unavailable for this catalog.');
+            }
+
+            if (!is_array($catalogSnapshot) || !isset($catalogSnapshot['grouped_products'])) {
+                $catalogSnapshot = $this->loadCatalogData($supplierId);
+            }
+
+            if ($this->catalogSnapshotBusy) {
+                $message = 'پیش‌نمایش کاتالوگ در حال آماده‌سازی است؛ چند ثانیهٔ دیگر دوباره تلاش کنید.';
+                $this->updateProgress(0, $message, 'failed');
+                $this->addError('pdfExport', $message);
+
+                return null;
+            }
+
+            if (!is_array($catalogSnapshot) || !isset($catalogSnapshot['grouped_products'])) {
+                throw new \RuntimeException('Catalog preview data could not be refreshed.');
+            }
+
+            $this->applyCatalogSnapshotWarning($catalogSnapshot);
+
+            $groupedProducts = $catalogSnapshot['grouped_products'];
+            $productCount = array_sum(array_map('count', $groupedProducts));
+            $priceTypesById = \App\Models\PriceType::query()
+                ->active()
+                ->ordered()
+                ->get(['id', 'code', 'name'])
+                ->mapWithKeys(static fn (\App\Models\PriceType $priceType): array => [
+                    (int) $priceType->id => [
+                        'code' => (string) $priceType->code,
+                        'name' => (string) $priceType->name,
+                    ],
+                ])
+                ->all();
+
+            $data = [
+                'supplierName' => $this->supplierName,
+                'groupedProducts' => $groupedProducts,
+                'selectedPriceTypes' => app(\App\Services\CatalogPriceTypeSelection::class)
+                    ->normalizeForPdf($this->selectedPriceTypes, $priceTypesById),
+                'priceLabels' => $this->priceLabels,
+                'settings' => $this->settings,
+                'template' => $this->template,
+                'separateCategories' => $this->separateCategories,
+                'showCoverPage' => $this->showCoverPage,
+                'supplierLogoUrl' => $this->supplierLogoUrl,
+                'supplierLogoPath' => $this->supplierLogoPath,
+                'forPdf' => true,
+                'supplier' => $this->supplier,
+                'contactPhones' => $this->settings['contact_phones'] ?? [],
+                'globalAttribute' => $this->settings['global_attribute'] ?? null,
+                'coverTheme' => $this->settings['cover_theme'] ?? 'default',
+                'catalogFont' => $this->settings['catalog_font']
+                    ?? $this->settings['custom_cover_table']['settings']['catalog_font']
+                    ?? 'vazir',
+                'includeWarranty' => $this->includeWarranty ?? false,
+                'displayCurrencyCode' => $this->displayCurrencyCode,
+                'exchangeRateBasis' => $this->exchangeRateBasis,
+                'currencySnapshotWarning' => $this->currencySnapshotWarning,
+                'priceFormatter' => app(\App\Services\CatalogPriceFormatter::class),
+                'priceTypesById' => $priceTypesById,
+            ];
+
+            $this->updateProgress(35, 'در حال آماده‌سازی قالب PDF...');
+
+            $options = [
+                'format' => 'A4',
+                'margin_left' => 6,
+                'margin_right' => 6,
+                'margin_top' => 6,
+                'margin_bottom' => 6,
+                'mode' => 'utf-8',
+                'default_font' => $data['catalogFont'],
+            ];
+
+            $this->updateProgress(50, 'در حال رندر کردن صفحات PDF...');
+            $bladeStartedAt = microtime(true);
+            $html = view($view, $data)->render();
+            $bladeDurationMs = (int) round((microtime(true) - $bladeStartedAt) * 1000);
+            \Log::info('Catalog PDF Blade render completed.', [
+                'format' => $format,
+                'product_count' => $productCount,
+                'duration_ms' => $bladeDurationMs,
+                'html_bytes' => strlen($html),
+            ]);
+
+            $parseStartedAt = microtime(true);
+            $pdf = PDF::loadHTML($html, $options);
+            \Log::info('Catalog PDF HTML parse completed.', [
+                'format' => $format,
+                'product_count' => $productCount,
+                'duration_ms' => (int) round((microtime(true) - $parseStartedAt) * 1000),
+            ]);
+
+            $this->updateProgress(75, 'در حال ساخت فایل PDF...');
+            $outputStartedAt = microtime(true);
+            $pdfOutput = $pdf->output();
+            \Log::info('Catalog PDF engine output completed.', [
+                'format' => $format,
+                'product_count' => $productCount,
+                'duration_ms' => (int) round((microtime(true) - $outputStartedAt) * 1000),
+                'file_bytes' => strlen($pdfOutput),
+            ]);
+
+            $disk = \Illuminate\Support\Facades\Storage::disk('local');
+            $downloadDirectory = 'catalog-pdf-downloads';
+            $disk->makeDirectory($downloadDirectory);
+
+            $this->pdfDownloadToken = (string) Str::uuid();
+            $downloadPath = $downloadDirectory . '/' . $this->pdfDownloadToken . '.pdf';
+            if (!$disk->put($downloadPath, $pdfOutput)) {
+                throw new \RuntimeException('Catalog PDF could not be staged for browser download.');
+            }
+
+            \Illuminate\Support\Facades\Cache::store('file')->put(
+                'catalog_pdf_download_' . $this->pdfDownloadToken,
+                [
+                    'user_id' => (int) Auth::id(),
+                    'filename' => $fileName,
+                ],
+                now()->addMinutes(10),
+            );
+
+            $this->updateProgress(100, 'کاتالوگ آمادهٔ دانلود است.', 'completed');
+            \Log::info('Catalog PDF synchronous export completed.', [
+                'format' => $format,
+                'product_count' => $productCount,
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'file_bytes' => strlen($pdfOutput),
+            ]);
+
+            return redirect()->route('catalog.pdf.download', [
+                'token' => $this->pdfDownloadToken,
+            ]);
+        } catch (\Throwable $exception) {
+            $this->updateProgress(0, 'ساخت PDF ناموفق بود. دوباره تلاش کنید.', 'failed');
+            \Log::error('Catalog PDF synchronous export failed.', [
+                'format' => $format,
+                'product_count' => $productCount,
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'exception' => $exception,
+            ]);
+            report($exception);
+            $this->addError('pdfExport', 'ساخت PDF ناموفق بود. دوباره تلاش کنید.');
+
+            return null;
+        } finally {
+            $this->enableProgress = false;
+        }
     }
 
     public function render()
     {
-        return view('livewire.supplier.catalog.preview')
+        $this->refreshCurrencyDisplayState();
+        $supplierId = $this->authenticatedUserIsAdmin() ? null : $this->authorizedSupplierScope();
+        $this->refreshCatalogSnapshotIfStale($supplierId);
+        $catalogData = $this->catalogDataCacheKey
+            ? (Cache::get($this->catalogDataCacheKey) ?? [])
+            : [];
+        if (isset($catalogData['grouped_products'])) {
+            $this->applyCatalogSnapshotWarning($catalogData);
+        }
+
+        return view('livewire.supplier.catalog.preview', [
+            'priceFormatter' => app(\App\Services\CatalogPriceFormatter::class),
+            'groupedProducts' => $catalogData['grouped_products'] ?? [],
+            'priceTypesById' => $catalogData['price_types_by_id'] ?? [],
+            'previewDataExpired' => !isset($catalogData['grouped_products']),
+            'catalogSnapshotBusy' => $this->catalogSnapshotBusy,
+        ])
             ->layout('components.layouts.blank');
+    }
+
+    public function retryCatalogSnapshot(): void
+    {
+        $this->authorizeCurrentTemplate();
+        $this->refreshCurrencyDisplayState();
+        $this->catalogSnapshotBusy = false;
+        $this->loadCatalogData($this->authorizedSupplierScope());
     }
     
     /**
@@ -786,12 +1232,25 @@ class Preview extends Component
      */
     public function clearCatalogCache()
     {
-        $supplierId = $this->isAdmin ? null : $this->supplier->id;
+        $this->authorizeCurrentTemplate();
+
+        if ($this->catalogSnapshotBusy) {
+            $this->dispatch('notify', [
+                'type' => 'warning',
+                'message' => 'پیش‌نمایش در حال آماده‌سازی است؛ پس از پایان، دوباره بروزرسانی کنید.',
+            ]);
+
+            return;
+        }
+
+        $supplierId = $this->authorizedSupplierScope();
+
+        $this->refreshCurrencyDisplayState();
         
         // پاک کردن کش با استفاده از версینینگ
         // یک کلید نسخه جدید می‌سازیم که کلید کش را تغییر دهد
         $versionKey = 'catalog_version_' . $this->template->id;
-        $newVersion = now()->timestamp;
+        $newVersion = (string) Str::uuid();
         Cache::put($versionKey, $newVersion, now()->addDays(30));
         
         // رفرش داده‌ها - چون کلید کش تغییر کرده، داده‌های جدید بارگذاری می‌شوند

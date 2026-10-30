@@ -945,6 +945,7 @@ class Create extends Component
 
         $product->galleries()->where('file_type', 'image')->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id')
             ->get()->each(fn ($gallery, $index) => $gallery->update(['sort_order' => $index + 1, 'is_primary' => $index === 0]));
+        app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
 
         if ($this->isEdit) {
             $product->markContentUpdated();

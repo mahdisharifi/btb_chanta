@@ -29,6 +29,7 @@ use App\Policies\SeoPagePolicy;
 use App\Policies\SupplierPolicy;
 use App\Policies\UserPolicy;
 use App\Services\PriceVisibilityService;
+use App\Services\CatalogSnapshotRevisionService;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -38,7 +39,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->scoped(CatalogSnapshotRevisionService::class);
     }
 
     public function boot(): void
@@ -91,6 +92,15 @@ class AppServiceProvider extends ServiceProvider
         Supplier::observe(SupplierObserver::class);
         Category::observe(\App\Observers\CategoryCatalogObserver::class);
         Product::observe(\App\Observers\CategoryCatalogObserver::class);
+        \App\Models\ProductSupplier::observe(\App\Observers\ProductSupplierCatalogObserver::class);
+        \App\Models\ProductPrice::observe(\App\Observers\ProductPriceCatalogObserver::class);
+        \App\Models\CheckPeriod::observe(\App\Observers\CheckPeriodCatalogObserver::class);
+
+        $catalogSnapshotObserver = \App\Observers\CatalogSnapshotObserver::class;
+        \App\Models\Attribute::observe($catalogSnapshotObserver);
+        \App\Models\AttributeValue::observe($catalogSnapshotObserver);
+        \App\Models\ProductGallery::observe($catalogSnapshotObserver);
+        \App\Models\PriceType::observe($catalogSnapshotObserver);
 
         /*
         |--------------------------------------------------------------------------

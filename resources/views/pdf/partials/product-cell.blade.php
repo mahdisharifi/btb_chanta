@@ -41,35 +41,43 @@
             $sampleWarrantyType = null;
             $sampleWarrantyDuration = null;
             
-            if (is_array($selectedPriceTypes)) {
+            $selectedTypesByTier = is_array($selectedPriceTypes) ? $selectedPriceTypes : [];
+            if ($selectedPriceTypes === 'all') {
+                $selectablePriceTypeIds = array_keys(array_filter(
+                    $priceTypesById,
+                    static fn (array $priceType): bool => ($priceType['code'] ?? null) !== 'warranty'
+                ));
+                $selectedTypesByTier = array_fill_keys([0, 1, 2, 3], $selectablePriceTypeIds);
+            }
+
+            if ($selectedTypesByTier !== []) {
                 // ساختار جدید: ['tier_index' => [price_type_ids]]
                 $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
                 
-                foreach ($selectedPriceTypes as $tierIndex => $priceTypeIds) {
+                foreach ($selectedTypesByTier as $tierIndex => $priceTypeIds) {
                     $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
                     
                     foreach ($priceTypeIds as $priceTypeId) {
-                        // قیمت نقدی یا گارانتی (بدون check_period)
-                        $key = "{$tierIndex}_{$priceTypeId}";
-                        if (isset($product['prices'][$key])) {
-                            $displayPrices[$key] = $product['prices'][$key];
+                        $priceType = $priceTypesById[$priceTypeId] ?? null;
+                        $isCheckType = ($priceType['code'] ?? null) === 'check';
+
+                        if (!$isCheckType) {
+                            // نقدی و قیمت‌های غیرچکی از کلید قیمت پایه خوانده می‌شوند.
+                            $key = "{$tierIndex}_{$priceTypeId}";
+                            if (isset($product['prices'][$key])) {
+                                $displayPrices[$key] = $product['prices'][$key];
+                            } else {
+                                $displayPrices[$key] = [
+                                    'price' => null,
+                                    'tier_index' => $tierIndex,
+                                    'price_type_id' => $priceTypeId,
+                                    'check_period_label' => null,
+                                    'warranty_type' => null,
+                                    'warranty_duration' => null,
+                                    'warranty_price' => 0,
+                                ];
+                            }
                         } else {
-                            // ✅ اگر این قیمت وجود ندارد، placeholder اضافه کن
-                            $priceTypeModel = \App\Models\PriceType::find($priceTypeId);
-                            $displayPrices[$key] = [
-                                'price' => null,
-                                'tier_index' => $tierIndex,
-                                'price_type_id' => $priceTypeId,
-                                'check_period_label' => null,
-                                'warranty_type' => null,
-                                'warranty_duration' => null,
-                                'warranty_price' => 0,
-                            ];
-                        }
-                        
-                        // قیمت‌های چک (اگر نوع = check)
-                        $priceType = \App\Models\PriceType::find($priceTypeId);
-                        if ($priceType && $priceType->code === 'check') {
                             // جستجو برای همه قیمت‌های چک این تیراژ
                             foreach ($product['prices'] as $priceKey => $priceData) {
                                 if (is_array($priceData) 
@@ -101,6 +109,12 @@
             if (($includeWarranty ?? false) && $warrantyPrice > 0) {
                 $finalPrice = $priceValue + $warrantyPrice;
             }
+            $formattedPrice = $priceFormatter->format(
+                $finalPrice,
+                $displayCurrencyCode,
+                is_array($priceData) ? ($priceData['foreign_price_applied_currency'] ?? null) : null,
+                is_array($priceData) ? ($priceData['foreign_price_rate'] ?? null) : null,
+            );
             
             // ✅ تشخیص گارانتی برای محصول
             if ($warrantyType || $warrantyDuration) {
@@ -113,8 +127,7 @@
             $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
             $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
             
-            $priceTypeModel = $priceTypeId ? \App\Models\PriceType::find($priceTypeId) : null;
-            $priceTypeName = $priceTypeModel ? $priceTypeModel->name : "قیمت {$priceTypeId}";
+            $priceTypeName = $priceTypesById[$priceTypeId]['name'] ?? "قیمت {$priceTypeId}";
             
             if ($checkPeriodLabel) {
                 $label = "{$tierName} - {$checkPeriodLabel}";
@@ -127,8 +140,8 @@
                 {{ $label }}
             </td>
             <td class="price-value">
-                @if($finalPrice)
-                    {{ number_format($finalPrice) }}
+                @if($formattedPrice)
+                    {{ $formattedPrice }}
                 @else
                     <span class="price-empty">---</span>
                 @endif

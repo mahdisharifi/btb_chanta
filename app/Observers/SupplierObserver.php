@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Supplier;
+use App\Services\CatalogSnapshotRevisionService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -19,6 +20,7 @@ class SupplierObserver
      */
     public function created(Supplier $supplier): void
     {
+        app(CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
         $this->clearSupplierCaches();
         
         Log::info('Supplier created, cache cleared', [
@@ -32,6 +34,7 @@ class SupplierObserver
      */
     public function updated(Supplier $supplier): void
     {
+        app(CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
         $this->clearSupplierCaches();
         
         // اگر استان یا شهر تغییر کرد، لیست provinces هم باید بروز شود
@@ -50,6 +53,7 @@ class SupplierObserver
      */
     public function deleted(Supplier $supplier): void
     {
+        app(CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
         $this->clearSupplierCaches();
         $this->clearGeographyCaches();
         
@@ -64,6 +68,7 @@ class SupplierObserver
      */
     public function restored(Supplier $supplier): void
     {
+        app(CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
         $this->clearSupplierCaches();
         
         Log::info('Supplier restored, cache cleared', [
@@ -76,6 +81,7 @@ class SupplierObserver
      */
     public function forceDeleted(Supplier $supplier): void
     {
+        app(CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
         $this->clearSupplierCaches();
         $this->clearGeographyCaches();
         

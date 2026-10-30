@@ -132,7 +132,7 @@ class FastPricing extends Component
             }
 
             app(\App\Services\ProductPriceRevisionService::class)
-                ->increment((int) $productSupplier->product_id);
+                ->increment((int) $productSupplier->product_id, (int) $productSupplier->supplier_id);
             DB::commit();
 
             \App\Jobs\BroadcastSupplierProductPrices::dispatch(

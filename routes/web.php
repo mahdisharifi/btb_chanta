@@ -4,6 +4,7 @@ use App\Http\Controllers\PaymentCallbackController;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use App\Http\Controllers\Web\HomeController;
 use App\Http\Controllers\Web\ProductController;
 use App\Http\Controllers\Web\ProductPriceSnapshotController;
@@ -275,8 +276,61 @@ Volt::route('/test-volt', 'test-page')->name('test.volt');
 Route::any('/payment/verify', [PaymentController::class, 'verify'])->name('payment.verify');
 Route::get('/payment/callback', [PaymentCallbackController::class, 'verify'])->name('payment.callback');
 
-// Catalog Progress Tracking (استفاده از Cache به جای Session)
-Route::middleware(['auth'])->get('/catalog/progress/{key}', function ($key) {
-    $progress = \Illuminate\Support\Facades\Cache::get($key, ['percent' => 0, 'message' => 'آماده‌سازی...']);
+// Catalog Progress Tracking (uses the same file cache store as the Livewire action).
+Route::middleware(['auth', 'throttle:30,1'])->get('/catalog/pdf-download/{token}', function (string $token) {
+    abort_unless(preg_match('/\A[0-9a-f-]{36}\z/iD', $token) === 1, 404);
+
+    $cacheKey = 'catalog_pdf_download_' . $token;
+    $cache = \Illuminate\Support\Facades\Cache::store('file');
+
+    try {
+        return $cache->lock($cacheKey . ':claim', 30)->block(5, function () use ($cache, $cacheKey, $token) {
+            $download = $cache->get($cacheKey);
+            abort_unless(
+                is_array($download)
+                    && (int) ($download['user_id'] ?? 0) === (int) auth()->id(),
+                404,
+            );
+
+            $filename = $download['filename'] ?? null;
+            abort_unless(
+                is_string($filename)
+                    && preg_match('/\A(?:catalog|list)-[0-9-]+\.pdf\z/iD', $filename) === 1,
+                404,
+            );
+
+            $relativePath = 'catalog-pdf-downloads/' . $token . '.pdf';
+            $disk = \Illuminate\Support\Facades\Storage::disk('local');
+            abort_unless($disk->exists($relativePath), 404);
+
+            // Claim the one-time token before releasing the lock so concurrent requests cannot both pass.
+            $cache->forget($cacheKey);
+
+            return response()->download(
+                $disk->path($relativePath),
+                $filename,
+                ['Content-Type' => 'application/pdf'],
+            )->deleteFileAfterSend(true);
+        });
+    } catch (LockTimeoutException) {
+        return response('درخواست دانلود هم‌زمان در حال پردازش است؛ دوباره تلاش کنید.', 429)
+            ->header('Retry-After', '1');
+    }
+})->name('catalog.pdf.download');
+
+Route::middleware(['auth'])->get('/catalog/progress/{key}', function (string $key) {
+    $progress = \Illuminate\Support\Facades\Cache::store('file')->get($key);
+
+    if (!is_array($progress)) {
+        return response()->json([
+            'percent' => 0,
+            'message' => 'در حال شروع ساخت PDF...',
+            'status' => 'pending',
+        ], 202);
+    }
+
+    abort_unless((int) ($progress['user_id'] ?? 0) === (int) auth()->id(), 404);
+    unset($progress['user_id']);
+
     return response()->json($progress);
 })->name('catalog.progress');

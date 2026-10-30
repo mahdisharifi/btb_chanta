@@ -119,6 +119,7 @@ class ProductCompletionPublisher
         }
 
         $product->attributeValues()->sync($syncData);
+        app(CatalogSnapshotRevisionService::class)->invalidateGlobal();
     }
 
     private function scopeAllows(ProductCompletionTask $task, string $key): bool

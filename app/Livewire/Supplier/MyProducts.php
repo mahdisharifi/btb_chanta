@@ -25,6 +25,7 @@ class MyProducts extends Component
 
         if ($supplier) {
             $supplier->products()->detach($productId);
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
             session()->flash('message', 'محصول با موفقیت از لیست شما حذف شد.');
         }
     }

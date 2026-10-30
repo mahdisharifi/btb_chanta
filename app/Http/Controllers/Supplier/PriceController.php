@@ -91,6 +91,8 @@ class PriceController extends Controller
             $product->prices()->create($priceData);
         }
 
+        app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
+
         return back()->with('success', 'قیمت‌های محصول با موفقیت به‌روزرسانی شد.');
     }
 
@@ -121,6 +123,8 @@ class PriceController extends Controller
                 );
             }
         }
+
+        app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
 
         return back()->with('success', 'قیمت‌ها با موفقیت به‌روزرسانی شد.');
     }

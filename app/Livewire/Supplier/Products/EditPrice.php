@@ -563,6 +563,7 @@ class EditPrice extends Component
         abort_unless((int) $this->productSupplier->supplier_id === $supplierId, 403, 'شما مجاز به ویرایش این محصول نیستید.');
 
         $saved = DB::transaction(function () use ($supplierId): bool {
+            return app(\App\Services\CatalogSnapshotRevisionService::class)->batch(function () use ($supplierId): bool {
             $lockedSupplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
             if ($lockedSupplier->pricing_currency !== $this->priceCurrency
                 || (int) $lockedSupplier->pricing_currency_revision !== $this->pricingCurrencyRevision) {
@@ -800,9 +801,10 @@ class EditPrice extends Component
                 }
             }
             app(\App\Services\ProductPriceRevisionService::class)
-                ->increment((int) $lockedProductSupplier->product_id);
+                ->increment((int) $lockedProductSupplier->product_id, (int) $lockedProductSupplier->supplier_id);
 
             return true;
+            });
         }, 3);
 
         if (!$saved) {

@@ -153,7 +153,6 @@
     </style>
 </head>
 <body>
-
 {{-- فراخوانی کاور در صورت فعال بودن تنظیمات --}}
 @if($showCoverPage)
 @switch($coverTheme ?? 'default')
@@ -166,6 +165,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
         @break
     
@@ -178,6 +179,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
         @break
     
@@ -190,6 +193,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
         @break
     
@@ -204,6 +209,8 @@
                 'catalogTitle'     => $template->title ?? null,
                 'supplier'         => $supplier ?? null,
                 'contactPhones'    => $contactPhones ?? [],
+                'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
                 'settings'         => $settings ?? [],
             ])
         @else
@@ -215,6 +222,8 @@
                 'catalogTitle'     => $template->title ?? null,
                 'supplier'         => $supplier ?? null,
                 'contactPhones'    => $contactPhones ?? [],
+                'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
                 'settings'         => $settings ?? [],
             ])
         @endif
@@ -229,6 +238,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
 @endswitch
 
@@ -250,6 +261,11 @@
 <pagebreak />
 @endif
 
+@else
+    @include('pdf.partials.exchange-rate-basis-summary', [
+        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+        'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
+    ])
 @endif
 
 @forelse($groupedProducts as $categoryName => $products)

@@ -53,7 +53,7 @@
     </script>
 
     <!-- Progress Modal -->
-    <div id="progressModal" class="fixed inset-0 z-[9999] items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+    <div id="progressModal" role="dialog" aria-modal="true" aria-labelledby="progressTitle" aria-describedby="progressMessage" tabindex="-1" class="fixed inset-0 z-[9999] items-center justify-center bg-black/50 backdrop-blur-sm outline-none hidden">
         <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4 transform transition-all">
             
             <!-- Header -->
@@ -63,156 +63,254 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                     </svg>
                 </div>
-                <h3 class="text-xl font-bold text-gray-900">در حال تولید کاتالوگ</h3>
-                <p id="progressMessage" class="text-sm text-gray-500 mt-2">آماده‌سازی...</p>
+                <h3 id="progressTitle" class="text-xl font-bold text-gray-900">در حال تولید کاتالوگ</h3>
+                <p id="progressMessage" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-500 mt-2">آماده‌سازی...</p>
             </div>
 
             <!-- Progress Bar -->
             <div class="relative">
                 <!-- Background -->
-                <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div id="progressBar" role="progressbar" aria-label="درصد پیشرفت ساخت PDF" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" class="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <!-- Progress Fill -->
-                    <div id="progressBar" class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 ease-out" style="width: 0%">
+                    <div id="progressFill" class="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 ease-out" style="width: 0%">
                     </div>
                 </div>
                 
                 <!-- Percentage Text -->
                 <div class="mt-3 flex items-center justify-between">
-                    <span id="progressPercent" class="text-2xl font-bold text-gray-900">0%</span>
+                <span id="progressPercent" aria-live="polite" aria-atomic="true" class="text-2xl font-bold text-gray-900">0%</span>
                     <span class="text-sm text-gray-500">لطفاً صبر کنید...</span>
                 </div>
             </div>
 
             <!-- Success Message -->
-            <div id="successMessage" class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg items-center gap-2 hidden">
+            <div id="successMessage" role="status" aria-live="polite" class="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg items-center gap-2 hidden">
                 <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
                 <span class="text-sm text-green-800 font-medium">کاتالوگ با موفقیت آماده شد!</span>
             </div>
+            <div id="errorMessage" class="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 hidden" role="alert"></div>
         </div>
     </div>
 
     <script>
         // Progress Tracker با Vanilla JavaScript
         const ProgressTracker = {
-            isDownloading: false,
             progress: 0,
-            message: 'آماده‌سازی...',
-            intervalId: null,
-            progressKey: '{{ $progressKey }}',
+            pollTimeoutId: null,
+            pollDelayMs: 2000,
+                returnFocusElement: null,
+            progressEndpoint: @js(route('catalog.progress', $progressKey)),
+            progressUrl: null,
+            startedAt: 0,
+            downloadStarted: false,
+            pendingTimeoutMs: 15000,
+            staleProgressTimeoutMs: @js((int) ini_get('max_execution_time') > 0
+                ? (((int) ini_get('max_execution_time') + 10) * 1000)
+                : 300000),
 
             elements: {
                 modal: null,
                 progressBar: null,
+                progressFill: null,
                 progressPercent: null,
                 progressMessage: null,
                 progressIcon: null,
-                successMessage: null
+                successMessage: null,
+                errorMessage: null
             },
 
             init() {
                 this.elements.modal = document.getElementById('progressModal');
                 this.elements.progressBar = document.getElementById('progressBar');
+                this.elements.progressFill = document.getElementById('progressFill');
                 this.elements.progressPercent = document.getElementById('progressPercent');
                 this.elements.progressMessage = document.getElementById('progressMessage');
                 this.elements.progressIcon = document.getElementById('progressIcon');
                 this.elements.successMessage = document.getElementById('successMessage');
+                this.elements.errorMessage = document.getElementById('errorMessage');
             },
 
             startTracking() {
-                console.log('🚀 Progress tracking started with key:', this.progressKey);
                 if (!this.elements.modal) this.init();
-                
-                this.isDownloading = true;
+                if (this.pollTimeoutId) clearTimeout(this.pollTimeoutId);
+
+                this.returnFocusElement = document.activeElement;
+                this.progressUrl = this.progressEndpoint;
+                this.startedAt = Date.now();
+                this.pollDelayMs = 2000;
+                this.downloadStarted = false;
                 this.progress = 0;
-                this.message = 'آماده‌سازی...';
-                
-                // نمایش modal
                 this.elements.modal.classList.remove('hidden');
                 this.elements.modal.classList.add('flex');
                 this.elements.successMessage.classList.add('hidden');
+                this.elements.errorMessage.classList.add('hidden');
                 this.elements.progressIcon.classList.add('animate-spin');
-                
-                // شروع polling هر 500ms
-                this.intervalId = setInterval(() => {
-                    this.fetchProgress();
-                }, 500);
+                this.elements.modal.focus();
+
+                this.fetchProgress();
             },
 
             async fetchProgress() {
                 try {
-                    const response = await fetch(`/catalog/progress/${this.progressKey}`);
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        console.log('📈 Progress:', data.percent + '% -', data.message);
-                        
-                        this.progress = data.percent || 0;
-                        this.message = data.message || 'در حال پردازش...';
-                        
-                        // بروزرسانی UI
-                        this.updateUI();
-                        
-                        // اگر به 100% رسید، بعد از 1.5 ثانیه بسته شود
-                        if (this.progress >= 100) {
-                            console.log('✅ Progress completed!');
-                            this.elements.progressIcon.classList.remove('animate-spin');
-                            this.elements.successMessage.classList.remove('hidden');
-                            this.elements.successMessage.classList.add('flex');
-                            
-                            clearInterval(this.intervalId);
-                            setTimeout(() => {
-                                this.stopTracking();
-                            }, 1500);
+                    const controller = new AbortController();
+                    const requestTimeoutId = setTimeout(() => controller.abort(), 10000);
+                    let response;
+                    let data;
+                    try {
+                        response = await fetch(this.progressUrl, {
+                            credentials: 'same-origin',
+                            headers: { Accept: 'application/json' },
+                            signal: controller.signal,
+                        });
+                        if (response.ok) {
+                            data = await response.json();
                         }
+                    } finally {
+                        clearTimeout(requestTimeoutId);
+                    }
+
+                    if (response.status === 401 || response.status === 404) {
+                        this.showError('وضعیت ساخت PDF منقضی شده است. دوباره خروجی بگیرید.');
+                        return;
+                    }
+
+                    if (!response.ok) throw new Error('PDF progress returned ' + response.status);
+
+                    this.progress = Math.max(0, Math.min(100, Number(data.percent) || 0));
+                    this.elements.progressMessage.textContent = data.message || 'در حال پردازش...';
+                    this.updateUI();
+
+                    const elapsedMs = Date.now() - this.startedAt;
+                    const lastUpdateMs = Number(data.timestamp) > 0
+                        ? Date.now() - Number(data.timestamp) * 1000
+                        : null;
+
+                    if (data.status === 'pending' && elapsedMs > this.pendingTimeoutMs) {
+                        this.showError('ساخت PDF شروع نشد. دوباره تلاش کنید.');
+                        return;
+                    }
+
+                    if (data.status === 'processing'
+                        && lastUpdateMs !== null
+                        && lastUpdateMs > this.staleProgressTimeoutMs) {
+                        this.showError('ساخت PDF متوقف شد یا زمان اجرای سرور به پایان رسید. دوباره تلاش کنید.');
+                        return;
+                    }
+
+                    if (data.status === 'failed') {
+                        this.showError(data.message);
+                        return;
+                    }
+
+                    if (data.status === 'completed' || this.progress >= 100) {
+                        this.complete();
+                        return;
+                    }
+
+                    this.pollDelayMs = Math.min(10000, Math.ceil(this.pollDelayMs * 1.5));
+
+                    if (elapsedMs > this.staleProgressTimeoutMs + 5000) {
+                        this.showError('ساخت PDF بیش از زمان مجاز طول کشید. بعداً دوباره تلاش کنید.');
+                        return;
                     }
                 } catch (error) {
                     console.error('❌ Error fetching progress:', error);
-                    // در صورت خطا، بعد از 3 ثانیه modal را ببند
-                    setTimeout(() => {
-                        this.stopTracking();
-                    }, 3000);
+                    if (error && error.name === 'AbortError' && this.elements.progressMessage) {
+                        this.elements.progressMessage.textContent = 'ارتباط کند است؛ دوباره تلاش می‌کنیم.';
+                    }
+                    this.pollDelayMs = Math.min(10000, Math.ceil(this.pollDelayMs * 1.5));
+                    if (Date.now() - this.startedAt > 60000) {
+                        this.showError('ارتباط با وضعیت ساخت PDF برقرار نشد. دوباره تلاش کنید.');
+                        return;
+                    }
+                }
+
+                if (this.progressUrl) {
+                    this.pollTimeoutId = setTimeout(() => this.fetchProgress(), this.pollDelayMs);
                 }
             },
 
+            complete() {
+                if (this.downloadStarted) return;
+                this.downloadStarted = true;
+                if (this.pollTimeoutId) clearTimeout(this.pollTimeoutId);
+                this.elements.progressIcon.classList.remove('animate-spin');
+                this.elements.successMessage.classList.remove('hidden');
+                this.elements.successMessage.classList.add('flex');
+                this.elements.successMessage.querySelector('span').textContent = 'کاتالوگ با موفقیت آماده شد!';
+                setTimeout(() => this.stopTracking(), 8000);
+            },
+
+            showError(message) {
+                if (!this.elements.modal) this.init();
+                if (this.pollTimeoutId) clearTimeout(this.pollTimeoutId);
+                this.progressUrl = null;
+                this.elements.modal.classList.remove('hidden');
+                this.elements.modal.classList.add('flex');
+                this.elements.successMessage.classList.add('hidden');
+                this.elements.progressIcon.classList.remove('animate-spin');
+                this.elements.errorMessage.textContent = message || 'ساخت PDF ناموفق بود. دوباره تلاش کنید.';
+                this.elements.errorMessage.classList.remove('hidden');
+                setTimeout(() => this.stopTracking(), 6000);
+            },
+
             updateUI() {
-                if (this.elements.progressBar) {
-                    this.elements.progressBar.style.width = this.progress + '%';
+                if (this.elements.progressFill) {
+                    this.elements.progressFill.style.width = this.progress + '%';
                 }
                 if (this.elements.progressPercent) {
                     this.elements.progressPercent.textContent = this.progress + '%';
                 }
-                if (this.elements.progressMessage) {
-                    this.elements.progressMessage.textContent = this.message;
+                if (this.elements.progressBar) {
+                    this.elements.progressBar.setAttribute('aria-valuenow', String(this.progress));
                 }
             },
 
             stopTracking() {
-                console.log('🛑 Progress tracking stopped');
-                if (this.intervalId) {
-                    clearInterval(this.intervalId);
+                if (this.pollTimeoutId) {
+                    clearTimeout(this.pollTimeoutId);
                 }
-                this.isDownloading = false;
-                this.progress = 0;
-                
-                // مخفی کردن modal
+                this.pollTimeoutId = null;
+                this.progressUrl = null;
+
                 if (this.elements.modal) {
                     this.elements.modal.classList.remove('flex');
                     this.elements.modal.classList.add('hidden');
                 }
+
+                if (this.returnFocusElement?.isConnected && !this.returnFocusElement.disabled) {
+                    this.returnFocusElement.focus();
+                }
+                this.returnFocusElement = null;
             }
         };
 
-        // تابع global برای شروع tracking
-        window.startProgressTracking = function() {
-            ProgressTracker.startTracking();
-        };
+        window.startProgressTracking = () => ProgressTracker.startTracking();
 
-        // Initialize وقتی صفحه لود شد
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Tab' || !ProgressTracker.elements.modal) return;
+            if (ProgressTracker.elements.modal.classList.contains('hidden')) return;
+
+            event.preventDefault();
+            ProgressTracker.elements.modal.focus();
+        });
+
+        document.addEventListener('livewire:init', () => {
+            Livewire.hook('request', ({ fail }) => {
+                fail(({ status }) => {
+                    if (!ProgressTracker.progressUrl) return;
+
+                    ProgressTracker.showError(status === 503
+                        ? 'ارتباط با سرور قطع شد. دوباره تلاش کنید.'
+                        : 'ساخت PDF با خطای سرور متوقف شد. دوباره تلاش کنید.');
+                });
+            });
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
             ProgressTracker.init();
-            console.log('✅ Progress Tracker initialized');
         });
     </script>
 
@@ -253,23 +351,24 @@
     <!-- نوار ابزار (در زمان چاپ مخفی می‌شود) -->
     <div class="print:hidden sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
         <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center gap-4">
-                    <a href="{{ route('supplier.catalog.index') }}" class="text-gray-500 hover:text-gray-700 transition-colors inline-flex items-center gap-1">
+            <div class="flex flex-col gap-2 py-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:py-0 lg:h-16">
+                <div class="flex min-w-0 items-center gap-4">
+                    <a href="{{ route('supplier.catalog.index') }}" class="text-gray-500 hover:text-gray-700 transition-colors inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">
                         @svg('heroicon-o-arrow-right', 'w-5 h-5')
                         <span class="text-sm font-medium">بازگشت</span>
                     </a>
                     <div class="h-6 w-px bg-gray-300"></div>
                     <div>
-                        <h1 class="text-lg font-bold text-gray-900 truncate max-w-xs" title="{{ $template->name }}">{{ $template->name }}</h1>
+                        <h1 class="max-w-[10rem] truncate text-lg font-bold text-gray-900 lg:max-w-xs" title="{{ $template->name }}">{{ $template->name }}</h1>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-3">
+                <div class="flex flex-wrap items-center gap-2 lg:gap-3">
                     <button 
                         wire:click="clearCatalogCache"
                         wire:loading.attr="disabled"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-sm font-medium text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-50"
+                        @disabled($catalogSnapshotBusy)
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-sm font-medium text-orange-700 hover:bg-orange-50 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2"
                         title="اگر اطلاعات کاتالوگ به‌روز نیست، این دکمه را بزنید">
                         @svg('heroicon-o-arrow-path', 'w-5 h-5 text-orange-500')
                         <span wire:loading.remove wire:target="clearCatalogCache">بروزرسانی داده‌ها</span>
@@ -282,20 +381,24 @@
                         </span>
                     </button>
                     <button 
+                        id="downloadPdf2Btn"
                         onclick="window.startProgressTracking()"
                         wire:click="downloadPdf2" 
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                        wire:loading.attr="disabled"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">
                         @svg('heroicon-o-document-arrow-down', 'w-5 h-5 text-gray-500')
                         PDF(کاتالوگ)
                     </button>
                     <button 
+                        id="downloadPdfBtn"
                         onclick="window.startProgressTracking()"
                         wire:click="downloadPdf" 
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                        wire:loading.attr="disabled"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">
                         @svg('heroicon-o-document-arrow-down', 'w-5 h-5 text-gray-500')
                         PDF(لیست)
                     </button>
-                    <button onclick="window.print()" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 border border-transparent rounded-lg text-sm font-medium text-white hover:bg-indigo-700 transition-colors">
+                    <button onclick="window.print()" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 border border-transparent rounded-lg text-sm font-medium text-white hover:bg-indigo-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2">
                         @svg('heroicon-o-printer', 'w-5 h-5')
                         چاپ
                     </button>
@@ -303,6 +406,35 @@
             </div>
         </div>
     </div>
+
+    @error('pdfExport')
+        <div class="max-w-6xl mx-auto mt-3 px-4 sm:px-6 lg:px-8" role="alert">
+            <div class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800">{{ $message }}</div>
+        </div>
+    @enderror
+
+    @if(($settings['price_display_currency'] ?? 'toman') === 'supplier' && !$displayCurrencyCode)
+        <div class="mx-auto mt-4 max-w-6xl rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert">
+            ارز پایهٔ کاتالوگ قابل تشخیص نیست. برای نمایش ارزی باید دقیقاً یک تأمین‌کننده با ارز پایهٔ دلار، یوان یا درهم انتخاب شود.
+        </div>
+    @elseif($currencySnapshotWarning && ($showCoverPage || empty($exchangeRateBasis)))
+        <div class="mx-auto mt-4 max-w-6xl rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert">
+            نرخ ذخیره‌شدهٔ بعضی کالاها با نرخ تنظیم‌شده یکسان نیست یا معتبر نیست؛ مبلغ فقط با نرخ ذخیره‌شدهٔ معتبر و هم‌ارز نمایش داده می‌شود و در غیر این صورت ناموجود است.
+        </div>
+    @endif
+
+    @if(!$showCoverPage && !empty($exchangeRateBasis))
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        @include('pdf.partials.exchange-rate-basis-summary', [
+            'exchangeRateBasis' => $exchangeRateBasis,
+            'currencySnapshotWarning' => $currencySnapshotWarning,
+        ])
+        </div>
+    @endif
+
+    @error('priceDisplayCurrency')
+        <div class="mx-auto mt-4 max-w-6xl rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800" role="alert">{{ $message }}</div>
+    @enderror
 
     <!-- محتوای اصلی کاتالوگ -->
     <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 print:p-0 print:m-0 print:max-w-full print:w-full">
@@ -316,6 +448,8 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
+                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'currencySnapshotWarning' => false,
                     ])
                     @break
                 
@@ -326,6 +460,8 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
+                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'currencySnapshotWarning' => false,
                     ])
                     @break
                 
@@ -336,6 +472,8 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
+                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'currencySnapshotWarning' => false,
                     ])
                     @break
                 
@@ -349,6 +487,8 @@
                             'catalogTitle' => $template->title ?? null,
                             'supplier' => $supplier,
                             'contactPhones' => $settings['contact_phones'] ?? [],
+                            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                            'currencySnapshotWarning' => false,
                             'settings' => $settings,
                             'forPdf' => false,
                         ])
@@ -359,6 +499,8 @@
                             'catalogTitle' => $template->title ?? null,
                             'supplier' => $supplier,
                             'contactPhones' => $settings['contact_phones'] ?? [],
+                            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                            'currencySnapshotWarning' => false,
                             'settings' => $settings,
                         ])
                     @endif
@@ -372,6 +514,8 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
+                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'currencySnapshotWarning' => false,
                     ])
             @endswitch
             
@@ -470,8 +614,8 @@
                                             }
                                             
                                             // قیمت‌های چک (اگر نوع = check)
-                                            $priceType = \App\Models\PriceType::find($priceTypeId);
-                                            if ($priceType && $priceType->code === 'check') {
+                                            $priceType = $priceTypesById[(int) $priceTypeId] ?? null;
+                                            if (($priceType['code'] ?? null) === 'check') {
                                                 // جستجو برای همه قیمت‌های چک این تیراژ
                                                 foreach ($product['prices'] as $priceKey => $priceData) {
                                                     if (is_array($priceData) 
@@ -503,13 +647,19 @@
                                 if ($includeWarranty && $warrantyPrice > 0) {
                                     $finalPrice = $priceValue + $warrantyPrice;
                                 }
+                                $formattedPrice = $priceFormatter->format(
+                                    $finalPrice,
+                                    $displayCurrencyCode,
+                                    is_array($priceData) ? ($priceData['foreign_price_applied_currency'] ?? null) : null,
+                                    is_array($priceData) ? ($priceData['foreign_price_rate'] ?? null) : null,
+                                );
                                 
                                 // تولید label
                                 $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
                                 $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
                                 
-                                $priceTypeModel = $priceTypeId ? \App\Models\PriceType::find($priceTypeId) : null;
-                                $priceTypeName = $priceTypeModel ? $priceTypeModel->name : "قیمت {$priceTypeId}";
+                                $priceType = $priceTypesById[(int) $priceTypeId] ?? null;
+                                $priceTypeName = $priceType['name'] ?? "قیمت {$priceTypeId}";
                                 
                                 if ($checkPeriodLabel) {
                                     $label = "{$tierName} - {$checkPeriodLabel}";
@@ -533,9 +683,9 @@
                                 <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $label }}{{ $warrantyLabel }}">
                                     {{ $label }}{{ $warrantyLabel }}
                                 </span>
-                                <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $finalPrice ? number_format($finalPrice) : '-' }}">
-                                    @if($finalPrice)
-                                        {{ number_format($finalPrice) }}
+                                <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $formattedPrice ?? '-' }}">
+                                    @if($formattedPrice)
+                                        {{ $formattedPrice }}
                                     @else
                                         <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
                                     @endif
@@ -573,6 +723,21 @@
             </div>
 
             @empty
+            @if($catalogSnapshotBusy)
+            <div class="mx-4 mt-8 rounded-xl border border-amber-300 bg-amber-50 px-5 py-8 text-center text-amber-950 print:hidden" role="status" aria-live="polite">
+                <h3 class="text-base font-bold">پیش‌نمایش در حال آماده‌سازی است</h3>
+                <p class="mt-2 text-sm leading-6">درخواست دیگری در حال ساخت همین اطلاعات است. چند ثانیه صبر کنید و دوباره بررسی کنید.</p>
+                <button type="button" wire:click="retryCatalogSnapshot" wire:loading.attr="disabled" class="mt-4 min-h-11 rounded-lg bg-amber-700 px-5 py-2 text-sm font-bold text-white hover:bg-amber-800 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800">
+                    <span wire:loading.remove wire:target="retryCatalogSnapshot">بررسی دوباره</span>
+                    <span wire:loading wire:target="retryCatalogSnapshot">در حال بررسی…</span>
+                </button>
+            </div>
+            @elseif($previewDataExpired)
+            <div class="mx-4 mt-8 rounded-xl border border-amber-300 bg-amber-50 px-5 py-8 text-center text-amber-950 print:hidden" role="status">
+                <h3 class="text-base font-bold">پیش‌نمایش این کاتالوگ منقضی شده است</h3>
+                <p class="mt-2 text-sm leading-6">برای بارگذاری دوبارهٔ محصولات، دکمهٔ «بروزرسانی داده‌ها» را بزنید.</p>
+            </div>
+            @else
             <div class="py-20 text-center flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl print:hidden mx-4 mt-8">
                 <div class="bg-gray-100 p-4 rounded-full mb-4">
                     @svg('heroicon-o-inbox', 'w-10 h-10 text-gray-400')
@@ -580,6 +745,7 @@
                 <h3 class="text-lg font-bold text-gray-900">محصولی یافت نشد</h3>
                 <p class="text-gray-500 mt-2">محصولی با تنظیمات فعلی (دسته‌بندی یا فیلترهای اعمال شده) برای نمایش وجود ندارد.</p>
             </div>
+            @endif
             @endforelse
 
         </div>

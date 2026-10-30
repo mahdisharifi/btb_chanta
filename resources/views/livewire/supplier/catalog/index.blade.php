@@ -446,6 +446,30 @@
                                 </div>
                                 @endif
                                 
+                                {{-- واحد نمایش تمام قیمت‌های انتخاب‌شده در کاتالوگ --}}
+                                <fieldset class="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4" dir="rtl">
+                                    <legend class="px-2 font-bold text-gray-800">واحد نمایش قیمت‌های کاتالوگ</legend>
+                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <label for="priceDisplayCurrencyToman" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500">
+                                            <input id="priceDisplayCurrencyToman" type="radio" wire:model="priceDisplayCurrency" value="toman" class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-medium text-gray-800">تومان (نمایش فعلی)</span>
+                                        </label>
+                                        <label for="priceDisplayCurrencySupplier" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500 {{ !$this->supplierCurrencyLabel && $priceDisplayCurrency !== 'supplier' ? 'opacity-60' : '' }}">
+                                            <input id="priceDisplayCurrencySupplier" type="radio" wire:model="priceDisplayCurrency" value="supplier" @disabled(!$this->supplierCurrencyLabel && $priceDisplayCurrency !== 'supplier') class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-medium text-gray-800">
+                                                ارز پایه تأمین‌کننده{{ $this->supplierCurrencyLabel ? ' (' . $this->supplierCurrencyLabel . ')' : '' }}
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <p class="mt-2 text-xs leading-6 text-gray-600">
+                                        در حالت ارزی، همهٔ قیمت‌های چاپ‌شده با نرخ اعمال‌شدهٔ همان محصول تبدیل و با نام ارز درج می‌شوند. اگر نرخ اعمال‌شده‌ای برای محصول موجود نباشد، مبلغ ارزی آن محصول چاپ نمی‌شود.
+                                    </p>
+                                    @if(!$this->supplierCurrencyLabel)
+                                        <p class="mt-1 text-xs text-amber-700">{{ $this->supplierCurrencyUnavailableMessage() }}</p>
+                                    @endif
+                                    <x-input-error :messages="$errors->get('priceDisplayCurrency')" class="mt-2" />
+                                </fieldset>
+
                                 {{-- ✅ نمایش قیمت‌های با گارانتی --}}
                                 <div class="mt-3 p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
                                     <div class="flex items-start gap-3">

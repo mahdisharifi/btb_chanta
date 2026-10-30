@@ -307,6 +307,51 @@ class CheckPeriod extends Model
             });
     }
 
+    /**
+     * Load enabled check periods for several suppliers with one query.
+     * The result includes resolved_supplier_id for grouping by supplier.
+     *
+     * @param array<int, int|string> $supplierIds
+     */
+    public static function getActiveForSuppliers(array $supplierIds): \Illuminate\Support\Collection
+    {
+        $supplierIds = array_values(array_unique(array_filter(
+            array_map('intval', $supplierIds),
+            static fn (int $supplierId): bool => $supplierId > 0,
+        )));
+
+        if ($supplierIds === []) {
+            return collect();
+        }
+
+        return static::query()
+            ->select(
+                'check_periods.*',
+                'scp.supplier_id as resolved_supplier_id',
+                'scp.percentage_increase',
+                'scp.is_active as pivot_is_active',
+                'scp.label as supplier_label',
+            )
+            ->join('supplier_check_period as scp', 'check_periods.id', '=', 'scp.check_period_id')
+            ->where('check_periods.is_active', true)
+            ->where('scp.is_active', true)
+            ->whereIn('scp.supplier_id', $supplierIds)
+            ->where(function ($query): void {
+                $query->where('check_periods.scope', 'global')
+                    ->orWhereColumn('check_periods.supplier_id', 'scp.supplier_id');
+            })
+            ->orderBy('check_periods.sort_order')
+            ->orderBy('check_periods.days')
+            ->get()
+            ->map(static function ($period) {
+                $period->supplier_percentage = $period->percentage_increase;
+                $period->is_enabled_for_supplier = (bool) $period->pivot_is_active;
+                $period->display_name = $period->supplier_label ?: $period->name;
+
+                return $period;
+            });
+    }
+
     public static function getOptionsForSupplier(?int $supplierId = null): array
     {
         $query = static::active()->ordered();
