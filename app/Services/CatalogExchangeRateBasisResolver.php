@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Supplier;
 use App\Models\SupplierExchangeRateSetting;
+use Illuminate\Support\Collection;
 
 final class CatalogExchangeRateBasisResolver
 {
@@ -22,9 +23,7 @@ final class CatalogExchangeRateBasisResolver
     public function resolve(Supplier $supplier): ?array
     {
         $currency = strtoupper((string) $supplier->pricing_currency);
-        $currencyLabel = self::CURRENCY_LABELS[$currency] ?? null;
-
-        if ($currencyLabel === null) {
+        if (!isset(self::CURRENCY_LABELS[$currency])) {
             return null;
         }
 
@@ -32,6 +31,52 @@ final class CatalogExchangeRateBasisResolver
             ->where('supplier_id', $supplier->id)
             ->where('currency', $currency)
             ->first();
+
+        return $this->formatResolvedBasis($supplier, $currency, $setting);
+    }
+
+    /**
+     * Resolve several suppliers with one settings query, for all-branch catalog
+     * screens where calling resolve() in a loop would create an N+1 query.
+     *
+     * @param iterable<Supplier> $suppliers
+     * @return Collection<int, array|null>
+     */
+    public function resolveMany(iterable $suppliers): Collection
+    {
+        $suppliers = collect($suppliers)->values();
+        $eligible = $suppliers->filter(static function (Supplier $supplier): bool {
+            return isset(self::CURRENCY_LABELS[strtoupper((string) $supplier->pricing_currency)]);
+        });
+
+        $settingsByKey = collect();
+        if ($eligible->isNotEmpty()) {
+            $settingsByKey = SupplierExchangeRateSetting::query()
+                ->whereIn('supplier_id', $eligible->pluck('id')->map(static fn ($id): int => (int) $id)->unique())
+                ->whereIn('currency', $eligible->map(static fn (Supplier $supplier): string => strtoupper((string) $supplier->pricing_currency))->unique())
+                ->get()
+                ->keyBy(static fn (SupplierExchangeRateSetting $setting): string =>
+                    (int) $setting->supplier_id . ':' . strtoupper((string) $setting->currency)
+                );
+        }
+
+        return $suppliers->mapWithKeys(function (Supplier $supplier) use ($settingsByKey): array {
+            $currency = strtoupper((string) $supplier->pricing_currency);
+            $setting = $settingsByKey->get((int) $supplier->id . ':' . $currency);
+
+            return [(int) $supplier->id => $this->formatResolvedBasis($supplier, $currency, $setting)];
+        });
+    }
+
+    private function formatResolvedBasis(
+        Supplier $supplier,
+        string $currency,
+        ?SupplierExchangeRateSetting $setting,
+    ): ?array {
+        $currencyLabel = self::CURRENCY_LABELS[$currency] ?? null;
+        if ($currencyLabel === null) {
+            return null;
+        }
 
         $isAuto = (bool) $setting?->auto_update;
         $rate = $isAuto

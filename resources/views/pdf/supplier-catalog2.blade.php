@@ -90,7 +90,9 @@
             font-size: 10px;
             color: #4b5563;
             text-align: right;
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
 
@@ -268,6 +270,12 @@
     ])
 @endif
 
+@if(($supplier->type ?? null) === 'supplier')
+<div style="text-align: right; color: #4b5563; font-size: 10px; margin: 0 0 10px;">
+    {{ $supplier->company_name }} — {{ $supplier->branchLabel() }}
+</div>
+@endif
+
 @forelse($groupedProducts as $categoryName => $products)
 
 {{-- جداکننده صفحه بین دسته‌ها (به جز اولین دسته) --}}
@@ -307,6 +315,10 @@ $restChunks = array_slice($productChunks, 1);
             'product' => $product,
             'selectedPriceTypes' => $selectedPriceTypes,
             'includeWarranty' => $includeWarranty ?? false,
+            'catalogBranchPriceRows' => $catalogBranchPriceRows,
+            'priceTypesById' => $priceTypesById,
+            'displayCurrencyCode' => $displayCurrencyCode,
+            'priceFormatter' => $priceFormatter,
         ])
         @endforeach
 
@@ -327,6 +339,10 @@ $restChunks = array_slice($productChunks, 1);
             'product' => $product,
             'selectedPriceTypes' => $selectedPriceTypes,
             'includeWarranty' => $includeWarranty ?? false,
+            'catalogBranchPriceRows' => $catalogBranchPriceRows,
+            'priceTypesById' => $priceTypesById,
+            'displayCurrencyCode' => $displayCurrencyCode,
+            'priceFormatter' => $priceFormatter,
         ])
         @endforeach
 

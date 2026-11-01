@@ -98,6 +98,7 @@ class ProductSupplier extends Model
         'auto_calculate_tiers',   // ✅ فعال/غیرفعال محاسبه خودکار
         'tier_percentages',       // ✅ درصدهای تیراژها
         'tier_enabled',           // ✅ وضعیت فعال/غیرفعال تیراژها
+        'branch_price_percentage',
         'notes',
         'activated_at',
         'deactivated_at',
@@ -131,6 +132,7 @@ class ProductSupplier extends Model
             'auto_calculate_tiers'    => 'boolean',     // ✅
             'tier_percentages'        => 'array',       // ✅
             'tier_enabled'            => 'array',       // ✅
+            'branch_price_percentage' => 'decimal:12',
             'activated_at'            => 'datetime',
             'deactivated_at'          => 'datetime',
         ];
@@ -448,21 +450,19 @@ class ProductSupplier extends Model
     }
 
     /**
-     * کمترین قیمت به تومان
+     * کمترین قیمت ذخیره‌شده در ماتریس، به تومان
      */
     public function getLowestPriceTomanAttribute(): ?int
     {
-        $price = $this->lowest_price;
-        return $price !== null ? (int) round($price / 10) : null;
+        return $this->lowest_price;
     }
 
     /**
-     * بالاترین قیمت به تومان
+     * بالاترین قیمت ذخیره‌شده در ماتریس، به تومان
      */
     public function getHighestPriceTomanAttribute(): ?int
     {
-        $price = $this->highest_price;
-        return $price !== null ? (int) round($price / 10) : null;
+        return $this->highest_price;
     }
 
     /**

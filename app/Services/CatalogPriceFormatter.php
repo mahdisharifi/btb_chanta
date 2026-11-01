@@ -15,6 +15,7 @@ final class CatalogPriceFormatter
         ?string $displayCurrency,
         ?string $appliedCurrency = null,
         int|float|string|null $appliedRate = null,
+        bool $currencySnapshotValid = true,
     ): ?string {
         if (!is_numeric($priceToman) || (float) $priceToman <= 0) {
             return null;
@@ -24,7 +25,8 @@ final class CatalogPriceFormatter
             return number_format((float) $priceToman, 0, '.', ',');
         }
 
-        if (!isset(self::CURRENCY_LABELS[$displayCurrency])
+        if (!$currencySnapshotValid
+            || !isset(self::CURRENCY_LABELS[$displayCurrency])
             || $appliedCurrency !== $displayCurrency
             || !is_numeric($appliedRate)
             || (float) $appliedRate <= 0) {

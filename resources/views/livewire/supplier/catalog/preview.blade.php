@@ -1,3 +1,9 @@
+@php
+    $displayExchangeRateBasis = !empty($displayCurrencyCode) && $displayCurrencyCode !== 'TOM'
+        ? ($exchangeRateBasis ?? null)
+        : null;
+@endphp
+
 <div class="min-h-screen bg-gray-50 text-gray-800 font-sans" dir="rtl">
 
     <!-- Notification Toast -->
@@ -415,18 +421,18 @@
 
     @if(($settings['price_display_currency'] ?? 'toman') === 'supplier' && !$displayCurrencyCode)
         <div class="mx-auto mt-4 max-w-6xl rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert">
-            ارز پایهٔ کاتالوگ قابل تشخیص نیست. برای نمایش ارزی باید دقیقاً یک تأمین‌کننده با ارز پایهٔ دلار، یوان یا درهم انتخاب شود.
+            ارز پایهٔ کاتالوگ قابل استفاده نیست؛ ارز پایه و نرخ معتبر همهٔ شعبه‌های انتخاب‌شده باید یکسان باشد. یک شعبه را انتخاب کنید، نرخ ارز شعب را همسان کنید یا نمایش تومان را در تنظیمات برگزینید.
         </div>
-    @elseif($currencySnapshotWarning && ($showCoverPage || empty($exchangeRateBasis)))
+    @elseif($currencySnapshotWarning && ($showCoverPage || empty($displayExchangeRateBasis)))
         <div class="mx-auto mt-4 max-w-6xl rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900" role="alert">
             نرخ ذخیره‌شدهٔ بعضی کالاها با نرخ تنظیم‌شده یکسان نیست یا معتبر نیست؛ مبلغ فقط با نرخ ذخیره‌شدهٔ معتبر و هم‌ارز نمایش داده می‌شود و در غیر این صورت ناموجود است.
         </div>
     @endif
 
-    @if(!$showCoverPage && !empty($exchangeRateBasis))
+    @if(!$showCoverPage && !empty($displayExchangeRateBasis))
         <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         @include('pdf.partials.exchange-rate-basis-summary', [
-            'exchangeRateBasis' => $exchangeRateBasis,
+            'exchangeRateBasis' => $displayExchangeRateBasis,
             'currencySnapshotWarning' => $currencySnapshotWarning,
         ])
         </div>
@@ -448,7 +454,7 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
-                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'exchangeRateBasis' => $displayExchangeRateBasis,
                         'currencySnapshotWarning' => false,
                     ])
                     @break
@@ -460,7 +466,7 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
-                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'exchangeRateBasis' => $displayExchangeRateBasis,
                         'currencySnapshotWarning' => false,
                     ])
                     @break
@@ -472,7 +478,7 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
-                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'exchangeRateBasis' => $displayExchangeRateBasis,
                         'currencySnapshotWarning' => false,
                     ])
                     @break
@@ -487,7 +493,7 @@
                             'catalogTitle' => $template->title ?? null,
                             'supplier' => $supplier,
                             'contactPhones' => $settings['contact_phones'] ?? [],
-                            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                            'exchangeRateBasis' => $displayExchangeRateBasis,
                             'currencySnapshotWarning' => false,
                             'settings' => $settings,
                             'forPdf' => false,
@@ -499,7 +505,7 @@
                             'catalogTitle' => $template->title ?? null,
                             'supplier' => $supplier,
                             'contactPhones' => $settings['contact_phones'] ?? [],
-                            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                            'exchangeRateBasis' => $displayExchangeRateBasis,
                             'currencySnapshotWarning' => false,
                             'settings' => $settings,
                         ])
@@ -514,7 +520,7 @@
                         'catalogTitle' => $template->title ?? null,
                         'supplier' => $supplier,
                         'contactPhones' => $settings['contact_phones'] ?? [],
-                        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                        'exchangeRateBasis' => $displayExchangeRateBasis,
                         'currencySnapshotWarning' => false,
                     ])
             @endswitch
@@ -632,6 +638,58 @@
                                 }
                             @endphp
                             
+                            @if($branchAwareCatalog && !empty($product['branch_prices']))
+                                @php
+                                    $branchDisplayRows = $catalogBranchPriceRows->build(
+                                        $product['branch_prices'],
+                                        $selectedPriceTypes,
+                                        $priceTypesById,
+                                    );
+                                @endphp
+                                @foreach($branchDisplayRows as $branchRow)
+                                @php
+                                    $priceData = $branchRow['price_data'];
+                                    $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : null;
+                                    $warrantyPrice = is_array($priceData) ? ($priceData['warranty_price'] ?? 0) : 0;
+                                    $finalPrice = $priceValue;
+                                    if ($includeWarranty && $warrantyPrice > 0 && $finalPrice !== null) {
+                                        $finalPrice += $warrantyPrice;
+                                    }
+                                    $formattedPrice = $priceFormatter->format(
+                                        $finalPrice,
+                                        $displayCurrencyCode,
+                                        is_array($priceData) ? ($priceData['catalog_display_currency'] ?? $priceData['foreign_price_applied_currency'] ?? null) : null,
+                                        is_array($priceData) ? ($priceData['catalog_display_rate'] ?? $priceData['foreign_price_rate'] ?? null) : null,
+                                        is_array($priceData) ? (bool) ($priceData['catalog_display_valid'] ?? true) : true,
+                                    );
+                                    $label = $branchRow['label'];
+                                    $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
+                                    $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
+                                    $warrantyLabel = '';
+                                    if (!$includeWarranty && $warrantyType) {
+                                        if ($warrantyType === 'test') {
+                                            $warrantyLabel = ' (تست)';
+                                        } elseif ($warrantyType === 'limited' && $warrantyDuration) {
+                                            $warrantyLabel = " ({$warrantyDuration} ماه)";
+                                        } elseif ($warrantyType === 'lifetime') {
+                                            $warrantyLabel = ' (مادام‌العمر)';
+                                        }
+                                    }
+                                @endphp
+                                <div class="flex justify-between print:m-1 items-center px-3 py-[2px] overflow-hidden">
+                                    <span class="text-[11px] print:text-[10px] text-gray-600 print:text-gray-800 truncate" title="{{ $label }}{{ $warrantyLabel }}">
+                                        {{ $label }}{{ $warrantyLabel }}
+                                    </span>
+                                    <span class="text-[13px] print:text-[12px] font-bold text-gray-900 print:text-black flex-shrink-0" dir="ltr" title="{{ $formattedPrice ?? '-' }}">
+                                        @if($formattedPrice)
+                                            {{ $formattedPrice }}
+                                        @else
+                                            <span class="text-gray-300 print:m-1 print:text-gray-400 font-normal">---</span>
+                                        @endif
+                                    </span>
+                                </div>
+                                @endforeach
+                            @else
                             @foreach($displayPrices as $key => $priceData)
                             @php
                                 $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
@@ -650,8 +708,9 @@
                                 $formattedPrice = $priceFormatter->format(
                                     $finalPrice,
                                     $displayCurrencyCode,
-                                    is_array($priceData) ? ($priceData['foreign_price_applied_currency'] ?? null) : null,
-                                    is_array($priceData) ? ($priceData['foreign_price_rate'] ?? null) : null,
+                                    is_array($priceData) ? ($priceData['catalog_display_currency'] ?? $priceData['foreign_price_applied_currency'] ?? null) : null,
+                                    is_array($priceData) ? ($priceData['catalog_display_rate'] ?? $priceData['foreign_price_rate'] ?? null) : null,
+                                    is_array($priceData) ? (bool) ($priceData['catalog_display_valid'] ?? true) : true,
                                 );
                                 
                                 // تولید label
@@ -692,6 +751,7 @@
                                 </span>
                             </div>
                             @endforeach
+                            @endif
                             
                             {{-- ✅ نمایش اطلاعات گارانتی (اگر فعال باشد و محصول گارانتی داشته باشد) --}}
                             @if($includeWarranty && !empty($displayPrices))

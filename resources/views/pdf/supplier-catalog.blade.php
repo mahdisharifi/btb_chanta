@@ -171,6 +171,12 @@
     ])
 @endif
 
+@if(($supplier->type ?? null) === 'supplier')
+<div style="text-align: right; color: #4b5563; font-size: 10px; margin: 0 0 10px;">
+    {{ $supplier->company_name }} — {{ $supplier->branchLabel() }}
+</div>
+@endif
+
 {{-- حلقه نمایش دسته‌بندی‌ها و محصولات --}}
 @foreach($groupedProducts as $category => $products)
 <!--<div class="category-title">{{ $category }}</div>-->
@@ -248,9 +254,13 @@
         <th style="width: 40px;">ردیف</th>
         <th style="width: 70px;">تصویر</th>
         <th>نام محصول</th>
+        @if($branchAwareCatalog ?? false)
+        <th>قیمت‌های شعبه‌ها</th>
+        @else
         @foreach($priceColumns as $column)
         <th style="font-size: 10px;">{{ $column['label'] }}</th>
         @endforeach
+        @endif
     </tr>
     </thead>
     <tbody>
@@ -321,6 +331,32 @@
                 </div>
             @endif
         </td>
+        @if($branchAwareCatalog ?? false)
+        <td style="font-size: 10px; text-align: right;">
+            @foreach($catalogBranchPriceRows->build($product['branch_prices'] ?? [], $selectedPriceTypes, $priceTypesById) as $branchRow)
+                @php
+                    $priceData = $branchRow['price_data'];
+                    $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : null;
+                    $warrantyPrice = is_array($priceData) ? ($priceData['warranty_price'] ?? 0) : 0;
+                    $finalPrice = $priceValue;
+                    if (($includeWarranty ?? false) && $warrantyPrice > 0 && $finalPrice !== null) {
+                        $finalPrice += $warrantyPrice;
+                    }
+                    $formattedPrice = $priceFormatter->format(
+                        $finalPrice,
+                        $displayCurrencyCode,
+                        is_array($priceData) ? ($priceData['catalog_display_currency'] ?? $priceData['foreign_price_applied_currency'] ?? null) : null,
+                        is_array($priceData) ? ($priceData['catalog_display_rate'] ?? $priceData['foreign_price_rate'] ?? null) : null,
+                        is_array($priceData) ? (bool) ($priceData['catalog_display_valid'] ?? true) : true,
+                    );
+                @endphp
+                <div style="display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid #f3f4f6; padding: 2px 0;">
+                    <span>{{ $branchRow['label'] }}</span>
+                    <strong><bdi dir="ltr">{{ $formattedPrice ?: '---' }}</bdi></strong>
+                </div>
+            @endforeach
+        </td>
+        @else
         @foreach($priceColumns as $column)
         <td style="font-size: 11px;">
             @php
@@ -340,8 +376,9 @@
                 $formattedPrice = $priceFormatter->format(
                     $finalPrice,
                     $displayCurrencyCode,
-                    is_array($priceData) ? ($priceData['foreign_price_applied_currency'] ?? null) : null,
-                    is_array($priceData) ? ($priceData['foreign_price_rate'] ?? null) : null,
+                    is_array($priceData) ? ($priceData['catalog_display_currency'] ?? $priceData['foreign_price_applied_currency'] ?? null) : null,
+                    is_array($priceData) ? ($priceData['catalog_display_rate'] ?? $priceData['foreign_price_rate'] ?? null) : null,
+                    is_array($priceData) ? (bool) ($priceData['catalog_display_valid'] ?? true) : true,
                 );
             @endphp
             
@@ -352,6 +389,7 @@
             @endif
         </td>
         @endforeach
+        @endif
     </tr>
     @endforeach
     </tbody>

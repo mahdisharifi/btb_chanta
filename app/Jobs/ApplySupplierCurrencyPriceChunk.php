@@ -7,6 +7,8 @@ use App\Models\Supplier;
 use App\Models\SupplierExchangeRateSetting;
 use App\Jobs\BroadcastSupplierProductPrices;
 use App\Services\ForeignCurrencyPriceService;
+use App\Models\ProductPrice;
+use App\Services\SupplierBranchPriceSyncService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -209,6 +211,15 @@ class ApplySupplierCurrencyPriceChunk implements ShouldQueue, ShouldBeUnique
 
     private function dispatchChunkBroadcast(): void
     {
+        // Price rows are written quietly by the currency service so a large
+        // matrix does not trigger one branch sync and cache flush per row.
+        // Rebuild the complete bounded chunk once before broadcasting.
+        $sourcePrices = ProductPrice::query()
+            ->whereIn('product_supplier_id', array_values(array_unique(array_map('intval', $this->productSupplierIds))))
+            ->get();
+        app(SupplierBranchPriceSyncService::class)
+            ->syncBranchesForPrimaryPrices($sourcePrices);
+
         BroadcastSupplierProductPrices::dispatch(
             $this->supplierId,
             array_values(array_unique(array_map('intval', $this->productSupplierIds))),

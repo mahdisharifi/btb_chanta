@@ -19,7 +19,7 @@ class Dashboard extends Component
     #[Computed]
     public function supplier(): Supplier
     {
-        return Supplier::where('user_id', Auth::id())->firstOrFail();
+        return Auth::user()->currentSupplier();
     }
 
     /**
@@ -33,7 +33,7 @@ class Dashboard extends Component
     {
         $supplierId = $this->supplier->id;
 
-        $base = ProductSupplier::query()->where('supplier_id', $supplierId);
+        $base = ProductSupplier::query()->where('product_supplier.supplier_id', $supplierId);
 
         return [
             // تعداد کل محصولاتی که تأمین‌کننده انتخاب کرده است.
@@ -50,9 +50,10 @@ class Dashboard extends Component
                 ->count(),
 
             // مجموع بازدید محصولات انتخاب‌شدهٔ این تأمین‌کننده.
-            'total_views' => Product::whereIn(
+            'total_views' => Product::query()->whereIn(
                 'id',
-                (clone $base)->select('product_id')
+                (clone $base)->join('products as offered_product', 'offered_product.id', '=', 'product_supplier.product_id')
+                    ->select('offered_product.family_product_id')->distinct()
             )->sum('view_count'),
         ];
     }

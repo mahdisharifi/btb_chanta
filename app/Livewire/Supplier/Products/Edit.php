@@ -11,6 +11,8 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 #[Layout('components.layouts.supplier')]
 class Edit extends Component
@@ -18,6 +20,7 @@ class Edit extends Component
     use WithFileUploads;
 
     public Product $product;
+    public bool $isBranchCopy = false;
 
     public $title;
     public $slug;
@@ -44,27 +47,17 @@ class Edit extends Component
     public function mount(Product $product)
     {
         $user = auth()->user();
-        $supplierId = $user->supplier?->id;
+        $supplier = $user?->currentSupplier();
 
-        if ($supplierId === null) {
+        if (!$supplier) {
             abort(403, 'پروفایل تأمین‌کننده معتبر نیست.');
         }
 
         // بررسی‌های امنیتی
-        if ($product->supplier_id !== $supplierId) {
-            abort(403, 'شما اجازه ویرایش این محصول را ندارید.');
-        }
-
-        if ($product->status !== ProductStatus::DRAFT && $product->status !== 'draft') {
-            abort(403, 'فقط محصولاتی که در وضعیت پیش‌نویس هستند قابل ویرایش می‌باشند.');
-        }
-
-
-        if ($product->suppliers()->where('supplier_id', '!=', $supplierId)->exists()) {
-            abort(403, 'این محصول توسط تامین‌کنندگان دیگر نیز ارائه می‌شود و قابل ویرایش نیست.');
-        }
-
-        $this->product = $product;
+        $this->product = $this->editableOwnedProduct($product, $supplier);
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
 
         $this->title = $product->title;
         $this->slug = $product->slug;
@@ -142,18 +135,30 @@ class Edit extends Component
 
     public function loadExistingAttributeValues()
     {
+        $this->product = $this->editableOwnedProduct($this->product, auth()->user()->currentSupplier());
         $existingValues = $this->product->attributeValues()->pluck('attribute_values.id', 'attribute_id')->toArray();
         $this->attributeValues = $existingValues;
     }
 
     public function refreshAttributes()
     {
+        $this->product = $this->editableOwnedProduct($this->product, auth()->user()->currentSupplier());
         $this->loadCategoryAttributes();
         $this->dispatch('notify', ['message' => 'ویژگی‌ها بروزرسانی شدند', 'type' => 'success']);
     }
 
     public function saveNewAttributeValue($attributeId)
     {
+        $this->product = $this->editableOwnedProduct($this->product, auth()->user()->currentSupplier());
+        $allowedForCategory = Category::query()
+            ->whereKey($this->category_id)
+            ->whereHas('attributes', fn ($query) => $query->whereKey($attributeId))
+            ->exists();
+        abort_unless($allowedForCategory, 403, 'این ویژگی برای دسته‌بندی محصول مجاز نیست.');
+
+        $this->validate([
+            'newAttributeValues.' . $attributeId => 'required|string|max:255',
+        ]);
         $value = trim($this->newAttributeValues[$attributeId] ?? '');
 
         if (empty($value)) return;
@@ -178,7 +183,10 @@ class Edit extends Component
 
     public function removeExistingGalleryImage($galleryId)
     {
-        $gallery = $this->product->galleries()->where('id', $galleryId)->where('is_primary', false)->first();
+        $supplier = auth()->user()->currentSupplier();
+        $product = $this->editableOwnedProduct($this->product, $supplier);
+
+        $gallery = $product->galleries()->whereKey($galleryId)->where('is_primary', false)->first();
         if ($gallery) {
             Storage::disk('public')->delete($gallery->file_path);
             $gallery->delete();
@@ -190,18 +198,14 @@ class Edit extends Component
     public function save()
     {
         $user = auth()->user();
-        $supplierId = $user->supplier?->id;
+        $supplierId = $user->currentSupplier()->id;
 
         if ($supplierId === null) {
             abort(403, 'پروفایل تأمین‌کننده معتبر نیست.');
         }
 
         // بررسی‌های امنیتی در زمان ذخیره (استفاده از مقایسه صحیح Enum)
-        if ($this->product->supplier_id !== $supplierId ||
-            ($this->product->status !== ProductStatus::DRAFT && $this->product->status !== 'draft') ||
-            $this->product->suppliers()->where('supplier_id', '!=', $supplierId)->exists()) {
-            abort(403, 'تغییر وضعیت یا دسترسی غیرمجاز به محصول.');
-        }
+        $this->product = $this->editableOwnedProduct($this->product, $user->currentSupplier());
 
         $this->validate([
             'title' => 'required|string|max:255',
@@ -215,6 +219,25 @@ class Edit extends Component
             'primary_image' => 'nullable|image|max:2048',
             'gallery_images.*' => 'nullable|image|max:2048',
         ]);
+
+        $selectedAttributeValueIds = collect($this->attributeValues)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->values();
+        if ($selectedAttributeValueIds->isNotEmpty()) {
+            $validAttributeValueIds = DB::table('attribute_values')
+                ->join('attribute_category', 'attribute_category.attribute_id', '=', 'attribute_values.attribute_id')
+                ->where('attribute_category.category_id', $this->category_id)
+                ->whereIn('attribute_values.id', $selectedAttributeValueIds)
+                ->distinct()
+                ->pluck('attribute_values.id');
+
+            if ($validAttributeValueIds->count() !== $selectedAttributeValueIds->count()) {
+                throw ValidationException::withMessages([
+                    'attributeValues' => 'یکی از ویژگی‌ها با دسته‌بندی انتخاب‌شده سازگار نیست.',
+                ]);
+            }
+        }
 
         if (empty($this->sku)) {
             $this->sku = 'PRD-' . strtoupper(Str::random(8));
@@ -272,6 +295,27 @@ class Edit extends Component
     public function render()
     {
         return view('livewire.supplier.products.edit');
+    }
+
+    private function editableOwnedProduct(Product $product, $supplier): Product
+    {
+        abort_unless($supplier, 403, 'پروفایل تأمین‌کننده معتبر نیست.');
+
+        $ownedProduct = Product::query()
+            ->whereKey($product->id)
+            ->where('supplier_id', $supplier->id)
+            ->whereDoesntHave('productSuppliers', fn ($offers) => $offers->where('supplier_id', '!=', $supplier->id))
+            ->firstOrFail();
+
+        $isBranchCopy = $supplier->isBranch()
+            && $ownedProduct->family_product_id !== null
+            && (int) $ownedProduct->family_product_id !== (int) $ownedProduct->id;
+
+        if (!$isBranchCopy && $ownedProduct->status !== ProductStatus::DRAFT && $ownedProduct->status !== 'draft') {
+            abort(403, 'فقط محصولات پیش‌نویس و نسخه‌های مستقل شعبه قابل ویرایش هستند.');
+        }
+
+        return $ownedProduct;
     }
 }
 

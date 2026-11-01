@@ -94,6 +94,54 @@
             }
         @endphp
         
+        @if(!empty($product['branch_prices']))
+        @php
+            $branchDisplayRows = $catalogBranchPriceRows->build(
+                $product['branch_prices'],
+                $selectedPriceTypes,
+                $priceTypesById,
+            );
+        @endphp
+        @foreach($branchDisplayRows as $branchRow)
+        @php
+            $priceData = $branchRow['price_data'];
+            $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : null;
+            $warrantyPrice = is_array($priceData) ? ($priceData['warranty_price'] ?? 0) : 0;
+            $warrantyType = is_array($priceData) ? ($priceData['warranty_type'] ?? null) : null;
+            $warrantyDuration = is_array($priceData) ? ($priceData['warranty_duration'] ?? null) : null;
+            $finalPrice = $priceValue;
+            if (($includeWarranty ?? false) && $warrantyPrice > 0 && $finalPrice !== null) {
+                $finalPrice += $warrantyPrice;
+            }
+            $formattedPrice = $priceFormatter->format(
+                $finalPrice,
+                $displayCurrencyCode,
+                is_array($priceData) ? ($priceData['catalog_display_currency'] ?? $priceData['foreign_price_applied_currency'] ?? null) : null,
+                is_array($priceData) ? ($priceData['catalog_display_rate'] ?? $priceData['foreign_price_rate'] ?? null) : null,
+                is_array($priceData) ? (bool) ($priceData['catalog_display_valid'] ?? true) : true,
+            );
+            $label = $branchRow['label'];
+
+            if ($warrantyType || $warrantyDuration) {
+                $hasWarrantyForProduct = true;
+                $sampleWarrantyType ??= $warrantyType;
+                $sampleWarrantyDuration ??= $warrantyDuration;
+            }
+        @endphp
+        <tr>
+            <td class="price-label">{{ $label }}</td>
+            <td class="price-value">
+                @if($formattedPrice)
+                    {{ $formattedPrice }}
+                @else
+                    <span class="price-empty">---</span>
+                @endif
+            </td>
+        </tr>
+        @endforeach
+        @endif
+
+        @if(empty($product['branch_prices']))
         @foreach($displayPrices as $key => $priceData)
         @php
             $priceValue = is_array($priceData) ? ($priceData['price'] ?? null) : $priceData;
@@ -112,8 +160,9 @@
             $formattedPrice = $priceFormatter->format(
                 $finalPrice,
                 $displayCurrencyCode,
-                is_array($priceData) ? ($priceData['foreign_price_applied_currency'] ?? null) : null,
-                is_array($priceData) ? ($priceData['foreign_price_rate'] ?? null) : null,
+                is_array($priceData) ? ($priceData['catalog_display_currency'] ?? $priceData['foreign_price_applied_currency'] ?? null) : null,
+                is_array($priceData) ? ($priceData['catalog_display_rate'] ?? $priceData['foreign_price_rate'] ?? null) : null,
+                is_array($priceData) ? (bool) ($priceData['catalog_display_valid'] ?? true) : true,
             );
             
             // ✅ تشخیص گارانتی برای محصول
@@ -148,6 +197,7 @@
             </td>
         </tr>
         @endforeach
+        @endif
         
         {{-- ✅ نمایش اطلاعات گارانتی بعد از همه قیمت‌ها --}}
         @if(($includeWarranty ?? false) && $hasWarrantyForProduct)

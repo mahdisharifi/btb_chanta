@@ -11,6 +11,15 @@
 @php
 use App\Helpers\PriceHelper;
 $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $allowedPriceTypes, true);
+$formatBranchPercentage = static function (float $percentage): string {
+    $formatted = rtrim(rtrim(number_format($percentage, 2, '.', ''), '0'), '.');
+
+    return strtr($formatted, [
+        '0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴',
+        '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹',
+        ',' => '٬', '.' => '٫',
+    ]);
+};
 @endphp
 
 @section('seo')
@@ -144,7 +153,7 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                     {{ $canViewSupplierInfo ? 'قیمت‌های عمده تأمین‌کنندگان' : 'قیمت عمده محصول' }}
                     @if($canViewSupplierInfo && $hasMultipleSuppliers)
                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                        {{ $productSuppliers->count() }} تأمین‌کننده
+                                        {{ $supplierStats['total_suppliers'] ?? $productSuppliers->count() }} تأمین‌کننده
                                     </span>
                     @endif
                 </h3>
@@ -279,11 +288,14 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                                             <div class="mt-2 space-y-2">
                                                 @foreach($productSuppliers as $ps)
                                                     @if($ps->supplier)
-                                                    <div class="flex items-center gap-2 text-sm">
+                                                    <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 break-words text-sm">
                                                         <svg class="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                                        <span class="font-semibold">{{ $ps->supplier->company_name }}</span>
+                                                        <span class="min-w-0 break-words font-semibold">{{ $ps->supplier->company_name }} — {{ $ps->supplier->branchLabel() }} ({{ $ps->supplier->city ?: 'شهر ثبت نشده' }})</span>
+                                                        @if($ps->supplier->isBranch())
+                                                            <span class="text-xs font-medium text-indigo-700">({{ (float) $ps->branch_price_percentage > 0 ? '+' : '' }}{{ $formatBranchPercentage((float) $ps->branch_price_percentage) }}٪)</span>
+                                                        @endif
                                                         @if($ps->supplier->mobile)
-                                                            <span class="text-gray-600">— {{ $ps->supplier->mobile }}</span>
+                                                            <span class="break-words text-gray-600">— {{ $ps->supplier->mobile }}</span>
                                                         @endif
                                                     </div>
                                                     @endif
@@ -624,7 +636,7 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                                             }
                                             
                                             // پیدا کردن تمام قیمت‌ها برای این سلول (بدون گارانتی)
-                                            $cellPrices = $productSuppliers->flatMap(function($ps) use ($priceType, $tier) {
+                                            $cellPrices = $productSuppliers->flatMap(function($ps) use ($priceType, $tier, $canSeeWarrantyPrices) {
                                                 // ✅ فیلتر تیراژهای فعال برای این supplier
                                                 $tierEnabled = $ps->tier_enabled ?? [];
                                                 if (!empty($tierEnabled) && !($tierEnabled[$tier] ?? true)) {
@@ -950,13 +962,12 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                          x-data="{ expanded: {{ $psIndex === 0 ? 'true' : ($productSuppliers->count() <= 3 ? 'true' : 'false') }} }">
 
                         {{-- ── هدر تأمین‌کننده (قابل کلیک برای باز/بسته) ── --}}
-                        <button @click="expanded = !expanded"
-                                class="w-full bg-gradient-to-l from-blue-50 via-white to-blue-50 px-2 py-2 border-b border-gray-100 cursor-pointer transition-colors hover:from-blue-100/50">
+                        <div class="w-full bg-gradient-to-l from-blue-50 via-white to-blue-50 px-2 py-2 border-b border-gray-100 transition-colors hover:from-blue-100/50">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
                                     {{-- لوگو + لینک به فروشگاه تأمین‌کننده --}}
                                     @if($ps->supplier && $ps->supplier->slug)
-                                    <a href="{{ route('suppliers.show', $ps->supplier->slug) }}"
+                                    <a href="{{ route('suppliers.show', $ps->supplier->rootSupplier()->slug) }}"
                                        class="relative group/supplier shrink-0"
                                        target="_blank"
                                        rel="noopener noreferrer"
@@ -986,17 +997,23 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                                         <div class="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
                                             {{-- لینک نام شرکت به فروشگاه تأمین‌کننده --}}
                                             @if($ps->supplier && $ps->supplier->slug)
-                                            <a href="{{ route('suppliers.show', $ps->supplier->slug) }}"
+                                            <a href="{{ route('suppliers.show', $ps->supplier->rootSupplier()->slug) }}"
                                                class="inline-flex items-center gap-1 hover:text-blue-600 transition-colors border-b-2 border-transparent hover:border-blue-300 cursor-pointer group/supplier-name"
                                                target="_blank"
                                                rel="noopener noreferrer"
                                                title="مشاهده فروشگاه {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
                                                onclick="event.stopPropagation()">
-                                                <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}</span>
+                                                <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }} — {{ $ps->supplier->branchLabel() }} ({{ $ps->supplier->city ?: 'شهر ثبت نشده' }})</span>
+                                                @if($ps->supplier->isBranch())
+                                                    <span class="text-xs font-medium text-indigo-700">{{ (float) $ps->branch_price_percentage > 0 ? '+' : '' }}{{ $formatBranchPercentage((float) $ps->branch_price_percentage) }}٪</span>
+                                                @endif
                                                 <x-heroicon-o-arrow-top-right-on-square class="w-3.5 h-3.5 text-gray-400 group-hover/supplier-name:text-blue-500 transition-colors" />
                                             </a>
                                             @else
-                                            <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}</span>
+                                            <span class="truncate">{{ $ps->supplier->company_name ?? 'تأمین‌کننده' }} — {{ $ps->supplier->branchLabel() }} ({{ $ps->supplier->city ?: 'شهر ثبت نشده' }})</span>
+                                            @if($ps->supplier->isBranch())
+                                                <span class="text-xs font-medium text-indigo-700">{{ (float) $ps->branch_price_percentage > 0 ? '+' : '' }}{{ $formatBranchPercentage((float) $ps->branch_price_percentage) }}٪</span>
+                                            @endif
                                             @endif
                                             @if($ps->supplier && $ps->supplier->is_verified)
                                             <span class="inline-flex items-center gap-1 text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
@@ -1026,7 +1043,12 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                                 </div>
 
                                 {{-- ✅ اصلاح #8: سمت چپ: محدوده قیمت + فلش --}}
-                                <div class="flex items-center gap-3 shrink-0">
+                                <button type="button"
+                                        @click="expanded = !expanded"
+                                        :aria-expanded="expanded.toString()"
+                                        aria-controls="supplier-price-body-{{ $ps->id }}"
+                                        aria-label="نمایش یا پنهان کردن قیمت‌های {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
+                                        class="flex items-center gap-3 shrink-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2">
                                     <div class="text-left">
                                         <div class="text-[11px] text-gray-500 mb-0.5">محدوده قیمت</div>
                                         <div class="text-base font-extrabold text-blue-700">
@@ -1059,12 +1081,13 @@ $canSeeWarrantyPrices = $allowedPriceTypes === null || in_array('warranty', $all
                                          fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                                     </svg>
-                                </div>
+                                </button>
                             </div>
-                        </button>
+                        </div>
 
                         {{-- ── بدنه: ماتریس قیمت‌ها (Collapsible) ── --}}
-                        <div x-show="expanded"
+                        <div id="supplier-price-body-{{ $ps->id }}"
+                             x-show="expanded"
                              x-transition:enter="transition ease-out duration-200"
                              x-transition:enter-start="opacity-0 -translate-y-2"
                              x-transition:enter-end="opacity-100 translate-y-0"

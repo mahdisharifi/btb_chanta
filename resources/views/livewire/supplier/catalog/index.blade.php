@@ -259,6 +259,47 @@
                                 </div>
                             </div>
 
+                            @unless($isAdmin)
+                            <fieldset class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4" dir="rtl"
+                                @error('catalogBranchScope') aria-invalid="true" aria-describedby="catalogBranchScope-error" @enderror>
+                                <legend class="px-2 font-bold text-gray-800">شعبه‌های داخل خروجی کاتالوگ</legend>
+                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label for="catalogBranchSingle" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500">
+                                        <input id="catalogBranchSingle" type="radio" wire:model.live="catalogBranchScope" value="single" @error('catalogBranchScope') aria-describedby="catalogBranchScope-error" @enderror class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="text-sm font-medium text-gray-800">یک شعبه</span>
+                                    </label>
+                                    <label for="catalogBranchAll" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500">
+                                        <input id="catalogBranchAll" type="radio" wire:model.live="catalogBranchScope" value="all" @error('catalogBranchScope') aria-describedby="catalogBranchScope-error" @enderror class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="text-sm font-medium text-gray-800">شعبهٔ اصلی و همهٔ شعب فعال</span>
+                                    </label>
+                                </div>
+                                @if($this->availableCatalogBranches->count() < 2)
+                                    <p class="text-xs leading-5 text-gray-500 dark:text-gray-400">فعلاً فقط شعبهٔ اصلی موجود است؛ با ساخت شعبه‌های دیگر، این انتخاب خروجی همهٔ شعب فعال را شامل می‌کند.</p>
+                                @endif
+                                @if($catalogBranchScope === 'single')
+                                    <div class="max-w-2xl">
+                                        <label for="catalogBranchSupplierId" class="mb-1 block text-sm font-medium text-gray-700">انتخاب شعبه</label>
+                                        <select id="catalogBranchSupplierId" required wire:model.live="catalogBranchSupplierId"
+                                            @error('catalogBranchSupplierId') aria-invalid="true" aria-describedby="catalogBranchSupplierId-error" @enderror
+                                            class="min-h-11 w-full rounded-lg border-gray-300 bg-white text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <option value="">انتخاب شعبه</option>
+                                            @foreach($this->availableCatalogBranches as $catalogBranch)
+                                                <option value="{{ $catalogBranch->id }}">
+                                                    {{ $catalogBranch->selected_city_native_name ?: ($catalogBranch->selected_city_name ?: 'شهر ثبت نشده') }} · {{ $catalogBranch->branchLabel() }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <x-input-error id="catalogBranchSupplierId-error" role="alert" :messages="$errors->get('catalogBranchSupplierId')" class="mt-2" />
+                                    </div>
+                                @else
+                                    <p class="text-sm leading-6 text-gray-700">
+                                        برای هر محصول فقط یک کارت چاپ می‌شود و قیمت‌های شعب به‌صورت جداگانه، با نام شهر و تیراژ نمایش داده می‌شوند.
+                                    </p>
+                                @endif
+                                <x-input-error id="catalogBranchScope-error" role="alert" :messages="$errors->get('catalogBranchScope')" />
+                            </fieldset>
+                            @endunless
+
                             <!-- انتخاب دسته‌بندی‌ها با Alpine Dropdown -->
                             <div class="space-y-3 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                                 <h4 class="font-bold text-gray-800 flex items-center gap-2">

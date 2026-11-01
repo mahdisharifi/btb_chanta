@@ -534,7 +534,7 @@ class ForeignCurrencyPriceService
                         );
 
                     $checkPrice->calculation_mode = $mode;
-                    $checkPrice->save();
+                    $checkPrice->saveQuietly();
                 }
 
                 if (!in_array($mode, ['default', 'percentage'], true)) {
@@ -556,7 +556,7 @@ class ForeignCurrencyPriceService
                     $percentage,
                     $productSupplier->supplier
                 ));
-                $checkPrice->save();
+                $checkPrice->saveQuietly();
                 $changedRows[] = $checkPrice;
             }
 
@@ -571,7 +571,7 @@ class ForeignCurrencyPriceService
                 'foreign_price_last_attempt_at' => now(),
                 'foreign_price_last_error' => null,
                 'foreign_price_revision' => ((int) $productSupplier->foreign_price_revision) + 1,
-            ])->save();
+            ])->saveQuietly();
 
             app(ProductPriceRevisionService::class)->increment(
                 (int) $productSupplier->product_id,
@@ -613,12 +613,12 @@ class ForeignCurrencyPriceService
 
         if ($record) {
             if ((int) $record->price !== $price) {
-                $record->update(['price' => $price]);
+                $record->forceFill(['price' => $price])->saveQuietly();
             }
             return $price;
         }
 
-        ProductPrice::query()->create([
+        $record = new ProductPrice([
             'product_id' => $productSupplier->product_id,
             'product_supplier_id' => $productSupplier->id,
             'price_type_id' => $priceTypeId,
@@ -627,6 +627,7 @@ class ForeignCurrencyPriceService
             'price' => $price,
             'is_active' => true,
         ]);
+        $record->saveQuietly();
 
         return $price;
     }

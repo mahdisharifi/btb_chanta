@@ -130,60 +130,69 @@ class SupplierProducts extends Component
     {
         $this->supplier = Supplier::where('slug', $this->slug)
             ->where('is_active', true)
+            ->whereNull('parent_supplier_id')
             ->firstOrFail();
     }
 
     protected function loadSupplierStats(): void
     {
         $statsVersion = Cache::get("web:supplier:{$this->supplier->id}:stats:version", 'initial');
-        $cacheKey = "web:supplier:{$this->supplier->id}:stats:{$statsVersion}";
+        $supplierIds = $this->supplier->branches()->where('is_active', true)->pluck('id')->prepend($this->supplier->id)->map(fn ($id) => (int) $id)->all();
+        $branchGeneration = Cache::get(\App\Services\SupplierBranchPublicCacheInvalidator::GENERATION_KEY, 'initial');
+        $cacheKey = "web:supplier:{$this->supplier->id}:stats:{$statsVersion}:{$branchGeneration}";
 
-        $this->supplierStats = Cache::remember($cacheKey, 600, function () {
+        $this->supplierStats = Cache::remember($cacheKey, 600, function () use ($supplierIds) {
             // آمار محصولات (شامل هر دو مسیر)
-            $stats = DB::table('products')
-                ->where(function ($q) {
-                    $q->where('supplier_id', $this->supplier->id)
-                      ->orWhereExists(function ($sub) {
-                          $sub->select(DB::raw(1))
-                              ->from('product_supplier')
-                              ->whereColumn('product_supplier.product_id', 'products.id')
-                              ->where('product_supplier.supplier_id', $this->supplier->id)
-                              ->where('product_supplier.is_active', true);
+            $stats = DB::table('products as p')
+                ->whereColumn('p.family_product_id', 'p.id')
+                ->where(function ($q) use ($supplierIds) {
+                    $q->where('p.supplier_id', $this->supplier->id)
+                      ->orWhereExists(function ($sub) use ($supplierIds) {
+                          $sub->select(DB::raw(1))->from('product_supplier as ps')
+                              ->join('products as fp', 'fp.id', '=', 'ps.product_id')
+                              ->whereColumn('fp.family_product_id', 'p.id')
+                              ->whereIn('ps.supplier_id', $supplierIds)
+                              ->where('ps.is_active', true)
+                              ->whereNull('fp.deleted_at');
                       });
                 })
-                ->where('is_active', true)
-                ->where('status', ProductStatus::ACTIVE->value)
-                ->whereNull('deleted_at')
+                ->where('p.is_active', true)
+                ->where('p.status', ProductStatus::ACTIVE->value)
+                ->whereNull('p.deleted_at')
                 ->selectRaw("
-                    COUNT(DISTINCT id) as total_products,
-                    COUNT(DISTINCT category_id) as total_categories,
-                    SUM(view_count) as total_views,
-                    SUM(CASE WHEN is_featured = 1 THEN 1 ELSE 0 END) as featured_count
+                    COUNT(DISTINCT p.id) as total_products,
+                    COUNT(DISTINCT p.category_id) as total_categories,
+                    SUM(p.view_count) as total_views,
+                    SUM(CASE WHEN p.is_featured = 1 THEN 1 ELSE 0 END) as featured_count
                 ")
                 ->first();
 
             // بازه قیمت‌ها
-            $productIds = DB::table('products')
-                ->where(function ($q) {
-                    $q->where('supplier_id', $this->supplier->id)
-                      ->orWhereExists(function ($sub) {
-                          $sub->select(DB::raw(1))
-                              ->from('product_supplier')
-                              ->whereColumn('product_supplier.product_id', 'products.id')
-                              ->where('product_supplier.supplier_id', $this->supplier->id)
-                              ->where('product_supplier.is_active', true);
+            $productIds = DB::table('products as p')
+                ->whereColumn('p.family_product_id', 'p.id')
+                ->where(function ($q) use ($supplierIds) {
+                    $q->where('p.supplier_id', $this->supplier->id)
+                      ->orWhereExists(function ($sub) use ($supplierIds) {
+                          $sub->select(DB::raw(1))->from('product_supplier as ps')
+                              ->join('products as fp', 'fp.id', '=', 'ps.product_id')
+                              ->whereColumn('fp.family_product_id', 'p.id')
+                              ->whereIn('ps.supplier_id', $supplierIds)
+                              ->where('ps.is_active', true)
+                              ->whereNull('fp.deleted_at');
                       });
                 })
-                ->where('is_active', true)
-                ->where('status', ProductStatus::ACTIVE->value)
-                ->whereNull('deleted_at')
-                ->pluck('id');
+                ->where('p.is_active', true)
+                ->where('p.status', ProductStatus::ACTIVE->value)
+                ->whereNull('p.deleted_at')
+                ->pluck('p.id');
 
             $priceStats = DB::table('product_prices')
                 ->join('product_supplier', 'product_prices.product_supplier_id', '=', 'product_supplier.id')
-                ->where('product_supplier.supplier_id', $this->supplier->id)
+                ->whereIn('product_supplier.supplier_id', $supplierIds)
                 ->where('product_prices.is_active', true)
-                ->whereIn('product_prices.product_id', $productIds)
+                ->whereIn('product_prices.product_id', function ($query) use ($productIds) {
+                    $query->select('fp.id')->from('products as fp')->whereIn('fp.family_product_id', $productIds);
+                })
                 ->selectRaw('MIN(product_prices.price) as min_price, MAX(product_prices.price) as max_price, AVG(product_prices.price) as avg_price')
                 ->first();
 
@@ -201,19 +210,24 @@ class SupplierProducts extends Component
 
     protected function loadSupplierCategories(): void
     {
+        $supplierIds = $this->supplier->branches()->where('is_active', true)->pluck('id')->prepend($this->supplier->id)->map(fn ($id) => (int) $id)->all();
+
         $categoryIdsWithCounts = DB::table('products as p')
             ->select('p.category_id', DB::raw('COUNT(DISTINCT p.id) as products_count'))
+            ->whereColumn('p.family_product_id', 'p.id')
             ->where('p.is_active', true)
             ->where('p.status', ProductStatus::ACTIVE->value)
             ->whereNull('p.deleted_at')
-            ->where(function ($sub) {
+            ->where(function ($sub) use ($supplierIds) {
                 $sub->where('p.supplier_id', $this->supplier->id)
-                    ->orWhereExists(function ($ex) {
+                    ->orWhereExists(function ($ex) use ($supplierIds) {
                         $ex->select(DB::raw(1))
                            ->from('product_supplier as ps')
-                           ->whereColumn('ps.product_id', 'p.id')
-                           ->where('ps.supplier_id', $this->supplier->id)
-                           ->where('ps.is_active', true);
+                           ->join('products as fp', 'fp.id', '=', 'ps.product_id')
+                           ->whereColumn('fp.family_product_id', 'p.id')
+                           ->whereIn('ps.supplier_id', $supplierIds)
+                           ->where('ps.is_active', true)
+                           ->whereNull('fp.deleted_at');
                     });
             })
             ->groupBy('p.category_id')
@@ -250,15 +264,18 @@ class SupplierProducts extends Component
 
     protected function buildProductsQuery()
     {
+        $supplierIds = $this->supplier->branches()->where('is_active', true)->pluck('id')->prepend($this->supplier->id)->map(fn ($id) => (int) $id)->all();
+        $today = now()->toDateString();
+
         $query = Product::query()
-            ->pricedFirst()
+            ->canonical()
             ->where('is_active', true)
             ->where('status', ProductStatus::ACTIVE)
-            ->where(function ($q) {
+            ->where(function ($q) use ($supplierIds) {
                 $q->where('supplier_id', $this->supplier->id)
-                  ->orWhereHas('productSuppliers', function ($sub) {
-                      $sub->where('supplier_id', $this->supplier->id)
-                           ->where('is_active', true);
+                  ->orWhereHas('familyProductSuppliers', function ($sub) use ($supplierIds) {
+                      $sub->whereIn('product_supplier.supplier_id', $supplierIds)
+                           ->where('product_supplier.is_active', true);
                   });
             })
             ->with([
@@ -266,8 +283,16 @@ class SupplierProducts extends Component
                 'galleries' => fn($q) => $q->where('file_type', 'image')
                     ->orderByDesc('is_primary')->orderBy('sort_order')->limit(1),
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true),
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                'familyProducts.supplier.checkPeriods' => fn ($q) => $q->where('check_periods.is_active', true)->wherePivot('is_active', true),
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                'familyProducts.productSuppliers.supplier.checkPeriods' => fn ($q) => $q->where('check_periods.is_active', true)->wherePivot('is_active', true),
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                'familyProducts.productSuppliers.prices.priceType:id,code',
+                'familyProducts.productSuppliers.prices.checkPeriod:id,label,name',
                 'retailPrices' => fn($q) => $q->where('is_published', true),
             ]);
 
@@ -295,15 +320,27 @@ class SupplierProducts extends Component
 
         // Price Range
         if ($this->minPrice || $this->maxPrice) {
-            $query->whereHas('productSuppliers.prices', function ($q) {
-                $q->where('is_active', true);
-                
-                if ($this->minPrice) {
-                    $q->where('price', '>=', $this->minPrice);
-                }
-                if ($this->maxPrice) {
-                    $q->where('price', '<=', $this->maxPrice);
-                }
+            $query->whereHas('familyProductSuppliers', function ($offers) use ($supplierIds, $today) {
+                $offers->whereIn('product_supplier.supplier_id', $supplierIds)
+                    ->where('product_supplier.is_active', true)
+                    ->whereHas('prices', function ($q) use ($today) {
+                        $q->where('product_prices.is_active', true)
+                            ->where(function ($validity) use ($today) {
+                                $validity->whereNull('product_prices.valid_from')
+                                    ->orWhere('product_prices.valid_from', '<=', $today);
+                            })
+                            ->where(function ($validity) use ($today) {
+                                $validity->whereNull('product_prices.valid_until')
+                                    ->orWhere('product_prices.valid_until', '>=', $today);
+                            });
+
+                        if ($this->minPrice) {
+                            $q->where('product_prices.price', '>=', $this->minPrice);
+                        }
+                        if ($this->maxPrice) {
+                            $q->where('product_prices.price', '<=', $this->maxPrice);
+                        }
+                    });
             });
         }
 
@@ -314,34 +351,60 @@ class SupplierProducts extends Component
 
         // In Stock
         if ($this->inStock) {
-            $query->whereHas('productSuppliers', function ($q) {
-                $q->where('supplier_id', $this->supplier->id)
-                  ->where('is_active', true)
-                  ->whereHas('prices', function ($sub) {
-                      $sub->where('is_active', true);
+            $query->whereHas('familyProductSuppliers', function ($q) use ($supplierIds, $today) {
+                $q->whereIn('product_supplier.supplier_id', $supplierIds)
+                  ->where('product_supplier.is_active', true)
+                  ->whereHas('prices', function ($sub) use ($today) {
+                      $sub->where('product_prices.is_active', true)
+                          ->where(function ($validity) use ($today) {
+                              $validity->whereNull('product_prices.valid_from')
+                                  ->orWhere('product_prices.valid_from', '<=', $today);
+                          })
+                          ->where(function ($validity) use ($today) {
+                              $validity->whereNull('product_prices.valid_until')
+                                  ->orWhere('product_prices.valid_until', '>=', $today);
+                          });
                   });
             });
         }
 
         // ─── Sorting ───
+        $familyPrice = fn () => DB::table('product_prices')
+            ->selectRaw('MIN(product_prices.price)')
+            ->where('product_prices.is_active', true)
+            ->where(function ($prices) use ($today) {
+                $prices->whereNull('product_prices.valid_from')
+                    ->orWhere('product_prices.valid_from', '<=', $today);
+            })
+            ->where(function ($prices) use ($today) {
+                $prices->whereNull('product_prices.valid_until')
+                    ->orWhere('product_prices.valid_until', '>=', $today);
+            })
+            ->whereIn('product_prices.product_supplier_id', function ($sub) use ($supplierIds) {
+                $sub->select('ps.id')
+                    ->from('product_supplier as ps')
+                    ->join('products as family_offer', 'family_offer.id', '=', 'ps.product_id')
+                    ->whereColumn('family_offer.family_product_id', 'products.family_product_id')
+                    ->where('family_offer.is_active', true)
+                    ->where('family_offer.status', ProductStatus::ACTIVE->value)
+                    ->whereIn('ps.supplier_id', $supplierIds)
+                    ->where('ps.is_active', true)
+                    ->whereNull('ps.deleted_at')
+                    ->whereNull('family_offer.deleted_at');
+            });
+
+        $pricePresence = $familyPrice();
+        $query->orderByRaw(
+            'CASE WHEN (' . $pricePresence->toSql() . ') IS NULL THEN 1 ELSE 0 END ASC',
+            $pricePresence->getBindings()
+        );
+
         $query = match ($this->sortBy) {
             'latest' => $query->orderByDesc('created_at'),
             'oldest' => $query->orderBy('created_at'),
             'popular' => $query->orderByDesc('view_count'),
-            'price_low' => $query->orderByRaw('
-                (SELECT MIN(price) FROM product_prices 
-                 WHERE product_prices.product_supplier_id IN 
-                 (SELECT id FROM product_supplier 
-                  WHERE product_supplier.product_id = products.id AND supplier_id = ' . $this->supplier->id . ') 
-                 AND is_active = 1) ASC
-            '),
-            'price_high' => $query->orderByRaw('
-                (SELECT MIN(price) FROM product_prices 
-                 WHERE product_prices.product_supplier_id IN 
-                 (SELECT id FROM product_supplier 
-                  WHERE product_supplier.product_id = products.id AND supplier_id = ' . $this->supplier->id . ') 
-                 AND is_active = 1) DESC
-            '),
+            'price_low' => $query->orderBy($familyPrice(), 'asc'),
+            'price_high' => $query->orderBy($familyPrice(), 'desc'),
             'name_asc' => $query->orderBy('title'),
             default => $query->orderByDesc('created_at'),
         };

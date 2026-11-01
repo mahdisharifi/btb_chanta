@@ -293,9 +293,11 @@ class HomeController extends Controller
     private function buildHomeProductQuery()
     {
         return Product::query()
+            ->canonical()
             ->pricedFirst()
             ->select([
                 'products.id',
+                'products.family_product_id',
                 'products.title',
                 'products.slug',
                 'products.short_description',
@@ -313,6 +315,10 @@ class HomeController extends Controller
             ->with([
                 'category:id,name,slug',
                 'supplier:id,company_name,brand_name,slug,logo_path,logo_versions,is_verified',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
@@ -338,7 +344,7 @@ class HomeController extends Controller
                               });
                       }]);
                 },
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
@@ -356,6 +362,7 @@ class HomeController extends Controller
         return Cache::remember('home:suppliers:top', self::CACHE_TTL_LONG, function () {
             return Supplier::query()
                 ->where('is_active', true)
+                ->whereNull('parent_supplier_id')
                 ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
                 ->where('is_verified', true)
                 ->select([
@@ -365,7 +372,8 @@ class HomeController extends Controller
                 ])
                 ->withCount(['products as active_products_count' => function ($q) {
                     $q->where('products.is_active', true)
-                        ->where('products.status', ProductStatus::ACTIVE);
+                        ->where('products.status', ProductStatus::ACTIVE)
+                        ->canonical();
                 }])
                 ->having('active_products_count', '>', 0)
                 ->orderByDesc('active_products_count')
@@ -380,12 +388,14 @@ class HomeController extends Controller
             return [
                 'total_products' => Product::where('is_active', true)
                     ->where('status', ProductStatus::ACTIVE)
+                    ->canonical()
                     ->count(),
 
                 'total_categories' => Category::where('is_active', true)->count(),
 
                 'total_suppliers' => Supplier::where('is_active', true)
                     ->where('type', 'supplier') // ✅ فقط تأمین‌کنندگان
+                    ->whereNull('parent_supplier_id')
                     ->where('is_verified', true)
                     ->count(),
 
@@ -409,8 +419,10 @@ class HomeController extends Controller
         }
 
         return Product::query()
+            ->canonical()
             ->select([
                 'products.id',
+                'products.family_product_id',
                 'products.title',
                 'products.slug',
                 'products.short_description',
@@ -429,6 +441,10 @@ class HomeController extends Controller
             ->with([
                 'category:id,name,slug',
                 'supplier:id,company_name,slug,logo_path,logo_versions,is_verified',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'alt_text',
@@ -454,7 +470,7 @@ class HomeController extends Controller
                               });
                       }]);
                 },
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([

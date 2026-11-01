@@ -14,7 +14,7 @@ class ProductController extends Controller
 {
     private function getSupplier(): Supplier
     {
-        return Supplier::where('user_id', auth()->id())->firstOrFail();
+        return auth()->user()->currentSupplier();
     }
 
     public function index(Request $request): View

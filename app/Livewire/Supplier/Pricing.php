@@ -32,18 +32,39 @@ class Pricing extends Component
             return redirect()->route('supplier.product-selection');
         }
 
-        $this->product = Product::findOrFail($this->product_id);
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
 
-        $this->productSupplier = ProductSupplier::firstOrCreate(
-            [
+        $selectedProduct = Product::query()->whereKey($this->product_id)->firstOrFail();
+        if (Auth::user()->currentSupplier()->isBranch()) {
+            $familyId = (int) ($selectedProduct->family_product_id ?: $selectedProduct->id);
+            $this->product = Product::query()
+                ->where('supplier_id', $supplierId)
+                ->where('family_product_id', $familyId)
+                ->firstOrFail();
+        } else {
+            $this->product = $selectedProduct;
+            abort_unless(
+                (int) $this->product->supplier_id === (int) $supplierId
+                    || ProductSupplier::query()->where('product_id', $this->product->id)->where('supplier_id', $supplierId)->exists(),
+                403,
+                'این محصول در شعبهٔ جاری ثبت نشده است.'
+            );
+        }
+
+        $this->productSupplier = ProductSupplier::query()
+            ->where('product_id', $this->product->id)
+            ->where('supplier_id', $supplierId)
+            ->first();
+
+        if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
+            $this->productSupplier = ProductSupplier::create([
                 'product_id' => $this->product->id,
                 'supplier_id' => $supplierId,
-            ],
-            [
                 'is_active' => true,
-            ]
-        );
+            ]);
+        }
+
+        abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
 
         $this->sku = $this->productSupplier->sku;
         $this->stock_quantity = $this->productSupplier->stock_quantity ?? 0;
@@ -82,8 +103,21 @@ class Pricing extends Component
     {
         $this->validate();
 
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplier = Auth::user()->currentSupplier();
+        $supplierId = (int) $supplier->id;
         $blockedByCurrency = false;
+        $this->product = Product::query()
+            ->whereKey($this->product->id)
+            ->where(function ($query) use ($supplier): void {
+                $query->where('supplier_id', $supplier->id)
+                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplier->id));
+            })
+            ->firstOrFail();
+        $this->productSupplier = ProductSupplier::query()
+            ->whereKey($this->productSupplier->id)
+            ->where('product_id', $this->product->id)
+            ->where('supplier_id', $supplier->id)
+            ->firstOrFail();
 
         // استفاده از تراکنش برای جلوگیری از ثبت ناقص اطلاعات در دو جدول
         $saved = DB::transaction(function () use ($supplierId, &$blockedByCurrency): bool {

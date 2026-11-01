@@ -173,7 +173,7 @@ class Create extends Component
         $finalSku = $this->generateUniqueSku();
 
         // دریافت شناسه تامین‌کننده لاگین شده
-        $supplierId = auth()->user()->supplier->id;
+        $supplierId = auth()->user()->currentSupplier()->id;
 
         // ایجاد محصول
         $product = Product::create([

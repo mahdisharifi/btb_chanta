@@ -10,6 +10,7 @@ use App\Livewire\Supplier\Catalog\Preview;
 use App\Livewire\Supplier\Settings\ManageCheckPeriods;
 use App\Models\CatalogTemplate;
 use App\Models\Category;
+use App\Models\City;
 use App\Models\CheckPeriod;
 use App\Models\PriceType;
 use App\Models\Product;
@@ -19,6 +20,7 @@ use App\Models\Supplier;
 use App\Models\SupplierExchangeRateSetting;
 use App\Models\User;
 use App\Services\CatalogPriceFormatter;
+use App\Services\CatalogBranchPriceRows;
 use App\Services\CatalogExchangeRateBasisResolver;
 use App\Services\CatalogSnapshotRevisionService;
 use App\Services\CatalogPriceTypeSelection;
@@ -67,6 +69,15 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
 
     public function test_supplier_can_save_and_reopen_foreign_currency_catalog_setting(): void
     {
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $this->supplier->id,
+            'currency' => 'USD',
+            'rate_toman' => '280000.0000',
+            'manual_rate_toman' => '280000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
         Livewire::actingAs($this->user)
             ->test(Index::class)
             ->set('name', 'کاتالوگ ارزی')
@@ -85,6 +96,976 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
             ->test(Index::class)
             ->call('editTemplate', $template->id)
             ->assertSet('priceDisplayCurrency', 'supplier');
+    }
+
+    public function test_catalog_exchange_rate_basis_resolves_many_suppliers_with_one_settings_query(): void
+    {
+        $branches = Supplier::factory()->count(2)->create([
+            'user_id' => $this->user->id,
+            'is_active' => true,
+            'is_verified' => true,
+            'verification_status' => 'approved',
+        ]);
+        $suppliers = collect([$this->supplier, ...$branches]);
+
+        foreach ($suppliers as $supplier) {
+            $supplier->forceFill(['pricing_currency' => 'USD'])->save();
+            SupplierExchangeRateSetting::query()->create([
+                'supplier_id' => $supplier->id,
+                'currency' => 'USD',
+                'rate_toman' => '280000.0000',
+                'manual_rate_toman' => '280000.0000',
+                'auto_update' => false,
+                'source' => 'manual',
+            ]);
+        }
+
+        $connection = DB::connection();
+        $connection->flushQueryLog();
+        $connection->enableQueryLog();
+        $resolved = app(\App\Services\CatalogExchangeRateBasisResolver::class)->resolveMany($suppliers);
+        $rateSettingQueries = collect($connection->getQueryLog())
+            ->filter(static fn (array $query): bool => str_contains($query['query'], 'supplier_exchange_rate_settings'));
+        $connection->disableQueryLog();
+
+        $this->assertCount(1, $rateSettingQueries);
+        $this->assertCount(3, $resolved);
+        $this->assertSame('280000.0000', $resolved->get((int) $this->supplier->id)['rate_value']);
+    }
+
+    public function test_supplier_can_save_an_all_branches_catalog_scope(): void
+    {
+        Livewire::actingAs($this->user)
+            ->test(Index::class)
+            ->set('name', 'کاتالوگ همه شعب')
+            ->set('catalogBranchScope', 'all')
+            ->call('saveTemplate')
+            ->assertHasNoErrors();
+
+        $template = CatalogTemplate::query()
+            ->where('supplier_id', $this->supplier->id)
+            ->where('name', 'کاتالوگ همه شعب')
+            ->sole();
+
+        $this->assertSame('all', $template->settings['catalog_branch_scope']);
+        $this->assertNull($template->settings['catalog_branch_supplier_id']);
+    }
+
+    public function test_combined_catalog_retains_period_name_when_custom_check_label_is_generic(): void
+    {
+        $rows = (new CatalogBranchPriceRows())->build(
+            [
+                9 => [
+                    'label' => 'گناوه',
+                    'prices' => [
+                        '0_2_3' => [
+                            'price' => 2500,
+                            'tier_index' => 0,
+                            'price_type_id' => 2,
+                            'check_period_id' => 3,
+                            'check_period_days' => 30,
+                            'check_period_name' => 'چک ۳۰ روزه',
+                            'check_period_label' => 'چکی',
+                        ],
+                    ],
+                ],
+            ],
+            [0 => [2]],
+            [2 => ['code' => 'check', 'name' => 'چکی', 'is_active' => true]],
+        );
+
+        $this->assertSame('گناوه - زیرکارتن - چکی · ۳۰ روزه', $rows[0]['label']);
+    }
+
+    public function test_all_branches_catalog_keeps_one_product_card_and_uses_each_branch_price_in_preview_and_pdfs(): void
+    {
+        [$product, $rootOffer, $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'toman',
+                'catalog_branch_scope' => 'all',
+                'prices' => ['0' => [$this->cashType->id]],
+            ],
+            tomanPrice: 1_400_000,
+            appliedCurrency: 'USD',
+            appliedRate: '280000.0000',
+        );
+
+        $now = now();
+        $countryId = DB::table('countries')->insertGetId([
+            'name' => 'Iran', 'native_name' => 'ایران', 'iso2' => 'IR', 'is_active' => true,
+            'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $tehranProvinceId = DB::table('provinces')->insertGetId([
+            'country_id' => $countryId, 'name' => 'Tehran', 'native_name' => 'تهران',
+            'is_active' => true, 'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $bushehrProvinceId = DB::table('provinces')->insertGetId([
+            'country_id' => $countryId, 'name' => 'Bushehr', 'native_name' => 'بوشهر',
+            'is_active' => true, 'sort_order' => 2, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $tehranCityId = DB::table('cities')->insertGetId([
+            'province_id' => $tehranProvinceId, 'country_id' => $countryId,
+            'name' => 'Tehran', 'native_name' => 'تهران', 'is_active' => true,
+            'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $ganavehCityId = DB::table('cities')->insertGetId([
+            'province_id' => $bushehrProvinceId, 'country_id' => $countryId,
+            'name' => 'Ganaveh', 'native_name' => 'گناوه', 'is_active' => true,
+            'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $this->supplier->update([
+            'province_id' => $tehranProvinceId,
+            'city_id' => $tehranCityId,
+            'province' => 'تهران',
+            'city' => 'تهران',
+        ]);
+
+        $branch = Supplier::factory()->create([
+            'user_id' => $this->user->id,
+            'parent_supplier_id' => $this->supplier->id,
+            'branch_name' => 'شعبه گناوه',
+            'slug' => 'catalog-ganaveh-' . uniqid(),
+            'company_name' => 'فروشگاه گناوه',
+            'is_active' => true,
+            'is_verified' => true,
+            'verification_status' => 'approved',
+            'pricing_currency' => 'USD',
+            'province_id' => $bushehrProvinceId,
+            'city_id' => $ganavehCityId,
+            'province' => 'بوشهر',
+            'city' => 'گناوه',
+        ]);
+        $branchProduct = Product::factory()->create([
+            'supplier_id' => $branch->id,
+            'family_product_id' => $product->id,
+            'category_id' => $product->category_id,
+            'title' => 'عنوان کپی شعبه',
+            'is_active' => true,
+            'status' => 'active',
+        ]);
+        $branchOffer = ProductSupplier::query()->create([
+            'product_id' => $branchProduct->id,
+            'supplier_id' => $branch->id,
+            'is_active' => true,
+            'price_currency' => 'USD',
+            'foreign_price_amount' => '7.5000',
+            'foreign_price_rate' => '280000.0000',
+            'foreign_price_applied_currency' => 'USD',
+            'branch_price_percentage' => 50,
+            'foreign_price_applied_setting_revision' => 1,
+            'foreign_price_applied_tier_revision' => 1,
+        ]);
+        ProductPrice::query()->create([
+            'product_id' => $branchProduct->id,
+            'product_supplier_id' => $branchOffer->id,
+            'price_type_id' => $this->cashType->id,
+            'tier_index' => 0,
+            'price' => 2_100_000,
+            'is_active' => true,
+        ]);
+
+        $checkType = PriceType::query()->create([
+            'code' => 'check',
+            'name' => 'چکی',
+            'description' => 'قیمت چکی',
+            'sort_order' => 2,
+            'is_active' => true,
+        ]);
+        $period = CheckPeriod::query()->create([
+            'supplier_id' => null,
+            'name' => 'چک ۳۰ روزه',
+            'scope' => 'global',
+            'days' => 30,
+            'label' => 'چک ۳۰ روزه',
+            'sort_order' => 1,
+            'is_active' => true,
+        ]);
+        foreach ([$this->supplier, $branch] as $checkSupplier) {
+            DB::table('supplier_check_period')->insert([
+                'supplier_id' => $checkSupplier->id,
+                'check_period_id' => $period->id,
+                'percentage_increase' => 10,
+                'is_active' => true,
+                'label' => $checkSupplier->id === $this->supplier->id
+                    ? 'چک تهران ۳۰ روزه'
+                    : 'چک گناوه ۳۰ روزه',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        $primaryScopedPeriod = CheckPeriod::query()->create([
+            'supplier_id' => $this->supplier->id,
+            'name' => 'چک مادر ۶۰ روزه',
+            'scope' => 'supplier',
+            'days' => 60,
+            'label' => 'چک مادر ۶۰ روزه',
+            'sort_order' => 2,
+            'is_active' => true,
+        ]);
+        DB::table('supplier_check_period')->insert([
+            'supplier_id' => $this->supplier->id,
+            'check_period_id' => $primaryScopedPeriod->id,
+            'percentage_increase' => 20,
+            'is_active' => true,
+            'label' => 'چک مادر ۶۰ روزه',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        foreach ([[$product, $rootOffer, 1_540_000]] as [$matrixProduct, $matrixOffer, $checkPrice]) {
+            ProductPrice::query()->create([
+                'product_id' => $matrixProduct->id,
+                'product_supplier_id' => $matrixOffer->id,
+                'price_type_id' => $checkType->id,
+                'tier_index' => 0,
+                'check_period_id' => $period->id,
+                'price' => $checkPrice,
+                'is_active' => true,
+            ]);
+        }
+        ProductPrice::query()->create([
+            'product_id' => $product->id,
+            'product_supplier_id' => $rootOffer->id,
+            'price_type_id' => $checkType->id,
+            'tier_index' => 0,
+            'check_period_id' => $primaryScopedPeriod->id,
+            'price' => 1_680_000,
+            'is_active' => true,
+        ]);
+        $this->assertSame(2_310_000, ProductPrice::query()
+            ->where('product_supplier_id', $branchOffer->id)
+            ->where('price_type_id', $checkType->id)
+            ->where('check_period_id', $period->id)
+            ->value('price'), 'The branch check matrix should be derived from the primary check price and branch percentage.');
+
+        $branchScopedPeriod = CheckPeriod::query()->create([
+            'supplier_id' => $branch->id,
+            'name' => 'چک شعبه ۴۵ روزه',
+            'scope' => 'supplier',
+            'days' => 45,
+            'label' => 'چک شعبه ۴۵ روزه',
+            'sort_order' => 3,
+            'is_active' => true,
+        ]);
+        DB::table('supplier_check_period')->insert([
+            'supplier_id' => $branch->id,
+            'check_period_id' => $branchScopedPeriod->id,
+            'percentage_increase' => 5,
+            'is_active' => true,
+            'label' => 'چک اختصاصی گناوه',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        ProductPrice::query()->create([
+            'product_id' => $branchProduct->id,
+            'product_supplier_id' => $branchOffer->id,
+            'price_type_id' => $checkType->id,
+            'tier_index' => 0,
+            'check_period_id' => $branchScopedPeriod->id,
+            'price' => 2_660_000,
+            'is_active' => true,
+        ]);
+
+        $availablePeriods = Livewire::actingAs($this->user)
+            ->test(Index::class)
+            ->set('catalogBranchScope', 'all')
+            ->instance()
+            ->availableCheckPeriods;
+        $this->assertTrue($availablePeriods->contains('id', $primaryScopedPeriod->id));
+        $this->assertTrue($availablePeriods->contains('id', $branchScopedPeriod->id));
+
+        $templateSettings = $template->settings;
+        $templateSettings['prices'] = ['0' => [$this->cashType->id, $checkType->id]];
+        $templateSettings['check_periods'] = ['0' => [$period->id, $primaryScopedPeriod->id, $branchScopedPeriod->id]];
+        $template->forceFill(['settings' => $templateSettings])->save();
+
+        $component = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSee('تهران - زیرکارتن')
+            ->assertSee('گناوه - زیرکارتن')
+            ->assertSee('تهران - زیرکارتن - نقدی')
+            ->assertSee('گناوه - زیرکارتن - نقدی')
+            ->assertSee('تهران - زیرکارتن - چکی · تهران ۳۰ روزه')
+            ->assertSee('گناوه - زیرکارتن - چکی · گناوه ۳۰ روزه')
+            ->assertSee('تهران - زیرکارتن - چکی · مادر ۶۰ روزه')
+            ->assertSee('گناوه - زیرکارتن - چکی · مادر ۶۰ روزه')
+            ->assertSee('گناوه - زیرکارتن - چکی · اختصاصی گناوه')
+            ->assertSee('تهران - زیرکارتن - چکی · شعبه ۴۵ روزه')
+            ->assertSee('1,400,000')
+            ->assertSee('2,100,000')
+            ->assertSee('1,540,000')
+            ->assertSee('2,310,000')
+            ->assertSee('1,680,000')
+            ->assertSee('2,520,000')
+            ->assertSee('2,660,000')
+            ->assertDontSee('عنوان کپی شعبه');
+
+        $preview = $component->instance();
+        $snapshot = Cache::get($preview->catalogDataCacheKey);
+        $items = $snapshot['grouped_products']['all'];
+        $this->assertCount(1, $items, 'Branch copies should produce a single canonical product card.');
+        $this->assertSame($product->title, $items[0]['title']);
+        $this->assertSame(1_400_000, $items[0]['branch_prices'][$this->supplier->id]['prices']['0_' . $this->cashType->id]['price']);
+        $this->assertSame(2_100_000, $items[0]['branch_prices'][$branch->id]['prices']['0_' . $this->cashType->id]['price']);
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $html = $this->renderPdfTemplateHtml($component, $view);
+            $this->assertStringContainsString('تهران - زیرکارتن', $html);
+            $this->assertStringContainsString('گناوه - زیرکارتن', $html);
+            $this->assertStringContainsString('تهران - زیرکارتن - نقدی', $html);
+            $this->assertStringContainsString('گناوه - زیرکارتن - نقدی', $html);
+            $this->assertStringContainsString('تهران - زیرکارتن - چکی · تهران ۳۰ روزه', $html);
+            $this->assertStringContainsString('گناوه - زیرکارتن - چکی · گناوه ۳۰ روزه', $html);
+            $this->assertStringContainsString('تهران - زیرکارتن - چکی · مادر ۶۰ روزه', $html);
+            $this->assertStringContainsString('گناوه - زیرکارتن - چکی · مادر ۶۰ روزه', $html);
+            $this->assertStringContainsString('گناوه - زیرکارتن - چکی · اختصاصی گناوه', $html);
+            $this->assertStringContainsString('تهران - زیرکارتن - چکی · شعبه ۴۵ روزه', $html);
+            $this->assertStringContainsString('1,400,000', $html);
+            $this->assertStringContainsString('2,100,000', $html);
+            $this->assertStringContainsString('1,540,000', $html);
+            $this->assertStringContainsString('2,310,000', $html);
+            $this->assertStringContainsString('1,680,000', $html);
+            $this->assertStringContainsString('2,520,000', $html);
+            $this->assertStringContainsString('2,660,000', $html);
+            $this->assertStringNotContainsString('عنوان کپی شعبه', $html);
+            $this->assertSame(1, substr_count($html, $product->title));
+        }
+
+        $branchCity = City::query()->findOrFail($ganavehCityId);
+        $branchCity->update(['native_name' => 'گناوهٔ تازه']);
+        $refreshedForCity = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSee('گناوهٔ تازه - زیرکارتن');
+        $this->assertNotSame($preview->catalogDataCacheKey, $refreshedForCity->instance()->catalogDataCacheKey);
+        $branchCity->update(['native_name' => 'گناوه']);
+
+        $this->assertPdfDownloadRoute($component, 'downloadPdf');
+        $this->assertPdfDownloadRoute($component, 'downloadPdf2');
+
+        foreach ([$this->supplier, $branch] as $currencySupplier) {
+            SupplierExchangeRateSetting::query()->create([
+                'supplier_id' => $currencySupplier->id,
+                'currency' => 'USD',
+                'rate_toman' => '280000.0000',
+                'manual_rate_toman' => '280000.0000',
+                'auto_update' => false,
+                'source' => 'manual',
+            ]);
+        }
+
+        $createScopedTemplate = function (string $name, string $currency, string $scope, ?int $branchId = null) use ($template): CatalogTemplate {
+            $settings = $template->settings;
+            $settings['price_display_currency'] = $currency;
+            $settings['catalog_branch_scope'] = $scope;
+            $settings['catalog_branch_supplier_id'] = $branchId;
+
+            return CatalogTemplate::query()->create([
+                'supplier_id' => $this->supplier->id,
+                'name' => $name,
+                'selected_categories' => $template->selected_categories,
+                'selected_price_types' => $template->selected_price_types,
+                'settings' => $settings,
+                'config' => [],
+            ]);
+        };
+
+        $foreignAllTemplate = $createScopedTemplate('همه شعب ارزی', 'supplier', 'all');
+        $foreignAll = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $foreignAllTemplate->id])
+            ->assertSet('currencySnapshotWarning', false)
+            ->assertSee('تهران - زیرکارتن')
+            ->assertSee('گناوه - زیرکارتن')
+            ->assertSee('5 دلار')
+            ->assertSee('7.5 دلار')
+            ->assertSee('5.5 دلار')
+            ->assertSee('8.25 دلار')
+            ->assertSee('6 دلار')
+            ->assertSee('9 دلار')
+            ->assertSee('9.5 دلار');
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $html = $this->renderPdfTemplateHtml($foreignAll, $view);
+            $this->assertStringContainsString('تهران - زیرکارتن', $html);
+            $this->assertStringContainsString('گناوه - زیرکارتن', $html);
+            $this->assertStringContainsString('5 دلار', $html);
+            $this->assertStringContainsString('7.5 دلار', $html);
+            $this->assertStringContainsString('5.5 دلار', $html);
+            $this->assertStringContainsString('8.25 دلار', $html);
+            $this->assertStringContainsString('6 دلار', $html);
+            $this->assertStringContainsString('9 دلار', $html);
+            $this->assertStringContainsString('9.5 دلار', $html);
+        }
+
+        $singleTomanTemplate = $createScopedTemplate('یک شعبه تومانی', 'toman', 'single', (int) $branch->id);
+        $singleToman = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $singleTomanTemplate->id])
+            ->assertSee('2,100,000')
+            ->assertSee('2,520,000')
+            ->assertSee('2,660,000')
+            ->assertDontSee('1,400,000')
+            ->assertDontSee('تهران - زیرکارتن')
+            ->assertSee('عنوان کپی شعبه');
+
+        $singleForeignTemplate = $createScopedTemplate('یک شعبه ارزی', 'supplier', 'single', (int) $branch->id);
+        $singleForeign = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $singleForeignTemplate->id])
+            ->assertSet('displayCurrencyCode', 'USD')
+            ->assertSee('7.5 دلار')
+            ->assertSee('9 دلار')
+            ->assertSee('9.5 دلار');
+
+        foreach ([$singleToman, $singleForeign] as $singleComponent) {
+            $singlePreview = $singleComponent->instance();
+            $singleSnapshot = Cache::get($singlePreview->catalogDataCacheKey);
+            $singleItem = $singleSnapshot['grouped_products']['all'][0];
+            $this->assertSame(
+                2_100_000,
+                $singleItem['prices']['0_' . $this->cashType->id]['price'],
+                'A selected-branch catalog must use the child branch cash matrix, not the primary price.'
+            );
+            $this->assertSame(
+                2_310_000,
+                $singleItem['prices']['0_' . $checkType->id . '_' . $period->id]['price'],
+                'A selected-branch catalog must use the child branch check matrix, not the primary price.'
+            );
+            $this->assertSame(
+                2_520_000,
+                $singleItem['prices']['0_' . $checkType->id . '_' . $primaryScopedPeriod->id]['price'],
+                'A selected branch catalog must retain a check period inherited from the primary supplier.'
+            );
+            $this->assertSame(
+                2_660_000,
+                $singleItem['prices']['0_' . $checkType->id . '_' . $branchScopedPeriod->id]['price'],
+                'A selected branch catalog must retain its branch-owned check period and label.'
+            );
+        }
+
+        foreach ([[$singleToman, '2,100,000'], [$singleForeign, '7.5 دلار']] as [$singleComponent, $expectedPrice]) {
+            foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+                $html = $this->renderPdfTemplateHtml($singleComponent, $view);
+                $this->assertStringContainsString($expectedPrice, $html);
+                $this->assertStringNotContainsString('1,400,000', $html);
+                $this->assertStringContainsString('عنوان کپی شعبه', $html);
+            }
+        }
+
+        $this->assertPdfDownloadRoute($singleToman, 'downloadPdf');
+        $this->assertPdfDownloadRoute($singleToman, 'downloadPdf2');
+
+        foreach ([
+            ['code' => 'CNY', 'rate' => 40_000, 'root_cash' => '35 یوان', 'branch_cash' => '52.5 یوان', 'root_check' => '38.5 یوان', 'branch_check' => '57.75 یوان', 'root_scoped_check' => '42 یوان', 'branch_scoped_check' => '63 یوان', 'branch_custom_check' => '66.5 یوان', 'single' => '52.5 یوان'],
+            ['code' => 'AED', 'rate' => 70_000, 'root_cash' => '20 درهم', 'branch_cash' => '30 درهم', 'root_check' => '22 درهم', 'branch_check' => '33 درهم', 'root_scoped_check' => '24 درهم', 'branch_scoped_check' => '36 درهم', 'branch_custom_check' => '38 درهم', 'single' => '30 درهم'],
+        ] as $currencyCase) {
+            $currency = $currencyCase['code'];
+            $rate = (string) $currencyCase['rate'] . '.0000';
+            $this->supplier->forceFill(['pricing_currency' => $currency])->save();
+            $branch->forceFill(['pricing_currency' => $currency])->save();
+            foreach ([$this->supplier, $branch] as $currencySupplier) {
+                SupplierExchangeRateSetting::query()->create([
+                    'supplier_id' => $currencySupplier->id,
+                    'currency' => $currency,
+                    'rate_toman' => $rate,
+                    'manual_rate_toman' => $rate,
+                    'auto_update' => false,
+                    'source' => 'manual',
+                ]);
+            }
+            $rootOffer->update([
+                'price_currency' => $currency,
+                'foreign_price_amount' => number_format(1_400_000 / $currencyCase['rate'], 4, '.', ''),
+                'foreign_price_rate' => $rate,
+                'foreign_price_applied_currency' => $currency,
+            ]);
+            $branchOffer->update([
+                'price_currency' => $currency,
+                'foreign_price_amount' => number_format(2_100_000 / $currencyCase['rate'], 4, '.', ''),
+                'foreign_price_rate' => $rate,
+                'foreign_price_applied_currency' => $currency,
+            ]);
+
+            $allTemplate = $createScopedTemplate("همه شعب {$currency}", 'supplier', 'all');
+            $allComponent = Livewire::actingAs($this->user)
+                ->test(Preview::class, ['catalog' => $allTemplate->id])
+                ->assertSet('displayCurrencyCode', $currency)
+                ->assertSet('currencySnapshotWarning', false)
+                ->assertSee($currencyCase['root_cash'])
+                ->assertSee($currencyCase['branch_cash'])
+                ->assertSee($currencyCase['root_check'])
+                ->assertSee($currencyCase['branch_check'])
+                ->assertSee($currencyCase['root_scoped_check'])
+                ->assertSee($currencyCase['branch_scoped_check'])
+                ->assertSee($currencyCase['branch_custom_check']);
+
+            $singleTemplate = $createScopedTemplate("یک شعبه {$currency}", 'supplier', 'single', (int) $branch->id);
+            $singleComponent = Livewire::actingAs($this->user)
+                ->test(Preview::class, ['catalog' => $singleTemplate->id])
+                ->assertSet('displayCurrencyCode', $currency)
+                ->assertSee($currencyCase['single'])
+                ->assertSee($currencyCase['branch_scoped_check'])
+                ->assertSee($currencyCase['branch_custom_check']);
+
+            foreach ([[$allComponent, true], [$singleComponent, false]] as [$currencyComponent, $combined]) {
+                foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+                    $html = $this->renderPdfTemplateHtml($currencyComponent, $view);
+                    if ($combined) {
+                        $this->assertStringContainsString('تهران - زیرکارتن', $html);
+                        $this->assertStringContainsString('گناوه - زیرکارتن', $html);
+                        $this->assertStringContainsString($currencyCase['root_cash'], $html);
+                        $this->assertStringContainsString($currencyCase['branch_cash'], $html);
+                        $this->assertStringContainsString($currencyCase['root_check'], $html);
+                        $this->assertStringContainsString($currencyCase['branch_check'], $html);
+                    } else {
+                        $this->assertStringContainsString($currencyCase['single'], $html);
+                        $this->assertStringNotContainsString('1,400,000', $html);
+                        $this->assertStringContainsString('عنوان کپی شعبه', $html);
+                    }
+                }
+            }
+        }
+    }
+
+    public function test_all_toman_branch_catalog_exports_both_pdfs_without_exchange_rates(): void
+    {
+        $this->supplier->forceFill(['pricing_currency' => 'TOM'])->save();
+        [$product, , $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'supplier',
+                'catalog_branch_scope' => 'all',
+                'prices' => 'all',
+            ],
+            tomanPrice: 1_200_000,
+            appliedCurrency: 'TOM',
+            appliedRate: '1.0000',
+        );
+
+        $branch = Supplier::factory()->create([
+            'user_id' => $this->user->id,
+            'parent_supplier_id' => $this->supplier->id,
+            'branch_name' => 'شعبهٔ گناوه',
+            'slug' => 'toman-catalog-branch-' . uniqid(),
+            'company_name' => 'فروشگاه گناوه',
+            'is_active' => true,
+            'is_verified' => true,
+            'verification_status' => 'approved',
+            'pricing_currency' => 'TOM',
+            'city' => 'گناوه',
+        ]);
+        $branchProduct = Product::factory()->create([
+            'supplier_id' => $branch->id,
+            'family_product_id' => $product->id,
+            'category_id' => $product->category_id,
+            'title' => 'محصول کپی شعبهٔ گناوه',
+            'is_active' => true,
+            'status' => 'active',
+        ]);
+        $branchOffer = ProductSupplier::query()->create([
+            'product_id' => $branchProduct->id,
+            'supplier_id' => $branch->id,
+            'is_active' => true,
+            'price_currency' => 'TOM',
+            'branch_price_percentage' => -5,
+        ]);
+        ProductPrice::query()->create([
+            'product_id' => $branchProduct->id,
+            'product_supplier_id' => $branchOffer->id,
+            'price_type_id' => $this->cashType->id,
+            'tier_index' => 0,
+            'price' => 1_140_000,
+            'is_active' => true,
+        ]);
+
+        $this->assertSame(0, SupplierExchangeRateSetting::query()
+            ->whereIn('supplier_id', [$this->supplier->id, $branch->id])
+            ->count());
+
+        $component = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSet('displayCurrencyCode', 'TOM')
+            ->assertSet('currencySnapshotWarning', false)
+            ->assertSee('1,200,000')
+            ->assertSee('1,140,000');
+
+        foreach ([
+            ['action' => 'downloadPdf', 'view' => 'pdf.supplier-catalog'],
+            ['action' => 'downloadPdf2', 'view' => 'pdf.supplier-catalog2'],
+        ] as $pdfCase) {
+            $this->assertPdfDownloadRoute($component, $pdfCase['action']);
+            $html = $this->renderPdfTemplateHtml($component, $pdfCase['view']);
+            $this->assertStringContainsString('1,200,000', $html);
+            $this->assertStringContainsString('1,140,000', $html);
+            $this->assertStringContainsString('گناوه', $html);
+        }
+    }
+
+    public function test_catalog_branch_selector_and_combined_export_exclude_unverified_branches(): void
+    {
+        [$product, , $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'toman',
+                'catalog_branch_scope' => 'all',
+                'prices' => ['0' => [$this->cashType->id]],
+            ],
+            tomanPrice: 1_400_000,
+            appliedCurrency: 'USD',
+            appliedRate: '280000.0000',
+        );
+        $unverifiedBranch = Supplier::factory()->create([
+            'user_id' => $this->user->id,
+            'parent_supplier_id' => $this->supplier->id,
+            'branch_name' => 'شعبه تأییدنشده',
+            'slug' => 'catalog-unverified-branch-' . uniqid(),
+            'is_active' => true,
+            'is_verified' => false,
+            'verification_status' => 'pending',
+            'pricing_currency' => 'USD',
+        ]);
+        $branchProduct = Product::factory()->create([
+            'supplier_id' => $unverifiedBranch->id,
+            'family_product_id' => $product->id,
+            'category_id' => $product->category_id,
+            'title' => 'محصول شعبه تأییدنشده',
+            'is_active' => true,
+            'status' => 'active',
+        ]);
+        $branchOffer = ProductSupplier::query()->create([
+            'product_id' => $branchProduct->id,
+            'supplier_id' => $unverifiedBranch->id,
+            'is_active' => true,
+        ]);
+        ProductPrice::query()->create([
+            'product_id' => $branchProduct->id,
+            'product_supplier_id' => $branchOffer->id,
+            'price_type_id' => $this->cashType->id,
+            'tier_index' => 0,
+            'price' => 1_000_000,
+            'is_active' => true,
+        ]);
+
+        $selection = Livewire::actingAs($this->user)
+            ->test(Index::class)
+            ->call('createNew')
+            ->set('name', 'کاتالوگ شعبه تأییدشده')
+            ->set('catalogBranchScope', 'single')
+            ->set('catalogBranchSupplierId', $unverifiedBranch->id)
+            ->call('saveTemplate')
+            ->assertHasErrors('catalogBranchSupplierId')
+            ->assertSee('aria-invalid="true"', false)
+            ->assertSee('catalogBranchSupplierId-error', false);
+
+        $this->assertNotNull($selection);
+        $component = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertDontSee('شعبه تأییدنشده - زیرکارتن')
+            ->assertDontSee('محصول شعبه تأییدنشده');
+        $preview = $component->instance();
+        $snapshot = Cache::get($preview->catalogDataCacheKey);
+        $items = $snapshot['grouped_products']['all'];
+        $this->assertCount(1, $items);
+        $this->assertSame([$this->supplier->id], array_map('intval', array_keys($items[0]['branch_prices'])));
+        $this->assertArrayNotHasKey($unverifiedBranch->id, $items[0]['branch_prices']);
+    }
+
+    public function test_catalog_all_branch_scope_can_save_without_a_branch_id(): void
+    {
+        Livewire::actingAs($this->user)
+            ->test(Index::class)
+            ->set('name', 'کاتالوگ همه شعب بدون شناسه')
+            ->set('catalogBranchScope', 'all')
+            ->set('catalogBranchSupplierId', null)
+            ->call('saveTemplate')
+            ->assertHasNoErrors();
+
+        $settings = CatalogTemplate::query()
+            ->where('name', 'کاتالوگ همه شعب بدون شناسه')
+            ->sole()
+            ->settings;
+
+        $this->assertSame('all', $settings['catalog_branch_scope']);
+        $this->assertNull($settings['catalog_branch_supplier_id']);
+    }
+
+    public function test_catalog_branch_scope_validation_error_is_associated_with_the_radio_group(): void
+    {
+        Livewire::actingAs($this->user)
+            ->test(Index::class)
+            ->call('createNew')
+            ->set('name', 'کاتالوگ با محدوده نامعتبر')
+            ->set('catalogBranchScope', 'invalid')
+            ->call('saveTemplate')
+            ->assertHasErrors('catalogBranchScope')
+            ->assertSee('catalogBranchScope-error', false);
+    }
+
+    public function test_all_branches_catalog_warns_and_blocks_pdf_when_branch_currency_rates_diverge(): void
+    {
+        [$product, , $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'supplier',
+                'catalog_branch_scope' => 'all',
+                'prices' => ['0' => [$this->cashType->id]],
+            ],
+            tomanPrice: 1_400_000,
+            appliedCurrency: 'USD',
+            appliedRate: '280000.0000',
+        );
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $this->supplier->id,
+            'currency' => 'USD',
+            'rate_toman' => '280000.0000',
+            'manual_rate_toman' => '280000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+        $branch = Supplier::factory()->create([
+            'user_id' => $this->user->id,
+            'parent_supplier_id' => $this->supplier->id,
+            'branch_name' => 'شعبه دوم',
+            'slug' => 'currency-branch-' . uniqid(),
+            'is_active' => true,
+            'is_verified' => true,
+            'verification_status' => 'approved',
+            'pricing_currency' => 'USD',
+        ]);
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $branch->id,
+            'currency' => 'USD',
+            'rate_toman' => '280000.0000',
+            'manual_rate_toman' => '280000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
+        $component = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSet('displayCurrencyCode', 'USD');
+
+        $branch->forceFill(['pricing_currency' => 'CNY'])->save();
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $branch->id,
+            'currency' => 'CNY',
+            'rate_toman' => '40000.0000',
+            'manual_rate_toman' => '40000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
+        $warning = 'ارز پایه و نرخ معتبر همهٔ شعبه‌های انتخاب‌شده باید یکسان باشد';
+        $actionableMessage = 'خروجی ارزی ممکن نیست';
+        $component->call('clearCatalogCache')
+            ->assertSet('displayCurrencyCode', null)
+            ->assertSee($warning);
+
+        $component->call('downloadPdf2')
+            ->assertHasErrors('pdfExport')
+            ->assertSee($actionableMessage);
+    }
+
+    public function test_catalog_formats_copied_branch_prices_using_the_source_exchange_snapshot(): void
+    {
+        [$product, $rootOffer, $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'supplier',
+                'catalog_branch_scope' => 'all',
+                'prices' => ['0' => [$this->cashType->id]],
+            ],
+            tomanPrice: 1_400_000,
+            appliedCurrency: 'USD',
+            appliedRate: '280000.0000',
+        );
+
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $this->supplier->id,
+            'currency' => 'USD',
+            'rate_toman' => '280000.0000',
+            'manual_rate_toman' => '280000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
+        $branch = Supplier::factory()->create([
+            'user_id' => $this->user->id,
+            'parent_supplier_id' => $this->supplier->id,
+            'branch_name' => 'شعبه گناوه',
+            'slug' => 'derived-currency-branch-' . uniqid(),
+            'is_active' => true,
+            'is_verified' => true,
+            'verification_status' => 'approved',
+            'pricing_currency' => 'USD',
+        ]);
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $branch->id,
+            'currency' => 'USD',
+            'rate_toman' => '280000.0000',
+            'manual_rate_toman' => '280000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
+        $branchProduct = Product::factory()->create([
+            'supplier_id' => $branch->id,
+            'family_product_id' => $product->id,
+            'category_id' => $product->category_id,
+            'is_active' => true,
+            'status' => 'active',
+        ]);
+        $branchOffer = ProductSupplier::query()->create([
+            'product_id' => $branchProduct->id,
+            'supplier_id' => $branch->id,
+            'is_active' => true,
+            'price_currency' => 'USD',
+            'branch_price_percentage' => 50,
+        ]);
+        $rootCashPrice = ProductPrice::query()
+            ->where('product_supplier_id', $rootOffer->id)
+            ->where('price_type_id', $this->cashType->id)
+            ->firstOrFail();
+        ProductPrice::query()->create([
+            'product_id' => $branchProduct->id,
+            'product_supplier_id' => $branchOffer->id,
+            'branch_source_price_id' => $rootCashPrice->id,
+            'price_type_id' => $this->cashType->id,
+            'tier_index' => 0,
+            'price' => 2_100_000,
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSet('displayCurrencyCode', 'USD')
+            ->assertSet('currencySnapshotWarning', false)
+            ->assertSee('5 دلار')
+            ->assertSee('7.5 دلار');
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $this->assertStringContainsString('7.5 دلار', $this->renderPdfTemplateHtml($component, $view));
+        }
+
+        $branch->forceFill(['pricing_currency' => 'CNY'])->save();
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $branch->id,
+            'currency' => 'CNY',
+            'rate_toman' => '40000.0000',
+            'manual_rate_toman' => '40000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+        $singleSettings = $template->settings;
+        $singleSettings['catalog_branch_scope'] = 'single';
+        $singleSettings['catalog_branch_supplier_id'] = (int) $branch->id;
+        $singleTemplate = CatalogTemplate::query()->create([
+            'supplier_id' => $this->supplier->id,
+            'name' => 'کاتالوگ ارزی شعبه',
+            'selected_categories' => $template->selected_categories,
+            'selected_price_types' => $template->selected_price_types,
+            'settings' => $singleSettings,
+            'config' => [],
+        ]);
+        $singleBranchComponent = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $singleTemplate->id])
+            ->assertSet('displayCurrencyCode', 'CNY')
+            ->assertSet('currencySnapshotWarning', false)
+            ->assertSee('52.5 یوان');
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $this->assertStringContainsString('52.5 یوان', $this->renderPdfTemplateHtml($singleBranchComponent, $view));
+        }
+
+        $singleBranchCacheKey = $singleBranchComponent->instance()->catalogDataCacheKey;
+        $rootUsdSetting = SupplierExchangeRateSetting::query()
+            ->where('supplier_id', $this->supplier->id)
+            ->where('currency', 'USD')
+            ->firstOrFail();
+        $rootUsdSetting->forceFill([
+            'manual_rate_toman' => '290000.0000',
+        ])->save();
+
+        $staleSourceComponent = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $singleTemplate->id])
+            ->assertSet('currencySnapshotWarning', true)
+            ->assertSee('---')
+            ->assertDontSee('52.5 یوان');
+        $this->assertNotSame($singleBranchCacheKey, $staleSourceComponent->instance()->catalogDataCacheKey);
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $html = $this->renderPdfTemplateHtml($staleSourceComponent, $view);
+            $this->assertStringNotContainsString('52.5 یوان', $html);
+            $this->assertStringContainsString('---', $html);
+        }
+    }
+
+    public function test_toman_all_branch_catalog_checks_each_price_against_its_own_currency_basis(): void
+    {
+        [$product, , $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'toman',
+                'catalog_branch_scope' => 'all',
+                'prices' => ['0' => [$this->cashType->id]],
+            ],
+            tomanPrice: 1_400_000,
+            appliedCurrency: 'USD',
+            appliedRate: '280000.0000',
+        );
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $this->supplier->id,
+            'currency' => 'USD',
+            'rate_toman' => '280000.0000',
+            'manual_rate_toman' => '280000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
+        $branch = Supplier::factory()->create([
+            'user_id' => $this->user->id,
+            'parent_supplier_id' => $this->supplier->id,
+            'branch_name' => 'شعبه دوم',
+            'slug' => 'toman-currency-branch-' . uniqid(),
+            'is_active' => true,
+            'is_verified' => true,
+            'verification_status' => 'approved',
+            'pricing_currency' => 'CNY',
+        ]);
+        SupplierExchangeRateSetting::query()->create([
+            'supplier_id' => $branch->id,
+            'currency' => 'CNY',
+            'rate_toman' => '40000.0000',
+            'manual_rate_toman' => '40000.0000',
+            'auto_update' => false,
+            'source' => 'manual',
+        ]);
+
+        $branchProduct = Product::factory()->create([
+            'supplier_id' => $branch->id,
+            'family_product_id' => $product->id,
+            'category_id' => $product->category_id,
+            'is_active' => true,
+            'status' => 'active',
+        ]);
+        $branchOffer = ProductSupplier::query()->create([
+            'product_id' => $branchProduct->id,
+            'supplier_id' => $branch->id,
+            'is_active' => true,
+            'price_currency' => 'CNY',
+            'foreign_price_amount' => '52.5000',
+            'foreign_price_rate' => '40000.0000',
+            'foreign_price_applied_currency' => 'CNY',
+            'foreign_price_applied_setting_revision' => 1,
+            'foreign_price_applied_tier_revision' => 1,
+        ]);
+        ProductPrice::query()->create([
+            'product_id' => $branchProduct->id,
+            'product_supplier_id' => $branchOffer->id,
+            'price_type_id' => $this->cashType->id,
+            'tier_index' => 0,
+            'price' => 2_100_000,
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSet('displayCurrencyCode', 'TOM')
+            ->assertSet('currencySnapshotWarning', false)
+            ->assertSee('1,400,000')
+            ->assertSee('2,100,000');
     }
 
     public function test_preview_formats_saved_toman_matrix_with_its_applied_rate_without_mutating_prices(): void
@@ -313,7 +1294,7 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(Preview::class, ['catalog' => $template->id])
-            ->assertSee('ارز پایهٔ کاتالوگ قابل تشخیص نیست')
+            ->assertSee('ارز پایهٔ کاتالوگ قابل استفاده نیست')
             ->assertDontSee('نرخ دلار')
             ->assertDontSee('نرخ یوان')
             ->assertDontSee('نرخ درهم');
@@ -386,6 +1367,18 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
 
         $this->supplier->forceFill(['pricing_currency' => 'TOM'])->save();
         $this->assertNull($resolver->resolve($this->supplier->fresh()));
+
+        Livewire::actingAs($this->user)
+            ->test(Index::class)
+            ->set('name', 'کاتالوگ پایه تومان')
+            ->set('priceDisplayCurrency', 'supplier')
+            ->call('saveTemplate')
+            ->assertHasNoErrors();
+
+        $this->assertSame(
+            'supplier',
+            CatalogTemplate::query()->where('name', 'کاتالوگ پایه تومان')->sole()->settings['price_display_currency'],
+        );
     }
 
     public function test_catalog_revision_batch_coalesces_repeated_supplier_invalidations(): void
@@ -555,7 +1548,14 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
         $firstProduct = collect($firstSnapshot['grouped_products'])->flatten(1)->firstWhere('id', $product->id);
         $this->assertArrayHasKey($checkPriceKey, $firstProduct['prices']);
 
-        $period->update(['label' => 'چک ۶۰ روزه']);
+        $period->update([
+            'name' => 'چک ۶۰ روزه',
+            'label' => 'چک ۶۰ روزه',
+        ]);
+        DB::table('supplier_check_period')
+            ->where('supplier_id', $this->supplier->id)
+            ->where('check_period_id', $period->id)
+            ->update(['label' => null, 'updated_at' => now()]);
 
         $renamedPreview = Livewire::actingAs($this->user)
             ->test(Preview::class, ['catalog' => $template->id]);
@@ -606,7 +1606,7 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
 
     public function test_preview_does_not_label_a_price_when_its_applied_currency_snapshot_mismatches(): void
     {
-        [, , $template] = $this->pricedProductAndTemplate(
+        [$product, , $template] = $this->pricedProductAndTemplate(
             settings: [
                 'price_display_currency' => 'supplier',
                 'prices' => 'all',
@@ -616,11 +1616,21 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
             appliedRate: '25000.0000',
         );
 
-        Livewire::actingAs($this->user)
+        $component = Livewire::actingAs($this->user)
             ->test(Preview::class, ['catalog' => $template->id])
             ->assertSee('نرخ ذخیره‌شدهٔ بعضی کالاها با نرخ تنظیم‌شده یکسان نیست یا معتبر نیست')
             ->assertSee('---')
             ->assertDontSee('5.12 دلار');
+
+        $snapshot = Cache::get($component->instance()->catalogDataCacheKey);
+        $productSnapshot = collect($snapshot['grouped_products'])->flatten(1)->firstWhere('id', $product->id);
+        $this->assertFalse($productSnapshot['prices']['0_' . $this->cashType->id]['catalog_display_valid']);
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $html = $this->renderPdfTemplateHtml($component, $view);
+            $this->assertStringNotContainsString('5.12 دلار', $html);
+            $this->assertStringContainsString('---', $html);
+        }
     }
 
     public function test_legacy_catalog_without_currency_setting_stays_in_toman(): void
@@ -742,8 +1752,27 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
             ->assertDontSee('نرخ درهم');
         $this->assertSame('TOM', $component->get('displayCurrencyCode'));
 
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $html = $this->renderPdfTemplateHtml($component, $view);
+            $this->assertStringNotContainsString('نرخ دلار', $html);
+            $this->assertStringNotContainsString('نرخ یوان', $html);
+            $this->assertStringNotContainsString('نرخ درهم', $html);
+        }
+
         $productSupplier = ProductSupplier::query()->sole();
         $this->supplier->forceFill(['pricing_currency' => 'CNY'])->save();
+        SupplierExchangeRateSetting::query()->updateOrCreate(
+            [
+                'supplier_id' => $this->supplier->id,
+                'currency' => 'CNY',
+            ],
+            [
+                'rate_toman' => '25000.0000',
+                'manual_rate_toman' => '25000.0000',
+                'auto_update' => false,
+                'source' => 'manual',
+            ],
+        );
         $productSupplier->forceFill([
             'foreign_price_rate' => '25000.0000',
             'foreign_price_applied_currency' => 'CNY',
@@ -755,6 +1784,40 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
         $this->assertSame('CNY', $component->get('displayCurrencyCode'));
         $html = $this->renderPdfTemplateHtml($component, 'pdf.supplier-catalog2');
         $this->assertStringContainsString('55.3 یوان', $html);
+    }
+
+    public function test_toman_catalog_hides_foreign_exchange_basis_while_retaining_it_for_snapshot_checks(): void
+    {
+        $this->supplier->forceFill(['pricing_currency' => 'USD'])->save();
+
+        [, , $template] = $this->pricedProductAndTemplate(
+            settings: [
+                'price_display_currency' => 'toman',
+                'show_cover_page' => true,
+                'cover_theme' => 'default',
+            ],
+            tomanPrice: 1382400,
+            appliedCurrency: 'USD',
+            appliedRate: '270000.0000',
+        );
+
+        $component = Livewire::actingAs($this->user)
+            ->test(Preview::class, ['catalog' => $template->id])
+            ->assertSet('displayCurrencyCode', 'TOM')
+            ->assertDontSee('نرخ دلار')
+            ->assertSee('1,382,400');
+
+        $this->assertSame('USD', $component->get('exchangeRateBasis')['currency']);
+        $this->assertFalse($component->get('currencySnapshotWarning'));
+
+        foreach (['pdf.supplier-catalog', 'pdf.supplier-catalog2'] as $view) {
+            $html = $this->renderPdfTemplateHtml($component, $view);
+            $this->assertStringNotContainsString('نرخ دلار', $html);
+            $this->assertStringContainsString('1,382,400', $html);
+        }
+
+        $this->assertPdfDownloadRoute($component, 'downloadPdf');
+        $this->assertPdfDownloadRoute($component, 'downloadPdf2');
     }
 
     public function test_manual_catalog_refresh_resolves_the_supplier_currency_again(): void
@@ -774,6 +1837,18 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
             ->assertSet('displayCurrencyCode', 'USD');
 
         $this->supplier->forceFill(['pricing_currency' => 'CNY'])->save();
+        SupplierExchangeRateSetting::query()->updateOrCreate(
+            [
+                'supplier_id' => $this->supplier->id,
+                'currency' => 'CNY',
+            ],
+            [
+                'rate_toman' => '25000.0000',
+                'manual_rate_toman' => '25000.0000',
+                'auto_update' => false,
+                'source' => 'manual',
+            ],
+        );
         $productSupplier->forceFill([
             'foreign_price_rate' => '25000.0000',
             'foreign_price_applied_currency' => 'CNY',
@@ -982,6 +2057,23 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
 
     private function pricedProductAndTemplate(array $settings, int $tomanPrice, string $appliedCurrency, string $appliedRate): array
     {
+        $supplierCurrency = strtoupper((string) $this->supplier->pricing_currency);
+        if (($settings['catalog_branch_scope'] ?? 'single') !== 'all'
+            && in_array($supplierCurrency, ['USD', 'CNY', 'AED'], true)) {
+            SupplierExchangeRateSetting::query()->firstOrCreate(
+                [
+                    'supplier_id' => $this->supplier->id,
+                    'currency' => $supplierCurrency,
+                ],
+                [
+                    'rate_toman' => $appliedRate,
+                    'manual_rate_toman' => $appliedRate,
+                    'auto_update' => false,
+                    'source' => 'manual',
+                ],
+            );
+        }
+
         $product = Product::factory()->create([
             'supplier_id' => $this->supplier->id,
             'category_id' => $this->category->id,
@@ -994,7 +2086,7 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
             'product_id' => $product->id,
             'supplier_id' => $this->supplier->id,
             'is_active' => true,
-            'price_currency' => 'USD',
+            'price_currency' => $appliedCurrency,
             'foreign_price_amount' => '5.1200',
             'foreign_price_rate' => $appliedRate,
             'foreign_price_applied_currency' => $appliedCurrency,
@@ -1065,9 +2157,14 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
                 ?? 'vazir',
             'includeWarranty' => $preview->includeWarranty,
             'displayCurrencyCode' => $preview->displayCurrencyCode,
-            'exchangeRateBasis' => $preview->exchangeRateBasis,
+            'exchangeRateBasis' => $preview->displayCurrencyCode === 'TOM'
+                ? null
+                : $preview->exchangeRateBasis,
             'currencySnapshotWarning' => $preview->currencySnapshotWarning,
             'priceFormatter' => app(CatalogPriceFormatter::class),
+            'catalogBranchPriceRows' => app(\App\Services\CatalogBranchPriceRows::class),
+            'branchAwareCatalog' => !$preview->isAdmin
+                && ($preview->settings['catalog_branch_scope'] ?? 'single') === 'all',
             'priceTypesById' => $priceTypesById,
         ])->render();
     }

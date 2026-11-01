@@ -42,7 +42,7 @@ class ManageCheckPeriods extends Component
     
     public function loadPeriods()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // دوره‌های پیش‌فرض (global) با اطلاعات فعال‌سازی و درصد از pivot
         $this->globalPeriods = CheckPeriod::select('check_periods.*')
@@ -113,10 +113,10 @@ class ManageCheckPeriods extends Component
         
         // Unique validation for inline editing
         if ($this->editingInline) {
-            $rules['inlineDays'][] = 'unique:check_periods,days,' . $this->editingInline . ',id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL');
+            $rules['inlineDays'][] = 'unique:check_periods,days,' . $this->editingInline . ',id,supplier_id,' . (Auth::user()->currentSupplier()->id ?? 'NULL');
             $rules['inlinePercentage'] = ['required', 'numeric', 'min:0', 'max:100'];
         } else {
-            $rules['days'][] = 'unique:check_periods,days,NULL,id,supplier_id,' . (Auth::user()->supplier->id ?? 'NULL');
+            $rules['days'][] = 'unique:check_periods,days,NULL,id,supplier_id,' . (Auth::user()->currentSupplier()->id ?? 'NULL');
         }
         
         return $rules;
@@ -148,7 +148,7 @@ class ManageCheckPeriods extends Component
         $this->validate();
         
         // امنیت: دریافت supplier_id از کاربر احراز هویت شده
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // امنیت: Sanitize inputs
         $sanitizedName = $this->sanitizeInput($this->name);
@@ -225,7 +225,7 @@ class ManageCheckPeriods extends Component
     public function startInlineEdit($id)
     {
         // امنیت: بررسی مالکیت دوره
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($id);
         
         // بارگذاری درصد از pivot
@@ -268,7 +268,7 @@ class ManageCheckPeriods extends Component
             'inlinePercentage.max' => 'درصد افزایش نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($this->editingInline);
         
         // بروزرسانی دوره
@@ -338,7 +338,7 @@ class ManageCheckPeriods extends Component
      */
     public function toggleSupplierPeriod($periodId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $period = CheckPeriod::forSupplier($supplierId)->findOrFail($periodId);
         
         // بررسی: اگر دوره فعال است، هشدار نمایش بده
@@ -369,7 +369,7 @@ class ManageCheckPeriods extends Component
      */
     public function toggleGlobalPeriod($periodId, $percentage)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // بررسی: آیا این دوره قبلاً فعال شده؟
         $existing = DB::table('supplier_check_period')
@@ -478,7 +478,7 @@ class ManageCheckPeriods extends Component
             return;
         }
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         DB::table('supplier_check_period')->updateOrInsert(
             [
@@ -545,7 +545,7 @@ class ManageCheckPeriods extends Component
      */
     public function loadCategoryPeriods()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // دریافت تمام تنظیمات
         $records = DB::table('category_check_period as ccp')
@@ -607,7 +607,7 @@ class ManageCheckPeriods extends Component
             'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = (int)$this->selectedCategoryId;
         
         // بررسی: آیا این دسته‌بندی قبلاً اضافه شده؟
@@ -660,7 +660,7 @@ class ManageCheckPeriods extends Component
      */
     public function removeCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         DB::transaction(function () use ($supplierId, $categoryId): void {
             DB::table('category_check_period')
@@ -687,7 +687,7 @@ class ManageCheckPeriods extends Component
      */
     public function startEditCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // بارگذاری درصدهای فعلی
         $existing = DB::table('category_check_period')
@@ -720,7 +720,7 @@ class ManageCheckPeriods extends Component
             'categoryPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->editingCategoryId;
         
         DB::transaction(function () use ($supplierId, $categoryId) {
@@ -774,7 +774,7 @@ class ManageCheckPeriods extends Component
      */
     public function confirmDeactivatePeriod($periodId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // 1. پیدا کردن دوره برای تشخیص نوع (global یا supplier)
         $period = CheckPeriod::find($periodId);
@@ -874,7 +874,7 @@ class ManageCheckPeriods extends Component
             ->toArray();
         
         // دریافت دوره‌های فعال برای نمایش در فرم
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $activePeriods = CheckPeriod::getActiveForSupplier($supplierId);
         
         return view('livewire.supplier.settings.manage-check-periods', [

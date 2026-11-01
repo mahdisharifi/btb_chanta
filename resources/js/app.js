@@ -231,6 +231,47 @@ function applyProductPriceSummary(update) {
     });
 }
 
+function applyBranchPriceSnapshot(productId, branches) {
+    if (!Array.isArray(branches)) return;
+
+    const branchPrices = new Map(branches.map((branch) => [String(branch.supplier_id), branch]));
+    document.querySelectorAll('[data-live-price-branch-container]').forEach((container) => {
+        if (container.dataset.livePriceProduct !== productId) return;
+
+        container.querySelectorAll('[data-live-price-branch-row]').forEach((row) => {
+            const branch = branchPrices.get(row.dataset.livePriceBranchRow);
+            if (!branch) {
+                row.hidden = true;
+                return;
+            }
+
+            row.hidden = false;
+            const price = row.querySelector('[data-live-price-branch-price]');
+            const amount = price?.querySelector('[data-live-price-branch-amount]');
+            if (amount) {
+                amount.textContent = branch.price === null || branch.price === undefined
+                    ? (branch.can_view_price ? 'قیمت فعال ندارد' : 'قیمت نیازمند دسترسی')
+                    : `از ${formatLivePrice(branch.price)} تومان`;
+            }
+
+            const priceType = row.querySelector('[data-live-price-branch-type]');
+            if (priceType) {
+                const typeLabel = branch.price_type === 'check'
+                    ? (branch.check_period_label ? `چکی · ${branch.check_period_label}` : 'چکی')
+                    : (branch.price_type === 'cash' ? 'نقدی' : '');
+                priceType.textContent = typeLabel ? `(${typeLabel})` : '';
+            }
+
+            const percentage = row.querySelector('[data-live-price-branch-percentage]');
+            if (percentage) {
+                percentage.textContent = branch.is_primary
+                    ? 'قیمت پایه'
+                    : `(${Number(branch.percentage) > 0 ? '+' : ''}${new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 2 }).format(branch.percentage)}٪)`;
+            }
+        });
+    });
+}
+
 function applyLivePriceUpdate(update, isRealtimeEvent = false) {
     const productId = String(update.product_id);
     const priceRevision = Number(update.price_revision);
@@ -258,6 +299,7 @@ function applyLivePriceUpdate(update, isRealtimeEvent = false) {
     if (isRealtimeEvent) {
         clearLiveBestPriceIndicators(productId);
         announceLivePriceUpdate(productId);
+        refreshProductPriceSnapshot(productId);
     }
 }
 
@@ -287,6 +329,8 @@ function refreshProductPriceSnapshot(productId) {
             if (Number.isFinite(snapshotRevision)
                 && currentRevision !== undefined
                 && snapshotRevision < currentRevision) return;
+
+            applyBranchPriceSnapshot(productId, snapshot.branches);
 
             const suppliers = Object.values(snapshot.suppliers || {});
             if (suppliers.length === 0) {

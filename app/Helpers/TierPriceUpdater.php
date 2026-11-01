@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Supplier;
 use App\Models\SupplierTierDiscount;
 use App\Models\PriceType;
+use App\Models\ProductPrice;
+use App\Services\SupplierBranchPriceSyncService;
 
 class TierPriceUpdater
 {
@@ -82,12 +84,12 @@ class TierPriceUpdater
                     }
 
                     if ($supplier->pricing_currency !== 'TOM') {
-                        return ['stop' => true, 'settings_changed' => false, 'last_id' => $lastId];
+                        return ['stop' => true, 'settings_changed' => false, 'last_id' => $lastId, 'changed_offer_ids' => []];
                     }
 
                     if ((int) $supplier->pricing_currency_revision !== $expectedCurrencyRevision
                         || (int) $supplier->tier_pricing_revision !== $expectedTierPricingRevision) {
-                        return ['stop' => true, 'settings_changed' => true, 'last_id' => $lastId];
+                        return ['stop' => true, 'settings_changed' => true, 'last_id' => $lastId, 'changed_offer_ids' => []];
                     }
 
                     $tierDiscounts = SupplierTierDiscount::getAllForSupplier($supplierId)->keyBy('tier_index');
@@ -110,7 +112,7 @@ class TierPriceUpdater
 
                     $productSuppliers = $query->get();
                     if ($productSuppliers->isEmpty()) {
-                        return ['stop' => true, 'settings_changed' => false, 'last_id' => $lastId];
+                        return ['stop' => true, 'settings_changed' => false, 'last_id' => $lastId, 'changed_offer_ids' => []];
                     }
 
                     $nextId = (int) $productSuppliers->last()->id;
@@ -353,7 +355,20 @@ class TierPriceUpdater
                             ->invalidateSupplier($supplierId);
                     }
 
-                    return ['stop' => false, 'settings_changed' => false, 'last_id' => $nextId];
+                    $changedOfferIds = collect($upsertRows)
+                        ->merge($checkUpsertRows)
+                        ->pluck('product_supplier_id')
+                        ->map(fn ($id) => (int) $id)
+                        ->unique()
+                        ->values()
+                        ->all();
+
+                    return [
+                        'stop' => false,
+                        'settings_changed' => false,
+                        'last_id' => $nextId,
+                        'changed_offer_ids' => $changedOfferIds,
+                    ];
                 });
 
                 if ($page['settings_changed']) {
@@ -363,6 +378,16 @@ class TierPriceUpdater
 
                 if ($page['stop']) {
                     break;
+                }
+
+                $changedOfferIds = $page['changed_offer_ids'] ?? [];
+                if ($changedOfferIds !== []) {
+                    $sourcePrices = ProductPrice::query()
+                        ->whereIn('product_supplier_id', $changedOfferIds)
+                        ->get();
+
+                    app(SupplierBranchPriceSyncService::class)
+                        ->syncBranchesForPrimaryPrices($sourcePrices);
                 }
 
                 $lastId = (int) $page['last_id'];

@@ -9,6 +9,7 @@ use App\Models\ProductPrice;
 use App\Models\ProductSupplier;
 use App\Services\PriceVisibilityService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -26,7 +27,7 @@ class ProductPriceSnapshotController extends Controller
 
         $suppliers = ProductSupplier::query()
             ->with([
-                'prices' => function (Builder $query) use ($allowedTypes, $today): void {
+                'prices' => function (Relation $query) use ($allowedTypes, $today): void {
                     $query->select([
                         'id',
                         'product_id',
@@ -56,6 +57,7 @@ class ProductPriceSnapshotController extends Controller
                         });
                 },
                 'prices.priceType:id,code',
+                'prices.checkPeriod:id,label,name',
             ])
             ->where('product_id', $product->id)
             ->where('is_active', true)
@@ -143,6 +145,9 @@ class ProductPriceSnapshotController extends Controller
 
         $productPrices = $uniqueVisiblePrices->pluck('price');
         $productMatrixPrices = $this->productMatrixPayload($suppliers, $allowedTypes);
+        $branchPrices = $canSeeSupplierInfo
+            ? $this->branchPricePayload($product, $allowedTypes, $today, $request->query('supplier_id'))
+            : [];
 
         return response()->json([
             'product_id' => (int) $product->id,
@@ -153,7 +158,192 @@ class ProductPriceSnapshotController extends Controller
             'product_prices' => $productMatrixPrices,
             'product_tiers_count' => collect($productMatrixPrices)->pluck('tier_index')->unique()->count(),
             'suppliers' => $supplierSnapshots,
+            'branches' => $branchPrices,
         ])->header('Cache-Control', 'private, no-store');
+    }
+
+    /** @return array<int, array{supplier_id:int, price:?int, price_type:?string, check_period_label:?string, percentage:float, is_primary:bool, can_view_price:bool}> */
+    private function branchPricePayload(
+        Product $product,
+        ?array $allowedTypes,
+        \Carbon\CarbonInterface $today,
+        mixed $displayedSupplierId = null,
+    ): array
+    {
+        $familyId = (int) ($product->family_product_id ?: $product->id);
+        $requestedSupplierId = $displayedSupplierId === null
+            ? (int) $product->supplier_id
+            : filter_var($displayedSupplierId, FILTER_VALIDATE_INT);
+        if (!$requestedSupplierId || $requestedSupplierId < 1) {
+            return [];
+        }
+
+        $ownerSupplier = \App\Models\Supplier::query()
+            ->whereKey($requestedSupplierId)
+            ->where('is_active', true)
+            ->where('is_verified', true)
+            ->first(['id', 'user_id', 'parent_supplier_id', 'is_verified']);
+
+        if (!$ownerSupplier) {
+            return [];
+        }
+
+        $primarySupplierId = (int) ($ownerSupplier->parent_supplier_id ?: $ownerSupplier->id);
+        $familySuppliers = \App\Models\Supplier::query()
+            ->where('user_id', $ownerSupplier->user_id)
+            ->where('is_active', true)
+            ->where('is_verified', true)
+            ->where(fn (Builder $query) => $query
+                ->whereKey($primarySupplierId)
+                ->orWhere('parent_supplier_id', $primarySupplierId))
+            ->get(['id', 'parent_supplier_id'])
+            ->keyBy('id');
+
+        $primarySupplier = $familySuppliers->get($primarySupplierId);
+        if (!$primarySupplier || $primarySupplier->parent_supplier_id !== null) {
+            return [];
+        }
+
+        $branchSupplierIds = $familySuppliers
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        if ($branchSupplierIds === []) {
+            return [];
+        }
+        if (!in_array((int) $ownerSupplier->id, $branchSupplierIds, true)) {
+            return [];
+        }
+
+        $familyProducts = Product::query()
+            ->where('family_product_id', $familyId)
+            ->where('is_active', true)
+            ->where('status', ProductStatus::ACTIVE->value)
+            ->with([
+                'supplier:id,user_id,parent_supplier_id,is_active,is_verified',
+                'productSuppliers' => function (Relation $query) use ($branchSupplierIds, $allowedTypes, $today): void {
+                    $query->whereIn('supplier_id', $branchSupplierIds)
+                        ->where('is_active', true)
+                        ->where('status', 'active')
+                        ->with([
+                            'supplier:id,parent_supplier_id,is_active,is_verified',
+                            'prices' => function (Relation $priceQuery) use ($allowedTypes, $today): void {
+                                $priceQuery->where('is_active', true)
+                                    ->where(fn (Builder $query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
+                                    ->where(fn (Builder $query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
+                                    ->when($allowedTypes !== null, function (Builder $query) use ($allowedTypes): void {
+                                        $query->where(function (Builder $query) use ($allowedTypes): void {
+                                            $query->whereHas(
+                                                'priceType',
+                                                fn (Builder $typeQuery) => $typeQuery->whereIn('code', $allowedTypes)
+                                            );
+
+                                            if (in_array('cash', $allowedTypes, true)) {
+                                                $query->orWhereNull('price_type_id');
+                                            }
+                                        });
+                                    });
+                            },
+                            'prices.priceType:id,code',
+                            'prices.checkPeriod:id,label,name',
+                        ]);
+                },
+            ])
+            ->get();
+
+        $familyHasOffer = $familyProducts->contains(
+            static fn (Product $familyProduct): bool => $familyProduct->productSuppliers->isNotEmpty(),
+        );
+        if (!$familyHasOffer) {
+            return [];
+        }
+
+        $rows = [];
+        $branchSupplierIdSet = array_fill_keys($branchSupplierIds, true);
+        $checkPeriodsBySupplier = collect();
+        if ($allowedTypes === null || in_array('check', $allowedTypes, true)) {
+            $checkPeriodsBySupplier = \App\Models\CheckPeriod::getActiveForSuppliers($branchSupplierIds)
+                ->groupBy(static fn ($period) => (int) $period->resolved_supplier_id)
+                ->map(static fn ($periods) => $periods->values());
+
+            $primaryPeriods = $checkPeriodsBySupplier->get($primarySupplierId, collect());
+            foreach ($branchSupplierIds as $branchSupplierId) {
+                if ((int) $branchSupplierId === $primarySupplierId) {
+                    continue;
+                }
+
+                $branchPeriods = $checkPeriodsBySupplier->get($branchSupplierId, collect());
+                $checkPeriodsBySupplier[$branchSupplierId] = $primaryPeriods
+                    ->merge($branchPeriods)
+                    ->unique('id')
+                    ->values();
+            }
+        }
+
+        $appendBranchRow = function ($supplier, ?ProductSupplier $offer) use (&$rows, $branchSupplierIdSet, $allowedTypes, $checkPeriodsBySupplier): void {
+            if (!$supplier?->is_active || !$supplier?->is_verified) {
+                return;
+            }
+
+            $supplierId = (int) $supplier->id;
+            if (!isset($branchSupplierIdSet[$supplierId]) || isset($rows[$supplierId])) {
+                return;
+            }
+
+            if ($offer && (!$offer->is_active || $offer->status !== 'active')) {
+                return;
+            }
+
+            $prices = $offer?->prices ?? collect();
+            $visiblePrices = $prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
+                $type = $price->priceType?->code ?? 'cash';
+
+                return $price->is_active
+                    && $price->isValid()
+                    && ($allowedTypes === null || in_array($type, $allowedTypes, true));
+            });
+            $basePrices = $visiblePrices->filter(fn (ProductPrice $price): bool => in_array(
+                $price->priceType?->code ?? 'cash',
+                ['cash', 'check'],
+                true,
+            ));
+            $lowestBasePrice = $basePrices->sortBy('price')->first();
+            $priceType = $lowestBasePrice?->priceType?->code ?? ($lowestBasePrice ? 'cash' : null);
+
+            $rows[$supplierId] = [
+                'supplier_id' => $supplierId,
+                'price' => $lowestBasePrice ? (int) $lowestBasePrice->price : null,
+                'price_type' => $priceType,
+                'check_period_label' => $priceType === 'check'
+                    ? ($checkPeriodsBySupplier->get($supplierId, collect())
+                        ->firstWhere('id', (int) $lowestBasePrice?->check_period_id)?->display_name
+                        ?: $lowestBasePrice?->checkPeriod?->label
+                        ?: $lowestBasePrice?->checkPeriod?->name)
+                    : null,
+                'percentage' => (float) ($offer?->branch_price_percentage ?? 0),
+                'is_primary' => $supplier->parent_supplier_id === null,
+                'can_view_price' => true,
+            ];
+        };
+
+        foreach ($familyProducts->sortBy('id') as $familyProduct) {
+            $supplier = $familyProduct->supplier;
+            if (!$supplier?->is_active) {
+                continue;
+            }
+
+            if ((int) ($supplier->parent_supplier_id ?: $supplier->id) === $primarySupplierId) {
+                $ownerOffer = $familyProduct->productSuppliers->firstWhere('supplier_id', $supplier->id);
+                $appendBranchRow($supplier, $ownerOffer);
+            }
+
+            foreach ($familyProduct->productSuppliers as $offer) {
+                $appendBranchRow($offer->supplier, $offer);
+            }
+        }
+
+        return array_values($rows);
     }
 
     /** @return array<int, array{type: string, tier_index: int, check_period_id: ?int, price: int, warranty_price: ?int}> */

@@ -29,7 +29,7 @@ class Review extends Component
     protected function getBatch()
     {
         return PriceUpdateBatch::where('id', $this->batchId)
-            ->where('supplier_id', Auth::user()->supplier->id)
+            ->where('supplier_id', Auth::user()->currentSupplier()->id)
             ->where('operation_type', 'excel_import')
             ->where('status', 'pending')
             ->firstOrFail();
@@ -37,7 +37,7 @@ class Review extends Component
 
     public function commitChanges()
     {
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
 
         DB::beginTransaction();
         try {
@@ -353,7 +353,7 @@ class Review extends Component
 
     public function cancelBatch()
     {
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
 
         DB::beginTransaction();
         try {
@@ -396,7 +396,7 @@ class Review extends Component
         $invalidRecords = $batch->items()->where('status', 'invalid')->count();
 
         // ✅ Cache: دریافت یکباره تنظیمات rounding برای supplier جاری
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $roundingCache = $this->buildRoundingCache($supplierId);
 
         return view('livewire.supplier.fast-pricing.review', compact('items', 'totalRecords', 'validRecords', 'invalidRecords', 'roundingCache'));

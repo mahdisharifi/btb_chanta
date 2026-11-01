@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Builder;
 use App\Exceptions\ProductSlugRedirectException;
 use App\Models\ProductSlugRedirect;
@@ -19,8 +20,18 @@ class Product extends Model
 {
     use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes;
 
+    protected static function booted(): void
+    {
+        static::created(function (self $product): void {
+            if ($product->family_product_id === null) {
+                $product->forceFill(['family_product_id' => $product->id])->saveQuietly();
+            }
+        });
+    }
+
     protected $fillable = [
         'supplier_id',
+        'family_product_id',
         'category_id',
         'title',
         'slug',
@@ -108,6 +119,39 @@ class Product extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function familyRoot(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'family_product_id');
+    }
+
+    public function familyProducts(): HasMany
+    {
+        return $this->hasMany(self::class, 'family_product_id', 'family_product_id');
+    }
+
+    /**
+     * Offers and prices recorded on every independent branch copy in this family.
+     */
+    public function familyProductSuppliers(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            ProductSupplier::class,
+            self::class,
+            'family_product_id',
+            'product_id',
+            'family_product_id',
+            'id'
+        );
+    }
+
+    public function scopeCanonical($query)
+    {
+        return $query->whereRaw(
+            'products.id = (SELECT family_candidate.id FROM products as family_candidate WHERE family_candidate.family_product_id = products.family_product_id AND family_candidate.is_active = 1 AND family_candidate.status = ? AND family_candidate.deleted_at IS NULL ORDER BY CASE WHEN family_candidate.id = family_candidate.family_product_id THEN 0 ELSE 1 END, family_candidate.id LIMIT 1)',
+            [ProductStatus::ACTIVE->value]
+        );
     }
 
     public function products()
@@ -228,6 +272,25 @@ class Product extends Model
                      ->where('status', ProductStatus::ACTIVE);
     }
 
+    /** A live branch copy whose current family root belongs to the given supplier. */
+    public function scopeEligiblePrimarySwitchCopy(Builder $query, Supplier $primary): Builder
+    {
+        return $query
+            ->where('is_active', true)
+            ->where('status', ProductStatus::ACTIVE->value)
+            ->whereNotNull('family_product_id')
+            ->whereColumn('family_product_id', '!=', 'products.id')
+            ->whereExists(function ($familyRoot) use ($primary): void {
+                $familyRoot->selectRaw('1')
+                    ->from('products as current_family_root')
+                    ->whereColumn('current_family_root.id', 'products.family_product_id')
+                    ->where('current_family_root.supplier_id', $primary->id)
+                    ->where('current_family_root.is_active', true)
+                    ->where('current_family_root.status', ProductStatus::ACTIVE->value)
+                    ->whereNull('current_family_root.deleted_at');
+            });
+    }
+
     /** Put products with a current price from an active supplier first in catalog results. */
     public function scopePricedFirst(Builder $query): Builder
     {
@@ -237,11 +300,18 @@ class Product extends Model
             INNER JOIN suppliers as priced_supplier
                 ON priced_supplier.id = priced_ps.supplier_id
                 AND priced_supplier.is_active = 1
+                AND priced_supplier.deleted_at IS NULL
             INNER JOIN product_prices as priced_price
                 ON priced_price.product_supplier_id = priced_ps.id
                 AND priced_price.is_active = 1
-            WHERE priced_ps.product_id = products.id
+            INNER JOIN products as priced_product
+                ON priced_product.id = priced_ps.product_id
+                AND priced_product.is_active = 1
+                AND priced_product.status = 'active'
+                AND priced_product.deleted_at IS NULL
+            WHERE priced_product.family_product_id = products.family_product_id
                 AND priced_ps.is_active = 1
+                AND priced_ps.deleted_at IS NULL
                 AND (priced_price.valid_from IS NULL OR priced_price.valid_from <= CURRENT_DATE)
                 AND (priced_price.valid_until IS NULL OR priced_price.valid_until >= CURRENT_DATE)
         ) THEN 0 ELSE 1 END ASC");

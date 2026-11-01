@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Supplier;
 
 use App\Http\Controllers\Controller;
-use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -12,14 +11,14 @@ class ProfileController extends Controller
 {
     public function edit(): View
     {
-        $supplier = Supplier::where('user_id', auth()->id())->firstOrFail();
+        $supplier = auth()->user()->currentSupplier();
 
         return view('supplier.profile.edit', compact('supplier'));
     }
 
     public function update(Request $request): RedirectResponse
     {
-        $supplier = Supplier::where('user_id', auth()->id())->firstOrFail();
+        $supplier = auth()->user()->currentSupplier();
 
         $validated = $request->validate([
             'company_name' => ['required', 'string', 'max:255'],

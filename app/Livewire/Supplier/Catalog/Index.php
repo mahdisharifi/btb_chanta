@@ -26,6 +26,8 @@ class Index extends Component
     public array $selectedSuppliers = [];
 
     public string $priceDisplayCurrency = 'toman';
+    public string $catalogBranchScope = 'single';
+    public ?int $catalogBranchSupplierId = null;
     
     public $show_cover_page = true;
     
@@ -117,14 +119,139 @@ class Index extends Component
             $supplier = Supplier::query()
                 ->where('verification_status', 'approved')
                 ->find($supplierIds[0]);
+
+            $suppliers = $supplier ? collect([$supplier]) : collect();
         } else {
-            $supplier = Auth::user()?->supplier;
+            $suppliers = $this->selectedCatalogSuppliers();
         }
 
-        $currency = $supplier?->pricing_currency;
+        if ($suppliers->isEmpty()) {
+            return null;
+        }
+
+        $currencies = $suppliers
+            ->map(static fn (Supplier $supplier): ?string => strtoupper((string) $supplier->pricing_currency))
+            ->unique()
+            ->values();
+
+        if ($currencies->count() !== 1) {
+            return null;
+        }
+
+        $currency = $currencies->first();
+        if ($currency === 'TOM') {
+            return 'TOM';
+        }
+
+        $resolver = app(\App\Services\CatalogExchangeRateBasisResolver::class);
+        $rates = $resolver->resolveMany($suppliers)->map(static fn (?array $basis): ?float =>
+            $basis !== null && is_numeric($basis['rate_value'] ?? null)
+                ? (float) $basis['rate_value']
+                : null
+        );
+
+        if ($rates->contains(null) || $rates->filter(static fn (?float $rate): bool => $rate !== null)->count() !== $suppliers->count()) {
+            return null;
+        }
+
+        $firstRate = (float) $rates->first();
+        if ($rates->contains(static fn (?float $rate): bool => $rate === null || abs($rate - $firstRate) >= 0.00005)) {
+            return null;
+        }
 
         return app(\App\Services\CatalogPriceFormatter::class)
             ->isSupportedForeignCurrency($currency) ? $currency : null;
+    }
+
+    #[Computed]
+    public function availableCatalogBranches()
+    {
+        if ($this->authenticatedUserIsAdmin()) {
+            return collect();
+        }
+
+        $current = Auth::user()?->currentSupplier();
+        if (!$current) {
+            return collect();
+        }
+
+        $primary = $current->parent_supplier_id
+            ? $current->parentSupplier
+            : $current;
+
+        if (!$primary || !$primary->is_active) {
+            return collect();
+        }
+
+        $supplierIds = collect([(int) $primary->id])->merge(
+            $primary->branches()
+                ->where('is_active', true)
+                ->where('is_verified', true)
+                ->where('user_id', $primary->user_id)
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+        )->unique()->values();
+
+        return Supplier::query()
+            ->leftJoin('cities as branch_location_city', function ($join): void {
+                $join->on('suppliers.city_id', '=', 'branch_location_city.id')
+                    ->on('suppliers.province_id', '=', 'branch_location_city.province_id')
+                    ->where('branch_location_city.is_active', true)
+                    ->whereNull('branch_location_city.deleted_at');
+            })
+            ->whereIn('suppliers.id', $supplierIds)
+            ->where('suppliers.is_active', true)
+            ->orderByRaw('CASE WHEN suppliers.id = ? THEN 0 ELSE 1 END', [(int) $primary->id])
+            ->orderBy('suppliers.id')
+            ->get([
+                'suppliers.id',
+                'suppliers.user_id',
+                'suppliers.parent_supplier_id',
+                'suppliers.branch_name',
+                'suppliers.company_name',
+                'suppliers.city',
+                'suppliers.pricing_currency',
+                'branch_location_city.native_name as selected_city_native_name',
+                'branch_location_city.name as selected_city_name',
+            ]);
+    }
+
+    private function selectedCatalogSuppliers()
+    {
+        $branches = $this->availableCatalogBranches;
+        if ($this->catalogBranchScope === 'all') {
+            return $branches;
+        }
+
+        $selectedId = (int) ($this->catalogBranchSupplierId ?? 0);
+        if ($selectedId < 1) {
+            $selectedId = (int) (Auth::user()?->currentSupplier()?->id ?? 0);
+        }
+
+        return $branches->where('id', $selectedId)->values();
+    }
+
+    public function updatedCatalogBranchScope(): void
+    {
+        if ($this->catalogBranchScope === 'single' && !$this->catalogBranchSupplierId) {
+            $this->catalogBranchSupplierId = Auth::user()?->currentSupplier()?->id;
+        }
+
+        if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
+            $this->priceDisplayCurrency = 'toman';
+        }
+
+        unset($this->availableCategories);
+    }
+
+    public function updatedCatalogBranchSupplierId(): void
+    {
+        if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
+            $this->priceDisplayCurrency = 'toman';
+        }
+
+        unset($this->availableCategories);
     }
 
     #[Computed]
@@ -139,6 +266,10 @@ class Index extends Component
     {
         if ($this->authenticatedUserIsAdmin() && count(array_unique($this->selectedSuppliers)) !== 1) {
             return 'برای نمایش ارزی، دقیقاً یک تأمین‌کننده انتخاب کنید. کاتالوگ چندتأمین‌کننده فقط با تومان نمایش داده می‌شود.';
+        }
+
+        if (!$this->authenticatedUserIsAdmin() && $this->catalogBranchScope === 'all') {
+            return 'نمایش ارزی برای شعب انتخاب‌شده فقط زمانی ممکن است که همهٔ شعب ارز پایه و نرخ تبدیل یکسان داشته باشند؛ در غیر این صورت تومان را انتخاب کنید.';
         }
 
         return 'ابتدا ارز پایهٔ دلار، یوان یا درهم را در تنظیمات قیمت‌گذاری تأمین‌کننده فعال کنید.';
@@ -172,10 +303,11 @@ class Index extends Component
                 $q->whereIn('supplier_id', $supplierIds);
             });
         } else {
-            $supplierId = Auth::user()->supplier->id;
-            
-            $query = Category::whereHas('products.suppliers', function ($q) use ($supplierId) {
-                $q->where('supplier_id', $supplierId);
+            $supplierIds = $this->selectedCatalogSuppliers()->pluck('id')->all();
+
+            $query = Category::whereHas('products.productSuppliers', function ($q) use ($supplierIds) {
+                $q->whereIn('supplier_id', $supplierIds)
+                    ->where('is_active', true);
             });
         }
 
@@ -190,8 +322,8 @@ class Index extends Component
                         });
                 });
             } else {
-                $query->whereHas('products.suppliers', function ($q) use ($supplierId) {
-                    $q->where('product_supplier.supplier_id', $supplierId)
+                $query->whereHas('products.productSuppliers', function ($q) use ($supplierIds) {
+                    $q->whereIn('product_supplier.supplier_id', $supplierIds)
                         ->whereExists(function ($subQuery) {
                             $subQuery->select(DB::raw(1))
                                 ->from('product_prices')
@@ -248,11 +380,22 @@ class Index extends Component
                 ->orderBy('days')
                 ->get();
         } else {
-            // تامین‌کننده: فقط دوره‌های فعال شده (is_enabled_for_supplier = true)
-            $supplierId = Auth::user()->supplier->id;
-            return \App\Models\CheckPeriod::getActiveForSupplier($supplierId)
-                ->where('is_enabled_for_supplier', true)
-                ->values(); // بازنشانی کلیدهای collection
+            // For a combined catalog, expose the union of periods enabled by every
+            // selected branch. Preview still resolves each price against its own
+            // supplier's enabled periods, so a branch-only period cannot leak to others.
+            $primarySupplierId = (int) ($this->availableCatalogBranches->first()?->id ?? 0);
+            $supplierIds = $this->selectedCatalogSuppliers()
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->when($primarySupplierId > 0, static fn ($ids) => $ids->push($primarySupplierId))
+                ->unique()
+                ->values()
+                ->all();
+
+            return \App\Models\CheckPeriod::getActiveForSuppliers($supplierIds)
+                ->unique('id')
+                ->values();
         }
     }
     
@@ -513,7 +656,7 @@ class Index extends Component
      */
     protected function findDefaultTemplateCatalog()
     {
-        $supplierId = Auth::user()->supplier->id ?? null;
+        $supplierId = Auth::user()->currentSupplier()->id ?? null;
         if (!$supplierId) {
             return null;
         }
@@ -595,7 +738,7 @@ class Index extends Component
         $this->selectedSuppliers = [];
 
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         $template = CatalogTemplate::where('id', $id)
             ->where('supplier_id', $supplierId)
@@ -613,6 +756,16 @@ class Index extends Component
         }
 
         $settings = $template->settings ?? [];
+        if (!$this->authenticatedUserIsAdmin()) {
+            $scope = $settings['catalog_branch_scope'] ?? 'single';
+            $this->catalogBranchScope = in_array($scope, ['single', 'all'], true) ? $scope : 'single';
+            $ownerSupplierId = (int) $supplierId;
+            $configuredBranchId = (int) ($settings['catalog_branch_supplier_id'] ?? $ownerSupplierId);
+            $allowedBranchIds = $this->availableCatalogBranches->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $this->catalogBranchSupplierId = in_array($configuredBranchId, $allowedBranchIds, true)
+                ? $configuredBranchId
+                : $ownerSupplierId;
+        }
         $this->description = $settings['description'] ?? '';
 
         $this->sortLevel1 = $settings['sort_level1'] ?? 'category';
@@ -749,6 +902,10 @@ class Index extends Component
             'imageQuality' => 'required|string|in:sm,md,lg,original',
             'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom',
             'priceDisplayCurrency' => 'required|in:toman,supplier',
+            'catalogBranchScope' => $this->authenticatedUserIsAdmin() ? 'nullable' : 'required|in:single,all',
+            'catalogBranchSupplierId' => $this->authenticatedUserIsAdmin()
+                ? 'nullable'
+                : 'nullable|required_if:catalogBranchScope,single|integer|min:1',
             'selectedSuppliers' => $this->authenticatedUserIsAdmin() ? 'array' : 'nullable',
             'selectedSuppliers.*' => $this->authenticatedUserIsAdmin() ? 'required|integer|min:1' : 'nullable',
             'globalAttribute' => 'nullable|string',
@@ -778,6 +935,19 @@ class Index extends Component
             $this->addError('priceDisplayCurrency', $this->supplierCurrencyUnavailableMessage());
             return;
         }
+
+        if (!$this->authenticatedUserIsAdmin()) {
+            $allowedBranchIds = $this->availableCatalogBranches
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+
+            if ($this->catalogBranchScope === 'single'
+                && !in_array((int) $this->catalogBranchSupplierId, $allowedBranchIds, true)) {
+                $this->addError('catalogBranchSupplierId', 'شعبهٔ انتخاب‌شده متعلق به این فروشگاه نیست یا فعال نیست.');
+                return;
+            }
+        }
         
         // فیلتر کردن شماره‌های تماس خالی
         $filteredPhones = array_filter($this->contactPhones, function($phone) {
@@ -802,6 +972,10 @@ class Index extends Component
             'check_periods' => (object)$this->selectedCheckPeriods, // ✅ ذخیره دوره‌های چک (object)
             'include_warranty' => $this->includeWarranty, // ✅ نمایش گارانتی
             'price_display_currency' => $this->priceDisplayCurrency,
+            'catalog_branch_scope' => $this->authenticatedUserIsAdmin() ? 'single' : $this->catalogBranchScope,
+            'catalog_branch_supplier_id' => $this->authenticatedUserIsAdmin() || $this->catalogBranchScope === 'all'
+                ? null
+                : (int) $this->catalogBranchSupplierId,
             'sort_level1' => $this->sortLevel1,
             'sort_level1_dir' => $this->sortLevel1Dir,
             'sort_level2' => $this->sortLevel2,
@@ -818,9 +992,7 @@ class Index extends Component
         ];
         
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ است)
-        $supplierId = $this->authenticatedUserIsAdmin()
-            ? Auth::user()->supplier->id  // ادمین از supplier خودش استفاده می‌کند
-            : Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
         
         // اگر ادمین است، supplier_ids را در config ذخیره کن
         $config = [];
@@ -891,7 +1063,7 @@ class Index extends Component
     public function deleteTemplate(CatalogTemplate $template)
     {
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         if ($template->supplier_id === $supplierId) {
             $template->delete();
@@ -927,6 +1099,8 @@ class Index extends Component
     {
         $this->selectedSuppliers = [];
         $this->priceDisplayCurrency = 'toman';
+        $this->catalogBranchScope = 'single';
+        $this->catalogBranchSupplierId = Auth::user()?->currentSupplier()?->id;
         $this->editingTemplateId = null;
         $this->name = '';
         $this->description = '';
@@ -975,7 +1149,7 @@ class Index extends Component
         $layout = $this->isAdmin ? 'components.layouts.admin' : 'components.layouts.supplier';
         
         // تعیین supplier_id (همیشه supplier صاحب کاتالوگ)
-        $supplierId = Auth::user()->supplier->id ?? null;
+        $supplierId = Auth::user()->currentSupplier()->id ?? null;
         
         // لیست تمام suppliers تایید شده (برای ادمین)
         if ($this->isAdmin) {

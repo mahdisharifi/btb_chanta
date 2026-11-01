@@ -168,7 +168,8 @@ class Category extends Model
     {
         return $this->hasMany(Product::class)
                     ->where('is_active', true)
-                    ->where('status', \App\Enums\ProductStatus::ACTIVE);
+                    ->where('status', \App\Enums\ProductStatus::ACTIVE)
+                    ->canonical();
     }
 
     // ══════════════════════════════════════════════════════════

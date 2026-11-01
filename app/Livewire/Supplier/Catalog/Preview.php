@@ -8,6 +8,8 @@ use Livewire\Component;
 use Livewire\Attributes\Renderless;
 use App\Models\CatalogTemplate;
 use App\Models\Product;
+use App\Models\ProductPrice;
+use App\Models\ProductSupplier;
 use Livewire\Attributes\Locked;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -90,7 +92,7 @@ class Preview extends Component
             abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
         } else {
             // تامین‌کننده: فقط کاتالوگ خودش
-            $this->supplier = $user->supplier;
+            $this->supplier = $user->currentSupplier();
             abort_if(! $this->supplier, 403, 'شما پروفایل تامین‌کننده ندارید.');
 
             // بررسی مالکیت
@@ -205,7 +207,7 @@ class Preview extends Component
             return;
         }
 
-        $supplierId = Auth::user()?->supplier?->id;
+        $supplierId = Auth::user()?->currentSupplier()?->id;
         abort_if(!$supplierId || (int) $this->template?->supplier_id !== (int) $supplierId, 403);
     }
 
@@ -215,7 +217,7 @@ class Preview extends Component
             return null;
         }
 
-        $supplierId = Auth::user()?->supplier?->id;
+        $supplierId = Auth::user()?->currentSupplier()?->id;
         abort_if(!$supplierId, 403, 'پروفایل تأمین‌کننده پیدا نشد.');
         abort_if((int) $this->template->supplier_id !== (int) $supplierId, 403);
 
@@ -226,7 +228,7 @@ class Preview extends Component
     {
         $supplier = $this->resolveCurrencySupplier();
         $currency = ($this->settings['price_display_currency'] ?? 'toman') === 'supplier'
-            ? $supplier?->pricing_currency
+            ? $this->eligibleCatalogCurrencyCode()
             : 'TOM';
 
         $this->displayCurrencyCode = $currency === 'TOM'
@@ -258,7 +260,97 @@ class Preview extends Component
                 ->find($supplierIds[0]);
         }
 
-        return \App\Models\Supplier::query()->find($this->authorizedSupplierScope());
+        $supplierId = $this->catalogBranchSupplierIds($this->authorizedSupplierScope())[0] ?? null;
+
+        return $supplierId ? \App\Models\Supplier::query()->find($supplierId) : null;
+    }
+
+    private function eligibleCatalogCurrencyCode(): ?string
+    {
+        $supplierIds = $this->authenticatedUserIsAdmin()
+            ? array_values(array_unique(array_map('intval', $this->template->config['supplier_ids'] ?? [])))
+            : $this->catalogBranchSupplierIds($this->authorizedSupplierScope());
+
+        if ($supplierIds === [] || ($this->authenticatedUserIsAdmin() && count($supplierIds) !== 1)) {
+            return null;
+        }
+
+        $suppliers = \App\Models\Supplier::query()->whereIn('id', $supplierIds)->get();
+        if ($suppliers->count() !== count(array_unique($supplierIds))) {
+            return null;
+        }
+
+        $currencies = $suppliers
+            ->map(static fn ($supplier): string => strtoupper((string) $supplier->pricing_currency))
+            ->unique()
+            ->values();
+        if ($currencies->count() !== 1) {
+            return null;
+        }
+
+        $currency = $currencies->first();
+        if ($currency === 'TOM') {
+            return 'TOM';
+        }
+
+        $resolver = app(\App\Services\CatalogExchangeRateBasisResolver::class);
+        $rates = $resolver->resolveMany($suppliers)->map(static function (?array $basis): ?float {
+            return $basis && is_numeric($basis['rate_value'] ?? null)
+                ? (float) $basis['rate_value']
+                : null;
+        });
+
+        if ($rates->contains(null)) {
+            return null;
+        }
+
+        $firstRate = (float) $rates->first();
+        if ($rates->contains(static fn (?float $rate): bool => abs((float) $rate - $firstRate) >= 0.00005)) {
+            return null;
+        }
+
+        return app(\App\Services\CatalogPriceFormatter::class)
+            ->isSupportedForeignCurrency($currency) ? $currency : null;
+    }
+
+    /** @return array<int, int> */
+    private function catalogBranchSupplierIds(?int $ownerSupplierId): array
+    {
+        if (!$ownerSupplierId) {
+            return [];
+        }
+
+        $owner = \App\Models\Supplier::query()->findOrFail($ownerSupplierId);
+        $primary = $owner->parent_supplier_id
+            ? $owner->parentSupplier
+            : $owner;
+
+        abort_unless(
+            $primary
+                && (int) $primary->user_id === (int) $owner->user_id
+                && (bool) $primary->is_active,
+            403
+        );
+
+        $family = collect([(int) $primary->id])->merge(
+            $primary->branches()
+                ->where('is_active', true)
+                ->where('is_verified', true)
+                ->where('user_id', $primary->user_id)
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+        )->unique()->values();
+
+        $scope = $this->settings['catalog_branch_scope'] ?? 'single';
+        if ($scope === 'all') {
+            return $family->all();
+        }
+
+        $selectedId = (int) ($this->settings['catalog_branch_supplier_id'] ?? $ownerSupplierId);
+        abort_unless($family->contains($selectedId), 403, 'شعبهٔ انتخاب‌شده متعلق به این فروشگاه نیست یا فعال نیست.');
+
+        return [$selectedId];
     }
 
     /**
@@ -288,6 +380,47 @@ class Preview extends Component
         $cacheIdentity = $this->catalogCacheIdentity($supplierId);
         $selectedSupplierIds = $cacheIdentity['supplier_ids'];
         $cacheKey = $cacheIdentity['cache_key'];
+        abort_unless($selectedSupplierIds !== [], 403, 'هیچ شعبهٔ فعالی برای این کاتالوگ پیدا نشد.');
+        $branchAware = !$isAdmin && ($this->settings['catalog_branch_scope'] ?? 'single') === 'all';
+        $branchLabels = [];
+
+        if ($branchAware) {
+            $selectedBranches = \App\Models\Supplier::query()
+                ->leftJoin('cities as selected_city', function ($join): void {
+                    $join->on('suppliers.city_id', '=', 'selected_city.id')
+                        ->on('suppliers.province_id', '=', 'selected_city.province_id')
+                        ->where('selected_city.is_active', true)
+                        ->whereNull('selected_city.deleted_at');
+                })
+                ->whereIn('suppliers.id', $selectedSupplierIds)
+                ->get([
+                    'suppliers.id',
+                    'suppliers.branch_name',
+                    'suppliers.parent_supplier_id',
+                    'suppliers.city',
+                    'selected_city.name as selected_city_name',
+                    'selected_city.native_name as selected_city_native_name',
+                ]);
+            $cityCounts = $selectedBranches
+                ->map(static fn ($branch): string => mb_strtolower(trim((string) ($branch->selected_city_native_name ?: $branch->selected_city_name ?: $branch->city))))
+                ->filter()
+                ->countBy();
+
+            foreach ($selectedBranches as $branch) {
+                $city = trim((string) ($branch->selected_city_native_name ?: $branch->selected_city_name ?: $branch->city));
+                $branchName = $branch->branchLabel();
+                if ($city === '') {
+                    $label = $branchName . ' · شهر ثبت نشده';
+                } else {
+                    $cityKey = mb_strtolower($city);
+                    $label = $city;
+                    if (($cityCounts[$cityKey] ?? 0) > 1) {
+                        $label .= ' · ' . $branchName;
+                    }
+                }
+                $branchLabels[(int) $branch->id] = $label;
+            }
+        }
         
         // تلاش برای دریافت از کش
         $cached = Cache::get($cacheKey);
@@ -373,6 +506,9 @@ class Preview extends Component
             'category',
             'primaryImage',
             'attributeValues.attribute', // eager load برای جلوگیری از N+1
+            'familyRoot.category',
+            'familyRoot.primaryImage',
+            'familyRoot.attributeValues.attribute',
             'productSuppliers' => function ($q) use ($selectedSupplierIds, $supplierId, $isAdmin) {
                 if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
                     $q->whereIn('supplier_id', $selectedSupplierIds);
@@ -382,9 +518,10 @@ class Preview extends Component
                     $q->whereRaw('1 = 0');
                 }
 
-                $q->where('is_active', true)
-                    ->with(['prices' => function ($priceQuery) {
-                        $priceQuery->where('is_active', true);
+                    $q->where('is_active', true)
+                    ->with(['supplier:id,company_name,branch_name,parent_supplier_id,city,pricing_currency', 'prices' => function ($priceQuery) {
+                        $priceQuery->where('is_active', true)
+                            ->with('branchSourcePrice.productSupplier');
                     }]);
             }
         ])->get();
@@ -431,11 +568,52 @@ class Preview extends Component
                 ->flatMap(static fn ($product) => $product->productSuppliers->pluck('supplier_id'))
                 ->filter()
                 ->unique()
+                ->map(static fn ($id): int => (int) $id)
                 ->values();
 
-            $checkPeriodsBySupplier = \App\Models\CheckPeriod::getActiveForSuppliers($supplierIds->all())
+            $periodSupplierIds = $supplierIds;
+            $primaryBranchSupplierId = null;
+            if (!$isAdmin && $selectedSupplierIds !== []) {
+                $primaryBranchSupplierId = (int) $selectedSupplierIds[0];
+                if (count($selectedSupplierIds) === 1) {
+                    $parentSupplierId = (int) (\App\Models\Supplier::query()
+                        ->whereKey($primaryBranchSupplierId)
+                        ->value('parent_supplier_id') ?? 0);
+                    if ($parentSupplierId > 0) {
+                        $primaryBranchSupplierId = $parentSupplierId;
+                    }
+                }
+
+                $periodSupplierIds = $periodSupplierIds
+                    ->push((int) $primaryBranchSupplierId)
+                    ->unique()
+                    ->values();
+            }
+
+            $checkPeriodsBySupplier = \App\Models\CheckPeriod::getActiveForSuppliers($periodSupplierIds->all())
                 ->groupBy(static fn ($period) => (int) $period->resolved_supplier_id)
                 ->map(static fn ($periods) => $periods->values());
+
+            if (!$isAdmin && $primaryBranchSupplierId) {
+                $primaryPeriods = $checkPeriodsBySupplier->get((int) $primaryBranchSupplierId, collect());
+                foreach ($supplierIds as $branchSupplierId) {
+                    if ((int) $branchSupplierId === (int) $primaryBranchSupplierId) {
+                        continue;
+                    }
+
+                    // Branch price sync preserves the source check_period_id. Keep
+                    // enabled primary periods available for those copied matrix rows,
+                    // while retaining branch-owned periods and labels as well.
+                    // Eloquent Collection::merge() keys models by primary key, so
+                    // branch periods must be merged last to keep the branch pivot label.
+                    $branchPeriods = $checkPeriodsBySupplier->get($branchSupplierId, collect());
+                    $checkPeriodsBySupplier[$branchSupplierId] = $primaryPeriods
+                        ->merge($branchPeriods)
+                        ->unique('id')
+                        ->sortBy('days')
+                        ->values();
+                }
+            }
         }
         $totalProducts = $products->count();
         $processedProducts = 0;
@@ -449,10 +627,20 @@ class Preview extends Component
                 $this->updateProgress($percent, "پردازش محصول {$processedProducts} از {$totalProducts}...");
             }
 
+            $sourceProduct = $product;
+            $sourceProductSuppliers = $sourceProduct->productSuppliers;
+            if ($branchAware) {
+                $familyRoot = $sourceProduct->familyRoot;
+                if ($familyRoot && $familyRoot->is_active && $familyRoot->status === ProductStatus::ACTIVE) {
+                    $product = $familyRoot;
+                }
+            }
+
             $catName = $product->category?->name ?? 'بدون دسته‌بندی';
 
             // محاسبه قیمت‌ها از price_matrix با ساختار جدید
             $prices = [];
+            $pricesBySupplier = [];
             
             // دریافت تیراژهای انتخاب شده
             $selectedTiers = [];
@@ -478,7 +666,11 @@ class Preview extends Component
             }
             
             // ✅ برای هر تامین‌کننده، قیمت‌های این محصول را از جدول product_prices بخوان
-            foreach ($product->productSuppliers as $ps) {
+            foreach ($sourceProductSuppliers as $ps) {
+                if ($branchAware) {
+                    $prices = [];
+                }
+
                 // دریافت قیمت‌های این product_supplier از relation
                 $productPrices = $ps->prices; // Collection از ProductPrice
                 
@@ -543,8 +735,7 @@ class Preview extends Component
                                 
                                 $prices[$storeKey] = [
                                     'price' => (int)$priceRecord->price,
-                                    'foreign_price_rate' => $ps->foreign_price_rate,
-                                    'foreign_price_applied_currency' => $ps->foreign_price_applied_currency,
+                                    ...$this->catalogPriceCurrencyMetadata($priceRecord, $ps),
                                     'tier_index' => (int)$tierIndex,
                                     'price_type_id' => (int)$priceTypeId,
                                     'warranty_type' => $warrantyType,
@@ -610,13 +801,13 @@ class Preview extends Component
                                         
                                         $prices[$checkStoreKey] = [
                                             'price' => (int)$checkPriceRecord->price,
-                                            'foreign_price_rate' => $ps->foreign_price_rate,
-                                            'foreign_price_applied_currency' => $ps->foreign_price_applied_currency,
+                                            ...$this->catalogPriceCurrencyMetadata($checkPriceRecord, $ps),
                                             'tier_index' => (int)$tierIndex,
                                             'price_type_id' => (int)$priceTypeId,
                                             'check_period_id' => (int)$period->id,
                                             'check_period_days' => (int)$period->days,
-                                            'check_period_label' => $period->display_label ?? $period->display_name,
+                                            'check_period_name' => (string) $period->name,
+                                            'check_period_label' => $period->display_name ?? $period->name,
                                             'warranty_type' => $warrantyType,
                                             'warranty_duration' => $warrantyDuration,
                                             'warranty_price' => $warrantyPrice,
@@ -624,6 +815,22 @@ class Preview extends Component
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                if ($branchAware && $prices !== []) {
+                    $pricesBySupplier[(int) $ps->supplier_id] = $prices;
+                }
+            }
+
+            if ($branchAware) {
+                $prices = [];
+                foreach ($pricesBySupplier as $supplierPrices) {
+                    foreach ($supplierPrices as $priceKey => $priceData) {
+                        if (!isset($prices[$priceKey])
+                            || (float) ($priceData['price'] ?? 0) < (float) ($prices[$priceKey]['price'] ?? PHP_INT_MAX)) {
+                            $prices[$priceKey] = $priceData;
                         }
                     }
                 }
@@ -698,7 +905,7 @@ class Preview extends Component
                 }
             }
 
-            $allItems[] = [
+            $item = [
                 'id'               => $product->id,
                 'title'            => $product->title,
                 'sku'              => $product->sku,
@@ -706,13 +913,53 @@ class Preview extends Component
                 'brand'            => $product->brand,
                 'category_name'    => $catName,
                 'category_order'   => $product->category?->sort_order ?? 0,
-                'prices'           => $prices,
+                'prices'           => $branchAware ? [] : $prices,
                 'created_at'       => $product->created_at?->timestamp ?? 0,
-                'price_updated_at' => $product->productSuppliers->max('price_updated_at')?->timestamp ?? 0,
+                'price_updated_at' => $sourceProductSuppliers->max('price_updated_at')?->timestamp ?? 0,
                 'attribute_value'  => $attributeValue,
             ];
 
+            if (!$branchAware) {
+                $allItems[] = $item;
+                continue;
+            }
+
+            $familyId = (int) ($sourceProduct->family_product_id ?: $sourceProduct->id);
+            if (!isset($allItems[$familyId])) {
+                $item['branch_prices'] = [];
+                foreach ($selectedSupplierIds as $selectedBranchId) {
+                    $item['branch_prices'][(int) $selectedBranchId] = [
+                        'label' => $branchLabels[(int) $selectedBranchId] ?? 'شهر ثبت نشده',
+                        'prices' => [],
+                    ];
+                }
+                $allItems[$familyId] = $item;
+            } else {
+                $allItems[$familyId]['price_updated_at'] = max(
+                    (int) ($allItems[$familyId]['price_updated_at'] ?? 0),
+                    (int) ($item['price_updated_at'] ?? 0),
+                );
+            }
+
+            foreach ($pricesBySupplier as $branchId => $branchPrices) {
+                if (!isset($allItems[$familyId]['branch_prices'][$branchId])) {
+                    continue;
+                }
+
+                $allItems[$familyId]['branch_prices'][$branchId]['prices'] = $branchPrices;
+                foreach ($branchPrices as $priceKey => $priceData) {
+                    if (!isset($allItems[$familyId]['prices'][$priceKey])
+                        || (float) ($priceData['price'] ?? 0) < (float) ($allItems[$familyId]['prices'][$priceKey]['price'] ?? PHP_INT_MAX)) {
+                        $allItems[$familyId]['prices'][$priceKey] = $priceData;
+                    }
+                }
+            }
+
         }
+
+        // Branch families are keyed by family ID while they are being merged.
+        // Reindex before rendering so row numbers and array_chunk remain sequential.
+        $allItems = array_values($allItems);
 
         // پردازش تنظیمات سورت - پشتیبانی از هر دو فرمت قدیم و جدید
         $sorts = $this->settings['sort'] ?? [];
@@ -758,10 +1005,11 @@ class Preview extends Component
         // ذخیره در کش برای استفاده‌های بعدی (2 ساعت)
         $snapshot = [
             'grouped_products' => $grouped,
-            'price_types_by_id' => $priceTypes->mapWithKeys(static fn ($priceType): array => [
+            'price_types_by_id' => $priceTypes->where('is_active', true)->mapWithKeys(static fn ($priceType): array => [
                 (int) $priceType->id => [
                     'code' => (string) $priceType->code,
                     'name' => (string) $priceType->name,
+                    'is_active' => true,
                 ],
             ])->all(),
             'generated_at' => now()->toDateTimeString(),
@@ -791,14 +1039,33 @@ class Preview extends Component
         if ($isAdmin && !empty($this->template->config['supplier_ids']) && is_array($this->template->config['supplier_ids'])) {
             $selectedSupplierIds = array_values(array_unique(array_map('intval', $this->template->config['supplier_ids'])));
         } elseif ($supplierId) {
-            $selectedSupplierIds = [(int) $supplierId];
+            $selectedSupplierIds = $this->catalogBranchSupplierIds((int) $supplierId);
+        }
+
+        $revisionSupplierIds = $selectedSupplierIds;
+        if ($selectedSupplierIds !== []) {
+            $sourceSupplierIds = \App\Models\Supplier::query()
+                ->whereIn('id', $selectedSupplierIds)
+                ->whereNotNull('parent_supplier_id')
+                ->pluck('parent_supplier_id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+            $revisionSupplierIds = array_values(array_unique([...$selectedSupplierIds, ...$sourceSupplierIds]));
         }
 
         $sourceRevision = app(\App\Services\CatalogSnapshotRevisionService::class)
-            ->signatureFor($selectedSupplierIds);
+            ->signatureFor($revisionSupplierIds);
+        $activePriceTypeIds = \App\Models\PriceType::query()
+            ->active()
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
         $catalogVersion = Cache::get('catalog_version_' . $this->template->id, 0);
         $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
+            'snapshot_schema' => 5,
             'supplier_ids' => $selectedSupplierIds,
+            'active_price_type_ids' => $activePriceTypeIds,
             'settings' => $this->settings,
             'selected_prices' => $this->selectedPriceTypes,
             'source_revision' => $sourceRevision,
@@ -852,7 +1119,31 @@ class Preview extends Component
         };
     }
 
-    private function refreshCurrencySnapshotWarning(array $groupedProducts): void
+    private function catalogPriceCurrencyMetadata(ProductPrice $price, ProductSupplier $offer): array
+    {
+        // A copied branch's Toman price is derived from its source matrix.
+        // Use that source snapshot for freshness checks, while formatting the
+        // catalog in the selected supplier's current display currency/rate.
+        $snapshotOffer = $price->branchSourcePrice?->productSupplier ?? $offer;
+        $displayCurrency = $this->displayCurrencyCode;
+        $displayRate = $displayCurrency !== null
+            && $displayCurrency !== 'TOM'
+            && strtoupper((string) ($this->exchangeRateBasis['currency'] ?? '')) === $displayCurrency
+            && is_numeric($this->exchangeRateBasis['rate_value'] ?? null)
+            ? (string) $this->exchangeRateBasis['rate_value']
+            : null;
+
+        return [
+            'foreign_price_rate' => $snapshotOffer->foreign_price_rate,
+            'foreign_price_applied_currency' => $snapshotOffer->foreign_price_applied_currency,
+            'price_snapshot_supplier_id' => (int) ($snapshotOffer->supplier_id ?: $offer->supplier_id),
+            'catalog_display_currency' => $displayCurrency,
+            'catalog_display_rate' => $displayRate,
+            'catalog_display_valid' => $displayCurrency === 'TOM' || $displayRate !== null,
+        ];
+    }
+
+    private function refreshCurrencySnapshotWarning(array &$groupedProducts): void
     {
         $this->currencySnapshotWarning = false;
 
@@ -863,32 +1154,116 @@ class Preview extends Component
         $configuredCurrency = $this->exchangeRateBasis['currency'] ?? null;
         $configuredRate = $this->exchangeRateBasis['rate_value'] ?? null;
 
-        if ($this->displayCurrencyCode !== 'TOM' && $configuredCurrency !== $this->displayCurrencyCode) {
+        $displayBasisValid = $this->displayCurrencyCode === 'TOM'
+            || ($configuredCurrency === $this->displayCurrencyCode
+                && is_numeric($configuredRate)
+                && (float) $configuredRate > 0);
+
+        if (!$displayBasisValid) {
             $this->currencySnapshotWarning = true;
-            return;
         }
 
-        if (!$configuredCurrency || !is_numeric($configuredRate) || (float) $configuredRate <= 0) {
-            if ($this->displayCurrencyCode !== 'TOM') {
-                $this->currencySnapshotWarning = true;
-            }
-
-            return;
-        }
-
+        $snapshotSupplierIds = [];
         foreach ($groupedProducts as $items) {
             foreach ($items as $item) {
-                foreach (($item['prices'] ?? []) as $priceData) {
-                    if (!is_array($priceData)
-                        || ($priceData['foreign_price_applied_currency'] ?? null) !== $configuredCurrency
-                        || !is_numeric($priceData['foreign_price_rate'] ?? null)
-                        || (float) $priceData['foreign_price_rate'] <= 0
-                        || abs((float) $priceData['foreign_price_rate'] - (float) $configuredRate) >= 0.00005) {
-                        $this->currencySnapshotWarning = true;
-                        return;
+                $priceMaps = isset($item['branch_prices'])
+                    ? array_map(static fn (array $branch): array => $branch['prices'] ?? [], $item['branch_prices'])
+                    : [($item['prices'] ?? [])];
+
+                foreach ($priceMaps as $priceMap) {
+                    foreach ($priceMap as $priceData) {
+                        $supplierId = (int) ($priceData['price_snapshot_supplier_id'] ?? 0);
+                        if ($supplierId > 0) {
+                            $snapshotSupplierIds[$supplierId] = true;
+                        }
                     }
                 }
             }
+        }
+
+        $snapshotSuppliers = $snapshotSupplierIds === []
+            ? collect()
+            : \App\Models\Supplier::query()
+                ->whereIn('id', array_keys($snapshotSupplierIds))
+                ->get(['id', 'pricing_currency'])
+                ->keyBy('id');
+        $snapshotBases = $snapshotSuppliers->isEmpty()
+            ? collect()
+            : app(\App\Services\CatalogExchangeRateBasisResolver::class)
+                ->resolveMany($snapshotSuppliers->values());
+
+        foreach ($groupedProducts as &$items) {
+            foreach ($items as &$item) {
+                if (isset($item['branch_prices']) && is_array($item['branch_prices'])) {
+                    foreach ($item['branch_prices'] as &$branch) {
+                        if (!isset($branch['prices']) || !is_array($branch['prices'])) {
+                            $branch['prices'] = [];
+                        }
+
+                        foreach ($branch['prices'] as &$priceData) {
+                            $this->validateCatalogPriceSnapshot($priceData, $snapshotSuppliers, $snapshotBases, $displayBasisValid);
+                        }
+                        unset($priceData);
+                    }
+                    unset($branch);
+                    continue;
+                }
+
+                if (!isset($item['prices']) || !is_array($item['prices'])) {
+                    $item['prices'] = [];
+                }
+
+                foreach ($item['prices'] as &$priceData) {
+                    $this->validateCatalogPriceSnapshot($priceData, $snapshotSuppliers, $snapshotBases, $displayBasisValid);
+                }
+                unset($priceData);
+            }
+            unset($item);
+        }
+        unset($items);
+    }
+
+    private function validateCatalogPriceSnapshot(
+        mixed &$priceData,
+        \Illuminate\Support\Collection $snapshotSuppliers,
+        \Illuminate\Support\Collection $snapshotBases,
+        bool $displayBasisValid,
+    ): void {
+        if (!is_array($priceData)) {
+            return;
+        }
+
+        $supplierId = (int) ($priceData['price_snapshot_supplier_id'] ?? 0);
+        $supplierCurrency = strtoupper((string) ($snapshotSuppliers->get($supplierId)?->pricing_currency ?? ''));
+        $snapshotCurrency = strtoupper((string) ($priceData['foreign_price_applied_currency'] ?? ''));
+        $snapshotRate = $priceData['foreign_price_rate'] ?? null;
+        $snapshotIsCurrent = false;
+
+        if ($supplierCurrency === 'TOM') {
+            $snapshotIsCurrent = $snapshotCurrency === ''
+                && (!is_numeric($snapshotRate) || (float) $snapshotRate <= 0);
+        } else {
+            $currentBasis = $snapshotBases->get($supplierId);
+            if ($supplierId < 1) {
+                $currentBasis = $this->exchangeRateBasis;
+            }
+
+            $currentCurrency = strtoupper((string) ($currentBasis['currency'] ?? ''));
+            $currentRate = $currentBasis['rate_value'] ?? null;
+            $snapshotIsCurrent = $currentCurrency !== ''
+                && $snapshotCurrency === $currentCurrency
+                && is_numeric($snapshotRate)
+                && (float) $snapshotRate > 0
+                && is_numeric($currentRate)
+                && abs((float) $snapshotRate - (float) $currentRate) < 0.00005;
+        }
+
+        if (!$snapshotIsCurrent) {
+            $this->currencySnapshotWarning = true;
+        }
+
+        if ($this->displayCurrencyCode !== 'TOM') {
+            $priceData['catalog_display_valid'] = $displayBasisValid && $snapshotIsCurrent;
         }
     }
 
@@ -913,7 +1288,9 @@ class Preview extends Component
             return;
         }
 
-        $this->refreshCurrencySnapshotWarning($snapshot['grouped_products'] ?? []);
+        $groupedProducts = $snapshot['grouped_products'] ?? [];
+        $this->refreshCurrencySnapshotWarning($groupedProducts);
+        $snapshot['grouped_products'] = $groupedProducts;
         $snapshot['exchange_rate_basis_signature'] = $signature;
         $snapshot['currency_snapshot_warning'] = $this->currencySnapshotWarning;
 
@@ -1016,6 +1393,8 @@ class Preview extends Component
     {
         $this->authorizeCurrentTemplate();
         $this->resetErrorBag('pdfExport');
+        // mPDF can exceed PHP's common 30-second request limit while rendering Persian fonts.
+        set_time_limit(180);
         $fileName = $prefix . jdate(now())->format('Y-m-d') . '.pdf';
         $startedAt = microtime(true);
         $format = $prefix === 'list-' ? 'list' : 'catalog';
@@ -1046,7 +1425,11 @@ class Preview extends Component
 
             if (($this->settings['price_display_currency'] ?? 'toman') === 'supplier'
                 && $this->displayCurrencyCode === null) {
-                throw new \RuntimeException('Supplier currency is unavailable for this catalog.');
+                $message = 'خروجی ارزی ممکن نیست؛ ارز پایه و نرخ معتبر همهٔ شعبه‌های انتخاب‌شده باید یکسان باشند. یک شعبه را انتخاب کنید، نرخ ارز شعب را همسان کنید یا نمایش تومان را برگزینید.';
+                $this->updateProgress(0, $message, 'failed');
+                $this->addError('pdfExport', $message);
+
+                return null;
             }
 
             if (!is_array($catalogSnapshot) || !isset($catalogSnapshot['grouped_products'])) {
@@ -1103,9 +1486,14 @@ class Preview extends Component
                     ?? 'vazir',
                 'includeWarranty' => $this->includeWarranty ?? false,
                 'displayCurrencyCode' => $this->displayCurrencyCode,
-                'exchangeRateBasis' => $this->exchangeRateBasis,
+                'exchangeRateBasis' => empty($this->displayCurrencyCode) || $this->displayCurrencyCode === 'TOM'
+                    ? null
+                    : $this->exchangeRateBasis,
                 'currencySnapshotWarning' => $this->currencySnapshotWarning,
                 'priceFormatter' => app(\App\Services\CatalogPriceFormatter::class),
+                'catalogBranchPriceRows' => app(\App\Services\CatalogBranchPriceRows::class),
+                'branchAwareCatalog' => !$this->authenticatedUserIsAdmin()
+                    && ($this->settings['catalog_branch_scope'] ?? 'single') === 'all',
                 'priceTypesById' => $priceTypesById,
             ];
 
@@ -1211,8 +1599,11 @@ class Preview extends Component
 
         return view('livewire.supplier.catalog.preview', [
             'priceFormatter' => app(\App\Services\CatalogPriceFormatter::class),
+            'catalogBranchPriceRows' => app(\App\Services\CatalogBranchPriceRows::class),
             'groupedProducts' => $catalogData['grouped_products'] ?? [],
             'priceTypesById' => $catalogData['price_types_by_id'] ?? [],
+            'branchAwareCatalog' => !$this->authenticatedUserIsAdmin()
+                && ($this->settings['catalog_branch_scope'] ?? 'single') === 'all',
             'previewDataExpired' => !isset($catalogData['grouped_products']),
             'catalogSnapshotBusy' => $this->catalogSnapshotBusy,
         ])

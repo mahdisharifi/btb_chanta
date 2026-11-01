@@ -22,7 +22,7 @@ class ProductCompletionRequests extends Component
 
     public function render()
     {
-        $supplierId = auth()->user()->supplier()->value('id');
+        $supplierId = auth()->user()->currentSupplier()->id;
 
         return view('livewire.supplier.product-completion-requests', [
             'tasks' => ProductCompletionTask::query()

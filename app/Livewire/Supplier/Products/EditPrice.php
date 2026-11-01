@@ -9,8 +9,11 @@ use App\Models\CheckPeriod;
 use App\Models\SupplierExchangeRateSetting;
 use App\Models\Supplier;
 use App\Models\ProductPrice;
+use App\Models\User;
+use App\Services\SupplierBranchPriceSyncService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -23,6 +26,9 @@ class EditPrice extends Component
     public int $foreignPriceRevision = 0;
     public string $priceMatrixFingerprint = '';
     public ?string $foreignPriceRevisionToken = null;
+    public bool $isBranchCopy = false;
+    public string $branchPricePercentage = '0.00';
+    public ?int $branchReferencePrice = null;
 
     // Properties for the form
     public array $priceMatrix = []; // ساختار: [tier_index][price_type_id] = ['price' => ..., 'warranty_*' => ...]
@@ -117,19 +123,30 @@ class EditPrice extends Component
      */
     public function mount(Product $product)
     {
-        $supplierId = $this->authorizePriceWrite();
-        $this->product = $product;
-        
-        // Find or create the relationship
-        $this->productSupplier = ProductSupplier::firstOrCreate(
-            [
+        $supplier = Auth::user()->currentSupplier();
+        $supplierId = $supplier->id;
+        $this->product = Product::query()
+            ->whereKey($product->id)
+            ->where(function ($query) use ($supplierId): void {
+                $query->where('supplier_id', $supplierId)
+                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplierId));
+            })
+            ->firstOrFail();
+
+        $this->productSupplier = ProductSupplier::query()
+            ->where('product_id', $this->product->id)
+            ->where('supplier_id', $supplierId)
+            ->first();
+
+        if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
+            $this->productSupplier = ProductSupplier::create([
                 'product_id' => $this->product->id,
                 'supplier_id' => $supplierId,
-            ],
-            [
                 'is_active' => false,
-            ]
-        );
+            ]);
+        }
+
+        abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
 
         // Load data
         $this->sku = $this->productSupplier->sku;
@@ -154,6 +171,23 @@ class EditPrice extends Component
         $this->warrantyCoverageType = $this->productSupplier->warranty_coverage_type ?? 'full';
         $this->warrantyTypeCoverage = $this->productSupplier->warranty_type_coverage ?? 'limited'; // ✅
         $this->warrantyDurationDays = $this->productSupplier->warranty_duration_days;
+
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
+
+        if ($this->isBranchCopy) {
+            $this->branchPricePercentage = rtrim(rtrim(number_format(
+                (float) ($this->productSupplier->branch_price_percentage ?? 0),
+                12,
+                '.',
+                ''
+            ), '0'), '.');
+            $this->branchReferencePrice = app(SupplierBranchPriceSyncService::class)
+                ->primaryReferencePrice($this->product, $supplier);
+
+            return;
+        }
         
         // تیراژهای محصول
         $this->quantityTiers = $this->product->quantity_tiers ?? [];
@@ -286,7 +320,7 @@ class EditPrice extends Component
                                     
                                     if ($percentage !== null) {
                                         // ✅ استفاده از Helper برای محاسبه و rounding
-                                        $supplier = Auth::user()->supplier;
+                                        $supplier = Auth::user()->currentSupplier();
                                         $expectedDefaultPrice = \App\Helpers\PriceRoundingHelper::calculateCheckPrice(
                                             $cashPrice,
                                             $percentage,
@@ -557,12 +591,24 @@ class EditPrice extends Component
      */
     public function save()
     {
+        $supplier = Auth::user()->currentSupplier();
+        $this->resolveOwnedProductAndOffer($supplier);
         $supplierId = $this->authorizePriceWrite();
+        abort_unless($supplierId === (int) $supplier->id, 403, 'شما مجاز به ویرایش این محصول نیستید.');
+
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
+        if ($this->isBranchCopy) {
+            return $this->saveBranchPricing($supplier);
+        }
+
         $this->normalizeForeignPriceAmount();
         // امنیت: بررسی دسترسی تامین‌کننده به این محصول
         abort_unless((int) $this->productSupplier->supplier_id === $supplierId, 403, 'شما مجاز به ویرایش این محصول نیستید.');
 
-        $saved = DB::transaction(function () use ($supplierId): bool {
+        $saved = ProductPrice::withoutEvents(function () use ($supplierId): bool {
+            return DB::transaction(function () use ($supplierId): bool {
             return app(\App\Services\CatalogSnapshotRevisionService::class)->batch(function () use ($supplierId): bool {
             $lockedSupplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
             if ($lockedSupplier->pricing_currency !== $this->priceCurrency
@@ -803,9 +849,20 @@ class EditPrice extends Component
             app(\App\Services\ProductPriceRevisionService::class)
                 ->increment((int) $lockedProductSupplier->product_id, (int) $lockedProductSupplier->supplier_id);
 
+            $matrixPrices = ProductPrice::query()
+                ->where('product_id', $lockedProductSupplier->product_id)
+                ->where('product_supplier_id', $lockedProductSupplier->id)
+                ->get();
+            app(SupplierBranchPriceSyncService::class)->syncPrimaryMatrix(
+                $lockedProductSupplier->product->refresh(),
+                $lockedSupplier,
+                $matrixPrices,
+            );
+
             return true;
             });
         }, 3);
+        });
 
         if (!$saved) {
             return;
@@ -836,6 +893,90 @@ class EditPrice extends Component
         );
         
         session()->flash('message', 'ماتریس قیمت با موفقیت ذخیره شد.');
+    }
+
+    private function saveBranchPricing(\App\Models\Supplier $supplier): void
+    {
+        $this->validate([
+            'branchPricePercentage' => 'required|numeric|decimal:0,12|between:-99.999999,999.999999',
+            'warrantyType' => 'required|in:none,percentage,fixed,custom',
+            'warrantyValue' => 'nullable|numeric|min:0|max:1000000000',
+            'hasWarranty' => 'boolean',
+            'warrantyProvider' => 'required|in:none,manufacturer,seller',
+            'warrantyCoverageType' => 'required|in:full,limited,parts_only,service_only',
+            'warrantyTypeCoverage' => 'required|in:test,limited,lifetime',
+            'warrantyDurationDays' => 'nullable|integer|min:0|max:36500',
+        ]);
+
+        $percentage = round((float) $this->branchPricePercentage, 12, PHP_ROUND_HALF_UP);
+        DB::transaction(function () use ($supplier, $percentage): void {
+            // Match primary-promotion lock order (primary, then branch) to avoid
+            // lock inversion when a branch is promoted during a price edit.
+            $lockedPrimary = $supplier->parent_supplier_id !== null
+                ? Supplier::query()->lockForUpdate()->find($supplier->parent_supplier_id)
+                : null;
+            $lockedBranch = Supplier::query()->lockForUpdate()->findOrFail($supplier->id);
+            abort_unless(
+                $lockedPrimary
+                    && (int) $lockedBranch->parent_supplier_id === (int) $lockedPrimary->id,
+                403,
+                'ساختار شعبه هنگام ثبت قیمت تغییر کرده است.'
+            );
+            $this->assertPriceWriteContext(Auth::user(), $lockedBranch, $lockedPrimary, true);
+
+            $lockedProduct = Product::query()->lockForUpdate()->findOrFail($this->product->id);
+            abort_unless(
+                $lockedBranch->isBranch()
+                    && (int) $lockedProduct->supplier_id === (int) $lockedBranch->id
+                    && $lockedProduct->family_product_id !== null
+                    && (int) $lockedProduct->family_product_id !== (int) $lockedProduct->id,
+                403,
+                'این محصول دیگر نسخهٔ قابل‌ویرایش شعبه نیست.'
+            );
+
+            $lockedOffer = ProductSupplier::query()
+                ->whereKey($this->productSupplier->getKey())
+                ->where('product_id', $lockedProduct->id)
+                ->where('supplier_id', $lockedBranch->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedOffer->update([
+                'branch_price_percentage' => $percentage,
+                'warranty_type' => $this->warrantyType,
+                'warranty_value' => $this->warrantyValue,
+                'has_warranty' => $this->hasWarranty,
+                'warranty_provider' => $this->warrantyProvider,
+                'warranty_coverage_type' => $this->warrantyCoverageType,
+                'warranty_type_coverage' => $this->warrantyTypeCoverage,
+                'warranty_duration_days' => $this->warrantyDurationDays,
+            ]);
+
+            app(SupplierBranchPriceSyncService::class)
+                ->syncBranchProduct($lockedProduct, $lockedBranch, $percentage);
+        });
+
+        $this->branchReferencePrice = app(SupplierBranchPriceSyncService::class)
+            ->primaryReferencePrice($this->product, $supplier);
+        unset($this->branchCalculatedPrice);
+        $this->dispatch('notify', [
+            'type' => 'success',
+            'message' => 'درصد قیمت شعبه ذخیره شد و قیمت‌های آن بر اساس شعبهٔ اصلی به‌روز شدند.',
+        ]);
+    }
+
+    #[Computed]
+    public function branchCalculatedPrice(): ?int
+    {
+        if ($this->branchReferencePrice === null || !is_numeric($this->branchPricePercentage)) {
+            return null;
+        }
+
+        return max(0, (int) round(
+            $this->branchReferencePrice * (1 + ((float) $this->branchPricePercentage / 100)),
+            0,
+            PHP_ROUND_HALF_UP
+        ));
     }
     
     /**
@@ -873,7 +1014,7 @@ class EditPrice extends Component
         $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? 'default';
         
         // دریافت supplier برای rounding
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         
         switch ($mode) {
             case 'default':
@@ -1022,7 +1163,7 @@ class EditPrice extends Component
             return;
         }
 
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
         $defaultPercentages = DB::table('supplier_check_period')
             ->where('supplier_id', $supplierId)
             ->whereIn('check_period_id', $periodIds)
@@ -1066,7 +1207,7 @@ class EditPrice extends Component
 
     private function resolveEffectivePercentage(int $periodId): array
     {
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
         $defaultPercentage = (float) (DB::table('supplier_check_period')
             ->where('supplier_id', $supplierId)
             ->where('check_period_id', $periodId)
@@ -1107,7 +1248,7 @@ class EditPrice extends Component
      */
     public function loadTierPercentages(): void
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->product->category_id ?? null;
         
         // بارگذاری از جدول supplier_tier_percentages (اگر وجود داشته باشد)
@@ -1153,7 +1294,7 @@ class EditPrice extends Component
      */
     public function loadDefaultTierPercentages(): void
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // بارگذاری تنظیمات پیشفرض
         $defaultTierSettings = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId);
@@ -1187,7 +1328,15 @@ class EditPrice extends Component
      */
     public function saveTierPercentages(): void
     {
+        $supplier = Auth::user()->currentSupplier();
+        $this->resolveOwnedProductAndOffer($supplier);
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
+        abort_unless(!$this->isBranchCopy, 403, 'تنظیم درصد تیراژ برای کالای کپی‌شدهٔ شعبه در دسترس نیست.');
+
         $supplierId = $this->authorizePriceWrite();
+        abort_unless($supplierId === (int) $supplier->id, 403, 'شما مجاز به ویرایش این محصول نیستید.');
         abort_unless((int) $this->productSupplier->supplier_id === $supplierId, 403, 'شما مجاز به ویرایش این محصول نیستید.');
         $categoryId = $this->product->category_id ?? null;
         
@@ -1229,30 +1378,63 @@ class EditPrice extends Component
     private function authorizePriceWrite(): int
     {
         $user = Auth::user();
+        $supplier = $user?->currentSupplier();
+        $this->assertPriceWriteContext($user, $supplier);
+
+        return (int) $supplier->id;
+    }
+
+    private function assertPriceWriteContext(
+        ?User $user,
+        ?Supplier $supplier,
+        ?Supplier $primarySupplier = null,
+        bool $requireCurrentSelection = false,
+    ): void
+    {
         abort_unless(
             $user && $user->hasAnyRole(['supplier', 'regular_supplier', 'admin', 'super_admin']),
             403,
             'شما مجاز به ویرایش قیمت نیستید.'
         );
 
-        $supplier = $user->supplier;
         abort_unless($supplier, 403, 'حساب تامین‌کننده برای این کار در دسترس نیست.');
+        if ($requireCurrentSelection) {
+            $currentSupplier = $user->currentSupplier();
+            abort_unless(
+                (int) $currentSupplier->id === (int) $supplier->id,
+                403,
+                'شعبهٔ جاری هنگام ثبت قیمت تغییر کرده است.'
+            );
+        }
+
         abort_unless(
-            $supplier->is_active && $supplier->is_verified,
+            (int) $supplier->user_id === (int) $user->id
+                && $supplier->is_active
+                && $supplier->is_verified,
             403,
             'حساب تامین‌کننده فعال و تاییدشده نیست.'
         );
 
+        if ($supplier->isBranch()) {
+            $primarySupplier ??= $supplier->parentSupplier;
+            abort_unless(
+                $primarySupplier
+                    && (int) $primarySupplier->user_id === (int) $user->id
+                    && $primarySupplier->is_active
+                    && $primarySupplier->is_verified,
+                403,
+                'حساب تامین‌کننده اصلی فعال و تاییدشده نیست.'
+            );
+        }
+
         if ($user->hasAnyRole(['supplier', 'regular_supplier'])) {
             abort_unless(
-                $user->isAccountApproved()
-                    && $supplier->verification_status === 'approved',
+                $supplier->verification_status === 'approved'
+                    && (!$supplier->isBranch() || $primarySupplier?->verification_status === 'approved'),
                 403,
                 'حساب تامین‌کننده فعال و تاییدشده نیست.'
             );
         }
-
-        return (int) $supplier->id;
     }
 
     /**
@@ -1274,7 +1456,7 @@ class EditPrice extends Component
             return;
         }
         
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         $supplierId = $supplier->id;
         
         // ✅ دریافت دسته‌بندی محصول برای بررسی درصد اختصاصی
@@ -1372,7 +1554,7 @@ class EditPrice extends Component
      */
     public function getEffectiveTierPercentageForUI(int $tierIndex): array
     {
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
         $categoryId = $this->product->category_id;
         $this->getEffectiveTierPercentage($supplierId, $categoryId, $tierIndex);
         $cacheKey = $supplierId . ':' . ($categoryId ?? 'none');
@@ -1734,8 +1916,35 @@ class EditPrice extends Component
         return $fraction === '' ? $whole : $whole . '.' . $fraction;
     }
 
+    private function resolveOwnedProductAndOffer(\App\Models\Supplier $supplier): void
+    {
+        $productId = $this->product?->id;
+        abort_unless($productId, 403, 'محصول معتبر نیست.');
+
+        $product = Product::query()
+            ->whereKey($productId)
+            ->where(function ($query) use ($supplier): void {
+                $query->where('supplier_id', $supplier->id)
+                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplier->id));
+            })
+            ->firstOrFail();
+
+        $offerId = $this->productSupplier?->id;
+        abort_unless($offerId, 403, 'پیشنهاد این محصول در شعبهٔ جاری موجود نیست.');
+        $offer = ProductSupplier::query()
+            ->whereKey($offerId)
+            ->where('product_id', $product->id)
+            ->where('supplier_id', $supplier->id)
+            ->firstOrFail();
+
+        $this->product = $product;
+        $this->productSupplier = $offer;
+    }
+
     public function render()
     {
-        return view('livewire.supplier.products.edit-price');
+        return view($this->isBranchCopy
+            ? 'livewire.supplier.products.edit-branch-pricing'
+            : 'livewire.supplier.products.edit-price');
     }
 }

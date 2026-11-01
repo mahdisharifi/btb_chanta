@@ -155,6 +155,29 @@ class SupplierForeignCurrencyPricingTest extends TestCase
             ->assertHasErrors('foreignPriceAmount');
     }
 
+    public function test_public_supplier_price_range_keeps_converted_values_in_toman(): void
+    {
+        $product = $this->product('USD', 5, true);
+        $offer = ProductSupplier::query()
+            ->where('product_id', $product->id)
+            ->where('supplier_id', $this->supplier->id)
+            ->sole();
+
+        ProductPrice::query()->create([
+            'product_id' => $product->id,
+            'product_supplier_id' => $offer->id,
+            'price_type_id' => $this->cashType->id,
+            'tier_index' => 1,
+            'price' => 1_350_000,
+            'is_active' => true,
+        ]);
+
+        $offer->refresh();
+
+        $this->assertSame(1_350_000, $offer->lowest_price_toman);
+        $this->assertSame('1,350,000 تومان', $offer->formatted_price_range);
+    }
+
     public function test_unsaved_display_defaults_are_used_for_foreign_currency_tiers(): void
     {
         config()->set('queue.default', 'sync');

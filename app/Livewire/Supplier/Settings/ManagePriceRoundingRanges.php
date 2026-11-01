@@ -53,7 +53,7 @@ class ManagePriceRoundingRanges extends Component
      */
     public function loadRanges()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         $existingRanges = SupplierPriceRoundingRange::forSupplier($supplierId)
             ->ordered()
@@ -138,7 +138,7 @@ class ManagePriceRoundingRanges extends Component
     {
         $this->validate();
 
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
 
         try {
             DB::beginTransaction();
@@ -294,7 +294,7 @@ class ManagePriceRoundingRanges extends Component
      */
     public function calculateAffectedPrices()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $this->affectedPricesCount = PriceRoundingHelper::getAffectedPricesCount($supplierId);
     }
 
@@ -319,7 +319,7 @@ class ManagePriceRoundingRanges extends Component
     public function updateAllPrices()
     {
         try {
-            $supplierId = Auth::user()->supplier->id;
+            $supplierId = Auth::user()->currentSupplier()->id;
             
             \Log::info("Starting price update for supplier {$supplierId}");
             

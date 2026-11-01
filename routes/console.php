@@ -55,12 +55,14 @@ Schedule::call(function (): void {
 
 // Use the scheduler's PHP binary and consume both configured and legacy default queues.
 $queueConnection = (string) config('queue.default');
+$queueWorkerConnection = $queueConnection === 'sync' ? 'database' : $queueConnection;
 $workerQueues = implode(',', array_unique(array_filter([
-    (string) config("queue.connections.{$queueConnection}.queue", 'default'),
+    (string) config("queue.connections.{$queueWorkerConnection}.queue", 'default'),
     'default',
 ])));
 
 Schedule::command('queue:work', [
+    $queueWorkerConnection,
     '--queue' => $workerQueues,
     '--stop-when-empty',
     '--max-time' => 55,

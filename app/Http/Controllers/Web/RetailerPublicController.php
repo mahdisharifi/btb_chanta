@@ -199,6 +199,7 @@ class RetailerController extends Controller
                     'max_price'      => (clone $prices)->max('retail_price'),
                     'categories'     => Product::where('is_active', true)
                         ->where('status', ProductStatus::ACTIVE)
+                        ->canonical()
                         ->whereHas('retailPrices', fn($q) => $q->where('user_id', $retailer->id)->where('is_published', true))
                         ->distinct('category_id')
                         ->count('category_id'),

@@ -51,7 +51,7 @@ class ManageCategoryTierDiscounts extends Component
     
     public function loadCategoryTierSettings()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // دریافت تمام تنظیمات
         $records = DB::table('category_tier_discount as ctd')
@@ -137,7 +137,7 @@ class ManageCategoryTierDiscounts extends Component
             return;
         }
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = (int)$this->selectedCategoryId;
         
         // بررسی: آیا این دسته‌بندی قبلاً اضافه شده؟
@@ -205,7 +205,7 @@ class ManageCategoryTierDiscounts extends Component
     
     public function startEditCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
 
         $rows = DB::transaction(function () use ($supplierId, $categoryId) {
             Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
@@ -252,7 +252,7 @@ class ManageCategoryTierDiscounts extends Component
             return;
         }
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->editingCategoryId;
 
         if ($categoryId === null || $this->categoryEditSignature === null) {
@@ -339,7 +339,7 @@ class ManageCategoryTierDiscounts extends Component
     
     public function removeCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
 
         DB::transaction(function () use ($supplierId, $categoryId): void {
             $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
@@ -378,7 +378,7 @@ class ManageCategoryTierDiscounts extends Component
     public function render()
     {
         // دریافت درصدهای پیشفرض تامین‌کننده (برای نمایش در فرم)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $defaultTiers = SupplierTierDiscount::getAllForSupplier($supplierId)
             ->mapWithKeys(function($tier) {
                 return [$tier->tier_index => $tier];

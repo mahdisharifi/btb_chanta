@@ -8,6 +8,8 @@ use App\Listeners\UpdateAffectedCheckPrices;
 use App\Models\Category;
 use App\Models\CommissionRule;
 use App\Models\Product;
+use App\Models\ProductPrice;
+use App\Models\ProductSupplier;
 use App\Models\ProductCompletionCommission;
 use App\Models\ProductCompletionMedia;
 use App\Models\ProductCompletionSubmission;
@@ -93,15 +95,19 @@ class AppServiceProvider extends ServiceProvider
         Category::observe(\App\Observers\CategoryCatalogObserver::class);
         Product::observe(\App\Observers\CategoryCatalogObserver::class);
         \App\Models\ProductSupplier::observe(\App\Observers\ProductSupplierCatalogObserver::class);
+        \App\Models\ProductSupplier::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
         \App\Models\ProductPrice::observe(\App\Observers\ProductPriceCatalogObserver::class);
+        \App\Models\ProductPrice::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
         \App\Models\CheckPeriod::observe(\App\Observers\CheckPeriodCatalogObserver::class);
+        \App\Models\SupplierExchangeRateSetting::observe(\App\Observers\SupplierExchangeRateSettingCatalogObserver::class);
 
         $catalogSnapshotObserver = \App\Observers\CatalogSnapshotObserver::class;
         \App\Models\Attribute::observe($catalogSnapshotObserver);
         \App\Models\AttributeValue::observe($catalogSnapshotObserver);
         \App\Models\ProductGallery::observe($catalogSnapshotObserver);
         \App\Models\PriceType::observe($catalogSnapshotObserver);
-
+        \App\Models\City::observe($catalogSnapshotObserver);
+        \App\Models\Province::observe($catalogSnapshotObserver);
         /*
         |--------------------------------------------------------------------------
         | Register Blade Directives for Price Visibility
