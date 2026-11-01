@@ -106,6 +106,10 @@
                                     @if(!empty($supplier->address))
                                         <div style="padding: 4px 0; font-size: {{ $fontSize * 0.9 }}px; color: {{ $fontColor }};"><strong>آدرس:</strong> @if(!empty($supplier->city)){{ $supplier->city }} - @endif{{ $supplier->address }}</div>
                                     @endif
+                                    @if(!empty($exchangeRateBasis))
+                                        <div style="padding: 4px 0; font-size: {{ $fontSize * 0.9 }}px; color: {{ $fontColor }};"><strong>نرخ {{ $exchangeRateBasis['currency_label'] }}:</strong> @if(!empty($exchangeRateBasis['rate_display'])){{ $exchangeRateBasis['rate_display'] }} تومان@if(!empty($exchangeRateBasis['last_fetched_at'])) (آخرین دریافت موفق: {{ $exchangeRateBasis['last_fetched_at'] }})@endif @else{{ $exchangeRateBasis['status'] }}@endif</div>
+                                        @if(!empty($currencySnapshotWarning))<div style="padding: 2px 0; font-size: {{ $fontSize * 0.75 }}px; color: {{ $fontColor }};">نرخ ذخیره‌شدهٔ بعضی کالاها با نرخ تنظیم‌شده یکسان نیست یا معتبر نیست؛ مبلغ فقط با نرخ ذخیره‌شدهٔ معتبر و هم‌ارز نمایش داده می‌شود و در غیر این صورت ناموجود است.</div>@endif
+                                    @endif
                                 </div>
                             @elseif($contentType === 'date')
                                 <div style="font-size: {{ $fontSize }}px; font-weight: {{ $fontWeight }}; color: {{ $fontColor }};">{{ jdate(now())->format('Y/m/d') }}</div>
@@ -201,6 +205,20 @@
                                     <div style="font-size: {{ $fontSize * 0.9 }}px; color: {{ $fontColor }};">
                                         <strong>آدرس:</strong> @if(!empty($supplier->city)){{ $supplier->city }} - @endif{{ $supplier->address }}
                                     </div>
+                                @endif
+                                @if(!empty($exchangeRateBasis))
+                                    <div class="mt-2" style="font-size: {{ $fontSize * 0.9 }}px; color: {{ $fontColor }};">
+                                        <strong>نرخ {{ $exchangeRateBasis['currency_label'] }}:</strong>
+                                        @if(!empty($exchangeRateBasis['rate_display']))
+                                            {{ $exchangeRateBasis['rate_display'] }} تومان
+                                            @if(!empty($exchangeRateBasis['last_fetched_at'])) (آخرین دریافت موفق: {{ $exchangeRateBasis['last_fetched_at'] }}) @endif
+                                        @else
+                                            {{ $exchangeRateBasis['status'] }}
+                                        @endif
+                                    </div>
+                                    @if(!empty($currencySnapshotWarning))
+                                        <div style="font-size: {{ $fontSize * 0.75 }}px; color: {{ $fontColor }};">نرخ ذخیره‌شدهٔ بعضی کالاها با نرخ تنظیم‌شده یکسان نیست یا معتبر نیست؛ مبلغ فقط با نرخ ذخیره‌شدهٔ معتبر و هم‌ارز نمایش داده می‌شود و در غیر این صورت ناموجود است.</div>
+                                    @endif
                                 @endif
                             </div>
                         @elseif($contentType === 'date')

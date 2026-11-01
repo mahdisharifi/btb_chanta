@@ -15,10 +15,12 @@ class ProductPrice extends Model
     protected $fillable = [
         'product_id',
         'product_supplier_id',
+        'branch_source_price_id',
         'price_type_id',
         'tier_index',
         'check_period_id',
         'percentage_override',
+        'calculation_mode',
         'price',
         'warranty_type',
         'warranty_duration',
@@ -31,7 +33,9 @@ class ProductPrice extends Model
 
     protected $casts = [
         'tier_index'           => 'integer',
+        'branch_source_price_id' => 'integer',
         'percentage_override'  => 'float',
+        'calculation_mode'     => 'string',
         'price'                => 'integer',
         'warranty_duration'    => 'integer',
         'warranty_price'       => 'integer',
@@ -52,6 +56,11 @@ class ProductPrice extends Model
     public function productSupplier(): BelongsTo
     {
         return $this->belongsTo(ProductSupplier::class, 'product_supplier_id');
+    }
+
+    public function branchSourcePrice(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'branch_source_price_id');
     }
 
     public function priceType(): BelongsTo

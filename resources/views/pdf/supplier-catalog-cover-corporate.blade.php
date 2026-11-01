@@ -82,6 +82,25 @@
                     </td>
                 </tr>
                 @endif
+
+                @if(!empty($exchangeRateBasis))
+                <tr>
+                    <td class="info-label-cell">نرخ {{ $exchangeRateBasis['currency_label'] }}</td>
+                    <td class="info-value-cell">
+                        @if(!empty($exchangeRateBasis['rate_display']))
+                            {{ $exchangeRateBasis['rate_display'] }} تومان
+                            @if(!empty($exchangeRateBasis['last_fetched_at']))
+                                (آخرین دریافت موفق: {{ $exchangeRateBasis['last_fetched_at'] }})
+                            @endif
+                        @else
+                            {{ $exchangeRateBasis['status'] }}
+                        @endif
+                        @if(!empty($currencySnapshotWarning))
+                            <small>نرخ ذخیره‌شدهٔ بعضی کالاها با نرخ تنظیم‌شده یکسان نیست یا معتبر نیست؛ مبلغ فقط با نرخ ذخیره‌شدهٔ معتبر و هم‌ارز نمایش داده می‌شود و در غیر این صورت ناموجود است.</small>
+                        @endif
+                    </td>
+                </tr>
+                @endif
             </tbody>
         </table>
     </div>

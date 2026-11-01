@@ -46,8 +46,8 @@
                 'text-red-900': type === 'error',
                 'text-yellow-900': type === 'warning',
                 'text-blue-900': type === 'info'
-            }" class="text-sm font-medium flex-1" x-text="message"></p>
-            <button @click="show = false" class="text-gray-500 hover:text-gray-700">
+            }" class="text-sm font-medium flex-1" role="status" aria-live="polite" aria-atomic="true" x-text="message"></p>
+            <button @click="show = false" aria-label="بستن اعلان" class="text-gray-500 hover:text-gray-700">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
@@ -133,7 +133,7 @@
                                 $percentage = (float)($tier['percentage_change'] ?? 0);
                                 $calculatedPrice = $referencePrice * (1 + ($percentage / 100));
                             @endphp
-                            مثال: <span class="font-semibold @if($percentage > 0) text-red-600 @elseif($percentage < 0) text-green-600 @endif">{{ number_format($calculatedPrice, 0) }} ریال</span>
+                            مثال: <span class="font-semibold @if($percentage > 0) text-red-600 @elseif($percentage < 0) text-green-600 @endif">{{ number_format($calculatedPrice, 0) }} تومان</span>
                         </div>
                     </div>
                 </div>
@@ -190,6 +190,169 @@
         </div>
         @endif
     </div>
+
+    {{-- نرخ ارز و سیاست به‌روزرسانی در سطح تامین‌کننده --}}
+    <section class="bg-white dark:bg-gray-800 shadow rounded-lg p-4 sm:p-6 mb-6" aria-labelledby="currency-settings-title">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-5">
+            <div>
+                <h2 id="currency-settings-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    💱 ارز پایه و نرخ محصولات
+                </h2>
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    ارز پایه را یک‌بار برای همهٔ محصولات انتخاب کنید؛ سپس مبلغ نقدی هر محصول با همین ارز وارد و به تومان تبدیل می‌شود.
+                </p>
+            </div>
+            @if($currencySettingsChanged)
+                <span class="text-xs text-amber-600 dark:text-amber-400" role="status">تغییرات نرخ ارز ذخیره نشده است</span>
+            @endif
+        </div>
+
+        <div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <label for="supplier-pricing-currency" class="mb-2 block text-sm font-semibold text-gray-900 dark:text-gray-100">ارز قیمت‌گذاری همهٔ محصولات</label>
+            <select id="supplier-pricing-currency"
+                    wire:model.live="pricingCurrency"
+                    aria-describedby="supplier-pricing-currency-help"
+                    aria-invalid="@error('pricingCurrency') true @else false @enderror"
+                    class="w-full rounded-md border-gray-300 bg-white px-3 py-3 text-sm text-gray-900 shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 sm:max-w-md focus:border-indigo-500 focus:ring-indigo-500">
+                <option value="TOM">تومان (TOM)</option>
+                @foreach(\App\Livewire\Supplier\Settings\ManageTierDiscounts::CURRENCIES as $currency => $currencyLabel)
+                    <option value="{{ $currency }}">{{ $currencyLabel }} ({{ $currency }})</option>
+                @endforeach
+            </select>
+            <p id="supplier-pricing-currency-help" class="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                با تغییر ارز پایه، مبلغ‌های ارزی قبلی به‌صورت گروهی و بر اساس قیمت تومانی ذخیره‌شده هم‌ارزسازی می‌شوند؛ اگر نرخ در دسترس نباشد مبلغ قبلی پنهان می‌ماند تا دوباره وارد شود و قیمت تومانی قبلی حفظ می‌شود.
+            </p>
+            @error('pricingCurrency') <p class="mt-1 text-xs text-red-600" role="alert">{{ $message }}</p> @enderror
+        </div>
+
+        @if($pricingCurrency === 'TOM')
+            <div class="mb-4 rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                ارز پایه تومان است؛ برای این حالت نرخ تبدیل لازم نیست.
+            </div>
+        @endif
+
+        @if($pricingCurrency !== 'TOM')
+        <div class="grid grid-cols-1 gap-4">
+            @foreach(\App\Livewire\Supplier\Settings\ManageTierDiscounts::CURRENCIES as $currency => $currencyLabel)
+                @if($pricingCurrency === $currency)
+                <div wire:key="supplier-currency-setting-{{ $currency }}" class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
+                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">{{ $currencyLabel }} <span class="text-sm text-gray-500">({{ $currency }})</span></h3>
+
+                    <div>
+                        <label for="manual-currency-rate-{{ $currency }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            نرخ دستی هر واحد به تومان
+                        </label>
+                        <input id="manual-currency-rate-{{ $currency }}"
+                               type="number"
+                               min="0.0001"
+                               step="0.0001"
+                               inputmode="decimal"
+                               wire:model="currencySettings.{{ $currency }}.manual_rate_toman"
+                               @disabled($currencySettings[$currency]['auto_update'])
+                               aria-describedby="currency-rate-help-{{ $currency }}"
+                               aria-invalid="@error('currencySettings.' . $currency . '.manual_rate_toman') true @else false @enderror"
+                               class="w-full rounded-md border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:ring-indigo-500">
+                        <p id="currency-rate-help-{{ $currency }}" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            نمونهٔ نرخ دستی هر واحد {{ $currencyLabel }} به تومان؛ برای ارزهای استفاده‌نشده می‌توانید این فیلد را خالی بگذارید.
+                        </p>
+                        @error('currencySettings.' . $currency . '.manual_rate_toman')
+                            <p class="mt-1 text-xs text-red-600" role="alert">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <label for="currency-auto-{{ $currency }}" class="flex min-h-[44px] items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-900 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-100">
+                        <input id="currency-auto-{{ $currency }}"
+                               type="checkbox"
+                               wire:model.live="currencySettings.{{ $currency }}.auto_update"
+                               class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                        <span>دریافت خودکار نرخ</span>
+                    </label>
+
+                    @if($currencySettings[$currency]['auto_update'])
+                        <div>
+                            <label for="currency-interval-{{ $currency }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">بازهٔ به‌روزرسانی</label>
+                            <select id="currency-interval-{{ $currency }}"
+                                    wire:model="currencySettings.{{ $currency }}.refresh_hours"
+                                    aria-invalid="@error('currencySettings.' . $currency . '.refresh_hours') true @else false @enderror"
+                                    class="w-full rounded-md border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="2">هر ۲ ساعت</option>
+                                <option value="6">هر ۶ ساعت</option>
+                                <option value="12">هر ۱۲ ساعت</option>
+                                <option value="24">هر ۲۴ ساعت</option>
+                            </select>
+                            @error('currencySettings.' . $currency . '.refresh_hours')
+                                <p class="mt-1 text-xs text-red-600" role="alert">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    @endif
+
+                    @if($currencySettings[$currency]['auto_update'])
+                        <div class="rounded-md bg-white px-3 py-2 text-xs leading-5 text-gray-600 dark:bg-gray-800 dark:text-gray-300" aria-live="polite">
+                            @if($currencySettings[$currency]['rate_toman'])
+                                <div>آخرین نرخ دریافت‌شده: {{ \App\Helpers\PriceHelper::formatNumber((float) $currencySettings[$currency]['rate_toman']) }} تومان</div>
+                                @if($currencySettings[$currency]['fetched_at'])
+                                    <div>زمان دریافت: {{ $currencySettings[$currency]['fetched_at'] }} تهران</div>
+                                @endif
+                            @else
+                                <div class="text-amber-700 dark:text-amber-300">هنوز نرخ خودکاری دریافت نشده است.</div>
+                            @endif
+                            @if($currencySettings[$currency]['last_error'])
+                                <div class="mt-1 text-amber-700 dark:text-amber-300">{{ $currencySettings[$currency]['last_error'] }}</div>
+                            @endif
+                            @if($currencySettings[$currency]['last_apply_error'])
+                                <div class="mt-1 border-t border-red-200 pt-1 text-red-700 dark:border-red-800 dark:text-red-300" role="alert">{{ $currencySettings[$currency]['last_apply_error'] }}</div>
+                            @endif
+                        </div>
+                    @else
+                        <p class="rounded-md bg-white px-3 py-2 text-xs leading-5 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                            @if((float) ($currencySettings[$currency]['manual_rate_toman'] ?? 0) > 0)
+                                محصولات با همین نرخ دستی محاسبه می‌شوند.
+                            @else
+                                نرخ دستی ثبت نشده؛ محصولات این ارز هنگام اعمال گروهی بدون تغییر می‌مانند.
+                            @endif
+                        </p>
+                        @if($currencySettings[$currency]['last_error'])
+                            <p class="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200" role="status">
+                                {{ $currencySettings[$currency]['last_error'] }}
+                            </p>
+                        @endif
+                        @if($currencySettings[$currency]['last_apply_error'])
+                            <p class="rounded-md bg-red-50 px-3 py-2 text-xs leading-5 text-red-800 dark:bg-red-900/20 dark:text-red-200" role="alert">
+                                {{ $currencySettings[$currency]['last_apply_error'] }}
+                            </p>
+                        @endif
+                    @endif
+                </div>
+                @endif
+            @endforeach
+        </div>
+        @endif
+
+        <div class="mt-5 flex flex-col gap-3 border-t border-gray-200 dark:border-gray-700 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p class="text-xs leading-5 text-gray-600 dark:text-gray-400">
+                در حالت خودکار، نرخ در پس‌زمینه دریافت می‌شود و آخرین قیمت ذخیره‌شده تا دریافت نرخ معتبر حفظ خواهد شد.
+            </p>
+            <div class="flex flex-col gap-2 sm:flex-row">
+                <button type="button"
+                        wire:click="applyCurrencyRatesToProducts"
+                        wire:loading.attr="disabled"
+                        wire:target="applyCurrencyRatesToProducts"
+                        @disabled($currencySettingsChanged || $hasChanges)
+                        class="min-h-[44px] rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    <span wire:loading.remove wire:target="applyCurrencyRatesToProducts">اعمال نرخ روی همهٔ محصولات</span>
+                    <span wire:loading wire:target="applyCurrencyRatesToProducts">در حال قرار دادن در صف…</span>
+                </button>
+                <button type="button"
+                        wire:click="saveCurrencySettings"
+                        wire:loading.attr="disabled"
+                        wire:target="saveCurrencySettings"
+                        class="min-h-[44px] rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    <span wire:loading.remove wire:target="saveCurrencySettings">ذخیرهٔ تنظیمات ارز</span>
+                    <span wire:loading wire:target="saveCurrencySettings">در حال ذخیره…</span>
+                </button>
+            </div>
+        </div>
+    </section>
 
     {{-- بخش 2: تنظیمات اختصاصی دسته‌بندی --}}
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">

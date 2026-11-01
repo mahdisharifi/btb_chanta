@@ -4,17 +4,17 @@ namespace App\Http\Controllers\Supplier;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
-use App\Models\Supplier;
 use Illuminate\View\View;
 
 class AnalyticsController extends Controller
 {
     public function index(): View
     {
-        $supplier = Supplier::where('user_id', auth()->id())->firstOrFail();
+        $supplier = auth()->user()->currentSupplier();
 
         // Total views
-        $totalViews = Product::where('supplier_id', $supplier->id)->sum('view_count');
+        $familyIds = Product::query()->where('supplier_id', $supplier->id)->select('family_product_id')->distinct();
+        $totalViews = Product::query()->whereIn('id', $familyIds)->sum('view_count');
 
         // Most viewed products
         $mostViewed = Product::query()

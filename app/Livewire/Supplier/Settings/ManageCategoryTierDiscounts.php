@@ -4,10 +4,12 @@ namespace App\Livewire\Supplier\Settings;
 
 use App\Models\Category;
 use App\Models\CategoryTierDiscount;
+use App\Models\Supplier;
 use App\Models\SupplierTierDiscount;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('components.layouts.supplier')]
@@ -19,7 +21,10 @@ class ManageCategoryTierDiscounts extends Component
     public $tierPercentages = []; // ['tier_index' => percentage]
     
     public $categoryTierSettings = []; // دسته‌بندی‌های تنظیم شده
+    #[Locked]
     public $editingCategoryId = null;
+    #[Locked]
+    public ?string $categoryEditSignature = null;
     
     public function mount()
     {
@@ -46,7 +51,7 @@ class ManageCategoryTierDiscounts extends Component
     
     public function loadCategoryTierSettings()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // دریافت تمام تنظیمات
         $records = DB::table('category_tier_discount as ctd')
@@ -132,7 +137,7 @@ class ManageCategoryTierDiscounts extends Component
             return;
         }
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = (int)$this->selectedCategoryId;
         
         // بررسی: آیا این دسته‌بندی قبلاً اضافه شده؟
@@ -150,7 +155,16 @@ class ManageCategoryTierDiscounts extends Component
         }
         
         // افزودن رکوردها
-        DB::transaction(function () use ($supplierId, $categoryId) {
+        $categoryAlreadyExists = DB::transaction(function () use ($supplierId, $categoryId): bool {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            if (DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->exists()) {
+                return true;
+            }
+
             foreach ($this->tierPercentages as $tierIndex => $percentage) {
                 if ($percentage !== null && $percentage !== '') {
                     DB::table('category_tier_discount')->insert([
@@ -164,7 +178,18 @@ class ManageCategoryTierDiscounts extends Component
                     ]);
                 }
             }
+
+            $supplier->increment('tier_pricing_revision');
+            return false;
         });
+
+        if ($categoryAlreadyExists) {
+            $this->dispatch('notify',
+                message: 'این دسته‌بندی قبلاً اضافه شده است. می‌توانید آن را ویرایش کنید.',
+                type: 'warning'
+            );
+            return;
+        }
         
         $this->reset(['selectedCategoryId', 'tierPercentages']);
         $this->loadCategoryTierSettings();
@@ -180,20 +205,26 @@ class ManageCategoryTierDiscounts extends Component
     
     public function startEditCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        // بارگذاری درصدهای فعلی
-        $existing = DB::table('category_tier_discount')
-            ->where('supplier_id', $supplierId)
-            ->where('category_id', $categoryId)
-            ->where('is_active', true)
-            ->get();
-        
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        $rows = DB::transaction(function () use ($supplierId, $categoryId) {
+            Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            return DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->orderBy('tier_index')
+                ->get(['tier_index', 'percentage_change', 'is_active']);
+        });
+
         $this->editingCategoryId = $categoryId;
+        $this->categoryEditSignature = $this->categoryEditSignatureFromRows((int) $categoryId, $rows);
         $this->tierPercentages = [];
-        
-        foreach ($existing as $row) {
-            $this->tierPercentages[$row->tier_index] = (float)$row->percentage_change;
+
+        foreach ($rows as $row) {
+            if ((bool) $row->is_active) {
+                $this->tierPercentages[$row->tier_index] = (float) $row->percentage_change;
+            }
         }
     }
     
@@ -221,10 +252,22 @@ class ManageCategoryTierDiscounts extends Component
             return;
         }
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->editingCategoryId;
-        
-        DB::transaction(function () use ($supplierId, $categoryId) {
+
+        if ($categoryId === null || $this->categoryEditSignature === null) {
+            $this->dispatch('notify', message: 'فرم ویرایش دسته‌بندی منقضی شده است؛ دوباره بازش کنید.', type: 'warning');
+            return;
+        }
+
+        $expectedSignature = $this->categoryEditSignature;
+        $saved = DB::transaction(function () use ($supplierId, $categoryId, $expectedSignature): bool {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            if (!hash_equals($expectedSignature, $this->currentCategoryEditSignature($supplierId, (int) $categoryId))) {
+                return false;
+            }
+
             // حذف تنظیمات قبلی
             DB::table('category_tier_discount')
                 ->where('supplier_id', $supplierId)
@@ -245,7 +288,17 @@ class ManageCategoryTierDiscounts extends Component
                     ]);
                 }
             }
+
+            $supplier->increment('tier_pricing_revision');
+            return true;
         });
+
+        if (!$saved) {
+            $this->cancelCategoryEdit();
+            $this->loadCategoryTierSettings();
+            $this->dispatch('notify', message: 'این تنظیمات در تب دیگری تغییر کرده؛ مقدار تازه بارگذاری شد. دوباره بررسی و ویرایش کنید.', type: 'warning');
+            return;
+        }
         
         $this->cancelCategoryEdit();
         $this->loadCategoryTierSettings();
@@ -261,17 +314,42 @@ class ManageCategoryTierDiscounts extends Component
     
     public function cancelCategoryEdit()
     {
-        $this->reset(['editingCategoryId', 'tierPercentages']);
+        $this->reset(['editingCategoryId', 'categoryEditSignature', 'tierPercentages']);
+    }
+
+    private function currentCategoryEditSignature(int $supplierId, int $categoryId): string
+    {
+        $rows = DB::table('category_tier_discount')
+            ->where('supplier_id', $supplierId)
+            ->where('category_id', $categoryId)
+            ->orderBy('tier_index')
+            ->get(['tier_index', 'percentage_change', 'is_active']);
+
+        return $this->categoryEditSignatureFromRows($categoryId, $rows);
+    }
+
+    private function categoryEditSignatureFromRows(int $categoryId, $rows): string
+    {
+        $normalizedRows = $rows
+            ->map(fn ($row) => [(int) $row->tier_index, (float) $row->percentage_change, (bool) $row->is_active])
+            ->all();
+
+        return hash('sha256', json_encode([$categoryId, $normalizedRows], JSON_THROW_ON_ERROR));
     }
     
     public function removeCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        DB::table('category_tier_discount')
-            ->where('supplier_id', $supplierId)
-            ->where('category_id', $categoryId)
-            ->delete();
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        DB::transaction(function () use ($supplierId, $categoryId): void {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->delete();
+            $supplier->increment('tier_pricing_revision');
+        });
         
         $this->loadCategoryTierSettings();
         
@@ -300,7 +378,7 @@ class ManageCategoryTierDiscounts extends Component
     public function render()
     {
         // دریافت درصدهای پیشفرض تامین‌کننده (برای نمایش در فرم)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $defaultTiers = SupplierTierDiscount::getAllForSupplier($supplierId)
             ->mapWithKeys(function($tier) {
                 return [$tier->tier_index => $tier];

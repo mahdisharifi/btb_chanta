@@ -8,6 +8,8 @@ use App\Listeners\UpdateAffectedCheckPrices;
 use App\Models\Category;
 use App\Models\CommissionRule;
 use App\Models\Product;
+use App\Models\ProductPrice;
+use App\Models\ProductSupplier;
 use App\Models\ProductCompletionCommission;
 use App\Models\ProductCompletionMedia;
 use App\Models\ProductCompletionSubmission;
@@ -29,6 +31,7 @@ use App\Policies\SeoPagePolicy;
 use App\Policies\SupplierPolicy;
 use App\Policies\UserPolicy;
 use App\Services\PriceVisibilityService;
+use App\Services\CatalogSnapshotRevisionService;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -38,7 +41,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->scoped(CatalogSnapshotRevisionService::class);
     }
 
     public function boot(): void
@@ -91,7 +94,20 @@ class AppServiceProvider extends ServiceProvider
         Supplier::observe(SupplierObserver::class);
         Category::observe(\App\Observers\CategoryCatalogObserver::class);
         Product::observe(\App\Observers\CategoryCatalogObserver::class);
+        \App\Models\ProductSupplier::observe(\App\Observers\ProductSupplierCatalogObserver::class);
+        \App\Models\ProductSupplier::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
+        \App\Models\ProductPrice::observe(\App\Observers\ProductPriceCatalogObserver::class);
+        \App\Models\ProductPrice::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
+        \App\Models\CheckPeriod::observe(\App\Observers\CheckPeriodCatalogObserver::class);
+        \App\Models\SupplierExchangeRateSetting::observe(\App\Observers\SupplierExchangeRateSettingCatalogObserver::class);
 
+        $catalogSnapshotObserver = \App\Observers\CatalogSnapshotObserver::class;
+        \App\Models\Attribute::observe($catalogSnapshotObserver);
+        \App\Models\AttributeValue::observe($catalogSnapshotObserver);
+        \App\Models\ProductGallery::observe($catalogSnapshotObserver);
+        \App\Models\PriceType::observe($catalogSnapshotObserver);
+        \App\Models\City::observe($catalogSnapshotObserver);
+        \App\Models\Province::observe($catalogSnapshotObserver);
         /*
         |--------------------------------------------------------------------------
         | Register Blade Directives for Price Visibility

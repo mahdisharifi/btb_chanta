@@ -90,7 +90,35 @@ class User extends Authenticatable
 
     public function supplier(): HasOne
     {
-        return $this->hasOne(Supplier::class);
+        return $this->hasOne(Supplier::class)->whereNull('parent_supplier_id');
+    }
+
+    /** Resolve the active supplier branch from a validated server-side session value. */
+    public function currentSupplier(): Supplier
+    {
+        $primary = $this->supplier()->firstOrFail();
+        $session = request()->hasSession()
+            ? request()->session()
+            : app('session')->driver();
+        $selectedId = $session->get('supplier.active_branch_id');
+
+        if (!$selectedId || (int) $selectedId === (int) $primary->id) {
+            return $primary;
+        }
+
+        $branch = Supplier::query()
+            ->whereKey((int) $selectedId)
+            ->where('user_id', $this->id)
+            ->where('parent_supplier_id', $primary->id)
+            ->where('is_active', true)
+            ->first();
+
+        if (!$branch) {
+            $session->forget('supplier.active_branch_id');
+            return $primary;
+        }
+
+        return $branch;
     }
 
     // اضافه کردن رابطه پروفایل تامین‌کننده

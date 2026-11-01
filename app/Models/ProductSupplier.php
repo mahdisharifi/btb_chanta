@@ -65,6 +65,20 @@ class ProductSupplier extends Model
         'sku',
         'is_primary',
         'is_active',
+        'price_currency',
+        'foreign_price_amount',
+        'foreign_price_auto_update',
+        'foreign_price_refresh_hours',
+        'foreign_price_rate',
+        'foreign_price_source',
+        'foreign_price_applied_currency',
+        'foreign_price_applied_setting_revision',
+        'foreign_price_applied_tier_revision',
+        'foreign_price_updated_at',
+        'foreign_price_next_update_at',
+        'foreign_price_last_attempt_at',
+        'foreign_price_last_error',
+        'foreign_price_revision',
         'status',
         'sort_order',
         'cost_price',
@@ -84,6 +98,7 @@ class ProductSupplier extends Model
         'auto_calculate_tiers',   // ✅ فعال/غیرفعال محاسبه خودکار
         'tier_percentages',       // ✅ درصدهای تیراژها
         'tier_enabled',           // ✅ وضعیت فعال/غیرفعال تیراژها
+        'branch_price_percentage',
         'notes',
         'activated_at',
         'deactivated_at',
@@ -94,6 +109,16 @@ class ProductSupplier extends Model
         return [
             'is_primary'              => 'boolean',
             'is_active'               => 'boolean',
+            'foreign_price_amount'    => 'decimal:4',
+            'foreign_price_auto_update' => 'boolean',
+            'foreign_price_refresh_hours' => 'integer',
+            'foreign_price_rate'      => 'decimal:4',
+            'foreign_price_applied_setting_revision' => 'integer',
+            'foreign_price_applied_tier_revision' => 'integer',
+            'foreign_price_updated_at' => 'datetime',
+            'foreign_price_next_update_at' => 'datetime',
+            'foreign_price_last_attempt_at' => 'datetime',
+            'foreign_price_revision' => 'integer',
             'sort_order'              => 'integer',
             'cost_price'              => 'integer',
             'commission_rate'         => 'decimal:2',
@@ -107,6 +132,7 @@ class ProductSupplier extends Model
             'auto_calculate_tiers'    => 'boolean',     // ✅
             'tier_percentages'        => 'array',       // ✅
             'tier_enabled'            => 'array',       // ✅
+            'branch_price_percentage' => 'decimal:12',
             'activated_at'            => 'datetime',
             'deactivated_at'          => 'datetime',
         ];
@@ -424,21 +450,19 @@ class ProductSupplier extends Model
     }
 
     /**
-     * کمترین قیمت به تومان
+     * کمترین قیمت ذخیره‌شده در ماتریس، به تومان
      */
     public function getLowestPriceTomanAttribute(): ?int
     {
-        $price = $this->lowest_price;
-        return $price !== null ? (int) round($price / 10) : null;
+        return $this->lowest_price;
     }
 
     /**
-     * بالاترین قیمت به تومان
+     * بالاترین قیمت ذخیره‌شده در ماتریس، به تومان
      */
     public function getHighestPriceTomanAttribute(): ?int
     {
-        $price = $this->highest_price;
-        return $price !== null ? (int) round($price / 10) : null;
+        return $this->highest_price;
     }
 
     /**
@@ -941,7 +965,14 @@ class ProductSupplier extends Model
      */
     public function deactivateAllPrices(): int
     {
-        return $this->prices()->update(['is_active' => false]);
+        $updated = $this->prices()->update(['is_active' => false]);
+
+        if ($updated > 0) {
+            app(\App\Services\CatalogSnapshotRevisionService::class)
+                ->invalidateSupplier((int) $this->supplier_id);
+        }
+
+        return $updated;
     }
 
     /**
@@ -949,7 +980,14 @@ class ProductSupplier extends Model
      */
     public function activateAllPrices(): int
     {
-        return $this->prices()->update(['is_active' => true]);
+        $updated = $this->prices()->update(['is_active' => true]);
+
+        if ($updated > 0) {
+            app(\App\Services\CatalogSnapshotRevisionService::class)
+                ->invalidateSupplier((int) $this->supplier_id);
+        }
+
+        return $updated;
     }
 
     /**

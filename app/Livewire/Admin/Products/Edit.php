@@ -216,6 +216,7 @@ class Edit extends Component
 
         $validAttributeValues = array_filter($this->attributeValues);
         $this->product->attributeValues()->sync($validAttributeValues);
+        app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
 
         // حذف فیزیکی تصاویر گالری علامت‌گذاری شده
         if (!empty($this->imagesToDelete)) {

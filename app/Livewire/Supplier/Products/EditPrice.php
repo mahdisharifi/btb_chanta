@@ -6,9 +6,16 @@ use App\Models\Product;
 use App\Models\ProductSupplier;
 use App\Models\PriceType;
 use App\Models\CheckPeriod;
+use App\Models\SupplierExchangeRateSetting;
+use App\Models\Supplier;
+use App\Models\ProductPrice;
+use App\Models\User;
+use App\Services\SupplierBranchPriceSyncService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('components.layouts.supplier')]
@@ -16,17 +23,45 @@ class EditPrice extends Component
 {
     public Product $product;
     public ?ProductSupplier $productSupplier;
+    public int $foreignPriceRevision = 0;
+    public string $priceMatrixFingerprint = '';
+    public ?string $foreignPriceRevisionToken = null;
+    public bool $isBranchCopy = false;
+    public string $branchPricePercentage = '0.00';
+    public ?int $branchReferencePrice = null;
 
     // Properties for the form
     public array $priceMatrix = []; // ساختار: [tier_index][price_type_id] = ['price' => ..., 'warranty_*' => ...]
     public ?string $sku = '';
     public bool $is_active = false;
+
+    // واحد مبلغ نقدی تیراژ مرجع و تنظیم به‌روزرسانی نرخ ارز
+    #[Locked]
+    public string $priceCurrency = 'TOM';
+    #[Locked]
+    public int $pricingCurrencyRevision = 1;
+    #[Locked]
+    public int $tierPricingRevision = 1;
+    public ?string $foreignPriceAmount = null;
+    public bool $foreignPriceRebasePending = false;
+    public bool $foreignPricePreviewValid = false;
+    public ?string $latestExchangeRate = null;
+    public ?string $latestExchangeFetchedAt = null;
+    public ?string $latestExchangeSource = null;
+    public ?string $latestExchangeError = null;
+    private bool $usingStoredRateFallback = false;
+    public ?string $foreignPriceUpdatedAt = null;
+    public ?string $foreignPriceLastError = null;
     
     // ✅ قیمت‌گذاری چک
     public array $checkPriceMode = []; // [tier_index][period_id] = 'default' | 'percentage' | 'manual'
     public array $checkPercentageOverride = []; // [tier_index][period_id] = float (درصد اختصاصی)
     public array $checkPeriodEnabled = []; // [tier_index][period_id] = true/false (فعال/غیرفعال)
     public array $effectivePercentages = []; // [period_id] = ['value' => float, 'source' => string]
+    protected array $effectivePercentageCache = [];
+    protected bool $effectivePercentageCacheLoaded = false;
+    protected array $effectiveTierPercentageCache = [];
+    protected array $effectiveTierPercentageCacheLoaded = [];
     
     // ✅ هزینه گارانتی سراسری
     public string $warrantyType = 'none';  // none, percentage, fixed, custom
@@ -45,6 +80,7 @@ class EditPrice extends Component
     public $checkPeriods;
     
     // ✅ محاسبه خودکار تیراژها
+    #[Locked]
     public int $referenceTierIndex = 1; // تیراژ مرجع (1 = کارتن)
     public array $tierPercentages = []; // [tier_index] => percentage (+/- درصد نسبت به مرجع)
     public array $tierPriceMode = []; // [tier_index] => 'default' | 'percentage' (مشابه checkPriceMode)
@@ -87,23 +123,45 @@ class EditPrice extends Component
      */
     public function mount(Product $product)
     {
-        $this->product = $product;
-        $supplierId = Auth::user()->supplier->id;
-        
-        // Find or create the relationship
-        $this->productSupplier = ProductSupplier::firstOrCreate(
-            [
+        $supplier = Auth::user()->currentSupplier();
+        $supplierId = $supplier->id;
+        $this->product = Product::query()
+            ->whereKey($product->id)
+            ->where(function ($query) use ($supplierId): void {
+                $query->where('supplier_id', $supplierId)
+                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplierId));
+            })
+            ->firstOrFail();
+
+        $this->productSupplier = ProductSupplier::query()
+            ->where('product_id', $this->product->id)
+            ->where('supplier_id', $supplierId)
+            ->first();
+
+        if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
+            $this->productSupplier = ProductSupplier::create([
                 'product_id' => $this->product->id,
                 'supplier_id' => $supplierId,
-            ],
-            [
                 'is_active' => false,
-            ]
-        );
+            ]);
+        }
+
+        abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
 
         // Load data
         $this->sku = $this->productSupplier->sku;
         $this->is_active = $this->productSupplier->is_active;
+        $supplierPricing = Supplier::query()->findOrFail($supplierId);
+        $this->priceCurrency = $supplierPricing->pricing_currency ?? 'TOM';
+        $this->pricingCurrencyRevision = (int) $supplierPricing->pricing_currency_revision;
+        $this->tierPricingRevision = (int) $supplierPricing->tier_pricing_revision;
+        $this->foreignPriceAmount = $this->productSupplier->price_currency !== $this->priceCurrency
+            || $this->productSupplier->foreign_price_amount === null
+                ? null
+                : rtrim(rtrim(number_format((float) $this->productSupplier->foreign_price_amount, 4, '.', ''), '0'), '.');
+        $this->foreignPriceUpdatedAt = $this->productSupplier->foreign_price_updated_at?->timezone('Asia/Tehran')->format('Y/m/d H:i');
+        $this->foreignPriceLastError = $this->productSupplier->foreign_price_last_error;
+        $this->loadLatestExchangeRate();
         
         // ✅ بارگذاری تنظیمات گارانتی
         $this->warrantyType = $this->productSupplier->warranty_type ?? 'none';
@@ -113,6 +171,23 @@ class EditPrice extends Component
         $this->warrantyCoverageType = $this->productSupplier->warranty_coverage_type ?? 'full';
         $this->warrantyTypeCoverage = $this->productSupplier->warranty_type_coverage ?? 'limited'; // ✅
         $this->warrantyDurationDays = $this->productSupplier->warranty_duration_days;
+
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
+
+        if ($this->isBranchCopy) {
+            $this->branchPricePercentage = rtrim(rtrim(number_format(
+                (float) ($this->productSupplier->branch_price_percentage ?? 0),
+                12,
+                '.',
+                ''
+            ), '0'), '.');
+            $this->branchReferencePrice = app(SupplierBranchPriceSyncService::class)
+                ->primaryReferencePrice($this->product, $supplier);
+
+            return;
+        }
         
         // تیراژهای محصول
         $this->quantityTiers = $this->product->quantity_tiers ?? [];
@@ -145,14 +220,22 @@ class EditPrice extends Component
                 $query->where('supplier_id', $supplierId)
                       ->where('supplier_check_period.is_active', true);
             })
-            ->with(['suppliers' => function($query) use ($supplierId) {
-                $query->where('supplier_id', $supplierId);
-            }])
             ->active()
             ->orderBy('days')
             ->get();
+
+        $this->loadEffectivePercentages();
         
         $this->initializePriceMatrix();
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        $this->foreignPriceRebasePending = $cashPriceType !== null
+            && $this->productSupplier->price_currency !== $this->priceCurrency
+            && is_numeric($this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id]['price'] ?? null);
+        $this->foreignPricePreviewValid = $this->priceCurrency !== 'TOM'
+            && $this->foreignPriceAmount !== null
+            && $cashPriceType !== null
+            && is_numeric($this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id]['price'] ?? null);
+        $this->refreshForeignPriceRevisionToken();
     }
 
     /**
@@ -161,10 +244,13 @@ class EditPrice extends Component
     protected function initializePriceMatrix(): void
     {
         // بارگذاری قیمت‌های موجود
-        $existingPrices = $this->productSupplier->prices()
-            ->whereNotNull('price_type_id') // فقط قیمت‌های سیستم جدید
+        $existingPriceRows = $this->productSupplier->prices()
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
             ->get()
-            ->groupBy(function($price) {
+            ->values();
+        $this->priceMatrixFingerprint = $this->fingerprintPriceRows($existingPriceRows->sortBy('id')->values());
+        $existingPrices = $existingPriceRows->whereNotNull('price_type_id')->groupBy(function($price) {
                 return $price->tier_index . '_' . $price->price_type_id . '_' . ($price->check_period_id ?? 'null');
             });
 
@@ -214,6 +300,12 @@ class EditPrice extends Component
                                 $this->checkPercentageOverride[$tierIndex][$period->id] = (float)$checkPrice->percentage_override;
                                 // قیمت از دیتابیس خوانده می‌شود (محاسبه شده ذخیره شده است)
                                 $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                            } elseif ($checkPrice->calculation_mode === 'percentage') {
+                                $this->checkPriceMode[$tierIndex][$period->id] = 'manual';
+                                $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
+                            } elseif (in_array($checkPrice->calculation_mode, ['default', 'manual'], true)) {
+                                $this->checkPriceMode[$tierIndex][$period->id] = $checkPrice->calculation_mode;
+                                $this->priceMatrix[$tierIndex][$key]['check_periods'][$period->id]['price'] = $checkPrice->price;
                             } elseif ($checkPrice->price !== null && $checkPrice->price > 0) {
                                 // ✅ بررسی: آیا این قیمت manual است یا default؟
                                 // برای تشخیص، قیمت را با محاسبه default مقایسه می‌کنیم
@@ -228,7 +320,7 @@ class EditPrice extends Component
                                     
                                     if ($percentage !== null) {
                                         // ✅ استفاده از Helper برای محاسبه و rounding
-                                        $supplier = Auth::user()->supplier;
+                                        $supplier = Auth::user()->currentSupplier();
                                         $expectedDefaultPrice = \App\Helpers\PriceRoundingHelper::calculateCheckPrice(
                                             $cashPrice,
                                             $percentage,
@@ -284,6 +376,26 @@ class EditPrice extends Component
             // اطلاعات عرضه
             'sku' => ['nullable', 'string', 'max:255', 'regex:/^[a-zA-Z0-9\-_]+$/'],
             'is_active' => ['boolean'],
+            'priceCurrency' => ['required', 'string', 'in:TOM,USD,CNY,AED'],
+            'foreignPriceAmount' => [
+                'nullable',
+                'numeric',
+                'gt:0',
+                'max:9999999999999999',
+                function ($attribute, $value, $fail) {
+                    if ($this->priceCurrency !== 'TOM' && ($value === null || $value === '')) {
+                        $fail('مبلغ محصول به ارز انتخاب‌شده را وارد کنید.');
+                        return;
+                    }
+
+                    if ($value !== null
+                        && $value !== ''
+                        && !preg_match('/^\d+(?:\.\d{1,2})?$/', (string) $value)
+                        && !$this->isUnchangedStoredForeignPrice()) {
+                        $fail('مبلغ جدید باید حداکثر دو رقم اعشار داشته باشد.');
+                    }
+                },
+            ],
             
             // ✅ قیمت‌گذاری چک
             'checkPriceMode' => ['array'],
@@ -479,15 +591,71 @@ class EditPrice extends Component
      */
     public function save()
     {
-        $this->validate();
-        
-        // امنیت: بررسی دسترسی تامین‌کننده به این محصول
-        $supplierId = Auth::user()->supplier->id;
-        if ($this->productSupplier->supplier_id !== $supplierId) {
-            abort(403, 'شما مجاز به ویرایش این محصول نیستید.');
+        $supplier = Auth::user()->currentSupplier();
+        $this->resolveOwnedProductAndOffer($supplier);
+        $supplierId = $this->authorizePriceWrite();
+        abort_unless($supplierId === (int) $supplier->id, 403, 'شما مجاز به ویرایش این محصول نیستید.');
+
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
+        if ($this->isBranchCopy) {
+            return $this->saveBranchPricing($supplier);
         }
 
-        DB::transaction(function () use ($supplierId) {
+        $this->normalizeForeignPriceAmount();
+        // امنیت: بررسی دسترسی تامین‌کننده به این محصول
+        abort_unless((int) $this->productSupplier->supplier_id === $supplierId, 403, 'شما مجاز به ویرایش این محصول نیستید.');
+
+        $saved = ProductPrice::withoutEvents(function () use ($supplierId): bool {
+            return DB::transaction(function () use ($supplierId): bool {
+            return app(\App\Services\CatalogSnapshotRevisionService::class)->batch(function () use ($supplierId): bool {
+            $lockedSupplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
+            if ($lockedSupplier->pricing_currency !== $this->priceCurrency
+                || (int) $lockedSupplier->pricing_currency_revision !== $this->pricingCurrencyRevision) {
+                $this->addError('priceCurrency', 'ارز پایه هنگام بازبودن فرم تغییر کرده است. صفحه را تازه کنید تا واحد جدید بارگذاری شود.');
+                return false;
+            }
+
+            if ((int) $lockedSupplier->tier_pricing_revision !== $this->tierPricingRevision) {
+                $this->addError('priceMatrix', 'درصدهای سراسری تیراژ هنگام بازبودن فرم تغییر کرده‌اند. صفحه را تازه کنید تا قیمت‌ها با تنظیم جدید محاسبه شوند.');
+                return false;
+            }
+
+            $lockedProductSupplier = ProductSupplier::query()
+                ->with('product')
+                ->where('supplier_id', $supplierId)
+                ->lockForUpdate()
+                ->findOrFail($this->productSupplier->getKey());
+
+            abort_unless((int) $lockedProductSupplier->supplier_id === $supplierId, 403, 'شما مجاز به ویرایش این محصول نیستید.');
+
+            if (!$this->matchesForeignPriceRevision($lockedProductSupplier)) {
+                $this->addError('priceMatrix', 'قیمت این محصول هنگام بازبودن فرم به‌روزرسانی شده است. صفحه را تازه کنید و تغییرها را دوباره اعمال کنید.');
+                return false;
+            }
+
+            $this->productSupplier = $lockedProductSupplier;
+
+            $lockedExchangeRateSetting = null;
+            if ($this->priceCurrency !== 'TOM') {
+                $lockedExchangeRateSetting = SupplierExchangeRateSetting::query()
+                    ->where('supplier_id', $supplierId)
+                    ->where('currency', $this->priceCurrency)
+                    ->lockForUpdate()
+                    ->first();
+            }
+
+            if (!$this->syncForeignPriceToToman(requireAmount: true, rateOverride: $lockedExchangeRateSetting)) {
+                return false;
+            }
+
+            if ($this->priceCurrency !== 'TOM') {
+                $this->calculateTierPrices(forceCurrencyDerived: true);
+            }
+
+            $this->validate();
+
             // 1. بروزرسانی اطلاعات تامین‌کننده
             // ✅ محاسبه tier_percentages: فقط تیراژهایی که mode='percentage' دارند
             $tierPercentagesToSave = [];
@@ -502,6 +670,33 @@ class EditPrice extends Component
             $this->productSupplier->update([
                 'sku' => $this->sanitizeInput($this->sku),
                 'is_active' => (bool)$this->is_active,
+                'price_currency' => $this->priceCurrency,
+                'foreign_price_amount' => $this->foreignPriceAmountForStorage(),
+                // Automatic refresh policy is stored once per supplier and currency.
+                'foreign_price_auto_update' => false,
+                'foreign_price_refresh_hours' => null,
+                'foreign_price_rate' => $this->priceCurrency === 'TOM' ? null : $this->latestExchangeRate,
+                'foreign_price_source' => $this->priceCurrency === 'TOM' ? null : $this->latestExchangeSource,
+                'foreign_price_applied_currency' => $this->priceCurrency !== 'TOM' && !$this->usingStoredRateFallback
+                    ? $this->priceCurrency
+                    : null,
+                'foreign_price_applied_setting_revision' => $this->priceCurrency !== 'TOM' && !$this->usingStoredRateFallback
+                    ? (int) ($lockedExchangeRateSetting?->revision ?? 0)
+                    : 0,
+                'foreign_price_applied_tier_revision' => $this->priceCurrency !== 'TOM' && !$this->usingStoredRateFallback
+                    ? (int) $lockedSupplier->tier_pricing_revision
+                    : null,
+                'foreign_price_updated_at' => $this->priceCurrency === 'TOM'
+                    ? null
+                    : ($this->usingStoredRateFallback ? $this->productSupplier->foreign_price_updated_at : now()),
+                'foreign_price_next_update_at' => null,
+                'foreign_price_last_attempt_at' => $this->priceCurrency === 'TOM'
+                    ? null
+                    : ($this->usingStoredRateFallback ? $this->productSupplier->foreign_price_last_attempt_at : now()),
+                'foreign_price_last_error' => $this->priceCurrency === 'TOM'
+                    ? null
+                    : ($this->usingStoredRateFallback ? $this->productSupplier->foreign_price_last_error : null),
+                'foreign_price_revision' => ((int) $this->productSupplier->foreign_price_revision) + 1,
                 'warranty_type' => $this->warrantyType,
                 'warranty_value' => $this->warrantyValue,
                 'has_warranty' => $this->hasWarranty,
@@ -644,16 +839,53 @@ class EditPrice extends Component
                                 'check_period_id' => (int)$periodId,
                                 'price' => $price,
                                 'percentage_override' => $percentageOverride,
+                                'calculation_mode' => $mode,
                                 'is_active' => (bool)$this->is_active,
                             ]);
                         }
                     }
                 }
             }
+            app(\App\Services\ProductPriceRevisionService::class)
+                ->increment((int) $lockedProductSupplier->product_id, (int) $lockedProductSupplier->supplier_id);
+
+            $matrixPrices = ProductPrice::query()
+                ->where('product_id', $lockedProductSupplier->product_id)
+                ->where('product_supplier_id', $lockedProductSupplier->id)
+                ->get();
+            app(SupplierBranchPriceSyncService::class)->syncPrimaryMatrix(
+                $lockedProductSupplier->product->refresh(),
+                $lockedSupplier,
+                $matrixPrices,
+            );
+
+            return true;
+            });
+        }, 3);
         });
 
+        if (!$saved) {
+            return;
+        }
+
+        $this->productSupplier->refresh();
+        $this->foreignPriceRebasePending = false;
         // ✅ بارگذاری مجدد قیمت‌های ذخیره شده
         $this->initializePriceMatrix();
+        $this->refreshForeignPriceRevisionToken();
+
+        \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+            (int) $this->productSupplier->supplier_id,
+            [(int) $this->productSupplier->id],
+        );
+        $this->foreignPriceUpdatedAt = $this->priceCurrency === 'TOM'
+            ? null
+            : ($this->usingStoredRateFallback
+                ? $this->productSupplier->foreign_price_updated_at?->timezone('Asia/Tehran')->format('Y/m/d H:i')
+                : now()->timezone('Asia/Tehran')->format('Y/m/d H:i'));
+        $this->foreignPriceLastError = $this->usingStoredRateFallback
+            ? $this->productSupplier->foreign_price_last_error
+            : null;
 
         $this->dispatch('notify',
             message: 'ماتریس قیمت با موفقیت ذخیره شد.',
@@ -661,6 +893,90 @@ class EditPrice extends Component
         );
         
         session()->flash('message', 'ماتریس قیمت با موفقیت ذخیره شد.');
+    }
+
+    private function saveBranchPricing(\App\Models\Supplier $supplier): void
+    {
+        $this->validate([
+            'branchPricePercentage' => 'required|numeric|decimal:0,12|between:-99.999999,999.999999',
+            'warrantyType' => 'required|in:none,percentage,fixed,custom',
+            'warrantyValue' => 'nullable|numeric|min:0|max:1000000000',
+            'hasWarranty' => 'boolean',
+            'warrantyProvider' => 'required|in:none,manufacturer,seller',
+            'warrantyCoverageType' => 'required|in:full,limited,parts_only,service_only',
+            'warrantyTypeCoverage' => 'required|in:test,limited,lifetime',
+            'warrantyDurationDays' => 'nullable|integer|min:0|max:36500',
+        ]);
+
+        $percentage = round((float) $this->branchPricePercentage, 12, PHP_ROUND_HALF_UP);
+        DB::transaction(function () use ($supplier, $percentage): void {
+            // Match primary-promotion lock order (primary, then branch) to avoid
+            // lock inversion when a branch is promoted during a price edit.
+            $lockedPrimary = $supplier->parent_supplier_id !== null
+                ? Supplier::query()->lockForUpdate()->find($supplier->parent_supplier_id)
+                : null;
+            $lockedBranch = Supplier::query()->lockForUpdate()->findOrFail($supplier->id);
+            abort_unless(
+                $lockedPrimary
+                    && (int) $lockedBranch->parent_supplier_id === (int) $lockedPrimary->id,
+                403,
+                'ساختار شعبه هنگام ثبت قیمت تغییر کرده است.'
+            );
+            $this->assertPriceWriteContext(Auth::user(), $lockedBranch, $lockedPrimary, true);
+
+            $lockedProduct = Product::query()->lockForUpdate()->findOrFail($this->product->id);
+            abort_unless(
+                $lockedBranch->isBranch()
+                    && (int) $lockedProduct->supplier_id === (int) $lockedBranch->id
+                    && $lockedProduct->family_product_id !== null
+                    && (int) $lockedProduct->family_product_id !== (int) $lockedProduct->id,
+                403,
+                'این محصول دیگر نسخهٔ قابل‌ویرایش شعبه نیست.'
+            );
+
+            $lockedOffer = ProductSupplier::query()
+                ->whereKey($this->productSupplier->getKey())
+                ->where('product_id', $lockedProduct->id)
+                ->where('supplier_id', $lockedBranch->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedOffer->update([
+                'branch_price_percentage' => $percentage,
+                'warranty_type' => $this->warrantyType,
+                'warranty_value' => $this->warrantyValue,
+                'has_warranty' => $this->hasWarranty,
+                'warranty_provider' => $this->warrantyProvider,
+                'warranty_coverage_type' => $this->warrantyCoverageType,
+                'warranty_type_coverage' => $this->warrantyTypeCoverage,
+                'warranty_duration_days' => $this->warrantyDurationDays,
+            ]);
+
+            app(SupplierBranchPriceSyncService::class)
+                ->syncBranchProduct($lockedProduct, $lockedBranch, $percentage);
+        });
+
+        $this->branchReferencePrice = app(SupplierBranchPriceSyncService::class)
+            ->primaryReferencePrice($this->product, $supplier);
+        unset($this->branchCalculatedPrice);
+        $this->dispatch('notify', [
+            'type' => 'success',
+            'message' => 'درصد قیمت شعبه ذخیره شد و قیمت‌های آن بر اساس شعبهٔ اصلی به‌روز شدند.',
+        ]);
+    }
+
+    #[Computed]
+    public function branchCalculatedPrice(): ?int
+    {
+        if ($this->branchReferencePrice === null || !is_numeric($this->branchPricePercentage)) {
+            return null;
+        }
+
+        return max(0, (int) round(
+            $this->branchReferencePrice * (1 + ((float) $this->branchPricePercentage / 100)),
+            0,
+            PHP_ROUND_HALF_UP
+        ));
     }
     
     /**
@@ -698,7 +1014,7 @@ class EditPrice extends Component
         $mode = $this->checkPriceMode[$tierIndex][$periodId] ?? 'default';
         
         // دریافت supplier برای rounding
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         
         switch ($mode) {
             case 'default':
@@ -746,41 +1062,10 @@ class EditPrice extends Component
      */
     public function getEffectivePercentage(int $periodId): array
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        // 1. بررسی درصد دسته‌بندی
-        if ($this->product->category_id) {
-            $categoryPercentage = DB::table('category_check_period')
-                ->where('category_id', $this->product->category_id)
-                ->where('check_period_id', $periodId)
-                ->where('supplier_id', $supplierId)
-                ->where('is_active', true)
-                ->value('percentage_increase');
-            
-            if ($categoryPercentage !== null) {
-                $category = \App\Models\Category::find($this->product->category_id);
-                return [
-                    'value' => (float)$categoryPercentage,
-                    'source' => 'category',
-                    'details' => [
-                        'category_name' => $category ? $category->name : 'دسته‌بندی',
-                        'category_percentage' => (float)$categoryPercentage,
-                        'default_percentage' => $this->getDefaultPeriodPercentage($periodId),
-                    ],
-                ];
-            }
-        }
-        
-        // 2. درصد پیش‌فرض دوره چک
-        $defaultPercentage = $this->getDefaultPeriodPercentage($periodId);
-        
-        return [
-            'value' => $defaultPercentage,
-            'source' => 'default',
-            'details' => [
-                'default_percentage' => $defaultPercentage,
-            ],
-        ];
+        $this->primeEffectivePercentageCache();
+
+        return $this->effectivePercentageCache[$periodId]
+            ?? $this->resolveEffectivePercentage($periodId);
     }
 
     /**
@@ -797,15 +1082,7 @@ class EditPrice extends Component
      */
     private function getDefaultPeriodPercentage(int $periodId): float
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        $percentage = DB::table('supplier_check_period')
-            ->where('supplier_id', $supplierId)
-            ->where('check_period_id', $periodId)
-            ->where('is_active', true)
-            ->value('percentage_increase');
-        
-        return $percentage !== null ? (float)$percentage : 0.0;
+        return (float) ($this->getEffectivePercentage($periodId)['details']['default_percentage'] ?? 0);
     }
 
     /**
@@ -864,11 +1141,102 @@ class EditPrice extends Component
      */
     public function loadEffectivePercentages(): void
     {
-        $this->effectivePercentages = [];
-        
-        foreach ($this->checkPeriods as $period) {
-            $this->effectivePercentages[$period->id] = $this->getEffectivePercentage($period->id);
+        $this->primeEffectivePercentageCache();
+        $this->effectivePercentages = $this->effectivePercentageCache;
+    }
+
+    private function primeEffectivePercentageCache(): void
+    {
+        if ($this->effectivePercentageCacheLoaded) {
+            return;
         }
+
+        $this->effectivePercentageCacheLoaded = true;
+        $periodIds = collect($this->checkPeriods ?? [])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($periodIds === []) {
+            return;
+        }
+
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
+        $defaultPercentages = DB::table('supplier_check_period')
+            ->where('supplier_id', $supplierId)
+            ->whereIn('check_period_id', $periodIds)
+            ->where('is_active', true)
+            ->pluck('percentage_increase', 'check_period_id')
+            ->all();
+        $categoryId = $this->product->category_id;
+        $categoryPercentages = $categoryId
+            ? DB::table('category_check_period')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->whereIn('check_period_id', $periodIds)
+                ->where('is_active', true)
+                ->pluck('percentage_increase', 'check_period_id')
+                ->all()
+            : [];
+        $categoryName = $categoryPercentages !== []
+            ? ($this->product->category?->name ?? 'دسته‌بندی')
+            : null;
+
+        foreach ($periodIds as $periodId) {
+            $defaultPercentage = (float) ($defaultPercentages[$periodId] ?? 0);
+
+            $this->effectivePercentageCache[$periodId] = array_key_exists($periodId, $categoryPercentages)
+                ? [
+                    'value' => (float) $categoryPercentages[$periodId],
+                    'source' => 'category',
+                    'details' => [
+                        'category_name' => $categoryName,
+                        'category_percentage' => (float) $categoryPercentages[$periodId],
+                        'default_percentage' => $defaultPercentage,
+                    ],
+                ]
+                : [
+                    'value' => $defaultPercentage,
+                    'source' => 'default',
+                    'details' => ['default_percentage' => $defaultPercentage],
+                ];
+        }
+    }
+
+    private function resolveEffectivePercentage(int $periodId): array
+    {
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
+        $defaultPercentage = (float) (DB::table('supplier_check_period')
+            ->where('supplier_id', $supplierId)
+            ->where('check_period_id', $periodId)
+            ->where('is_active', true)
+            ->value('percentage_increase') ?? 0);
+        $categoryPercentage = $this->product->category_id
+            ? DB::table('category_check_period')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $this->product->category_id)
+                ->where('check_period_id', $periodId)
+                ->where('is_active', true)
+                ->value('percentage_increase')
+            : null;
+
+        $result = $categoryPercentage === null
+            ? ['value' => $defaultPercentage, 'source' => 'default', 'details' => ['default_percentage' => $defaultPercentage]]
+            : [
+                'value' => (float) $categoryPercentage,
+                'source' => 'category',
+                'details' => [
+                    'category_name' => $this->product->category?->name ?? 'دسته‌بندی',
+                    'category_percentage' => (float) $categoryPercentage,
+                    'default_percentage' => $defaultPercentage,
+                ],
+            ];
+
+        $this->effectivePercentageCache[$periodId] = $result;
+
+        return $result;
     }
 
     // ══════════════════════════════════════════════════════════
@@ -880,7 +1248,7 @@ class EditPrice extends Component
      */
     public function loadTierPercentages(): void
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->product->category_id ?? null;
         
         // بارگذاری از جدول supplier_tier_percentages (اگر وجود داشته باشد)
@@ -891,40 +1259,31 @@ class EditPrice extends Component
             ->get()
             ->keyBy('tier_index');
         
-        if ($savedSettings->isNotEmpty()) {
-            // تنظیمات ذخیره شده برای این محصول وجود دارد
-            $this->autoCalculateTiers = true;
-            
-            foreach ($savedSettings as $tierIndex => $setting) {
-                $savedPercentage = (float) $setting->percentage;
-                $this->tierPercentages[$tierIndex] = $savedPercentage;
-                
-                // ✅ تشخیص mode: مقایسه با درصد مؤثر (دسته‌بندی یا پیشفرض)
-                $effectivePercentage = $this->getEffectiveTierPercentage($supplierId, $categoryId, $tierIndex);
-                
-                // اگر درصد ذخیره شده با درصد مؤثر برابر باشد → default
-                if (abs($savedPercentage - $effectivePercentage) < 0.01) {
-                    $this->tierPriceMode[$tierIndex] = 'default';
-                } else {
-                    $this->tierPriceMode[$tierIndex] = 'percentage';
-                }
-                
-                if ($setting->is_reference) {
-                    $this->referenceTierIndex = (int) $tierIndex;
-                }
-            }
-        } else {
-            // ✅ هیچ تنظیمات ذخیره شده‌ای برای این محصول وجود ندارد
-            // باید با اولویت‌بندی درصدها را لود کنیم
-            $this->autoCalculateTiers = false;
-            $this->referenceTierIndex = 1; // تیراژ 1 (کارتن) به عنوان مرجع
-            
-            foreach ($this->quantityTiers as $index => $tier) {
-                // ✅ استفاده از getEffectiveTierPercentage برای اولویت‌بندی
+        $productOverrides = is_array($this->productSupplier->tier_percentages)
+            ? $this->productSupplier->tier_percentages
+            : [];
+
+        // The product_supplier JSON is the explicit override source. Do not
+        // infer override mode by comparing old snapshots with today's defaults:
+        // changing a supplier/category default would otherwise pin the old value
+        // to this product on its next save.
+        $this->referenceTierIndex = 1;
+        foreach ($this->quantityTiers as $index => $tier) {
+            $index = (int) $index;
+
+            if (array_key_exists($index, $productOverrides) || array_key_exists((string) $index, $productOverrides)) {
+                $override = array_key_exists($index, $productOverrides)
+                    ? $productOverrides[$index]
+                    : $productOverrides[(string) $index];
+                $this->tierPercentages[$index] = (float) $override;
+                $this->tierPriceMode[$index] = 'percentage';
+            } else {
                 $this->tierPercentages[$index] = $this->getEffectiveTierPercentage($supplierId, $categoryId, $index);
-                $this->tierPriceMode[$index] = 'default'; // ✅ حالت پیشفرض
+                $this->tierPriceMode[$index] = 'default';
             }
         }
+
+        $this->autoCalculateTiers = $savedSettings->isNotEmpty();
         
         // ✅ تیراژ مرجع همیشه 0% است
         $this->tierPercentages[$this->referenceTierIndex] = 0;
@@ -935,7 +1294,7 @@ class EditPrice extends Component
      */
     public function loadDefaultTierPercentages(): void
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // بارگذاری تنظیمات پیشفرض
         $defaultTierSettings = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId);
@@ -969,7 +1328,16 @@ class EditPrice extends Component
      */
     public function saveTierPercentages(): void
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplier = Auth::user()->currentSupplier();
+        $this->resolveOwnedProductAndOffer($supplier);
+        $this->isBranchCopy = $supplier->isBranch()
+            && $this->product->family_product_id !== null
+            && (int) $this->product->family_product_id !== (int) $this->product->id;
+        abort_unless(!$this->isBranchCopy, 403, 'تنظیم درصد تیراژ برای کالای کپی‌شدهٔ شعبه در دسترس نیست.');
+
+        $supplierId = $this->authorizePriceWrite();
+        abort_unless($supplierId === (int) $supplier->id, 403, 'شما مجاز به ویرایش این محصول نیستید.');
+        abort_unless((int) $this->productSupplier->supplier_id === $supplierId, 403, 'شما مجاز به ویرایش این محصول نیستید.');
         $categoryId = $this->product->category_id ?? null;
         
         DB::transaction(function () use ($supplierId, $categoryId) {
@@ -1007,12 +1375,74 @@ class EditPrice extends Component
         });
     }
 
+    private function authorizePriceWrite(): int
+    {
+        $user = Auth::user();
+        $supplier = $user?->currentSupplier();
+        $this->assertPriceWriteContext($user, $supplier);
+
+        return (int) $supplier->id;
+    }
+
+    private function assertPriceWriteContext(
+        ?User $user,
+        ?Supplier $supplier,
+        ?Supplier $primarySupplier = null,
+        bool $requireCurrentSelection = false,
+    ): void
+    {
+        abort_unless(
+            $user && $user->hasAnyRole(['supplier', 'regular_supplier', 'admin', 'super_admin']),
+            403,
+            'شما مجاز به ویرایش قیمت نیستید.'
+        );
+
+        abort_unless($supplier, 403, 'حساب تامین‌کننده برای این کار در دسترس نیست.');
+        if ($requireCurrentSelection) {
+            $currentSupplier = $user->currentSupplier();
+            abort_unless(
+                (int) $currentSupplier->id === (int) $supplier->id,
+                403,
+                'شعبهٔ جاری هنگام ثبت قیمت تغییر کرده است.'
+            );
+        }
+
+        abort_unless(
+            (int) $supplier->user_id === (int) $user->id
+                && $supplier->is_active
+                && $supplier->is_verified,
+            403,
+            'حساب تامین‌کننده فعال و تاییدشده نیست.'
+        );
+
+        if ($supplier->isBranch()) {
+            $primarySupplier ??= $supplier->parentSupplier;
+            abort_unless(
+                $primarySupplier
+                    && (int) $primarySupplier->user_id === (int) $user->id
+                    && $primarySupplier->is_active
+                    && $primarySupplier->is_verified,
+                403,
+                'حساب تامین‌کننده اصلی فعال و تاییدشده نیست.'
+            );
+        }
+
+        if ($user->hasAnyRole(['supplier', 'regular_supplier'])) {
+            abort_unless(
+                $supplier->verification_status === 'approved'
+                    && (!$supplier->isBranch() || $primarySupplier?->verification_status === 'approved'),
+                403,
+                'حساب تامین‌کننده فعال و تاییدشده نیست.'
+            );
+        }
+    }
+
     /**
      * محاسبه خودکار قیمت تیراژها بر اساس تیراژ مرجع
      */
-    public function calculateTierPrices(): void
+    public function calculateTierPrices(bool $forceCurrencyDerived = false): void
     {
-        if (!$this->autoCalculateTiers) {
+        if (!$this->autoCalculateTiers && !$forceCurrencyDerived) {
             return;
         }
         
@@ -1026,7 +1456,7 @@ class EditPrice extends Component
             return;
         }
         
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
         $supplierId = $supplier->id;
         
         // ✅ دریافت دسته‌بندی محصول برای بررسی درصد اختصاصی
@@ -1080,25 +1510,40 @@ class EditPrice extends Component
      */
     private function getEffectiveTierPercentage(int $supplierId, ?int $categoryId, int $tierIndex): float
     {
-        // 1. بررسی درصد اختصاصی دسته‌بندی
-        if ($categoryId) {
-            $categoryDiscount = DB::table('category_tier_discount')
-                ->where('supplier_id', $supplierId)
-                ->where('category_id', $categoryId)
-                ->where('tier_index', $tierIndex)
-                ->where('is_active', true)
-                ->value('percentage_change');
-            
-            if ($categoryDiscount !== null) {
-                return (float) $categoryDiscount;
+        $cacheKey = $supplierId . ':' . ($categoryId ?? 'none');
+
+        if (!array_key_exists($cacheKey, $this->effectiveTierPercentageCacheLoaded)) {
+            $tierIndexes = collect(array_keys($this->quantityTiers ?? []))
+                ->map(fn ($index) => (int) $index)
+                ->push($tierIndex)
+                ->unique()
+                ->values()
+                ->all();
+            $defaults = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId)
+                ->keyBy('tier_index');
+            $categoryPercentages = $categoryId
+                ? DB::table('category_tier_discount')
+                    ->where('supplier_id', $supplierId)
+                    ->where('category_id', $categoryId)
+                    ->whereIn('tier_index', $tierIndexes)
+                    ->where('is_active', true)
+                    ->pluck('percentage_change', 'tier_index')
+                    ->all()
+                : [];
+
+            foreach ($tierIndexes as $index) {
+                $default = $defaults->get($index);
+                $this->effectiveTierPercentageCache[$cacheKey][$index] = array_key_exists($index, $categoryPercentages)
+                    ? ['percentage' => (float) $categoryPercentages[$index], 'source' => 'category']
+                    : ['percentage' => $default
+                        ? (float) $default->percentage_change
+                        : \App\Models\SupplierTierDiscount::defaultPercentage((int) $index), 'source' => 'default'];
             }
+
+            $this->effectiveTierPercentageCacheLoaded[$cacheKey] = true;
         }
-        
-        // 2. استفاده از درصد پیشفرض
-        $defaultSetting = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId)
-            ->firstWhere('tier_index', $tierIndex);
-        
-        return $defaultSetting ? (float) $defaultSetting->percentage_change : 0;
+
+        return (float) ($this->effectiveTierPercentageCache[$cacheKey][$tierIndex]['percentage'] ?? 0);
     }
 
     /**
@@ -1109,34 +1554,13 @@ class EditPrice extends Component
      */
     public function getEffectiveTierPercentageForUI(int $tierIndex): array
     {
-        $supplierId = (int) Auth::user()->supplier->id;
+        $supplierId = (int) Auth::user()->currentSupplier()->id;
         $categoryId = $this->product->category_id;
-        
-        // 1. بررسی درصد اختصاصی دسته‌بندی
-        if ($categoryId) {
-            $categoryDiscount = DB::table('category_tier_discount')
-                ->where('supplier_id', $supplierId)
-                ->where('category_id', $categoryId)
-                ->where('tier_index', $tierIndex)
-                ->where('is_active', true)
-                ->value('percentage_change');
-            
-            if ($categoryDiscount !== null) {
-                return [
-                    'percentage' => (float) $categoryDiscount,
-                    'source' => 'category'
-                ];
-            }
-        }
-        
-        // 2. استفاده از درصد پیشفرض
-        $defaultSetting = \App\Models\SupplierTierDiscount::getAllForSupplier($supplierId)
-            ->firstWhere('tier_index', $tierIndex);
-        
-        return [
-            'percentage' => $defaultSetting ? (float) $defaultSetting->percentage_change : 0,
-            'source' => 'default'
-        ];
+        $this->getEffectiveTierPercentage($supplierId, $categoryId, $tierIndex);
+        $cacheKey = $supplierId . ':' . ($categoryId ?? 'none');
+
+        return $this->effectiveTierPercentageCache[$cacheKey][$tierIndex]
+            ?? ['percentage' => 0.0, 'source' => 'default'];
     }
 
     /**
@@ -1176,15 +1600,13 @@ class EditPrice extends Component
      */
     public function updateReferenceTier($newReferenceTierIndex): void
     {
-        $this->referenceTierIndex = (int) $newReferenceTierIndex;
-        
-        // درصد تیراژ مرجع باید صفر باشد
-        $this->tierPercentages[$this->referenceTierIndex] = 0;
-        
-        $this->dispatch('notify', 
-            message: 'تیراژ مرجع تغییر کرد.',
-            type: 'info'
-        );
+        if ((int) $newReferenceTierIndex !== 1) {
+            $this->addError('referenceTierIndex', 'تیراژ مرجع قیمت‌گذاری همیشه کارتن (تیراژ ۲) است.');
+            return;
+        }
+
+        $this->referenceTierIndex = 1;
+        $this->tierPercentages[1] = 0;
     }
 
     /**
@@ -1196,9 +1618,28 @@ class EditPrice extends Component
         if (!preg_match('/^(\d+)\.(\d+)\.price$/', $key, $matches)) {
             return;
         }
-        
+
+        $priceType = $this->priceTypes->firstWhere('id', (int) $matches[2]);
         $tierIndex = (int) $matches[1];
         $priceTypeId = (int) $matches[2];
+
+        if ($priceType?->code === 'cash' && $this->priceCurrency !== 'TOM') {
+            if ($tierIndex === $this->referenceTierIndex) {
+                $storedPrice = ProductPrice::query()
+                    ->where('product_supplier_id', $this->productSupplier->id)
+                    ->where('price_type_id', $priceType->id)
+                    ->where('tier_index', $tierIndex)
+                    ->whereNull('check_period_id')
+                    ->where('is_active', true)
+                    ->value('price');
+                $this->priceMatrix[$tierIndex][$priceTypeId]['price'] = $storedPrice;
+                $this->addError('foreignPriceAmount', 'قیمت پایهٔ این محصول باید به ارز انتخاب‌شده وارد شود؛ ورود تومانی در این حالت مجاز نیست.');
+            } else {
+                $this->calculateTierPrices(forceCurrencyDerived: true);
+            }
+
+            return;
+        }
         
         // بررسی: آیا این تیراژ مرجع است؟
         if ($tierIndex !== $this->referenceTierIndex) {
@@ -1222,8 +1663,288 @@ class EditPrice extends Component
         }
     }
 
+    public function updatedForeignPriceAmount(): void
+    {
+        $this->normalizeForeignPriceAmount();
+        $this->syncForeignPriceToToman();
+    }
+
+    private function normalizeForeignPriceAmount(): void
+    {
+        if ($this->foreignPriceAmount === null) {
+            return;
+        }
+
+        $digits = [
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        ];
+
+        $amount = strtr(trim((string) $this->foreignPriceAmount), $digits);
+        $amount = str_replace(['٬', ','], '', $amount);
+        $amount = str_replace('٫', '.', $amount);
+        $this->foreignPriceAmount = $amount === '' ? null : $amount;
+    }
+
+    private function loadLatestExchangeRate(): void
+    {
+        $setting = SupplierExchangeRateSetting::query()
+            ->where('supplier_id', $this->productSupplier->supplier_id)
+            ->where('currency', $this->priceCurrency)
+            ->first();
+        $rateService = app(\App\Services\ForeignCurrencyPriceService::class);
+        $rateValue = $setting?->auto_update
+            ? $setting?->rate_toman
+            : $setting?->manual_rate_toman;
+
+        $this->latestExchangeRate = $rateValue === null ? null : (string) $rateValue;
+        $this->latestExchangeSource = $setting?->auto_update ? $setting?->source : 'manual';
+        $isStale = $setting?->auto_update && !$rateService->isFreshSupplierRate($setting);
+        $this->latestExchangeError = $setting?->last_error
+            ?: ($isStale ? 'نرخ خودکار تازه نیست؛ آخرین قیمت ثبت‌شده حفظ می‌شود.' : null);
+        $this->latestExchangeFetchedAt = $setting?->auto_update && $setting?->fetched_at
+            ? $setting->fetched_at->timezone('Asia/Tehran')->format('Y/m/d H:i') . ' تهران'
+            : null;
+    }
+
+    private function refreshForeignPriceRevisionToken(): void
+    {
+        $this->foreignPriceRevision = (int) ($this->productSupplier?->foreign_price_revision ?? 0);
+        $message = implode(':', [
+            $this->productSupplier->getKey(),
+            $this->foreignPriceRevision,
+            $this->priceMatrixFingerprint,
+        ]);
+        $this->foreignPriceRevisionToken = hash_hmac('sha256', $message, (string) config('app.key'));
+    }
+
+    private function matchesForeignPriceRevision(ProductSupplier $productSupplier): bool
+    {
+        $currentFingerprint = $this->currentPriceMatrixFingerprint($productSupplier, lockRows: true);
+        $message = implode(':', [
+            $productSupplier->getKey(),
+            $this->foreignPriceRevision,
+            $this->priceMatrixFingerprint,
+        ]);
+        $expectedToken = hash_hmac('sha256', $message, (string) config('app.key'));
+
+        return $this->foreignPriceRevisionToken !== null
+            && hash_equals($expectedToken, $this->foreignPriceRevisionToken)
+            && (int) $productSupplier->foreign_price_revision === $this->foreignPriceRevision
+            && hash_equals($this->priceMatrixFingerprint, $currentFingerprint);
+    }
+
+    private function currentPriceMatrixFingerprint(ProductSupplier $productSupplier, bool $lockRows = false): string
+    {
+        $rows = ProductPrice::query()
+            ->where('product_supplier_id', $productSupplier->getKey())
+            ->orderBy('id')
+            ->when($lockRows, fn ($query) => $query->lockForUpdate())
+            ->get([
+                'id',
+                'product_id',
+                'price_type_id',
+                'tier_index',
+                'check_period_id',
+                'price',
+                'percentage_override',
+                'calculation_mode',
+                'is_active',
+                'valid_from',
+                'valid_until',
+            ]);
+
+        return $this->fingerprintPriceRows($rows);
+    }
+
+    private function fingerprintPriceRows(\Illuminate\Support\Collection $rows): string
+    {
+        $normalizedRows = $rows
+            ->map(fn (ProductPrice $price) => [
+                (int) $price->id,
+                (int) $price->product_id,
+                (int) $price->price_type_id,
+                (int) $price->tier_index,
+                $price->check_period_id === null ? null : (int) $price->check_period_id,
+                (string) $price->price,
+                $price->percentage_override === null ? null : (string) $price->percentage_override,
+                $price->calculation_mode,
+                (bool) $price->is_active,
+                $price->valid_from?->format('Y-m-d'),
+                $price->valid_until?->format('Y-m-d'),
+            ])
+            ->all();
+
+        return hash('sha256', json_encode($normalizedRows, JSON_THROW_ON_ERROR));
+    }
+
+    private function syncForeignPriceToToman(bool $requireAmount = false, ?SupplierExchangeRateSetting $rateOverride = null): bool
+    {
+        $this->usingStoredRateFallback = false;
+        $this->foreignPricePreviewValid = false;
+
+        if ($this->priceCurrency === 'TOM') {
+            return true;
+        }
+
+        if ($this->foreignPriceAmount === null || $this->foreignPriceAmount === '') {
+            if ($requireAmount) {
+                $this->addError('foreignPriceAmount', 'مبلغ محصول به ارز انتخاب‌شده را وارد کنید.');
+                return false;
+            }
+
+            return true;
+        }
+
+        $rateService = app(\App\Services\ForeignCurrencyPriceService::class);
+        $rateSetting = $rateOverride ?? SupplierExchangeRateSetting::query()
+            ->where('supplier_id', $this->productSupplier->supplier_id)
+            ->where('currency', $this->priceCurrency)
+            ->first();
+
+        // داده‌های قدیمی با دقت چهار رقم را تا وقتی کاربر مبلغ را عوض نکرده، حفظ می‌کنیم.
+        $isUnchangedStoredPrice = $this->isUnchangedStoredForeignPrice();
+
+        if (!is_numeric($this->foreignPriceAmount)
+            || (float) $this->foreignPriceAmount <= 0
+            || (!preg_match('/^\d+(?:\.\d{1,2})?$/', (string) $this->foreignPriceAmount) && !$isUnchangedStoredPrice)) {
+            $this->addError('foreignPriceAmount', 'مبلغ جدید باید بزرگ‌تر از صفر و حداکثر با دو رقم اعشار باشد.');
+            return false;
+        }
+
+        $isUsableRate = $rateService->isUsableSupplierRate($rateSetting);
+
+        if (!$isUsableRate && !$isUnchangedStoredPrice) {
+            $this->loadLatestExchangeRate();
+            $this->addError('foreignPriceAmount', 'برای تبدیل این مبلغ، نرخ دستی معتبر یا نرخ خودکار تازه لازم است. آخرین قیمت ثبت‌شده تا آماده‌شدن نرخ معتبر حفظ می‌شود.');
+            return false;
+        }
+
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType || !isset($this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id])) {
+            $this->addError('foreignPriceAmount', 'قیمت نقدی تیراژ مرجع برای این محصول در دسترس نیست.');
+            return false;
+        }
+
+        $this->usingStoredRateFallback = $isUnchangedStoredPrice && !$isUsableRate;
+        $conversionRate = $this->usingStoredRateFallback
+            ? (float) $this->productSupplier->foreign_price_rate
+            : (float) ($rateSetting->auto_update ? $rateSetting->rate_toman : $rateSetting->manual_rate_toman);
+
+        try {
+            $tomanPrice = app(\App\Services\ForeignCurrencyPriceService::class)
+                ->calculateToman((float) $this->foreignPriceAmount, $conversionRate, $this->productSupplier);
+        } catch (\InvalidArgumentException $exception) {
+            $this->addError('foreignPriceAmount', $exception->getMessage());
+            return false;
+        }
+
+        if ($this->usingStoredRateFallback) {
+            $this->latestExchangeRate = (string) $this->productSupplier->foreign_price_rate;
+            $this->latestExchangeSource = $this->productSupplier->foreign_price_source;
+            $this->latestExchangeFetchedAt = $this->foreignPriceUpdatedAt
+                ? $this->foreignPriceUpdatedAt . ' تهران'
+                : $this->latestExchangeFetchedAt;
+        } else {
+            $this->latestExchangeRate = (string) $conversionRate;
+            $this->latestExchangeSource = $rateSetting->auto_update ? $rateSetting->source : 'manual';
+            $this->latestExchangeFetchedAt = $rateSetting->auto_update
+                ? $rateSetting->fetched_at?->timezone('Asia/Tehran')->format('Y/m/d H:i') . ' تهران'
+                : null;
+            $this->latestExchangeError = null;
+        }
+
+        $this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id]['price'] = $tomanPrice;
+        $this->foreignPricePreviewValid = true;
+
+        if ($this->autoCalculateTiers || $this->priceCurrency !== 'TOM') {
+            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
+        } else {
+            $this->updateAllCheckPrices();
+        }
+
+        $this->foreignPriceUpdatedAt = $this->productSupplier->foreign_price_updated_at?->timezone('Asia/Tehran')->format('Y/m/d H:i');
+        $this->foreignPriceLastError = $this->productSupplier->foreign_price_last_error;
+        $this->resetErrorBag('foreignPriceAmount');
+
+        return true;
+    }
+
+    private function foreignPriceAmountForStorage(): ?string
+    {
+        if ($this->priceCurrency === 'TOM') {
+            return null;
+        }
+
+        $storedAmount = $this->productSupplier->foreign_price_amount;
+        $isUnchangedStoredPrice = $this->isUnchangedStoredForeignPrice();
+
+        return $isUnchangedStoredPrice
+            ? (string) $storedAmount
+            : number_format((float) $this->foreignPriceAmount, 2, '.', '');
+    }
+
+    private function isUnchangedStoredForeignPrice(): bool
+    {
+        if ($this->productSupplier === null
+            || $this->productSupplier->price_currency !== $this->priceCurrency
+            || $this->productSupplier->foreign_price_amount === null
+            || $this->productSupplier->foreign_price_rate === null
+            || $this->foreignPriceAmount === null) {
+            return false;
+        }
+
+        $storedAmount = $this->canonicalDecimalString($this->productSupplier->foreign_price_amount);
+        $submittedAmount = $this->canonicalDecimalString($this->foreignPriceAmount);
+
+        return $storedAmount !== null && $storedAmount === $submittedAmount;
+    }
+
+    private function canonicalDecimalString(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+        if (!preg_match('/^\d+(?:\.\d+)?$/', $value)) {
+            return null;
+        }
+
+        [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
+        $whole = ltrim($whole, '0') ?: '0';
+        $fraction = rtrim($fraction, '0');
+
+        return $fraction === '' ? $whole : $whole . '.' . $fraction;
+    }
+
+    private function resolveOwnedProductAndOffer(\App\Models\Supplier $supplier): void
+    {
+        $productId = $this->product?->id;
+        abort_unless($productId, 403, 'محصول معتبر نیست.');
+
+        $product = Product::query()
+            ->whereKey($productId)
+            ->where(function ($query) use ($supplier): void {
+                $query->where('supplier_id', $supplier->id)
+                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplier->id));
+            })
+            ->firstOrFail();
+
+        $offerId = $this->productSupplier?->id;
+        abort_unless($offerId, 403, 'پیشنهاد این محصول در شعبهٔ جاری موجود نیست.');
+        $offer = ProductSupplier::query()
+            ->whereKey($offerId)
+            ->where('product_id', $product->id)
+            ->where('supplier_id', $supplier->id)
+            ->firstOrFail();
+
+        $this->product = $product;
+        $this->productSupplier = $offer;
+    }
+
     public function render()
     {
-        return view('livewire.supplier.products.edit-price');
+        return view($this->isBranchCopy
+            ? 'livewire.supplier.products.edit-branch-pricing'
+            : 'livewire.supplier.products.edit-price');
     }
 }

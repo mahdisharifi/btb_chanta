@@ -311,14 +311,7 @@ php artisan storage:link
 
 ### ✅ بررسی Queues
 
-اگر از Queue استفاده می‌کنید:
-```bash
-# در cPanel → Terminal یا SSH
-php artisan queue:work --daemon
-
-# یا تنظیم Cron Job برای queue:work
-*/5 * * * * cd /home/username/public_html && php artisan queue:work --stop-when-empty
-```
+در این پروژه، زمان‌بند Laravel worker صف را به‌صورت کوتاه‌مدت اجرا می‌کند. همان Cron یک‌دقیقه‌ای `schedule:run` که در بالا آمده را تنظیم کنید و Cron یا worker جداگانهٔ `queue:work` نسازید؛ اجرای هم‌زمان هر دو مسیر می‌تواند workerهای تکراری ایجاد کند. مقدار `QUEUE_CONNECTION` و جدول‌های صف را هم با تنظیمات محیط استقرار تطبیق دهید.
 
 ---
 
@@ -401,8 +394,8 @@ php artisan config:cache
 
 **راه‌حل:**
 1. بررسی `QUEUE_CONNECTION` در `.env`
-2. تنظیم Cron Job برای `queue:work`
-3. استفاده از Supervisor (در VPS)
+2. بررسی اجرای Cron یک‌دقیقه‌ای `schedule:run` و لاگ زمان‌بند
+3. در این پروژه worker جداگانهٔ `queue:work` تنظیم نکنید؛ زمان‌بند خودش worker کوتاه‌مدت را اجرا می‌کند.
 
 ---
 

@@ -114,6 +114,7 @@ class Index extends Component
         $product = Product::findOrFail($id);
         $product->galleries()->delete();
         $product->attributeValues()->detach();
+        app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
         $product->delete();
         $this->dispatch('toast', message: 'محصول با موفقیت حذف شد.', type: 'success');
     }

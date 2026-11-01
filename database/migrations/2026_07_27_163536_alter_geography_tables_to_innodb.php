@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         if (! Schema::hasTable('countries') || ! Schema::hasTable('provinces') || ! Schema::hasTable('cities')) {
             return;
         }
@@ -53,6 +57,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         if (! Schema::hasTable('countries') || ! Schema::hasTable('provinces') || ! Schema::hasTable('cities')) {
             return;
         }

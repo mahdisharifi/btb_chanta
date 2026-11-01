@@ -283,6 +283,8 @@ class ProductController extends Controller
                 }
             }
 
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
+
             DB::commit();
 
             return redirect()->route('products.index')

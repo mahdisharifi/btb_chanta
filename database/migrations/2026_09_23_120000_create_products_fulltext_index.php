@@ -20,6 +20,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         // بررسی اینکه آیا index از قبل وجود دارد یا خیر
         $indexExists = DB::select(
             "SHOW INDEXES FROM products WHERE Key_name = 'products_title_short_description_fulltext'"
@@ -37,6 +41,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         Schema::table('products', function (Blueprint $table) {
             // حذف FULLTEXT index
             $indexExists = DB::select(

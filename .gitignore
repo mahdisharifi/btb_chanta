@@ -52,12 +52,22 @@ yarn-error.log
 Thumbs.db
 *.log
 
+# Laravel 4 specific
+/.vagrant
+bootstrap/compiled.php
+app/storage/
+
+# Laravel 5 & Lumen specific
+public_html/storage
+public_html/hot
+
 # Backup & Temporary Files
 *~
 *.swp
 *.swo
 *.bak
 *.tmp
+
 # AI & Backup Directories
 /Hosh Masnoei
 

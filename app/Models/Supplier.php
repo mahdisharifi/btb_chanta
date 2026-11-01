@@ -19,6 +19,8 @@ class Supplier extends Model
     protected $fillable = [
         // User relation
         'user_id',
+        'parent_supplier_id',
+        'branch_name',
 
         // Unified business profile (new schema)
         'type',
@@ -71,6 +73,9 @@ class Supplier extends Model
 
         'is_verified' => 'boolean',
         'is_active' => 'boolean',
+        'pricing_currency_revision' => 'integer',
+        'tier_pricing_revision' => 'integer',
+        'supplier_tier_discount_revision' => 'integer',
         'verified_at' => 'datetime',
         'social_networks' => 'array',
         'verification_documents' => 'array',
@@ -124,6 +129,36 @@ class Supplier extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function parentSupplier(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_supplier_id');
+    }
+
+    public function branches(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_supplier_id')->orderBy('id');
+    }
+
+    public function branchProductTransfers(): HasMany
+    {
+        return $this->hasMany(SupplierBranchProductTransfer::class, 'target_supplier_id');
+    }
+
+    public function isBranch(): bool
+    {
+        return $this->parent_supplier_id !== null;
+    }
+
+    public function rootSupplier(): self
+    {
+        return $this->parentSupplier ?? $this;
+    }
+
+    public function branchLabel(): string
+    {
+        return $this->branch_name ?: 'شعبه اصلی';
     }
 
     public function ownedProducts(): HasMany

@@ -3,10 +3,15 @@
 namespace App\Livewire\Supplier\Settings;
 
 use App\Models\Category;
+use App\Models\ExchangeRate;
+use App\Models\ProductSupplier;
 use App\Models\SupplierTierDiscount;
+use App\Models\SupplierExchangeRateSetting;
+use App\Models\Supplier;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('components.layouts.supplier')]
@@ -16,13 +21,31 @@ class ManageTierDiscounts extends Component
     public $affectedPricesCount = 0;
     public $showUpdateConfirm = false;
     public $hasChanges = false;
+    #[Locked]
+    public int $supplierTierDiscountRevision = 1;
+    public array $currencySettings = [];
+    public bool $currencySettingsChanged = false;
+    public string $pricingCurrency = 'TOM';
+    #[Locked]
+    public int $pricingCurrencyRevision = 1;
+    #[Locked]
+    public array $currencySettingRevisions = [];
+
+    public const CURRENCIES = [
+        'USD' => 'دلار آمریکا',
+        'CNY' => 'یوان چین',
+        'AED' => 'درهم امارات',
+    ];
     
     // برای تنظیمات دسته‌بندی
     public $categories = [];
     public $selectedCategoryId = null;
     public $categoryTierPercentages = []; // [tier_index => percentage]
     public $categoryTierSettings = []; // دسته‌بندی‌های تنظیم شده
+    #[Locked]
     public $editingCategoryId = null;
+    #[Locked]
+    public ?string $categoryEditSignature = null;
     
     // نام‌های پیشفرض تیراژها
     public const DEFAULT_TIER_NAMES = [
@@ -35,20 +58,335 @@ class ManageTierDiscounts extends Component
     public function mount()
     {
         $this->loadTierSettings();
+        $this->loadCurrencySettings();
         $this->loadCategories();
         $this->loadCategoryTierSettings();
         $this->calculateAffectedPrices();
     }
+
+    private function authorizedSupplierId(): int
+    {
+        $user = Auth::user();
+        abort_unless(
+            $user && $user->hasAnyRole(['supplier', 'regular_supplier', 'admin', 'super_admin']),
+            403,
+            'شما مجاز به تغییر تنظیمات تامین‌کننده نیستید.'
+        );
+
+        $supplier = $user->currentSupplier();
+
+        abort_unless(
+            $supplier && $supplier->is_active && $supplier->is_verified,
+            403,
+            'حساب تامین‌کننده فعال و تاییدشده نیست.'
+        );
+
+        if ($user->hasAnyRole(['supplier', 'regular_supplier'])) {
+            abort_unless(
+                $user->isAccountApproved()
+                    && $supplier->verification_status === 'approved',
+                403,
+                'حساب تامین‌کننده فعال و تاییدشده نیست.'
+            );
+        }
+
+        return (int) $supplier->id;
+    }
+
+    private function loadCurrencySettings(): void
+    {
+        $supplierId = $this->authorizedSupplierId();
+        $supplier = Supplier::query()->findOrFail($supplierId);
+        $this->pricingCurrency = (string) ($supplier->pricing_currency ?? 'TOM');
+        $this->pricingCurrencyRevision = (int) ($supplier->pricing_currency_revision ?? 1);
+        $this->currencySettings = [];
+
+        foreach (self::CURRENCIES as $currency => $_label) {
+            $snapshot = ExchangeRate::query()->find($currency);
+            $setting = SupplierExchangeRateSetting::query()->firstOrCreate(
+                ['supplier_id' => $supplierId, 'currency' => $currency],
+                [
+                    'rate_toman' => $snapshot?->rate_toman,
+                    'manual_rate_toman' => $snapshot?->rate_toman,
+                    'source' => 'manual',
+                    'revision' => 1,
+                ]
+            );
+
+            $this->currencySettings[$currency] = [
+                'manual_rate_toman' => $setting->manual_rate_toman === null
+                    ? ''
+                    : (string) $setting->manual_rate_toman,
+                'auto_update' => (bool) $setting->auto_update,
+                'refresh_hours' => $setting->refresh_hours ?? 6,
+                'rate_toman' => $setting->rate_toman === null ? null : (string) $setting->rate_toman,
+                'source' => $setting->source,
+                'fetched_at' => $setting->fetched_at?->timezone('Asia/Tehran')->format('Y/m/d H:i'),
+                'last_error' => $setting->last_error,
+                'last_apply_error' => $setting->last_apply_error,
+            ];
+            $this->currencySettingRevisions[$currency] = (int) $setting->revision;
+        }
+
+        $this->currencySettingsChanged = false;
+    }
+
+    public function saveCurrencySettings(): void
+    {
+        $supplierId = $this->authorizedSupplierId();
+        $rules = [
+            'pricingCurrency' => ['required', 'string', 'in:TOM,USD,CNY,AED'],
+        ];
+        $messages = [];
+
+        foreach (self::CURRENCIES as $currency => $label) {
+            $rules["currencySettings.{$currency}.manual_rate_toman"] = [
+                'nullable',
+                'numeric',
+                'decimal:0,4',
+                'gt:0',
+                'max:9999999999999999',
+            ];
+            $rules["currencySettings.{$currency}.auto_update"] = ['required', 'boolean'];
+            $rules["currencySettings.{$currency}.refresh_hours"] = [
+                'nullable',
+                'integer',
+                'in:2,6,12,24',
+                function ($attribute, $value, $fail) use ($currency): void {
+                    $autoUpdate = filter_var(
+                        $this->currencySettings[$currency]['auto_update'] ?? false,
+                        FILTER_VALIDATE_BOOLEAN
+                    );
+
+                    if ($autoUpdate && $value === null) {
+                        $fail('بازهٔ به‌روزرسانی خودکار را انتخاب کنید.');
+                    }
+                },
+            ];
+            $messages["currencySettings.{$currency}.manual_rate_toman.gt"] = "نرخ {$label} باید بزرگ‌تر از صفر باشد.";
+        }
+
+        $this->validate($rules, $messages);
+
+        $refreshRatesNow = false;
+        $currencyChanged = false;
+        $currencyRevision = 1;
+        $staleCurrencySettings = false;
+        $staleRateSettings = false;
+        DB::transaction(function () use ($supplierId, &$refreshRatesNow, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
+            $supplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
+            if ((int) $supplier->pricing_currency_revision !== $this->pricingCurrencyRevision) {
+                $staleCurrencySettings = true;
+                return;
+            }
+
+            $currencyChanged = $supplier->pricing_currency !== $this->pricingCurrency;
+            $currencyRevision = $currencyChanged
+                ? ((int) $supplier->pricing_currency_revision) + 1
+                : (int) $supplier->pricing_currency_revision;
+
+            // Compare every submitted rate-policy snapshot before writing any
+            // of them. This prevents one stale tab from restoring an old manual
+            // rate or auto-refresh interval after another tab has saved.
+            $lockedSettings = [];
+            foreach (self::CURRENCIES as $currency => $_label) {
+                $setting = SupplierExchangeRateSetting::query()
+                    ->where('supplier_id', $supplierId)
+                    ->where('currency', $currency)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $lockedSettings[$currency] = $setting;
+
+                if ((int) $setting->revision !== (int) ($this->currencySettingRevisions[$currency] ?? 0)) {
+                    $staleRateSettings = true;
+                }
+            }
+
+            if ($staleRateSettings) {
+                return;
+            }
+
+            // Mutate the global currency only after both the currency and rate
+            // snapshots have passed their optimistic concurrency checks.
+            if ($currencyChanged) {
+                $supplier->forceFill([
+                    'pricing_currency' => $this->pricingCurrency,
+                    'pricing_currency_revision' => $currencyRevision,
+                ])->save();
+            }
+
+            foreach (self::CURRENCIES as $currency => $_label) {
+                $input = $this->currencySettings[$currency];
+                $setting = $lockedSettings[$currency];
+                $autoUpdate = (bool) $input['auto_update'];
+                $manualRate = $input['manual_rate_toman'] === '' || $input['manual_rate_toman'] === null
+                    ? ($autoUpdate ? $setting->manual_rate_toman : null)
+                    : (float) $input['manual_rate_toman'];
+
+                if ($autoUpdate) {
+                    $refreshRatesNow = $refreshRatesNow || $currency === $this->pricingCurrency;
+                    $setting->fill([
+                        'manual_rate_toman' => $manualRate,
+                        'auto_update' => true,
+                        'refresh_hours' => (int) $input['refresh_hours'],
+                        'next_update_at' => now(),
+                        'last_error' => null,
+                        'last_apply_error' => null,
+                        'revision' => ((int) $setting->revision) + 1,
+                    ])->save();
+                    continue;
+                }
+
+                $setting->fill([
+                    'rate_toman' => $manualRate,
+                    'manual_rate_toman' => $manualRate,
+                    'auto_update' => false,
+                    'refresh_hours' => null,
+                    'next_update_at' => null,
+                    'source' => 'manual',
+                    'source_market_date' => null,
+                    'source_market_time' => null,
+                    'source_updated_at' => null,
+                    'fetched_at' => null,
+                    'last_attempt_at' => null,
+                    'last_error' => null,
+                    'last_apply_error' => null,
+                    'revision' => ((int) $setting->revision) + 1,
+                ])->save();
+            }
+
+            DB::afterCommit(function () use ($supplierId, $currencyRevision): void {
+                \App\Jobs\RebaseSupplierCurrencyPrices::dispatch(
+                    $supplierId,
+                    $this->pricingCurrency,
+                    $currencyRevision
+                );
+            });
+        });
+
+        if ($staleCurrencySettings) {
+            $this->loadCurrencySettings();
+            $this->addError('pricingCurrency', 'تنظیم ارز در تب دیگری تغییر کرده است؛ مقدار تازه بارگذاری شد. تغییرات را دوباره بررسی و ذخیره کنید.');
+            $this->dispatch('notify', message: 'تنظیم ارز در تب دیگری تغییر کرده بود؛ این فرم به‌روز شد و ذخیره انجام نشد.', type: 'warning');
+            return;
+        }
+
+        if ($staleRateSettings) {
+            $this->loadCurrencySettings();
+            $this->addError('currencySettings', 'تنظیم نرخ ارز در تب دیگری تغییر کرده است؛ مقادیر تازه بارگذاری شد. تغییرات را دوباره بررسی و ذخیره کنید.');
+            $this->dispatch('notify', message: 'تنظیم نرخ ارز در تب دیگری تغییر کرده بود؛ این فرم به‌روز شد و ذخیره انجام نشد.', type: 'warning');
+            return;
+        }
+
+        $this->currencySettingsChanged = false;
+        $this->loadCurrencySettings();
+
+        if ($refreshRatesNow) {
+            \App\Jobs\RefreshDueForeignCurrencyPrices::dispatch();
+            $message = $currencyChanged
+                ? 'ارز پایه ذخیره شد؛ هماهنگ‌سازی امن قیمت‌های قبلی و دریافت نرخ جدید در صف قرار گرفت.'
+                : 'تنظیمات ذخیره شد؛ دریافت نرخ و به‌روزرسانی خودکار در صف قرار گرفت.';
+        } else {
+            $message = $currencyChanged
+                ? 'ارز پایه ذخیره شد؛ هماهنگ‌سازی امن قیمت‌های قبلی در صف قرار گرفت.'
+                : 'نرخ‌های دستی ذخیره شدند. برای محاسبهٔ دوبارهٔ قیمت کالاها، دکمهٔ اعمال روی همهٔ محصولات را بزنید.';
+        }
+
+        $this->dispatch('notify', message: $message, type: 'success');
+    }
+
+    public function applyCurrencyRatesToProducts(bool $notify = true): string
+    {
+        if ($this->hasChanges || $this->currencySettingsChanged) {
+            if ($notify) {
+                $this->dispatch('notify', message: 'ابتدا تنظیمات درصد و نرخ ارز را ذخیره کنید.', type: 'warning');
+            }
+            return 'settings_unsaved';
+        }
+
+        $supplierId = $this->authorizedSupplierId();
+        $service = app(\App\Services\ForeignCurrencyPriceService::class);
+        $selectedCurrency = Supplier::query()->whereKey($supplierId)->value('pricing_currency') ?? 'TOM';
+        if ($selectedCurrency === 'TOM') {
+            if ($notify) {
+                $this->dispatch('notify', message: 'ارز پایهٔ تأمین‌کننده تومان است؛ برای محاسبهٔ نرخ ارزی، ابتدا ارز پایه را انتخاب کنید.', type: 'info');
+            }
+            return 'toman';
+        }
+
+        $hasPricedProducts = ProductSupplier::query()
+            ->where('supplier_id', $supplierId)
+            ->where('price_currency', $selectedCurrency)
+            ->whereNotNull('foreign_price_amount')
+            ->where('foreign_price_amount', '>', 0)
+            ->exists();
+        if (!$hasPricedProducts) {
+            if ($notify) {
+                $this->dispatch('notify', message: 'هنوز محصول قیمت‌گذاری‌شده‌ای با ارز پایهٔ انتخاب‌شده وجود ندارد.', type: 'info');
+            }
+            return 'no_products';
+        }
+
+        $setting = DB::transaction(function () use ($supplierId, $selectedCurrency, $service): ?SupplierExchangeRateSetting {
+            $setting = SupplierExchangeRateSetting::query()
+                ->where('supplier_id', $supplierId)
+                ->where('currency', $selectedCurrency)
+                ->lockForUpdate()
+                ->first();
+
+            $hasRate = $setting && ($setting->auto_update
+                ? $service->isFreshSupplierRate($setting)
+                : (float) ($setting->manual_rate_toman ?? 0) > 0);
+            if (!$hasRate) {
+                return null;
+            }
+
+            // A new generation lets the supplier re-run this same rate safely;
+            // queued chunks from an older run become stale and are ignored.
+            $setting->forceFill([
+                'revision' => ((int) $setting->revision) + 1,
+                'last_apply_error' => null,
+            ])->save();
+
+            return $setting;
+        });
+
+        if (!$setting) {
+            if ($notify) {
+                $this->dispatch('notify', message: 'برای ارز پایه نرخ معتبر در دسترس نیست؛ آخرین قیمت محصولات حفظ شد.', type: 'error');
+            }
+            return 'rate_unavailable';
+        }
+
+        $this->loadCurrencySettings();
+
+        \App\Jobs\ApplySupplierCurrencyPrices::dispatch(
+            $supplierId,
+            $selectedCurrency,
+            (int) $setting->revision,
+            false,
+            (int) Supplier::query()->whereKey($supplierId)->value('tier_pricing_revision'),
+        );
+        if ($notify) {
+            $this->dispatch('notify', message: 'محاسبهٔ همهٔ محصولات با ارز پایهٔ ' . $selectedCurrency . ' در صف قرار گرفت؛ قیمت‌های نقدی و وابسته پس از پردازش از پایگاه‌داده نمایش داده می‌شوند.', type: 'success');
+        }
+
+        return 'queued';
+    }
     
     public function loadTierSettings()
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        // بارگذاری تنظیمات موجود
-        $existing = SupplierTierDiscount::where('supplier_id', $supplierId)
-            ->where('is_active', true)
-            ->get()
-            ->keyBy('tier_index');
+        $supplierId = Auth::user()->currentSupplier()->id;
+        [$revision, $existing] = DB::transaction(function () use ($supplierId): array {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+            $discounts = SupplierTierDiscount::where('supplier_id', $supplierId)
+                ->where('is_active', true)
+                ->get()
+                ->keyBy('tier_index');
+
+            return [(int) $supplier->supplier_tier_discount_revision, $discounts];
+        });
+        $this->supplierTierDiscountRevision = $revision;
         
         // ایجاد آرایه تنظیمات برای 4 تیراژ
         $this->tierSettings = [];
@@ -138,9 +476,16 @@ class ManageTierDiscounts extends Component
     {
         $this->validate();
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
-        DB::transaction(function () use ($supplierId) {
+        $staleSettings = false;
+        DB::transaction(function () use ($supplierId, &$staleSettings) {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+            if ((int) $supplier->supplier_tier_discount_revision !== $this->supplierTierDiscountRevision) {
+                $staleSettings = true;
+                return;
+            }
+
             foreach ($this->tierSettings as $index => $tier) {
                 $tierIndex = (int)$tier['tier_index'];
                 $percentage = (float)$tier['percentage_change'];
@@ -158,7 +503,18 @@ class ManageTierDiscounts extends Component
                     ]
                 );
             }
+
+            $supplier->increment('tier_pricing_revision');
+            $supplier->increment('supplier_tier_discount_revision');
         });
+
+        if ($staleSettings) {
+            $this->loadTierSettings();
+            $this->hasChanges = false;
+            $this->calculateAffectedPrices();
+            $this->dispatch('notify', message: 'درصدهای تیراژ در تب دیگری تغییر کرده؛ مقدار تازه بارگذاری شد. دوباره بررسی و ذخیره کنید.', type: 'warning');
+            return;
+        }
         
         $this->dispatch('notify',
             message: '✅ تنظیمات درصد تیراژ با موفقیت ذخیره شد.',
@@ -190,7 +546,7 @@ class ManageTierDiscounts extends Component
      */
     public function calculateAffectedPrices()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // شمارش قیمت‌های نقدی که با mode='default' هستند
         $this->affectedPricesCount = DB::table('product_prices as pp')
@@ -211,9 +567,9 @@ class ManageTierDiscounts extends Component
      */
     public function confirmUpdatePrices()
     {
-        if ($this->hasChanges) {
+        if ($this->hasChanges || $this->currencySettingsChanged) {
             $this->dispatch('notify',
-                message: 'ابتدا تغییرات را ذخیره کنید.',
+                message: 'ابتدا تنظیمات درصد و ارز را ذخیره کنید.',
                 type: 'warning'
             );
             return;
@@ -229,23 +585,44 @@ class ManageTierDiscounts extends Component
     public function updatePrices()
     {
         try {
-            $supplierId = Auth::user()->supplier->id;
-            
-            // اجرای command برای بروزرسانی
-            $result = \App\Helpers\TierPriceUpdater::updateSupplierPrices($supplierId);
-            
-            $this->dispatch('notify',
-                message: "✅ بروزرسانی انجام شد. {$result['updated']} قیمت بروز شد.",
-                type: 'success'
-            );
-            
-            if ($result['errors'] > 0) {
-                $this->dispatch('notify',
-                    message: "⚠️ {$result['errors']} قیمت با خطا مواجه شد.",
-                    type: 'warning'
+            if ($this->hasChanges || $this->currencySettingsChanged) {
+                $this->dispatch('notify', message: 'ابتدا تنظیمات درصد و ارز را ذخیره کنید.', type: 'warning');
+                return;
+            }
+
+            $supplierId = Auth::user()->currentSupplier()->id;
+
+            $supplier = Supplier::query()->findOrFail($supplierId);
+            $tomanApplyQueued = $supplier->pricing_currency === 'TOM';
+            if ($tomanApplyQueued) {
+                \App\Jobs\ApplySupplierTomanTierPrices::dispatch(
+                    $supplierId,
+                    (int) $supplier->pricing_currency_revision,
+                    (int) $supplier->tier_pricing_revision,
                 );
             }
-            
+
+            // FX products use the selected reference tier and the current supplier rate.
+            // Combine both outcomes so a failed/declined FX apply cannot be hidden
+            // by a later generic success toast.
+            $currencyApplyStatus = $this->applyCurrencyRatesToProducts(notify: false);
+            $type = 'success';
+            if ($tomanApplyQueued) {
+                $message = 'بازمحاسبهٔ قیمت تیراژ همهٔ محصولات تومانی در صف قرار گرفت.';
+            } elseif ($currencyApplyStatus === 'queued') {
+                $message = 'محاسبهٔ قیمت‌های همهٔ محصولات ارزی در صف قرار گرفت.';
+            } elseif ($currencyApplyStatus === 'rate_unavailable') {
+                $message = 'نرخ ارز معتبر در دسترس نبود؛ آخرین قیمت ذخیره‌شده حفظ شد.';
+                $type = 'warning';
+            } elseif ($currencyApplyStatus === 'no_products') {
+                $message = 'محصولی با مبلغ ارزی برای محاسبه پیدا نشد.';
+            } else {
+                $message = 'تنظیمات ذخیره نشده بود؛ ابتدا تنظیمات درصد و نرخ را ذخیره کنید.';
+                $type = 'warning';
+            }
+
+            $this->dispatch('notify', message: $message, type: $type);
+
             $this->showUpdateConfirm = false;
             $this->calculateAffectedPrices();
             
@@ -292,7 +669,7 @@ class ManageTierDiscounts extends Component
      */
     public function loadCategoryTierSettings()
     {
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         
         // دریافت تمام تنظیمات
         $records = DB::table('category_tier_discount as ctd')
@@ -356,7 +733,7 @@ class ManageTierDiscounts extends Component
             'categoryTierPercentages.*.max' => 'درصد نمی‌تواند بیشتر از 100 باشد.',
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = (int)$this->selectedCategoryId;
         
         // بررسی: آیا این دسته‌بندی قبلاً اضافه شده؟
@@ -374,7 +751,16 @@ class ManageTierDiscounts extends Component
         }
         
         // افزودن رکوردها (فقط برای تیراژهای غیر از مرجع)
-        DB::transaction(function () use ($supplierId, $categoryId) {
+        $categoryAlreadyExists = DB::transaction(function () use ($supplierId, $categoryId): bool {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            if (DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->exists()) {
+                return true;
+            }
+
             foreach ($this->categoryTierPercentages as $tierIndex => $percentage) {
                 // تیراژ مرجع (1) را skip کن
                 if ($tierIndex == 1) {
@@ -393,8 +779,19 @@ class ManageTierDiscounts extends Component
                     ]);
                 }
             }
+
+            $supplier->increment('tier_pricing_revision');
+            return false;
         });
-        
+
+        if ($categoryAlreadyExists) {
+            $this->dispatch('notify',
+                message: 'این دسته‌بندی قبلاً اضافه شده است. می‌توانید آن را ویرایش کنید.',
+                type: 'warning'
+            );
+            return;
+        }
+
         $this->reset(['selectedCategoryId', 'categoryTierPercentages']);
         $this->loadCategoryTierSettings();
         $this->calculateAffectedPrices();
@@ -410,21 +807,25 @@ class ManageTierDiscounts extends Component
      */
     public function startEditCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        // بارگذاری درصدهای فعلی
-        $existing = DB::table('category_tier_discount')
-            ->where('supplier_id', $supplierId)
-            ->where('category_id', $categoryId)
-            ->where('is_active', true)
-            ->get();
-        
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        $rows = DB::transaction(function () use ($supplierId, $categoryId) {
+            Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            return DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->orderBy('tier_index')
+                ->get(['tier_index', 'percentage_change', 'is_active']);
+        });
+
         $this->editingCategoryId = $categoryId;
+        $this->categoryEditSignature = $this->categoryEditSignatureFromRows((int) $categoryId, $rows);
         $this->categoryTierPercentages = [];
-        
-        foreach ($existing as $row) {
+
+        foreach ($rows as $row) {
             // تیراژ مرجع را skip کن
-            if ($row->tier_index != 1) {
+            if ((bool) $row->is_active && $row->tier_index != 1) {
                 $this->categoryTierPercentages[$row->tier_index] = (float)$row->percentage_change;
             }
         }
@@ -440,10 +841,22 @@ class ManageTierDiscounts extends Component
             'categoryTierPercentages.*' => ['required', 'numeric', 'min:-100', 'max:100'],
         ]);
         
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $categoryId = $this->editingCategoryId;
-        
-        DB::transaction(function () use ($supplierId, $categoryId) {
+
+        if ($categoryId === null || $this->categoryEditSignature === null) {
+            $this->dispatch('notify', message: 'فرم ویرایش دسته‌بندی منقضی شده است؛ دوباره بازش کنید.', type: 'warning');
+            return;
+        }
+
+        $expectedSignature = $this->categoryEditSignature;
+        $saved = DB::transaction(function () use ($supplierId, $categoryId, $expectedSignature): bool {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            if (!hash_equals($expectedSignature, $this->currentCategoryEditSignature($supplierId, (int) $categoryId))) {
+                return false;
+            }
+
             // حذف تنظیمات قبلی
             DB::table('category_tier_discount')
                 ->where('supplier_id', $supplierId)
@@ -468,8 +881,18 @@ class ManageTierDiscounts extends Component
                     ]);
                 }
             }
+
+            $supplier->increment('tier_pricing_revision');
+            return true;
         });
-        
+
+        if (!$saved) {
+            $this->cancelCategoryEdit();
+            $this->loadCategoryTierSettings();
+            $this->dispatch('notify', message: 'این تنظیمات در تب دیگری تغییر کرده؛ مقدار تازه بارگذاری شد. دوباره بررسی و ویرایش کنید.', type: 'warning');
+            return;
+        }
+
         $this->cancelCategoryEdit();
         $this->loadCategoryTierSettings();
         $this->calculateAffectedPrices();
@@ -485,7 +908,27 @@ class ManageTierDiscounts extends Component
      */
     public function cancelCategoryEdit()
     {
-        $this->reset(['editingCategoryId', 'categoryTierPercentages']);
+        $this->reset(['editingCategoryId', 'categoryEditSignature', 'categoryTierPercentages']);
+    }
+
+    private function currentCategoryEditSignature(int $supplierId, int $categoryId): string
+    {
+        $rows = DB::table('category_tier_discount')
+            ->where('supplier_id', $supplierId)
+            ->where('category_id', $categoryId)
+            ->orderBy('tier_index')
+            ->get(['tier_index', 'percentage_change', 'is_active']);
+
+        return $this->categoryEditSignatureFromRows($categoryId, $rows);
+    }
+
+    private function categoryEditSignatureFromRows(int $categoryId, $rows): string
+    {
+        $normalizedRows = $rows
+            ->map(fn ($row) => [(int) $row->tier_index, (float) $row->percentage_change, (bool) $row->is_active])
+            ->all();
+
+        return hash('sha256', json_encode([$categoryId, $normalizedRows], JSON_THROW_ON_ERROR));
     }
     
     /**
@@ -493,12 +936,17 @@ class ManageTierDiscounts extends Component
      */
     public function removeCategory($categoryId)
     {
-        $supplierId = Auth::user()->supplier->id;
-        
-        DB::table('category_tier_discount')
-            ->where('supplier_id', $supplierId)
-            ->where('category_id', $categoryId)
-            ->delete();
+        $supplierId = Auth::user()->currentSupplier()->id;
+
+        DB::transaction(function () use ($supplierId, $categoryId): void {
+            $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
+
+            DB::table('category_tier_discount')
+                ->where('supplier_id', $supplierId)
+                ->where('category_id', $categoryId)
+                ->delete();
+            $supplier->increment('tier_pricing_revision');
+        });
         
         $this->loadCategoryTierSettings();
         $this->calculateAffectedPrices();
@@ -517,6 +965,14 @@ class ManageTierDiscounts extends Component
         if (str_starts_with($property, 'tierSettings')) {
             $this->hasChanges = true;
         }
+
+        if (str_starts_with($property, 'currencySettings')) {
+            $this->currencySettingsChanged = true;
+        }
+
+        if ($property === 'pricingCurrency') {
+            $this->currencySettingsChanged = true;
+        }
     }
     
     /**
@@ -534,7 +990,7 @@ class ManageTierDiscounts extends Component
     public function render()
     {
         // دریافت درصدهای پیشفرض تامین‌کننده (برای نمایش در فرم دسته‌بندی)
-        $supplierId = Auth::user()->supplier->id;
+        $supplierId = Auth::user()->currentSupplier()->id;
         $defaultTiers = SupplierTierDiscount::getAllForSupplier($supplierId)
             ->mapWithKeys(function($tier) {
                 return [$tier->tier_index => $tier];

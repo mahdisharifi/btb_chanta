@@ -47,12 +47,17 @@ class CategoryController extends Controller
 
         // Products in this category and subcategories
         $products = \App\Models\Product::query()
+            ->canonical()
             ->whereIn('category_id', $categoryIds)
             ->where('is_active', true)
             ->where('status', 'active')
             ->with([
                 'category:id,name,slug,parent_id',
                 'supplier:id,company_name,brand_name,slug,is_active,logo_path,logo_versions,is_verified',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'galleries' => fn($q) => $q->select(['id', 'product_id', 'file_path', 'is_primary', 'sort_order', 'file_type', 'alt_text', 'versions', 'base_name'])
                     ->where('file_type', 'image')
                     ->orderByDesc('is_primary')
@@ -61,7 +66,7 @@ class CategoryController extends Controller
                 // ✅ اضافه شد: eager loading برای قیمت‌های عمده
                 'productSuppliers' => fn($q) => $q->where('is_active', true)->whereHas('supplier', fn ($s) => $s->where('is_active', true)),
                 'productSuppliers.prices' => fn ($q) => $q->activeAndValid()->with('priceType'),
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
                 // ✅ اضافه شد: قیمت‌های خرده‌فروشی
                 'retailPrices' => fn($q) => $q->select(['id', 'product_id', 'user_id', 'retail_price', 'is_published'])
                     ->where('is_published', true)

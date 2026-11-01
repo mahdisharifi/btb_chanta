@@ -14,6 +14,9 @@ use App\Livewire\Supplier\Pricing;
 use App\Livewire\Supplier\MyProducts;
 use App\Livewire\Supplier\Reports;
 use App\Livewire\Feature\BuyFeature;
+use App\Livewire\Supplier\Branches\ManageBranches;
+use App\Livewire\Supplier\Branches\ProductTransfers;
+use App\Http\Controllers\Supplier\BranchSwitchController;
 
 
 Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_admin', 'check.approval'])
@@ -23,6 +26,10 @@ Route::middleware(['web', 'auth', 'role:supplier|regular_supplier|admin|super_ad
 
         // داشبورد
         Route::get('/dashboard', Dashboard::class)->name('dashboard');
+
+        Route::get('/branches', ManageBranches::class)->name('branches.index');
+        Route::get('/branches/product-transfers', ProductTransfers::class)->name('branches.transfers');
+        Route::post('/branches/switch', BranchSwitchController::class)->name('branches.switch');
 
         // مدیریت محصولات تامین‌کننده
         Route::get('/products', ProductIndex::class)->name('products.index');

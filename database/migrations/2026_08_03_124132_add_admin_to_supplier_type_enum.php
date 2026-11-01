@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
@@ -12,7 +13,9 @@ return new class extends Migration
     public function up(): void
     {
         // تغییر enum type برای اضافه کردن مقدار 'admin'
-        DB::statement("ALTER TABLE suppliers MODIFY COLUMN type ENUM('supplier', 'retailer', 'admin') DEFAULT 'supplier'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE suppliers MODIFY COLUMN type ENUM('supplier', 'retailer', 'admin') DEFAULT 'supplier'");
+        }
     }
 
     /**
@@ -21,6 +24,8 @@ return new class extends Migration
     public function down(): void
     {
         // برگرداندن به حالت قبلی (فقط supplier و retailer)
-        DB::statement("ALTER TABLE suppliers MODIFY COLUMN type ENUM('supplier', 'retailer') DEFAULT 'supplier'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE suppliers MODIFY COLUMN type ENUM('supplier', 'retailer') DEFAULT 'supplier'");
+        }
     }
 };

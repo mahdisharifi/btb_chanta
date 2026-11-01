@@ -56,6 +56,7 @@ class MigrateJsonToEav extends Command
                 $bar->advance();
             }
 
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
             DB::commit();
             $this->newLine();
             $this->info('انتقال داده‌ها با موفقیت انجام شد.');

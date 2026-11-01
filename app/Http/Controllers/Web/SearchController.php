@@ -19,6 +19,7 @@ class SearchController extends Controller
         if (strlen($query) >= 2) {
             // Search products
             $products = Product::query()
+                ->canonical()
                 ->pricedFirst()
                 ->where('is_active', true)
                 ->where('status', 'active')
@@ -27,7 +28,14 @@ class SearchController extends Controller
                       ->orWhere('short_description', 'like', "%{$query}%")
                       ->orWhere('sku', 'like', "%{$query}%");
                 })
-                ->with(['category', 'supplier', 'galleries' => fn($q) => $q->where('is_primary', true)])
+                ->with([
+                    'category', 'supplier',
+                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                    'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                    'galleries' => fn($q) => $q->where('is_primary', true),
+                ])
                 ->latest()
                 ->paginate(16)
                 ->withQueryString();
@@ -36,7 +44,8 @@ class SearchController extends Controller
             $categories = Category::query()
                 ->where('is_active', true)
                 ->where('name', 'like', "%{$query}%")
-                ->withCount(['products' => fn($q) => $q->where('is_active', true)->where('status', 'active')])
+                ->withCount(['products' => fn($q) => $q->where('is_active', true)->where('status', 'active')
+                    ->canonical()])
                 ->take(5)
                 ->get();
         }

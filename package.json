@@ -24,7 +24,9 @@
         "@codemirror/view": "^6.43.0",
         "@splidejs/splide": "^4.1.4",
         "codemirror": "^6.0.2",
+        "laravel-echo": "^2.2.6",
         "mermaid": "^11.15.0",
+        "pusher-js": "^8.4.0",
         "puppeteer": "^25.1.0",
         "vazirmatn": "^33.0.3"
     }

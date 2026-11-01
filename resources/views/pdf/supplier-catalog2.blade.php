@@ -90,7 +90,9 @@
             font-size: 10px;
             color: #4b5563;
             text-align: right;
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
 
@@ -153,7 +155,6 @@
     </style>
 </head>
 <body>
-
 {{-- فراخوانی کاور در صورت فعال بودن تنظیمات --}}
 @if($showCoverPage)
 @switch($coverTheme ?? 'default')
@@ -166,6 +167,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
         @break
     
@@ -178,6 +181,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
         @break
     
@@ -190,6 +195,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
         @break
     
@@ -204,6 +211,8 @@
                 'catalogTitle'     => $template->title ?? null,
                 'supplier'         => $supplier ?? null,
                 'contactPhones'    => $contactPhones ?? [],
+                'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
                 'settings'         => $settings ?? [],
             ])
         @else
@@ -215,6 +224,8 @@
                 'catalogTitle'     => $template->title ?? null,
                 'supplier'         => $supplier ?? null,
                 'contactPhones'    => $contactPhones ?? [],
+                'exchangeRateBasis' => $exchangeRateBasis ?? null,
+                'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
                 'settings'         => $settings ?? [],
             ])
         @endif
@@ -229,6 +240,8 @@
             'catalogTitle'     => $template->title ?? null,
             'supplier'         => $supplier ?? null,
             'contactPhones'    => $contactPhones ?? [],
+            'exchangeRateBasis' => $exchangeRateBasis ?? null,
+            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
         ])
 @endswitch
 
@@ -250,6 +263,17 @@
 <pagebreak />
 @endif
 
+@else
+    @include('pdf.partials.exchange-rate-basis-summary', [
+        'exchangeRateBasis' => $exchangeRateBasis ?? null,
+        'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
+    ])
+@endif
+
+@if(($supplier->type ?? null) === 'supplier')
+<div style="text-align: right; color: #4b5563; font-size: 10px; margin: 0 0 10px;">
+    {{ $supplier->company_name }} — {{ $supplier->branchLabel() }}
+</div>
 @endif
 
 @forelse($groupedProducts as $categoryName => $products)
@@ -291,6 +315,10 @@ $restChunks = array_slice($productChunks, 1);
             'product' => $product,
             'selectedPriceTypes' => $selectedPriceTypes,
             'includeWarranty' => $includeWarranty ?? false,
+            'catalogBranchPriceRows' => $catalogBranchPriceRows,
+            'priceTypesById' => $priceTypesById,
+            'displayCurrencyCode' => $displayCurrencyCode,
+            'priceFormatter' => $priceFormatter,
         ])
         @endforeach
 
@@ -311,6 +339,10 @@ $restChunks = array_slice($productChunks, 1);
             'product' => $product,
             'selectedPriceTypes' => $selectedPriceTypes,
             'includeWarranty' => $includeWarranty ?? false,
+            'catalogBranchPriceRows' => $catalogBranchPriceRows,
+            'priceTypesById' => $priceTypesById,
+            'displayCurrencyCode' => $displayCurrencyCode,
+            'priceFormatter' => $priceFormatter,
         ])
         @endforeach
 

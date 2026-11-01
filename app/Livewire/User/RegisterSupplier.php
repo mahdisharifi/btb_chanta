@@ -313,7 +313,7 @@ class RegisterSupplier extends Component
                     session()->flash('message', 'اطلاعات فروشگاه با موفقیت به‌روزرسانی شد.');
                 }
 
-                $this->supplier->update($data);
+                DB::transaction(fn () => $this->supplier->update($data));
                 $logoSaved = true;
             } else {
                 // حالت ثبت‌نام جدید

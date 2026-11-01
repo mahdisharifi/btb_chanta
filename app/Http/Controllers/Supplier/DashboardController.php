@@ -4,22 +4,23 @@ namespace App\Http\Controllers\Supplier;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
-use App\Models\Supplier;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
     public function index(): View
     {
-        $user = auth()->user();
-        $supplier = Supplier::where('user_id', $user->id)->firstOrFail();
+        $supplier = auth()->user()->currentSupplier();
 
         $stats = [
             'total_products' => Product::where('supplier_id', $supplier->id)->count(),
             'active_products' => Product::where('supplier_id', $supplier->id)->where('is_active', true)->where('status', 'active')->count(),
             'pending_products' => Product::where('supplier_id', $supplier->id)->where('status', 'pending_review')->count(),
             'draft_products' => Product::where('supplier_id', $supplier->id)->where('status', 'draft')->count(),
-            'total_views' => Product::where('supplier_id', $supplier->id)->sum('view_count'),
+            'total_views' => Product::query()->whereIn(
+                'id',
+                Product::query()->where('supplier_id', $supplier->id)->select('family_product_id')->distinct()
+            )->sum('view_count'),
         ];
 
         $recentProducts = Product::query()

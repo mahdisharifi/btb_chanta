@@ -173,7 +173,7 @@ class Create extends Component
         $finalSku = $this->generateUniqueSku();
 
         // دریافت شناسه تامین‌کننده لاگین شده
-        $supplierId = auth()->user()->supplier->id;
+        $supplierId = auth()->user()->currentSupplier()->id;
 
         // ایجاد محصول
         $product = Product::create([
@@ -192,6 +192,7 @@ class Create extends Component
         $validAttributeValues = array_filter($this->attributeValues);
         if (!empty($validAttributeValues)) {
             $product->attributeValues()->sync($validAttributeValues);
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
         }
 
         // ذخیره تصویر اصلی

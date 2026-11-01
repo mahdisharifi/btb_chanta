@@ -21,17 +21,18 @@ class MyProducts extends Component
 
     public function deleteProduct($productId)
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         if ($supplier) {
             $supplier->products()->detach($productId);
+            app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateSupplier((int) $supplier->id);
             session()->flash('message', 'محصول با موفقیت از لیست شما حذف شد.');
         }
     }
 
     public function render()
     {
-        $supplier = Auth::user()->supplier;
+        $supplier = Auth::user()->currentSupplier();
 
         $products = $supplier->products()
             ->when($this->search, function ($query) {

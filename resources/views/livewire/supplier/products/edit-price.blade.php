@@ -700,11 +700,9 @@
                                                     @php
                                                         $isEnabled = $tierEnabled[$tierIndex] ?? true;
                                                         $mode = $tierPriceMode[$tierIndex] ?? 'default';
-                                                        $percentage = (float)($tierPercentages[$tierIndex] ?? 0);
-                                                        
-                                                        if ($mode === 'default') {
-                                                            $percentage = $defaultPercentage;
-                                                        }
+                                                        $percentage = $mode === 'default'
+                                                            ? (float) $this->getEffectiveTierPercentageForUI((int) $tierIndex)['percentage']
+                                                            : (float) ($tierPercentages[$tierIndex] ?? 0);
                                                         
                                                         if ($tierIndex == 1) {
                                                             $percentage = 0;
@@ -876,6 +874,12 @@
                             $cashPriceType = $priceTypes->firstWhere('code', 'cash');
                             $checkPriceType = $priceTypes->firstWhere('code', 'check');
                             $warrantyPriceType = $priceTypes->firstWhere('code', 'warranty');
+                            $cashCurrencyLabel = match ($priceCurrency) {
+                                'USD' => 'دلار',
+                                'CNY' => 'یوان',
+                                'AED' => 'درهم',
+                                default => 'تومان',
+                            };
                             
                             // ✅ ترتیب نمایش: کارتن (0) اول، سپس بقیه
                             $orderedTiers = collect($quantityTiers);
@@ -916,7 +920,7 @@
                                                     نوع قیمت
                                                 </th>
                                                 <th class="px-6 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-b-2 border-gray-300 dark:border-gray-600">
-                                                    قیمت (تومان)
+                                                    {{ $priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex ? 'مبلغ پایه (' . $cashCurrencyLabel . ')' : 'قیمت نهایی (تومان)' }}
                                                 </th>
                                             </tr>
                                         </thead>
@@ -927,42 +931,36 @@
                                                 <td class="sticky right-0 z-10 px-4 py-4 border border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-900/20 font-medium">
                                                     <div class="flex items-center gap-2">
                                                         <x-heroicon-s-banknotes class="w-5 h-5 text-green-600 dark:text-green-400"/>
-                                                        <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">نقدی</span>
+                                                        <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                            @if($priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex)
+                                                                قیمت نقدی ({{ $cashCurrencyLabel }})
+                                                            @elseif($priceCurrency !== 'TOM')
+                                                                قیمت نقدی محاسبه‌شده (تومان)
+                                                            @else
+                                                                نقدی
+                                                            @endif
+                                                        </span>
                                                     </div>
                                                 </td>
                                                 <td class="px-6 py-4 border border-gray-200 dark:border-gray-700">
-                                                    @php
-                                                        // ✅ قیمت نقدی فقط برای تیراژ مرجع قابل ویرایش است (در حالت auto)
-                                                        $isCashDisabled = $autoCalculateTiers && $tierIndex !== $referenceTierIndex;
-                                                    @endphp
-                                                    
-                                                    <div class="relative max-w-xs">
-                                                        <input type="text"
-                                                               wire:ignore
-                                                               x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price', true)"
-                                                               x-effect="refresh(state)"
-                                                               x-on:input="input($event)"
-                                                               x-on:blur="sync()"
-                                                               value="{{ $priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? '' }}"
-                                                               aria-label="قیمت نقدی رده {{ $tierIndex + 1 }}"
-                                                               placeholder="قیمت نقدی"
-                                                               inputmode="numeric"
-                                                               onwheel="this.blur()"
-                                                               x-bind:disabled="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
-                                                               x-bind:readonly="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
-                                                               x-bind:class="($wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800 pr-10 pl-16' : 'px-4 pl-16'"
-                                                               class="block w-full py-2.5 text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 focus:border-green-500 focus:ring-green-500 rounded-md shadow-sm">
-                                                        <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                                                            <span class="text-xs text-gray-500 dark:text-gray-400">تومان</span>
-                                                        </div>
-                                                        <div x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                                <x-heroicon-s-lock-closed class="w-4 h-4 text-gray-400"/>
-                                                            </div>
+                                                    <div class="max-w-xs">
+                                                        <x-supplier.currency-price-input
+                                                            :tierIndex="$tierIndex"
+                                                            :referenceTierIndex="$referenceTierIndex"
+                                                            :cashPriceTypeId="$cashPriceType->id"
+                                                            :priceMatrix="$priceMatrix"
+                                                            :autoCalculateTiers="$autoCalculateTiers"
+                                                            :priceCurrency="$priceCurrency"
+                                                            :foreignPriceRebasePending="$foreignPriceRebasePending"
+                                                            :foreignPriceAmount="$foreignPriceAmount"
+                                                            :foreignPricePreviewValid="$foreignPricePreviewValid"
+                                                            :latestExchangeRate="$latestExchangeRate"
+                                                            :latestExchangeError="$latestExchangeError"
+                                                            :latestExchangeFetchedAt="$latestExchangeFetchedAt"
+                                                            :latestExchangeSource="$latestExchangeSource"
+                                                            :foreignPriceUpdatedAt="$foreignPriceUpdatedAt"
+                                                            :foreignPriceLastError="$foreignPriceLastError" />
                                                     </div>
-                                                    <p x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
-                                                            <x-heroicon-o-information-circle class="w-3.5 h-3.5"/>
-                                                            محاسبه خودکار از تیراژ مرجع
-                                                    </p>
                                                 </td>
                                             </tr>
                                             
@@ -1183,33 +1181,37 @@
                                         
                                         {{-- نقدی --}}
                                         <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                                            <label class="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
+                                            <div class="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
                                                 <x-heroicon-s-banknotes class="w-5 h-5 text-green-600 dark:text-green-400"/>
-                                                قیمت نقدی
+                                                @if($priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex)
+                                                    قیمت نقدی ({{ $cashCurrencyLabel }})
+                                                @elseif($priceCurrency !== 'TOM')
+                                                    قیمت نقدی محاسبه‌شده (تومان)
+                                                @else
+                                                    قیمت نقدی
+                                                @endif
                                                 <span x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
                                                         <x-heroicon-s-lock-closed class="w-3 h-3"/>
                                                         قفل (محاسبه خودکار)
                                                     </span>
-                                            </label>
-                                            <input type="text"
-                                                   wire:ignore
-                                                   x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceType->id }}.price', true)"
-                                                   x-effect="refresh(state)"
-                                                   x-on:input="input($event)"
-                                                   x-on:blur="sync()"
-                                                   value="{{ $priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? '' }}"
-                                                   aria-label="قیمت نقدی رده {{ $tierIndex + 1 }}"
-                                                   placeholder="قیمت نقدی"
-                                                   inputmode="numeric"
-                                                   onwheel="this.blur()"
-                                                   x-bind:disabled="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
-                                                   x-bind:readonly="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
-                                                   x-bind:class="($wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
-                                                   class="block w-full px-4 py-3 text-base border-gray-300 dark:border-gray-600 dark:bg-gray-900 rounded-lg">
-                                            <p x-show="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex" x-cloak class="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
-                                                    <x-heroicon-o-information-circle class="w-3.5 h-3.5"/>
-                                                    این قیمت به صورت خودکار از تیراژ مرجع محاسبه می‌شود
-                                            </p>
+                                            </div>
+                                            <x-supplier.currency-price-input
+                                                :tierIndex="$tierIndex"
+                                                :referenceTierIndex="$referenceTierIndex"
+                                                :cashPriceTypeId="$cashPriceType->id"
+                                                :priceMatrix="$priceMatrix"
+                                                :autoCalculateTiers="$autoCalculateTiers"
+                                                :priceCurrency="$priceCurrency"
+                                                :foreignPriceRebasePending="$foreignPriceRebasePending"
+                                                :foreignPriceAmount="$foreignPriceAmount"
+                                                :foreignPricePreviewValid="$foreignPricePreviewValid"
+                                                :latestExchangeRate="$latestExchangeRate"
+                                                :latestExchangeError="$latestExchangeError"
+                                                :latestExchangeFetchedAt="$latestExchangeFetchedAt"
+                                                :latestExchangeSource="$latestExchangeSource"
+                                                :foreignPriceUpdatedAt="$foreignPriceUpdatedAt"
+                                                :foreignPriceLastError="$foreignPriceLastError"
+                                                :mobile="true" />
                                         </div>
                                         
                                         {{-- چک‌ها --}}

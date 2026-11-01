@@ -40,7 +40,7 @@ class Index extends Component
     #[Computed]
     public function supplier()
     {
-        return Supplier::where('user_id', Auth::id())->firstOrFail();
+        return Auth::user()->currentSupplier();
     }
 
     #[Computed]
@@ -105,17 +105,9 @@ class Index extends Component
     public function deleteProduct($productId)
     {
         try {
-            // پیدا کردن محصول
-            $product = \App\Models\Product::findOrFail($productId);
-
-            // 1. بررسی مالکیت
-            if ($product->supplier_id !== $this->supplier->id) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'شما دسترسی لازم برای حذف این محصول را ندارید. (آیدی تامین‌کننده شما: ' . $this->supplier->id . ' - آیدی مالک محصول: ' . $product->supplier_id . ')'
-                ]);
-                return;
-            }
+            $product = Product::query()
+                ->where('supplier_id', $this->supplier->id)
+                ->findOrFail($productId);
 
             // 2. بررسی وضعیت پیش‌نویس
             if ($product->status !== \App\Enums\ProductStatus::DRAFT) {
@@ -135,9 +127,9 @@ class Index extends Component
             // 3. بررسی عدم قیمت‌گذاری توسط سایر تامین‌کنندگان
             $otherSuppliersCount = $product->suppliers()->where('suppliers.id', '!=', $this->supplier->id)->count();
             if ($otherSuppliersCount > 0) {
-               dd('notify', [
+                $this->dispatch('notify', [
                     'type' => 'error',
-                    'message' => 'این محصول توسط ' . $otherSuppliersCount . ' تامین‌کننده دیگر قیمت‌گذاری شده است و امکان حذف آن وجود ندارد.'
+                    'message' => 'این محصول در پیشنهاد فروش دیگری هم استفاده می‌شود و امکان حذف آن وجود ندارد.'
                 ]);
                 return;
             }

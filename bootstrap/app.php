@@ -25,6 +25,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/outsourcing.php'));
         },
     )
+    ->withBroadcasting(
+        __DIR__ . '/../routes/channels.php',
+        ['middleware' => ['web', 'auth']],
+    )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->prepend(\App\Http\Middleware\ConcealForbiddenResponses::class);
         // The framework validates this signed cookie before the web middleware runs.
