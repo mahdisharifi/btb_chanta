@@ -98,7 +98,7 @@ class ProductCompletionReviewedMediaFinalizationTest extends TestCase
         $rejectedAdd = ProductCompletionMedia::factory()->create(['task_id' => $task->id, 'status' => ProductCompletionMediaStatus::UNDER_REVIEW]);
         $task->update(['initial_snapshot_json' => app(ProductCompletionSnapshotService::class)->build($task->product->refresh(), $task->scope_json)]);
         $payload = ['schema_version' => 1, 'gallery' => ['items' => [
-            ['product_gallery_id' => $baseline->id, 'action' => 'remove', 'sort_order' => null, 'is_primary' => false],
+            ['product_gallery_id' => $baseline->id, 'action' => 'keep', 'sort_order' => 1, 'is_primary' => true],
             ['media_public_id' => $acceptedAdd->public_id, 'action' => 'add', 'sort_order' => 2, 'is_primary' => false],
             ['media_public_id' => $rejectedAdd->public_id, 'action' => 'add', 'sort_order' => 3, 'is_primary' => false],
         ]]];
@@ -106,9 +106,9 @@ class ProductCompletionReviewedMediaFinalizationTest extends TestCase
             'task_id' => $task->id, 'submitted_by' => $contractor->id, 'payload_json' => $payload,
             'payload_hash' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
         ]);
-        $task->update(['last_submission_id' => $submission->id]);
-        ProductCompletionSubmissionMedia::query()->createMany([
-            ['submission_id' => $submission->id, 'media_id' => null, 'product_gallery_id' => $baseline->id, 'action' => 'remove', 'sort_order' => null, 'is_primary' => false, 'is_seo_image' => true, 'review_status' => 'pending'],
+        $task->update(['last_submission_id' => $submission->id, 'status' => ProductCompletionTaskStatus::SUBMITTED, 'submitted_at' => now()]);
+        $submission->mediaItems()->createMany([
+            ['submission_id' => $submission->id, 'media_id' => null, 'product_gallery_id' => $baseline->id, 'action' => 'keep', 'sort_order' => 1, 'is_primary' => true, 'is_seo_image' => true, 'review_status' => 'pending'],
             ['submission_id' => $submission->id, 'media_id' => $acceptedAdd->id, 'product_gallery_id' => null, 'action' => 'add', 'sort_order' => 2, 'is_primary' => false, 'is_seo_image' => false, 'review_status' => 'pending'],
             ['submission_id' => $submission->id, 'media_id' => $rejectedAdd->id, 'product_gallery_id' => null, 'action' => 'add', 'sort_order' => 3, 'is_primary' => false, 'is_seo_image' => false, 'review_status' => 'pending'],
         ]);
