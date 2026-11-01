@@ -36,6 +36,32 @@ class PercentageUpdate extends Component
     public ?int $batchId = null;
     public string $notice = '';
     public array $priceErrors = [];
+    public string $search = '';
+    public string $statusFilter = 'all';
+    public int $perPage = 15;
+
+    protected array $queryString = [
+        'search' => ['except' => ''],
+        'statusFilter' => ['except' => 'all'],
+        'perPage' => ['except' => 15],
+    ];
+
+    public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStatusFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedPerPage(int|string $value): void
+    {
+        $allowed = [15, 30, 50];
+        $this->perPage = in_array((int) $value, $allowed, true) ? (int) $value : 15;
+        $this->resetPage();
+    }
 
     public function mount(): void
     {
@@ -403,26 +429,38 @@ class PercentageUpdate extends Component
         $this->percentage = '';
         $this->notice = 'پیش‌نویس بروزرسانی لغو شد.';
         $this->priceErrors = [];
+        $this->search = '';
+        $this->statusFilter = 'all';
+        $this->perPage = 15;
         $this->resetPage();
         $this->resetErrorBag();
     }
 
     public function render()
     {
-        $items = new LengthAwarePaginator([], 0, 15);
+        $items = new LengthAwarePaginator([], 0, $this->perPage);
         $totalProducts = 0;
         $totalPrices = 0;
 
         if ($this->batchId) {
             $batch = $this->ownedBatch();
-            $items = $batch->items()
+            $itemsQuery = $batch->items()
                 ->with('productSupplier.product:id,title')
-                ->orderBy('id')
-                ->paginate(15);
+                ->when(trim($this->search) !== '', function ($query): void {
+                    $term = trim($this->search);
+                    $query->whereHas('productSupplier', function ($productSupplierQuery) use ($term): void {
+                        $productSupplierQuery->where('sku', 'like', '%' . $term . '%')
+                            ->orWhereHas('product', fn ($productQuery) => $productQuery->where('title', 'like', '%' . $term . '%'));
+                    });
+                })
+                ->when($this->statusFilter === 'active', fn ($query) => $query->where('new_is_active', true))
+                ->when($this->statusFilter === 'inactive', fn ($query) => $query->where('new_is_active', false))
+                ->orderBy('id');
+            $items = $itemsQuery->paginate($this->perPage);
             $totalProducts = $batch->items()->count();
-            $totalPrices = $batch->items()->get(['new_prices'])->sum(
-                fn (PriceUpdateItem $item): int => count($item->new_prices ?? [])
-            );
+            $totalPrices = (int) $batch->items()
+                ->selectRaw('COALESCE(SUM(JSON_LENGTH(new_prices)), 0) as aggregate_total')
+                ->value('aggregate_total');
         }
 
         return view('livewire.supplier.fast-pricing.percentage-update', compact(

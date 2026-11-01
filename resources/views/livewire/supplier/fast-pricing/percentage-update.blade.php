@@ -132,9 +132,42 @@
             </div>
         </div>
 
+        <section class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm" aria-labelledby="percentage-filters-heading">
+            <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <h2 id="percentage-filters-heading" class="font-bold text-gray-900">جستجو و نمایش کالاها</h2>
+                <p class="text-xs text-gray-500">نتایج همین پیش‌نویس فیلتر می‌شوند.</p>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(160px,auto)_minmax(150px,auto)] md:items-end">
+                <div>
+                    <label for="percentage-search" class="mb-1 block text-sm font-medium text-gray-700">جستجو با نام کالا یا SKU</label>
+                    <input id="percentage-search" type="search" wire:model.live.debounce.350ms="search"
+                           placeholder="مثلاً پاوربانک یا SKU"
+                           class="min-h-11 w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                </div>
+                <div>
+                    <label for="percentage-status" class="mb-1 block text-sm font-medium text-gray-700">وضعیت کالا</label>
+                    <select id="percentage-status" wire:model.live="statusFilter"
+                            class="min-h-11 w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="all">همه</option>
+                        <option value="active">فعال</option>
+                        <option value="inactive">غیرفعال</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="percentage-per-page" class="mb-1 block text-sm font-medium text-gray-700">تعداد در هر صفحه</label>
+                    <select id="percentage-per-page" wire:model.live="perPage"
+                            class="min-h-11 w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="15">۱۵ مورد</option>
+                        <option value="30">۳۰ مورد</option>
+                        <option value="50">۵۰ مورد</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
         <div class="space-y-4">
             @forelse($items as $item)
-                <article wire:key="percentage-item-{{ $item->id }}" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                <article wire:key="percentage-item-{{ $item->id }}" class="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                     <header class="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div class="min-w-0">
                             <h3 class="break-words font-bold text-gray-900">{{ $item->productSupplier?->product?->title ?? 'کالای نامشخص' }}</h3>
@@ -160,8 +193,8 @@
                             @php($newPrice = (int) ($priceData['price'] ?? 0))
                             @php($fieldErrorKey = $item->id . '-' . $key)
                             @php($fieldError = $priceErrors[$fieldErrorKey] ?? null)
-                            <div class="grid grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(180px,1fr)_minmax(140px,auto)_minmax(220px,auto)] md:items-center">
-                                <div>
+                            <div class="grid min-w-0 grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_minmax(140px,auto)_minmax(0,220px)] md:items-center">
+                                <div class="min-w-0">
                                     <p class="text-sm font-semibold text-gray-800">{{ $priceData['tier_name'] ?? 'تیراژ نامشخص' }}</p>
                                     <p class="mt-1 text-xs text-gray-500">
                                         {{ $priceData['price_type_name'] ?? 'نوع قیمت نامشخص' }}
@@ -173,12 +206,12 @@
                                         @endif
                                     </p>
                                 </div>
-                                <div class="rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                                <div class="min-w-0 rounded-lg bg-gray-50 px-3 py-2 text-sm">
                                     <span class="text-gray-500">قیمت قبلی:</span>
                                     <strong class="mr-1 text-gray-800">{{ number_format($oldPrice) }}</strong>
                                     <span class="text-xs text-gray-500">تومان</span>
                                 </div>
-                                <div>
+                                <div class="min-w-0">
                                     <label for="price-{{ $item->id }}-{{ $loop->index }}" class="mb-1 block text-xs font-medium text-gray-600">
                                         قیمت جدید (تومان)
                                         <span class="sr-only">برای {{ $item->productSupplier?->product?->title ?? 'کالا' }}، {{ $priceData['tier_name'] ?? 'تیراژ نامشخص' }}، {{ $priceData['price_type_name'] ?? 'نوع قیمت نامشخص' }}</span>
@@ -205,7 +238,10 @@
         </div>
 
         @if($items->hasPages())
-            <div class="rounded-xl border border-gray-200 bg-white p-4">{{ $items->links() }}</div>
+            <div id="percentage-pagination" class="scroll-mt-24 rounded-xl border border-gray-200 bg-white p-4">
+                <div class="mb-3 text-sm text-gray-600">نمایش {{ number_format($items->firstItem()) }} تا {{ number_format($items->lastItem()) }} از {{ number_format($items->total()) }} نتیجه</div>
+                {{ $items->links() }}
+            </div>
         @endif
     @endif
 </div>

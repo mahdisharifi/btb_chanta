@@ -606,6 +606,7 @@ class ProductCompletionMediaService
             throw ValidationException::withMessages(['submission' => 'گالری تأییدشده باید دقیقاً یک تصویر اصلی داشته باشد.']);
         }
         $approvedPrimary = $primaryItems->first();
+        $approvedPrimaryGalleryId = null;
         $product->galleries()->where('file_type', 'image')->update([
             'is_primary' => false,
         ]);
@@ -619,11 +620,14 @@ class ProductCompletionMediaService
             if ($item->action === 'keep') {
                 $item->productGallery?->update([
                     'sort_order' => $item->sort_order,
-                    'is_primary' => ($approvedPrimary['action'] ?? null) === 'keep'
-                        && (int) ($approvedPrimary['product_gallery_id'] ?? 0) === (int) $item->product_gallery_id,
+                    'is_primary' => false,
                     'title' => $item->title,
                     'alt_text' => $item->alt_text,
                 ]);
+                if (($approvedPrimary['action'] ?? null) === 'keep'
+                    && (int) ($approvedPrimary['product_gallery_id'] ?? 0) === (int) $item->product_gallery_id) {
+                    $approvedPrimaryGalleryId = (int) $item->product_gallery_id;
+                }
                 continue;
             }
 
@@ -640,14 +644,17 @@ class ProductCompletionMediaService
                 'title' => $item->title,
                 'alt_text' => $item->alt_text,
                 'sort_order' => $item->sort_order,
-                'is_primary' => ($approvedPrimary['action'] ?? null) === 'add'
-                    && (string) ($approvedPrimary['media_public_id'] ?? '') === (string) $media->public_id,
+                'is_primary' => false,
                 'file_size' => $media->file_size,
                 'mime_type' => 'image/webp',
                 'width' => $media->width,
                 'height' => $media->height,
                 'versions' => $media->versions_json,
             ]);
+            if (($approvedPrimary['action'] ?? null) === 'add'
+                && (string) ($approvedPrimary['media_public_id'] ?? '') === (string) $media->public_id) {
+                $approvedPrimaryGalleryId = (int) $gallery->getKey();
+            }
             $media->forceFill([
                 'published_product_gallery_id' => $gallery->getKey(),
                 'status' => ProductCompletionMediaStatus::PUBLISHED,
@@ -655,7 +662,18 @@ class ProductCompletionMediaService
             ])->save();
         }
 
-        if ($product->galleries()->where('file_type', 'image')->where('is_primary', true)->count() !== 1) {
+        if ($approvedPrimaryGalleryId === null || $product->galleries()
+            ->where('file_type', 'image')
+            ->whereKey($approvedPrimaryGalleryId)
+            ->update(['is_primary' => true]) !== 1) {
+            throw new ProductCompletionMediaException('\u062a\u0635\u0648\u06cc\u0631 \u0627\u0635\u0644\u06cc \u062a\u0623\u06cc\u06cc\u062f\u0634\u062f\u0647 \u0628\u0647 \u06af\u0627\u0644\u0631\u06cc \u0645\u0646\u062a\u0634\u0631\u0634\u062f\u0647 \u0648\u0635\u0644 \u0646\u0634\u062f.');
+        }
+
+        $primaryGalleryIds = $product->galleries()
+            ->where('file_type', 'image')
+            ->where('is_primary', true)
+            ->pluck('id');
+        if ($primaryGalleryIds->count() !== 1 || (int) $primaryGalleryIds->first() !== $approvedPrimaryGalleryId) {
             throw new ProductCompletionMediaException('انتشار گالری باید دقیقاً یک تصویر اصلی داشته باشد.');
         }
     }

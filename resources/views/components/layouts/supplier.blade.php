@@ -108,7 +108,7 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col h-screen overflow-hidden">
+    <main class="flex-1 flex flex-col min-h-screen">
 
         <!-- Topbar -->
         <header class="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between px-4 sm:px-6 z-10">
@@ -148,7 +148,7 @@
         </header>
 
         <!-- Page Content -->
-        <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div class="flex-1 p-4 sm:p-6 lg:p-8">
             @if (session()->has('info'))
             <div class="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg">
                 {{ session('info') }}
