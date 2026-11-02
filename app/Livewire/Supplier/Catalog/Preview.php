@@ -423,7 +423,6 @@ class Preview extends Component
                 $branchLabels[(int) $branch->id] = $label;
             }
         }
-<<<<<<< HEAD
         
         // دریافت timestamp آخرین تغییرات برای تشخیص نیاز به رفرش کش
         // این timestampها باعث می‌شوند وقتی داده‌ها تغییر کنند، کش خودکار رفرش شود
@@ -450,8 +449,6 @@ class Preview extends Component
             'attributes_updated' => $attributesUpdatedAt,
             'images_updated' => $imagesUpdatedAt,
         ]));
-=======
->>>>>>> origin/codex/fx-branch-integration
         
         // تلاش برای دریافت از کش
         $cached = Cache::get($cacheKey);
