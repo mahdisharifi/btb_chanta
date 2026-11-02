@@ -60,10 +60,20 @@ class ForeignCurrencyPriceService
             ->whereNotNull('next_update_at')
             ->where('next_update_at', '<=', now())
             ->whereIn('currency', self::CURRENCIES)
-            ->whereHas('supplier', fn ($query) => $query->whereColumn(
-                'suppliers.pricing_currency',
-                'supplier_exchange_rate_settings.currency'
-            ));
+            ->whereHas('supplier', function ($query): void {
+                if ($query->getQuery()->getConnection()->getDriverName() === 'mysql') {
+                    $query->whereRaw(
+                        'suppliers.pricing_currency COLLATE utf8mb4_unicode_ci = supplier_exchange_rate_settings.currency COLLATE utf8mb4_unicode_ci'
+                    );
+
+                    return;
+                }
+
+                $query->whereColumn(
+                    'suppliers.pricing_currency',
+                    'supplier_exchange_rate_settings.currency'
+                );
+            });
 
         if (!$dueSettings->exists()) {
             return 0;

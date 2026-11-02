@@ -263,7 +263,7 @@
                             <fieldset class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4" dir="rtl"
                                 @error('catalogBranchScope') aria-invalid="true" aria-describedby="catalogBranchScope-error" @enderror>
                                 <legend class="px-2 font-bold text-gray-800">شعبه‌های داخل خروجی کاتالوگ</legend>
-                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                     <label for="catalogBranchSingle" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500">
                                         <input id="catalogBranchSingle" type="radio" wire:model.live="catalogBranchScope" value="single" @error('catalogBranchScope') aria-describedby="catalogBranchScope-error" @enderror class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         <span class="text-sm font-medium text-gray-800">یک شعبه</span>
@@ -271,6 +271,10 @@
                                     <label for="catalogBranchAll" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500">
                                         <input id="catalogBranchAll" type="radio" wire:model.live="catalogBranchScope" value="all" @error('catalogBranchScope') aria-describedby="catalogBranchScope-error" @enderror class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         <span class="text-sm font-medium text-gray-800">شعبهٔ اصلی و همهٔ شعب فعال</span>
+                                    </label>
+                                    <label for="catalogBranchSelected" class="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 focus-within:ring-2 focus-within:ring-indigo-500">
+                                        <input id="catalogBranchSelected" type="radio" wire:model.live="catalogBranchScope" value="selected" @error('catalogBranchScope') aria-describedby="catalogBranchScope-error" @enderror class="h-5 w-5 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="text-sm font-medium text-gray-800">ترکیب دلخواه شعب</span>
                                     </label>
                                 </div>
                                 @if($this->availableCatalogBranches->count() < 2)
@@ -290,6 +294,25 @@
                                             @endforeach
                                         </select>
                                         <x-input-error id="catalogBranchSupplierId-error" role="alert" :messages="$errors->get('catalogBranchSupplierId')" class="mt-2" />
+                                    </div>
+                                @elseif($catalogBranchScope === 'selected')
+                                    <div class="space-y-2">
+                                        <p id="catalogBranchSupplierIds-help" class="text-sm leading-6 text-gray-600">
+                                            شعبه‌های موردنظر را انتخاب کن؛ انتخاب شعبهٔ اصلی اجباری نیست.
+                                        </p>
+                                        <div class="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 sm:grid-cols-2" role="group" aria-describedby="catalogBranchSupplierIds-help">
+                                            @foreach($this->availableCatalogBranches as $catalogBranch)
+                                                <label for="catalogBranchSupplierId-{{ $catalogBranch->id }}" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-gray-100 p-3 hover:border-indigo-200 hover:bg-indigo-50/50 focus-within:ring-2 focus-within:ring-indigo-500">
+                                                    <input id="catalogBranchSupplierId-{{ $catalogBranch->id }}" type="checkbox" wire:model.live="catalogBranchSupplierIds" value="{{ $catalogBranch->id }}"
+                                                        @error('catalogBranchSupplierIds') aria-invalid="true" aria-describedby="catalogBranchSupplierIds-error" @enderror
+                                                        class="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                                    <span class="text-sm text-gray-800">
+                                                        {{ $catalogBranch->selected_city_native_name ?: ($catalogBranch->selected_city_name ?: 'شهر ثبت نشده') }} · {{ $catalogBranch->branchLabel() }}
+                                                    </span>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                        <x-input-error id="catalogBranchSupplierIds-error" role="alert" :messages="$errors->get('catalogBranchSupplierIds')" />
                                     </div>
                                 @else
                                     <p class="text-sm leading-6 text-gray-700">

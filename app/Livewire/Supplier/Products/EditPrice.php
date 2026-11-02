@@ -125,28 +125,63 @@ class EditPrice extends Component
     {
         $supplier = Auth::user()->currentSupplier();
         $supplierId = $supplier->id;
-        $this->product = Product::query()
-            ->whereKey($product->id)
-            ->where(function ($query) use ($supplierId): void {
-                $query->where('supplier_id', $supplierId)
-                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplierId));
-            })
-            ->firstOrFail();
 
-        $this->productSupplier = ProductSupplier::query()
-            ->where('product_id', $this->product->id)
-            ->where('supplier_id', $supplierId)
-            ->first();
+        if ($supplier->isBranch()) {
+            $this->product = Product::query()
+                ->whereKey($product->id)
+                ->where(function ($query) use ($supplierId): void {
+                    $query->where('supplier_id', $supplierId)
+                        ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplierId));
+                })
+                ->firstOrFail();
 
-        if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
-            $this->productSupplier = ProductSupplier::create([
-                'product_id' => $this->product->id,
-                'supplier_id' => $supplierId,
-                'is_active' => false,
-            ]);
+            $this->productSupplier = ProductSupplier::query()
+                ->where('product_id', $this->product->id)
+                ->where('supplier_id', $supplierId)
+                ->first();
+
+            if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
+                $this->productSupplier = ProductSupplier::create([
+                    'product_id' => $this->product->id,
+                    'supplier_id' => $supplierId,
+                    'is_active' => false,
+                ]);
+            }
+
+            abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
+        } else {
+            $this->product = $product;
+            $this->productSupplier = ProductSupplier::withTrashed()
+                ->where('product_id', $this->product->id)
+                ->where('supplier_id', $supplierId)
+                ->first();
+
+            $isAlreadyOwned = (int) $this->product->supplier_id === (int) $supplierId;
+            $hasActiveOffer = $this->productSupplier && !$this->productSupplier->trashed();
+            if (!$isAlreadyOwned && !$hasActiveOffer) {
+                abort_unless(
+                    Product::query()
+                        ->canonical()
+                        ->where('status', \App\Enums\ProductStatus::ACTIVE->value)
+                        ->whereKey($this->product->id)
+                        ->exists(),
+                    404
+                );
+            }
+
+            if ($this->productSupplier?->trashed()) {
+                $this->productSupplier = $this->restoreProductSupplierDraft($this->productSupplier);
+            } elseif (!$this->productSupplier) {
+                $this->productSupplier = ProductSupplier::withTrashed()->firstOrCreate(
+                    ['product_id' => $this->product->id, 'supplier_id' => $supplierId],
+                    ['is_active' => false]
+                );
+
+                if ($this->productSupplier->trashed()) {
+                    $this->productSupplier = $this->restoreProductSupplierDraft($this->productSupplier);
+                }
+            }
         }
-
-        abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
 
         // Load data
         $this->sku = $this->productSupplier->sku;
@@ -365,6 +400,25 @@ class EditPrice extends Component
         
         // بارگذاری درصدهای مؤثر
         $this->loadEffectivePercentages();
+    }
+
+    private function restoreProductSupplierDraft(ProductSupplier $productSupplier): ProductSupplier
+    {
+        $productSupplierId = $productSupplier->getKey();
+
+        return DB::transaction(function () use ($productSupplierId): ProductSupplier {
+            $productSupplier = ProductSupplier::withTrashed()
+                ->whereKey($productSupplierId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($productSupplier->trashed()) {
+                $productSupplier->forceFill(['is_active' => false]);
+                $productSupplier->restore();
+            }
+
+            return $productSupplier;
+        });
     }
 
     /**

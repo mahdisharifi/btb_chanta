@@ -28,6 +28,7 @@ class Index extends Component
     public string $priceDisplayCurrency = 'toman';
     public string $catalogBranchScope = 'single';
     public ?int $catalogBranchSupplierId = null;
+    public array $catalogBranchSupplierIds = [];
     
     public $show_cover_page = true;
     
@@ -224,6 +225,17 @@ class Index extends Component
             return $branches;
         }
 
+        if ($this->catalogBranchScope === 'selected') {
+            $selectedIds = collect($this->catalogBranchSupplierIds)
+                ->map(static fn ($id): int => (int) $id)
+                ->unique()
+                ->values();
+
+            return $branches
+                ->filter(static fn (Supplier $branch): bool => $selectedIds->contains((int) $branch->id))
+                ->values();
+        }
+
         $selectedId = (int) ($this->catalogBranchSupplierId ?? 0);
         if ($selectedId < 1) {
             $selectedId = (int) (Auth::user()?->currentSupplier()?->id ?? 0);
@@ -234,8 +246,37 @@ class Index extends Component
 
     public function updatedCatalogBranchScope(): void
     {
-        if ($this->catalogBranchScope === 'single' && !$this->catalogBranchSupplierId) {
-            $this->catalogBranchSupplierId = Auth::user()?->currentSupplier()?->id;
+        $availableIds = $this->availableCatalogBranches
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        if ($this->catalogBranchScope === 'all') {
+            // Keep the all-branch set ready in case the user switches to a custom mix.
+            $this->catalogBranchSupplierIds = $availableIds;
+        } elseif ($this->catalogBranchScope === 'single') {
+            $currentId = (int) (Auth::user()?->currentSupplier()?->id ?? 0);
+            if (!in_array((int) $this->catalogBranchSupplierId, $availableIds, true)) {
+                $this->catalogBranchSupplierId = in_array($currentId, $availableIds, true)
+                    ? $currentId
+                    : ($availableIds[0] ?? null);
+            }
+
+            $this->catalogBranchSupplierIds = $this->catalogBranchSupplierId
+                ? [(int) $this->catalogBranchSupplierId]
+                : [];
+        } elseif ($this->catalogBranchScope === 'selected') {
+            $this->catalogBranchSupplierIds = array_values(array_intersect(
+                array_values(array_unique(array_map('intval', $this->catalogBranchSupplierIds))),
+                $availableIds,
+            ));
+
+            if ($this->catalogBranchSupplierIds === []) {
+                $fallbackId = (int) ($this->catalogBranchSupplierId ?? Auth::user()?->currentSupplier()?->id ?? 0);
+                if (in_array($fallbackId, $availableIds, true)) {
+                    $this->catalogBranchSupplierIds = [$fallbackId];
+                }
+            }
         }
 
         if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
@@ -247,6 +288,36 @@ class Index extends Component
 
     public function updatedCatalogBranchSupplierId(): void
     {
+        if ($this->catalogBranchScope === 'single' && $this->catalogBranchSupplierId) {
+            $this->catalogBranchSupplierIds = [(int) $this->catalogBranchSupplierId];
+        }
+
+        if ($this->catalogBranchScope === 'all') {
+            $this->catalogBranchSupplierIds = $this->availableCatalogBranches
+                ->pluck('id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+        }
+
+        if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
+            $this->priceDisplayCurrency = 'toman';
+        }
+
+        unset($this->availableCategories);
+    }
+
+    public function updatedCatalogBranchSupplierIds(): void
+    {
+        $allowedIds = $this->availableCatalogBranches
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        $this->catalogBranchSupplierIds = array_values(array_intersect(
+            array_values(array_unique(array_map('intval', $this->catalogBranchSupplierIds))),
+            $allowedIds,
+        ));
+
         if ($this->priceDisplayCurrency === 'supplier' && $this->eligibleSupplierCurrencyCode() === null) {
             $this->priceDisplayCurrency = 'toman';
         }
@@ -268,7 +339,7 @@ class Index extends Component
             return 'برای نمایش ارزی، دقیقاً یک تأمین‌کننده انتخاب کنید. کاتالوگ چندتأمین‌کننده فقط با تومان نمایش داده می‌شود.';
         }
 
-        if (!$this->authenticatedUserIsAdmin() && $this->catalogBranchScope === 'all') {
+        if (!$this->authenticatedUserIsAdmin() && in_array($this->catalogBranchScope, ['all', 'selected'], true)) {
             return 'نمایش ارزی برای شعب انتخاب‌شده فقط زمانی ممکن است که همهٔ شعب ارز پایه و نرخ تبدیل یکسان داشته باشند؛ در غیر این صورت تومان را انتخاب کنید.';
         }
 
@@ -758,13 +829,39 @@ class Index extends Component
         $settings = $template->settings ?? [];
         if (!$this->authenticatedUserIsAdmin()) {
             $scope = $settings['catalog_branch_scope'] ?? 'single';
-            $this->catalogBranchScope = in_array($scope, ['single', 'all'], true) ? $scope : 'single';
+            $this->catalogBranchScope = in_array($scope, ['single', 'all', 'selected'], true) ? $scope : 'single';
             $ownerSupplierId = (int) $supplierId;
             $configuredBranchId = (int) ($settings['catalog_branch_supplier_id'] ?? $ownerSupplierId);
             $allowedBranchIds = $this->availableCatalogBranches->pluck('id')->map(static fn ($id): int => (int) $id)->all();
-            $this->catalogBranchSupplierId = in_array($configuredBranchId, $allowedBranchIds, true)
-                ? $configuredBranchId
-                : $ownerSupplierId;
+
+            if ($this->catalogBranchScope === 'selected') {
+                $configuredBranchIds = $settings['catalog_branch_supplier_ids'] ?? [];
+                $configuredBranchIds = is_array($configuredBranchIds)
+                    ? array_values(array_unique(array_map('intval', $configuredBranchIds)))
+                    : [];
+                $this->catalogBranchSupplierIds = array_values(array_intersect($configuredBranchIds, $allowedBranchIds));
+
+                if ($this->catalogBranchSupplierIds === []) {
+                    $fallbackId = in_array($ownerSupplierId, $allowedBranchIds, true)
+                        ? $ownerSupplierId
+                        : ($allowedBranchIds[0] ?? null);
+                    $this->catalogBranchSupplierIds = $fallbackId ? [(int) $fallbackId] : [];
+                }
+
+                $this->catalogBranchSupplierId = $this->catalogBranchSupplierIds[0] ?? null;
+            } elseif ($this->catalogBranchScope === 'all') {
+                $this->catalogBranchSupplierIds = $allowedBranchIds;
+                $this->catalogBranchSupplierId = in_array($ownerSupplierId, $allowedBranchIds, true)
+                    ? $ownerSupplierId
+                    : ($allowedBranchIds[0] ?? null);
+            } else {
+                $this->catalogBranchSupplierId = in_array($configuredBranchId, $allowedBranchIds, true)
+                    ? $configuredBranchId
+                    : ($allowedBranchIds[0] ?? $ownerSupplierId);
+                $this->catalogBranchSupplierIds = $this->catalogBranchSupplierId
+                    ? [(int) $this->catalogBranchSupplierId]
+                    : [];
+            }
         }
         $this->description = $settings['description'] ?? '';
 
@@ -902,10 +999,16 @@ class Index extends Component
             'imageQuality' => 'required|string|in:sm,md,lg,original',
             'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom',
             'priceDisplayCurrency' => 'required|in:toman,supplier',
-            'catalogBranchScope' => $this->authenticatedUserIsAdmin() ? 'nullable' : 'required|in:single,all',
+            'catalogBranchScope' => $this->authenticatedUserIsAdmin() ? 'nullable' : 'required|in:single,all,selected',
             'catalogBranchSupplierId' => $this->authenticatedUserIsAdmin()
                 ? 'nullable'
                 : 'nullable|required_if:catalogBranchScope,single|integer|min:1',
+            'catalogBranchSupplierIds' => $this->authenticatedUserIsAdmin()
+                ? 'nullable|array'
+                : 'nullable|array|required_if:catalogBranchScope,selected|min:1',
+            'catalogBranchSupplierIds.*' => $this->authenticatedUserIsAdmin()
+                ? 'nullable|integer|min:1'
+                : 'required|integer|min:1',
             'selectedSuppliers' => $this->authenticatedUserIsAdmin() ? 'array' : 'nullable',
             'selectedSuppliers.*' => $this->authenticatedUserIsAdmin() ? 'required|integer|min:1' : 'nullable',
             'globalAttribute' => 'nullable|string',
@@ -947,6 +1050,25 @@ class Index extends Component
                 $this->addError('catalogBranchSupplierId', 'شعبهٔ انتخاب‌شده متعلق به این فروشگاه نیست یا فعال نیست.');
                 return;
             }
+
+            if ($this->catalogBranchScope === 'selected') {
+                $selectedBranchIds = array_values(array_unique(array_map('intval', $this->catalogBranchSupplierIds)));
+                if ($selectedBranchIds === []) {
+                    $this->addError('catalogBranchSupplierIds', 'حداقل یک شعبه را برای کاتالوگ انتخاب کنید.');
+                    return;
+                }
+
+                if (array_diff($selectedBranchIds, $allowedBranchIds) !== []) {
+                    $this->addError('catalogBranchSupplierIds', 'فقط شعبه‌های فعال همین فروشگاه را می‌توانید انتخاب کنید.');
+                    return;
+                }
+
+                $this->catalogBranchSupplierIds = $selectedBranchIds;
+            } elseif ($this->catalogBranchScope === 'all') {
+                $this->catalogBranchSupplierIds = $allowedBranchIds;
+            } else {
+                $this->catalogBranchSupplierIds = [(int) $this->catalogBranchSupplierId];
+            }
         }
         
         // فیلتر کردن شماره‌های تماس خالی
@@ -973,9 +1095,12 @@ class Index extends Component
             'include_warranty' => $this->includeWarranty, // ✅ نمایش گارانتی
             'price_display_currency' => $this->priceDisplayCurrency,
             'catalog_branch_scope' => $this->authenticatedUserIsAdmin() ? 'single' : $this->catalogBranchScope,
-            'catalog_branch_supplier_id' => $this->authenticatedUserIsAdmin() || $this->catalogBranchScope === 'all'
+            'catalog_branch_supplier_id' => $this->authenticatedUserIsAdmin() || $this->catalogBranchScope !== 'single'
                 ? null
                 : (int) $this->catalogBranchSupplierId,
+            'catalog_branch_supplier_ids' => !$this->authenticatedUserIsAdmin() && $this->catalogBranchScope === 'selected'
+                ? array_values(array_unique(array_map('intval', $this->catalogBranchSupplierIds)))
+                : null,
             'sort_level1' => $this->sortLevel1,
             'sort_level1_dir' => $this->sortLevel1Dir,
             'sort_level2' => $this->sortLevel2,
@@ -1101,6 +1226,9 @@ class Index extends Component
         $this->priceDisplayCurrency = 'toman';
         $this->catalogBranchScope = 'single';
         $this->catalogBranchSupplierId = Auth::user()?->currentSupplier()?->id;
+        $this->catalogBranchSupplierIds = $this->catalogBranchSupplierId
+            ? [(int) $this->catalogBranchSupplierId]
+            : [];
         $this->editingTemplateId = null;
         $this->name = '';
         $this->description = '';

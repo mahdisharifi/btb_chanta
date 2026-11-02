@@ -349,6 +349,28 @@ class Preview extends Component
             return $family->all();
         }
 
+        if ($scope === 'selected') {
+            $configuredIds = $this->settings['catalog_branch_supplier_ids'] ?? [];
+            abort_unless(is_array($configuredIds), 403, 'فهرست شعبه‌های انتخاب‌شده معتبر نیست.');
+
+            $selectedIds = collect($configuredIds)
+                ->map(static fn ($id): int => (int) $id)
+                ->unique()
+                ->values();
+
+            abort_unless($selectedIds->isNotEmpty(), 403, 'حداقل یک شعبه برای این کاتالوگ باید انتخاب شود.');
+            abort_unless(
+                $selectedIds->every(static fn (int $id): bool => $family->contains($id)),
+                403,
+                'یکی از شعبه‌های انتخاب‌شده متعلق به این فروشگاه نیست یا فعال نیست.'
+            );
+
+            return $family
+                ->filter(static fn (int $id): bool => $selectedIds->contains($id))
+                ->values()
+                ->all();
+        }
+
         $selectedId = (int) ($this->settings['catalog_branch_supplier_id'] ?? $ownerSupplierId);
         abort_unless($family->contains($selectedId), 403, 'شعبهٔ انتخاب‌شده متعلق به این فروشگاه نیست یا فعال نیست.');
 
@@ -383,7 +405,11 @@ class Preview extends Component
         $selectedSupplierIds = $cacheIdentity['supplier_ids'];
         $cacheKey = $cacheIdentity['cache_key'];
         abort_unless($selectedSupplierIds !== [], 403, 'هیچ شعبهٔ فعالی برای این کاتالوگ پیدا نشد.');
-        $branchAware = !$isAdmin && ($this->settings['catalog_branch_scope'] ?? 'single') === 'all';
+        $branchAware = !$isAdmin && in_array(
+            $this->settings['catalog_branch_scope'] ?? 'single',
+            ['all', 'selected'],
+            true
+        );
         $branchLabels = [];
 
         if ($branchAware) {
@@ -602,15 +628,12 @@ class Preview extends Component
             $periodSupplierIds = $supplierIds;
             $primaryBranchSupplierId = null;
             if (!$isAdmin && $selectedSupplierIds !== []) {
-                $primaryBranchSupplierId = (int) $selectedSupplierIds[0];
-                if (count($selectedSupplierIds) === 1) {
-                    $parentSupplierId = (int) (\App\Models\Supplier::query()
-                        ->whereKey($primaryBranchSupplierId)
-                        ->value('parent_supplier_id') ?? 0);
-                    if ($parentSupplierId > 0) {
-                        $primaryBranchSupplierId = $parentSupplierId;
-                    }
-                }
+                $parentSupplierId = (int) (\App\Models\Supplier::query()
+                    ->whereKey($supplierId)
+                    ->value('parent_supplier_id') ?? 0);
+                $primaryBranchSupplierId = $parentSupplierId > 0
+                    ? $parentSupplierId
+                    : (int) $supplierId;
 
                 $periodSupplierIds = $periodSupplierIds
                     ->push((int) $primaryBranchSupplierId)
@@ -1546,7 +1569,7 @@ class Preview extends Component
                 'priceFormatter' => app(\App\Services\CatalogPriceFormatter::class),
                 'catalogBranchPriceRows' => app(\App\Services\CatalogBranchPriceRows::class),
                 'branchAwareCatalog' => !$this->authenticatedUserIsAdmin()
-                    && ($this->settings['catalog_branch_scope'] ?? 'single') === 'all',
+                    && in_array($this->settings['catalog_branch_scope'] ?? 'single', ['all', 'selected'], true),
                 'priceTypesById' => $priceTypesById,
             ];
 
@@ -1656,7 +1679,7 @@ class Preview extends Component
             'groupedProducts' => $catalogData['grouped_products'] ?? [],
             'priceTypesById' => $catalogData['price_types_by_id'] ?? [],
             'branchAwareCatalog' => !$this->authenticatedUserIsAdmin()
-                && ($this->settings['catalog_branch_scope'] ?? 'single') === 'all',
+                && in_array($this->settings['catalog_branch_scope'] ?? 'single', ['all', 'selected'], true),
             'previewDataExpired' => !isset($catalogData['grouped_products']),
             'catalogSnapshotBusy' => $this->catalogSnapshotBusy,
         ])
