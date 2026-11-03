@@ -85,7 +85,7 @@ class EditPrice extends Component
     public array $tierPercentages = []; // [tier_index] => percentage (+/- درصد نسبت به مرجع)
     public array $tierPriceMode = []; // [tier_index] => 'default' | 'percentage' (مشابه checkPriceMode)
     public bool $autoCalculateTiers = false; // فعال/غیرفعال محاسبه خودکار
-    public array $tierEnabled = []; // [tier_index] => true/false (فعال/غیرفعال تیراژ در محاسبه خودکار)
+    public array $tierEnabled = []; // [tier_index] => فعال/غیرفعال بودن فروش؛ مستقل از مرجع محاسباتی
 
     /**
      * Updated hook - اجرا می‌شود وقتی property تغییر می‌کند
@@ -95,6 +95,19 @@ class EditPrice extends Component
         // اگر از custom به گزینه دیگر سویچ شد، قیمت‌های گارانتی در ماتریس را پاک کن
         if ($value !== 'custom') {
             $this->clearWarrantyPricesFromMatrix();
+        }
+    }
+
+    public function updatedTierEnabled($value, $key): void
+    {
+        $tierIndex = (int) $key;
+        if (!array_key_exists($tierIndex, $this->quantityTiers)) {
+            return;
+        }
+
+        // تغییر وضعیت فروش تیراژ نباید مرجع را حذف کند؛ پیش‌نمایش درصدها را تازه کن.
+        if ($this->priceCurrency !== 'TOM' || $this->autoCalculateTiers) {
+            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
         }
     }
     
@@ -1523,11 +1536,9 @@ class EditPrice extends Component
                 continue;
             }
             
-            // ✅ بررسی فعال بودن تیراژ در محاسبه خودکار
-            if (!($this->tierEnabled[$index] ?? true)) {
-                continue; // تیراژ غیرفعال → محاسبه نشود
-            }
-            
+            // فعال‌بودن تیراژ فقط فروش آن را کنترل می‌کند؛ قیمت هر تیراژ باید
+            // حتی در حالت غیرفعال هم از مرجع ثابت کارتن و درصد خودش محاسبه شود.
+
             // ✅ تشخیص درصد بر اساس mode
             $mode = $this->tierPriceMode[$index] ?? 'default';
             

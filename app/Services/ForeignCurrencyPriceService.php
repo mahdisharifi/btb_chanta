@@ -521,8 +521,9 @@ class ForeignCurrencyPriceService
                 foreach ($quantityTiers as $tierIndex => $_tier) {
                     $tierIndex = (int) $tierIndex;
 
-                    if ($tierIndex === $referenceTier
-                        || !(bool) (($productSupplier->tier_enabled ?? [])[$tierIndex] ?? true)) {
+                    // غیرفعال‌بودن تیراژ فقط نمایش/فروش آن را متوقف می‌کند؛
+                    // قیمت ذخیره‌شده‌اش باید با مرجع ثابت کارتن و درصد خودش به‌روز بماند.
+                    if ($tierIndex === $referenceTier) {
                         continue;
                     }
 
