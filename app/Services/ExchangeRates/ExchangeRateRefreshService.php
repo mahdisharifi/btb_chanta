@@ -15,8 +15,12 @@ class ExchangeRateRefreshService
     {
     }
 
-    public function refresh(): void
+    public function refresh(?int $maxAgeMinutes = null): void
     {
+        $configuredMaxAgeMinutes = max(1, (int) config('pricing.exchange_rates.max_age_minutes', 15));
+        $maxAgeMinutes = $maxAgeMinutes === null
+            ? $configuredMaxAgeMinutes
+            : max($configuredMaxAgeMinutes, min(24 * 60, max(1, $maxAgeMinutes)));
         $lock = Cache::lock('exchange-rates.refresh', 30);
 
         if (!$lock->get()) {
@@ -25,22 +29,22 @@ class ExchangeRateRefreshService
         }
 
         try {
-            $this->refreshUnderLock();
+            $this->refreshUnderLock($maxAgeMinutes);
         } finally {
             $lock->release();
         }
     }
 
-    private function refreshUnderLock(): void
+    private function refreshUnderLock(int $maxAgeMinutes): void
     {
         $attemptedAt = Carbon::now('UTC');
+        $snapshot = null;
+        $fetchedAt = null;
 
         try {
             $snapshot = $this->provider->fetch();
             $fetchedAt = Carbon::now('UTC');
             $sourceUpdatedAt = $this->parseSourceUpdatedAt($snapshot);
-            $maxAgeMinutes = (int) config('pricing.exchange_rates.max_age_minutes', 15);
-
             if ($sourceUpdatedAt->lt($fetchedAt->copy()->subMinutes($maxAgeMinutes))) {
                 throw new \RuntimeException('نرخ‌سنج پاسخ قدیمی برگرداند؛ آخرین نرخ معتبر حفظ شد.');
             }
@@ -83,22 +87,54 @@ class ExchangeRateRefreshService
                 }
             });
         } catch (Throwable $exception) {
-            DB::transaction(function () use ($attemptedAt, $exception): void {
+            $hasRatesWithoutSourceTime = is_array($snapshot)
+                && is_array($snapshot['rates'] ?? null)
+                && (empty($snapshot['market_date']) || empty($snapshot['market_time']));
+
+            DB::transaction(function () use ($attemptedAt, $exception, $snapshot, $fetchedAt, $hasRatesWithoutSourceTime): void {
                 $rates = ExchangeRate::query()
                     ->whereIn('currency', ['USD', 'CNY', 'AED'])
                     ->lockForUpdate()
-                    ->get();
+                    ->get()
+                    ->keyBy('currency');
 
-                foreach ($rates as $rate) {
-                    if ($rate->last_attempt_at?->gt($attemptedAt)) {
+                foreach (['USD', 'CNY', 'AED'] as $currency) {
+                    $rate = $rates->get($currency);
+                    $candidateRate = $snapshot['rates'][$currency] ?? null;
+                    $canStoreDisplayOnlyCandidate = $hasRatesWithoutSourceTime
+                        && is_numeric($candidateRate)
+                        && (float) $candidateRate > 0
+                        && (!$rate || $rate->source_updated_at === null);
+
+                    if ($rate?->last_attempt_at?->gt($attemptedAt)) {
                         continue;
                     }
 
-                    $rate->forceFill([
+                    $attributes = [
                         'last_attempt_at' => $attemptedAt,
                         'last_error' => mb_substr($exception->getMessage(), 0, 500),
                         'updated_at' => $attemptedAt,
-                    ])->save();
+                    ];
+
+                    if ($canStoreDisplayOnlyCandidate) {
+                        $attributes += [
+                            'rate_toman' => $candidateRate,
+                            'source' => NerkhsanjRateProvider::SOURCE,
+                            'source_market_date' => $snapshot['market_date'],
+                            'source_market_time' => $snapshot['market_time'],
+                            'source_updated_at' => null,
+                            'fetched_at' => $fetchedAt ?? $attemptedAt,
+                        ];
+                    }
+
+                    if ($rate) {
+                        $rate->forceFill($attributes)->save();
+                    } elseif ($canStoreDisplayOnlyCandidate) {
+                        ExchangeRate::query()->create([
+                            'currency' => $currency,
+                            ...$attributes,
+                        ]);
+                    }
                 }
             });
 

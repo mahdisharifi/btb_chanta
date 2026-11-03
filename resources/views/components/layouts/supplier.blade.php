@@ -35,7 +35,7 @@
         </div>
 
         <!-- لینک‌های منو -->
-        <nav class="flex-1 px-2 py-4 space-y-2">
+        <nav class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-4 space-y-2">
             <!-- داشبورد -->
             <a href="{{ route('supplier.dashboard') }}"
                class="{{ request()->routeIs('supplier.dashboard') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
@@ -80,9 +80,17 @@
 
             <!-- محصولات پیشنهادی -->
             <a href="{{ route('supplier.products.index') }}"
-               class="{{ request()->routeIs('supplier.products.*') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
-                <x-heroicon-o-shopping-bag class="{{ request()->routeIs('supplier.products.*') ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
+               class="{{ request()->routeIs('supplier.products.*') && !request()->routeIs('supplier.products.create') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
+                <x-heroicon-o-shopping-bag class="{{ request()->routeIs('supplier.products.*') && !request()->routeIs('supplier.products.create') ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
                 محصولات پیشنهادی
+            </a>
+
+            <!-- افزودن محصول جدید به‌صورت پیش‌نویس -->
+            <a href="{{ route('supplier.products.create') }}"
+               @if(request()->routeIs('supplier.products.create')) aria-current="page" @endif
+               class="{{ request()->routeIs('supplier.products.create') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex min-h-11 items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                <x-heroicon-o-plus-circle class="{{ request()->routeIs('supplier.products.create') ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
+                افزودن محصول
             </a>
 
             <!-- کاتالوگ PDF -->

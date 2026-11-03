@@ -81,7 +81,10 @@ class ForeignCurrencyPriceService
 
         // One provider request refreshes all supported currencies, regardless of product count.
         try {
-            app(\App\Services\ExchangeRates\ExchangeRateRefreshService::class)->refresh();
+            $maxRefreshHours = max(self::REFRESH_HOURS);
+            app(\App\Services\ExchangeRates\ExchangeRateRefreshService::class)->refresh(
+                $this->maxAgeMinutesForRefreshHours($maxRefreshHours)
+            );
         } catch (Throwable $exception) {
             $attemptedAt = now();
             $retryAt = $attemptedAt->copy()->addMinutes(
@@ -145,17 +148,6 @@ class ForeignCurrencyPriceService
                     return;
                 }
 
-                $rate = $rates->get($setting->currency);
-                if (!$this->isFreshRate($rate)) {
-                    $setting->forceFill([
-                        'last_attempt_at' => now(),
-                        'last_error' => 'نرخ تازه دریافت نشد؛ قیمت‌های ثبت‌شده حفظ شدند.',
-                        'next_update_at' => now()->addMinutes(max(5, (int) config('pricing.exchange_rates.refresh_minutes', 5))),
-                    ])->save();
-
-                    return;
-                }
-
                 $hours = (int) $setting->refresh_hours;
                 if (!in_array($hours, self::REFRESH_HOURS, true)) {
                     $setting->forceFill([
@@ -163,6 +155,33 @@ class ForeignCurrencyPriceService
                         'last_error' => 'بازهٔ به‌روزرسانی نرخ ارز معتبر نیست.',
                         'next_update_at' => now()->addMinutes(30),
                     ])->save();
+
+                    return;
+                }
+
+                $rate = $rates->get($setting->currency);
+                if (!$this->isFreshRate($rate, $this->maxAgeMinutesForRefreshHours($hours))) {
+                    $attributes = [
+                        'last_attempt_at' => now(),
+                        'last_error' => $rate?->last_error ?: 'آخرین نرخ از بازهٔ انتخاب‌شده قدیمی‌تر است؛ قیمت‌های ثبت‌شده حفظ شدند.',
+                        'next_update_at' => now()->addMinutes(max(5, (int) config('pricing.exchange_rates.refresh_minutes', 5))),
+                    ];
+
+                    if ($rate
+                        && $rate->source === \App\Services\ExchangeRates\NerkhsanjRateProvider::SOURCE
+                        && is_numeric($rate->rate_toman)
+                        && (float) $rate->rate_toman > 0) {
+                        $attributes += [
+                            'rate_toman' => $rate->rate_toman,
+                            'source' => $rate->source,
+                            'source_market_date' => $rate->source_market_date,
+                            'source_market_time' => $rate->source_market_time,
+                            'source_updated_at' => $rate->source_updated_at,
+                            'fetched_at' => $rate->fetched_at,
+                        ];
+                    }
+
+                    $setting->forceFill($attributes)->save();
 
                     return;
                 }
@@ -175,7 +194,7 @@ class ForeignCurrencyPriceService
                     'source_updated_at' => $rate->source_updated_at,
                     'fetched_at' => $rate->fetched_at,
                     'last_attempt_at' => now(),
-                    'last_error' => null,
+                    'last_error' => $rate->last_error,
                     'last_apply_error' => null,
                     'next_update_at' => now()->addHours($hours),
                     'revision' => ((int) $setting->revision) + 1,
@@ -216,15 +235,21 @@ class ForeignCurrencyPriceService
         return $this->isFreshSupplierRate($setting);
     }
 
-    public function isFreshSupplierRate(?SupplierExchangeRateSetting $setting): bool
+    public function isFreshSupplierRate(?SupplierExchangeRateSetting $setting, ?int $maxAgeMinutes = null): bool
     {
-        $cutoff = \Carbon\CarbonImmutable::now('UTC')->subMinutes(
-            (int) config('pricing.exchange_rates.max_age_minutes', 15)
-        );
+        if (!$setting) {
+            return false;
+        }
 
-        return $setting !== null
-            && $setting->last_error === null
-            && is_numeric($setting->rate_toman)
+        $acceptedAgeMinutes = $maxAgeMinutes === null
+            ? $this->maxAgeMinutesForRefreshHours((int) $setting->refresh_hours)
+            : max(
+                max(1, (int) config('pricing.exchange_rates.max_age_minutes', 15)),
+                min(24 * 60, max(1, $maxAgeMinutes))
+            );
+        $cutoff = \Carbon\CarbonImmutable::now('UTC')->subMinutes($acceptedAgeMinutes);
+
+        return is_numeric($setting->rate_toman)
             && (float) $setting->rate_toman > 0
             && $setting->fetched_at !== null
             && $setting->source_updated_at !== null
@@ -741,14 +766,26 @@ class ForeignCurrencyPriceService
         ])->save();
     }
 
-    public function isFreshRate(?ExchangeRate $rate): bool
+    public function maxAgeMinutesForRefreshHours(int $refreshHours): int
     {
-        $cutoff = \Carbon\CarbonImmutable::now('UTC')->subMinutes(
-            (int) config('pricing.exchange_rates.max_age_minutes', 15)
-        );
+        $configuredMaxAgeMinutes = max(1, (int) config('pricing.exchange_rates.max_age_minutes', 15));
+
+        if (!in_array($refreshHours, self::REFRESH_HOURS, true)) {
+            return $configuredMaxAgeMinutes;
+        }
+
+        return max($configuredMaxAgeMinutes, min(24 * 60, $refreshHours * 60));
+    }
+
+    public function isFreshRate(?ExchangeRate $rate, ?int $maxAgeMinutes = null): bool
+    {
+        $configuredMaxAgeMinutes = max(1, (int) config('pricing.exchange_rates.max_age_minutes', 15));
+        $acceptedAgeMinutes = $maxAgeMinutes === null
+            ? $configuredMaxAgeMinutes
+            : max($configuredMaxAgeMinutes, min(24 * 60, max(1, $maxAgeMinutes)));
+        $cutoff = \Carbon\CarbonImmutable::now('UTC')->subMinutes($acceptedAgeMinutes);
 
         return $rate !== null
-            && $rate->last_error === null
             && is_numeric($rate->rate_toman)
             && (float) $rate->rate_toman > 0
             && $rate->fetched_at !== null

@@ -240,20 +240,29 @@
 
                     <div>
                         <label for="manual-currency-rate-{{ $currency }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            نرخ دستی هر واحد به تومان
+                            {{ $currencySettings[$currency]['auto_update'] ? 'آخرین نرخ موجود هر واحد به تومان' : 'نرخ دستی هر واحد به تومان' }}
                         </label>
                         <input id="manual-currency-rate-{{ $currency }}"
                                type="number"
                                min="0.0001"
                                step="0.0001"
                                inputmode="decimal"
+                               @if($currencySettings[$currency]['auto_update'])
+                                   value="{{ $currencySettings[$currency]['rate_toman'] ?? '' }}"
+                                   readonly
+                                   aria-readonly="true"
+                               @else
                                wire:model="currencySettings.{{ $currency }}.manual_rate_toman"
-                               @disabled($currencySettings[$currency]['auto_update'])
+                               @endif
                                aria-describedby="currency-rate-help-{{ $currency }}"
                                aria-invalid="@error('currencySettings.' . $currency . '.manual_rate_toman') true @else false @enderror"
-                               class="w-full rounded-md border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:ring-indigo-500">
+                               class="w-full rounded-md border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm read-only:bg-gray-50 read-only:text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:ring-indigo-500">
                         <p id="currency-rate-help-{{ $currency }}" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            نمونهٔ نرخ دستی هر واحد {{ $currencyLabel }} به تومان؛ برای ارزهای استفاده‌نشده می‌توانید این فیلد را خالی بگذارید.
+                            @if($currencySettings[$currency]['auto_update'])
+                                آخرین نرخ موجود و زمان دریافتش نمایش داده می‌شود. اگر زمان انتشار در منبع موجود نباشد یا دریافت تازه ناموفق باشد هشدار می‌بینید؛ نرخ بدون زمان معتبر یا خارج از بازهٔ انتخابی روی محصولات اعمال نمی‌شود.
+                            @else
+                                نمونهٔ نرخ دستی هر واحد {{ $currencyLabel }} به تومان؛ برای ارزهای استفاده‌نشده می‌توانید این فیلد را خالی بگذارید.
+                            @endif
                         </p>
                         @error('currencySettings.' . $currency . '.manual_rate_toman')
                             <p class="mt-1 text-xs text-red-600" role="alert">{{ $message }}</p>
@@ -263,10 +272,19 @@
                     <label for="currency-auto-{{ $currency }}" class="flex min-h-[44px] items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-900 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-100">
                         <input id="currency-auto-{{ $currency }}"
                                type="checkbox"
-                               wire:model.live="currencySettings.{{ $currency }}.auto_update"
+                               wire:change="toggleAutomaticCurrencyRate('{{ $currency }}', $event.target.checked)"
+                               wire:loading.attr="disabled"
+                               wire:target="toggleAutomaticCurrencyRate"
+                               @checked($currencySettings[$currency]['auto_update'])
                                class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
                         <span>دریافت خودکار نرخ</span>
                     </label>
+                    <p class="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        با روشن‌کردن تیک، نرخ در کادر بالا دریافت و نمایش داده می‌شود؛ سپس برای ثبت تنظیمات، دکمهٔ ذخیره را بزنید.
+                    </p>
+                    <p wire:loading wire:target="toggleAutomaticCurrencyRate" class="text-xs text-purple-700 dark:text-purple-300" role="status">
+                        در حال دریافت نرخ…
+                    </p>
 
                     @if($currencySettings[$currency]['auto_update'])
                         <div>
@@ -289,9 +307,12 @@
                     @if($currencySettings[$currency]['auto_update'])
                         <div class="rounded-md bg-white px-3 py-2 text-xs leading-5 text-gray-600 dark:bg-gray-800 dark:text-gray-300" aria-live="polite">
                             @if($currencySettings[$currency]['rate_toman'])
-                                <div>آخرین نرخ دریافت‌شده: {{ \App\Helpers\PriceHelper::formatNumber((float) $currencySettings[$currency]['rate_toman']) }} تومان</div>
+                                <div>آخرین نرخ موجود: {{ \App\Helpers\PriceHelper::formatNumber((float) $currencySettings[$currency]['rate_toman']) }} تومان</div>
+                                @if($currencySettings[$currency]['source_market_at'])
+                                    <div>زمان ثبت‌شده در منبع: {{ $currencySettings[$currency]['source_market_at'] }} تهران</div>
+                                @endif
                                 @if($currencySettings[$currency]['fetched_at'])
-                                    <div>زمان دریافت: {{ $currencySettings[$currency]['fetched_at'] }} تهران</div>
+                                    <div>زمان دریافت این نرخ از سامانه: {{ $currencySettings[$currency]['fetched_at'] }} تهران</div>
                                 @endif
                             @else
                                 <div class="text-amber-700 dark:text-amber-300">هنوز نرخ خودکاری دریافت نشده است.</div>
