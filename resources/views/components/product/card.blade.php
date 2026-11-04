@@ -53,8 +53,25 @@ if ($canSeeWholesalePrice && $product->relationLoaded('productSuppliers')) {
     // جمع‌آوری تمام قیمت‌های فعال از productSuppliers فعال
     $allPrices = collect();
     $activeSuppliersCount = 0; // ✅ شمارش تامین‌کنندگان با قیمت فعال
+    $priceOffers = $product->productSuppliers;
+
+    // کارت‌های عمومی خانوادهٔ محصول نمایندهٔ محصول اصلی هستند؛ قیمت‌های شعبه‌ها
+    // روی رکوردهای وابسته ذخیره می‌شوند و باید در همان کارت لحاظ شوند.
+    if (!$supplier && $product->relationLoaded('familyProducts')) {
+        foreach ($product->familyProducts as $familyProduct) {
+            if (!$familyProduct->is_active
+                || $familyProduct->status?->value !== 'active'
+                || !$familyProduct->relationLoaded('productSuppliers')) {
+                continue;
+            }
+
+            $priceOffers = $priceOffers->merge($familyProduct->productSuppliers);
+        }
+    }
+
+    $priceOffers = $priceOffers->unique(fn ($offer) => (int) $offer->getKey())->values();
     
-    foreach ($product->productSuppliers as $ps) {
+    foreach ($priceOffers as $ps) {
         // ✅ فقط productSuppliers فعال را در نظر بگیر
         if ($ps->is_active && $ps->relationLoaded('prices')) {
             $activePrices = $ps->prices->where('is_active', true);

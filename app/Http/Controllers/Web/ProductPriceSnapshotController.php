@@ -24,6 +24,16 @@ class ProductPriceSnapshotController extends Controller
         $allowedTypes = $settings?->getAllowedPriceTypes();
         $canSeeSupplierInfo = $settings?->canSeeSupplierInfo() ?? false;
         $today = now()->startOfDay();
+        $familyId = (int) ($product->family_product_id ?: $product->id);
+        $familyProductIds = Product::query()
+            ->where('family_product_id', $familyId)
+            ->where('is_active', true)
+            ->where('status', ProductStatus::ACTIVE)
+            ->pluck('id');
+
+        if (!$familyProductIds->contains((int) $product->id)) {
+            $familyProductIds->push((int) $product->id);
+        }
 
         $suppliers = ProductSupplier::query()
             ->with([
@@ -59,7 +69,7 @@ class ProductPriceSnapshotController extends Controller
                 'prices.priceType:id,code',
                 'prices.checkPeriod:id,label,name',
             ])
-            ->where('product_id', $product->id)
+            ->whereIn('product_id', $familyProductIds->all())
             ->where('is_active', true)
             ->verifiedSupplier()
             ->get();

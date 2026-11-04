@@ -611,10 +611,11 @@ class ProductController extends Controller
                 'category:id,name,slug,icon,parent_id',
 
                 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                'familyProducts.productSuppliers.prices.priceType:id,code',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'file_type',
@@ -1231,10 +1232,11 @@ class ProductController extends Controller
                         ->orderBy('retail_price')
                         ->limit(1),
                     'category:id,name,slug',
-                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
-                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
+                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                     'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                    'familyProducts.productSuppliers.prices.priceType:id,code',
                     // ✅ اضافه شده: eager loading برای قیمت‌های عمده
                     'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
@@ -1246,7 +1248,7 @@ class ProductController extends Controller
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
                         }),
-                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 ])
                 ->inRandomOrder()
@@ -1296,10 +1298,11 @@ class ProductController extends Controller
                     ->orderBy('retail_price')
                     ->limit(1),
                 'category:id,name,slug',
-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                'familyProducts.productSuppliers.prices.priceType:id,code',
                 // ✅ اضافه شده: eager loading برای قیمت‌های عمده
                 'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
@@ -1311,7 +1314,7 @@ class ProductController extends Controller
                         $sub->whereNull('valid_from')
                             ->orWhere('valid_from', '<=', now());
                     }),
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
             ])
             ->get()
