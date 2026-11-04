@@ -243,6 +243,7 @@
                             {{ $currencySettings[$currency]['auto_update'] ? 'آخرین نرخ موجود هر واحد به تومان' : 'نرخ دستی هر واحد به تومان' }}
                         </label>
                         <input id="manual-currency-rate-{{ $currency }}"
+                               wire:key="currency-rate-input-{{ $currency }}-{{ $currencySettings[$currency]['auto_update'] ? 'automatic' : 'manual' }}"
                                type="number"
                                min="0.0001"
                                step="0.0001"
