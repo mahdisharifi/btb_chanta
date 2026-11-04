@@ -7,12 +7,21 @@
 @php
 use App\Helpers\PriceHelper;
 
-// ✅ استفاده از Service برای دریافت دسترسی‌ها
+// ✅ یک بار تنظیمات نقش را می‌گیریم تا هر کارت چند کوئری تکراری نزند.
 $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
 $user = auth()->user();
-
-$canSeeSupplier = $priceVisibilityService->canSeeSupplierInfo($user);
-$canSeeWholesalePrice = $priceVisibilityService->canSeeWholesalePrice($user);
+$cardVisibilitySettings = $priceVisibilityService->getSettings($user);
+$canSeeSupplier = $cardVisibilitySettings?->canSeeSupplierInfo() ?? false;
+$canSeeWholesalePrice = $cardVisibilitySettings?->canSeeWholesalePrice() ?? false;
+$allowedCardPriceTypes = $cardVisibilitySettings?->getAllowedPriceTypes();
+$liveCardSupplierId = $supplier && $canSeeSupplier ? (int) $supplier->id : null;
+$canSubscribeCardPrices = auth()->check() && $canSeeWholesalePrice && (!$supplier || $canSeeSupplier);
+$priceSnapshotUrl = $canSubscribeCardPrices && Route::has('products.price-snapshot')
+    ? route('products.price-snapshot', [
+        'product' => $product->id,
+        ...($liveCardSupplierId ? ['card_supplier_id' => $liveCardSupplierId] : []),
+    ])
+    : null;
 
 // اگر supplier مشخص شده (در صفحه supplier)، قیمت‌های آن supplier را نمایش بده
 $productSupplier = $supplier ?? ($product->relationLoaded('supplier') ? $product->supplier : null);
@@ -73,14 +82,36 @@ if ($canSeeWholesalePrice && $product->relationLoaded('productSuppliers')) {
     
     foreach ($priceOffers as $ps) {
         // ✅ فقط productSuppliers فعال را در نظر بگیر
-        if ($ps->is_active && $ps->relationLoaded('prices')) {
-            $activePrices = $ps->prices->where('is_active', true);
+        $offerSupplier = $ps->relationLoaded('supplier') ? $ps->supplier : null;
+        if ($ps->is_active
+            && $ps->relationLoaded('prices')
+            && (!$ps->relationLoaded('supplier') || ($offerSupplier?->is_active && $offerSupplier?->is_verified))) {
+            $tierEnabled = (array) ($ps->tier_enabled ?? []);
+            $activePrices = $ps->prices->filter(function ($price) use ($allowedCardPriceTypes, $tierEnabled): bool {
+                $type = $price->priceType?->code ?? 'cash';
+                $tierIndex = (int) $price->tier_index;
+
+                return $price->is_active
+                    && $price->isValid()
+                    && ($allowedCardPriceTypes === null || in_array($type, $allowedCardPriceTypes, true))
+                    && (empty($tierEnabled) || (bool) ($tierEnabled[$tierIndex] ?? true));
+            });
             if ($activePrices->isNotEmpty()) {
                 $allPrices = $allPrices->merge($activePrices);
                 $activeSuppliersCount++; // ✅ افزایش شمارنده فقط اگر قیمت فعال دارد
             }
         }
     }
+
+    $allPrices = $allPrices
+        ->groupBy(fn ($price) => implode(':', [
+            $price->product_supplier_id,
+            $price->price_type_id,
+            $price->tier_index,
+            $price->check_period_id ?? 0,
+        ]))
+        ->map(fn ($rows) => $rows->sortBy('price')->first())
+        ->values();
     
     if ($allPrices->isNotEmpty()) {
         // اگر supplier مشخص شده، فقط قیمت‌های آن supplier را نمایش بده
@@ -131,7 +162,8 @@ $categorySlug = $category?->slug;
 @endphp
 
 @if($view === 'list')
-<div class="group flex flex-row overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-200 hover:shadow-md">
+<div class="group flex flex-row overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-200 hover:shadow-md"
+     @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" data-live-price-channel-role="{{ $priceVisibilityService->getUserRole($user) }}" data-live-price-snapshot-url="{{ $priceSnapshotUrl }}" @endif>
     <a href="{{ $productUrl }}" class="relative min-h-[170px] w-44 flex-shrink-0 overflow-hidden bg-gray-50 sm:w-52" 
        x-data="{
            handleError(event) {
@@ -193,25 +225,20 @@ $categorySlug = $category?->slug;
                 </div>
                 @endif
 
-                @if($canSeeWholesalePrice && $wholesalePriceData)
-                <div class="mt-0.5 flex items-center gap-1">
+                @if($canSeeWholesalePrice)
+                <div class="mt-0.5 flex items-center gap-1" @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-card-range @if($liveCardSupplierId) data-live-price-card-supplier-id="{{ $liveCardSupplierId }}" @endif @if(!$wholesalePriceData) hidden @endif>
                     <x-heroicon-o-arrow-trending-up class="h-3 w-3 text-amber-600" />
                     <span class="text-xs font-semibold text-amber-700">
                         @if($supplier)
-                            @if($wholesalePriceData['has_range'])
-                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
-                            @else
-                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
-                            @endif
+                            قیمت این تامین‌کننده:
                         @else
-                            @if($wholesalePriceData['has_range'])
-                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
-                                @if($wholesalePriceData['tiers_count'] > 1)
-                                    <span class="text-[10px]">({{ $wholesalePriceData['tiers_count'] }} تیراژ)</span>
-                                @endif
-                            @else
-                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
-                            @endif
+                            عمده:
+                        @endif
+                        <span data-live-price-card-min>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['lowest']) : '—' }}</span>
+                        <span data-live-price-card-separator @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif> - </span>
+                        <span data-live-price-card-max @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['highest']) : '—' }}</span>
+                        @if(!$supplier)
+                        <span data-live-price-card-count @if(!$wholesalePriceData || $wholesalePriceData['tiers_count'] <= 1) hidden @endif>({{ $wholesalePriceData['tiers_count'] ?? 0 }} تیراژ)</span>
                         @endif
                     </span>
                 </div>
@@ -221,7 +248,12 @@ $categorySlug = $category?->slug;
                 </a>
                 @endif
 
-                @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
+                @if(!$retailPrice && $canSeeWholesalePrice)
+                <div @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-empty-label data-live-price-range="card" class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1" @if($wholesalePriceData) hidden @endif>
+                    <svg class="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <x-product-unpriced-label class="text-xs font-bold text-red-600" />
+                </div>
+                @elseif(!$retailPrice && !$canSeeWholesalePrice)
                 <div class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1">
                     <svg class="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                     <x-product-unpriced-label class="text-xs font-bold text-red-600" />
@@ -283,6 +315,7 @@ $categorySlug = $category?->slug;
      طراحی شده با همکاری کارشناسان گرافیک، فرانت‌اند و UX
      ═══════════════════════════════════════════════════════════ --}}
 <div class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-300 hover:shadow-xl hover:-translate-y-1"
+     @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" data-live-price-channel-role="{{ $priceVisibilityService->getUserRole($user) }}" data-live-price-snapshot-url="{{ $priceSnapshotUrl }}" @endif
      x-data="{ imageLoaded: false }"
      x-init="$nextTick(() => { imageLoaded = true; })">
     
@@ -385,27 +418,14 @@ $categorySlug = $category?->slug;
             @endif
 
             {{-- Wholesale Price با طراحی مینیمال --}}
-            @if($canSeeWholesalePrice && $wholesalePriceData)
-            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200">
-                @if($wholesalePriceData['has_range'])
-                    {{-- نمایش محدوده قیمت در یک خط --}}
-                    <div class="flex items-baseline justify-center gap-1 flex-wrap">
-                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
-                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
-                        </span>
-                        <span class="text-[9px] text-amber-600">تا</span>
-                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
-                            {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
-                        </span>
-                    </div>
-                @else
-                    {{-- قیمت واحد --}}
-                    <div class="flex items-baseline justify-center gap-0.5">
-                        <span class="text-sm sm:text-base font-extrabold text-amber-700">
-                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
-                        </span>
-                    </div>
-                @endif
+            @if($canSeeWholesalePrice)
+            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200" @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-card-range @if($liveCardSupplierId) data-live-price-card-supplier-id="{{ $liveCardSupplierId }}" @endif @if(!$wholesalePriceData) hidden @endif>
+                <div class="flex items-baseline justify-center gap-1 flex-wrap">
+                    <span class="text-xs sm:text-sm font-extrabold text-amber-700" data-live-price-card-min>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['lowest']) : '—' }}</span>
+                    <span class="text-[9px] text-amber-600" data-live-price-card-separator @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>تا</span>
+                    <span class="text-xs sm:text-sm font-extrabold text-amber-700" data-live-price-card-max @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['highest']) : '—' }}</span>
+                    <span class="text-[9px] text-amber-600" data-live-price-card-count @if(!$wholesalePriceData || $wholesalePriceData['tiers_count'] <= 1) hidden @endif>({{ $wholesalePriceData['tiers_count'] ?? 0 }} تیراژ)</span>
+                </div>
             </div>
             @elseif(!$canSeeWholesalePrice && Route::has('register'))
             <a href="{{ route('register') }}" class="block text-center w-full rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105">
@@ -417,7 +437,12 @@ $categorySlug = $category?->slug;
             @endif
 
             {{-- Contact for Price - بهبود یافته (Updated: 2026-09-26) --}}
-            @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
+            @if(!$retailPrice && $canSeeWholesalePrice)
+            <div @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-empty-label data-live-price-range="card" class="flex items-center justify-center gap-1.5 rounded-xl bg-red-50 border border-red-200 px-3 py-2" @if($wholesalePriceData) hidden @endif>
+                <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <x-product-unpriced-label class="text-xs font-bold text-red-600 sm:text-sm" />
+            </div>
+            @elseif(!$retailPrice && !$canSeeWholesalePrice)
             <div class="flex items-center justify-center gap-1.5 rounded-xl bg-red-50 border border-red-200 px-3 py-2">
                 <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                 <x-product-unpriced-label class="text-xs font-bold text-red-600 sm:text-sm" />

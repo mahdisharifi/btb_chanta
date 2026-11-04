@@ -98,6 +98,7 @@ class TierPriceUpdater
                         ->where('ps.supplier_id', $supplierId)
                         ->where('ps.id', '>', $lastId)
                         ->where('ps.price_currency', 'TOM')
+                        ->where('ps.auto_calculate_tiers', true)
                         ->orderBy('ps.id')
                         ->limit(self::UPDATE_CHUNK_SIZE)
                         ->select('ps.*', 'p.category_id', 'p.quantity_tiers as product_quantity_tiers');
@@ -121,7 +122,7 @@ class TierPriceUpdater
                         ->whereIn('id', $productSupplierIds)
                         ->orderBy('id')
                         ->lockForUpdate()
-                        ->get(['id', 'price_currency', 'is_active'])
+                        ->get(['id', 'price_currency', 'is_active', 'auto_calculate_tiers'])
                         ->keyBy('id');
                     $cashRows = DB::table('product_prices')
                         ->whereIn('product_supplier_id', $productSupplierIds)
@@ -226,7 +227,8 @@ class TierPriceUpdater
                             $lockedProductSupplier = $lockedProductSuppliers->get($productSupplier->id);
 
                             if (!$lockedProductSupplier
-                                || $lockedProductSupplier->price_currency !== 'TOM') {
+                                || $lockedProductSupplier->price_currency !== 'TOM'
+                                || !(bool) $lockedProductSupplier->auto_calculate_tiers) {
                                 continue;
                             }
 
@@ -244,7 +246,6 @@ class TierPriceUpdater
                                 ? $productSupplier->product_quantity_tiers
                                 : (json_decode((string) $productSupplier->product_quantity_tiers, true) ?: []);
                             $productTierPercentages = self::decodeJsonArray($productSupplier->tier_percentages ?? null);
-                            $productTierEnabled = self::decodeJsonArray($productSupplier->tier_enabled ?? null);
                             $tierIndexes = array_keys($quantityTiers);
                             if ($tierIndexes === []) {
                                 $tierIndexes = $fallbackTierIndexes[$productSupplier->id] ?? [];
@@ -255,13 +256,6 @@ class TierPriceUpdater
                             foreach ($tierIndexes as $tierIndex) {
                                 $tierIndex = (int) $tierIndex;
                                 if ($tierIndex === $referenceTierIndex) {
-                                    continue;
-                                }
-
-                                $tierEnabled = $productTierEnabled[$tierIndex]
-                                    ?? $productTierEnabled[(string) $tierIndex]
-                                    ?? true;
-                                if (!(bool) $tierEnabled) {
                                     continue;
                                 }
 

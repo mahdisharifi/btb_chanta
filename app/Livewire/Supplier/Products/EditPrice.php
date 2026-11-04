@@ -43,6 +43,12 @@ class EditPrice extends Component
     #[Locked]
     public int $tierPricingRevision = 1;
     public ?string $foreignPriceAmount = null;
+    /** @var array<int, string|null> FX amounts for manually managed cash tiers. */
+    public array $foreignTierAmounts = [];
+    #[Locked]
+    public array $foreignTierAmountsTouched = [];
+    #[Locked]
+    public array $foreignTierAmountsDerived = [];
     public bool $foreignPriceRebasePending = false;
     public bool $foreignPricePreviewValid = false;
     public ?string $latestExchangeRate = null;
@@ -106,9 +112,19 @@ class EditPrice extends Component
         }
 
         // تغییر وضعیت فروش تیراژ نباید مرجع را حذف کند؛ پیش‌نمایش درصدها را تازه کن.
-        if ($this->priceCurrency !== 'TOM' || $this->autoCalculateTiers) {
-            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
+        if ($this->autoCalculateTiers) {
+            $this->calculateTierPrices();
         }
+    }
+
+    public function updatedAutoCalculateTiers(): void
+    {
+        if ($this->autoCalculateTiers) {
+            $this->calculateTierPrices();
+            return;
+        }
+
+        $this->updateAllCheckPrices();
     }
     
     /**
@@ -275,6 +291,7 @@ class EditPrice extends Component
         $this->loadEffectivePercentages();
         
         $this->initializePriceMatrix();
+        $this->initializeForeignTierAmounts();
         $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
         $this->foreignPriceRebasePending = $cashPriceType !== null
             && $this->productSupplier->price_currency !== $this->priceCurrency
@@ -415,6 +432,238 @@ class EditPrice extends Component
         $this->loadEffectivePercentages();
     }
 
+    private function initializeForeignTierAmounts(): void
+    {
+        $this->foreignTierAmounts = [];
+        $this->foreignTierAmountsTouched = [];
+        $this->foreignTierAmountsDerived = [];
+
+        if ($this->priceCurrency === 'TOM') {
+            return;
+        }
+
+        $storedAmounts = is_array($this->productSupplier->foreign_tier_amounts)
+            ? $this->productSupplier->foreign_tier_amounts
+            : [];
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType) {
+            return;
+        }
+
+        $rate = $this->productSupplier->price_currency === $this->priceCurrency
+            && is_numeric($this->productSupplier->foreign_price_rate)
+            && (float) $this->productSupplier->foreign_price_rate > 0
+                ? (float) $this->productSupplier->foreign_price_rate
+                : $this->effectiveForeignConversionRate();
+        foreach ($this->quantityTiers as $tierIndex => $_tier) {
+            $tierIndex = (int) $tierIndex;
+            if ($tierIndex === $this->referenceTierIndex) {
+                continue;
+            }
+
+            $storedAmount = $storedAmounts[$tierIndex] ?? $storedAmounts[(string) $tierIndex] ?? null;
+            if (is_numeric($storedAmount) && (float) $storedAmount > 0) {
+                $this->foreignTierAmounts[$tierIndex] = $this->formatForeignAmount($storedAmount);
+                continue;
+            }
+
+            $tomanPrice = $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? null;
+            if ($rate !== null && is_numeric($tomanPrice) && (float) $tomanPrice > 0) {
+                $this->foreignTierAmounts[$tierIndex] = number_format((float) $tomanPrice / $rate, 4, '.', '');
+                $this->foreignTierAmountsDerived[$tierIndex] = true;
+            }
+        }
+    }
+
+    private function effectiveForeignConversionRate(): ?float
+    {
+        if ($this->priceCurrency === 'TOM') {
+            return null;
+        }
+
+        $setting = SupplierExchangeRateSetting::query()
+            ->where('supplier_id', $this->productSupplier->supplier_id)
+            ->where('currency', $this->priceCurrency)
+            ->first();
+        $rateService = app(\App\Services\ForeignCurrencyPriceService::class);
+        if ($rateService->isUsableSupplierRate($setting)) {
+            $rate = $setting->auto_update ? $setting->rate_toman : $setting->manual_rate_toman;
+            return is_numeric($rate) && (float) $rate > 0 ? (float) $rate : null;
+        }
+
+        if ($this->productSupplier->price_currency === $this->priceCurrency
+            && is_numeric($this->productSupplier->foreign_price_rate)
+            && (float) $this->productSupplier->foreign_price_rate > 0) {
+            return (float) $this->productSupplier->foreign_price_rate;
+        }
+
+        return null;
+    }
+
+    private function formatForeignAmount(mixed $amount): string
+    {
+        return rtrim(rtrim(number_format((float) $amount, 4, '.', ''), '0'), '.');
+    }
+
+    private function normalizeForeignTierAmount(int $tierIndex): void
+    {
+        if (!array_key_exists($tierIndex, $this->foreignTierAmounts)
+            || $this->foreignTierAmounts[$tierIndex] === null) {
+            return;
+        }
+
+        $digits = [
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+        ];
+
+        $amount = strtr(trim((string) $this->foreignTierAmounts[$tierIndex]), $digits);
+        $amount = str_replace(['٬', ','], '', $amount);
+        $amount = str_replace('٫', '.', $amount);
+        $this->foreignTierAmounts[$tierIndex] = $amount === '' ? null : $amount;
+    }
+
+    public function updatedForeignTierAmounts(mixed $value, string|int $key): void
+    {
+        $tierIndex = (int) $key;
+        if ($this->priceCurrency === 'TOM'
+            || $this->autoCalculateTiers
+            || $tierIndex === $this->referenceTierIndex
+            || !array_key_exists($tierIndex, $this->quantityTiers)) {
+            return;
+        }
+
+        $this->foreignTierAmountsTouched[$tierIndex] = true;
+        $this->foreignTierAmountsDerived[$tierIndex] = false;
+        $this->normalizeForeignTierAmount($tierIndex);
+
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType) {
+            return;
+        }
+
+        $amount = $this->foreignTierAmounts[$tierIndex] ?? null;
+        if ($amount === null || $amount === '') {
+            $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = null;
+            $this->resetErrorBag("foreignTierAmounts.{$tierIndex}");
+            $this->updateAllCheckPrices();
+            return;
+        }
+
+        $rate = $this->effectiveForeignConversionRate();
+        if ($rate === null) {
+            $this->addError("foreignTierAmounts.{$tierIndex}", 'برای تبدیل مبلغ این تیراژ، نرخ معتبر ارز لازم است.');
+            return;
+        }
+
+        try {
+            $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = app(\App\Services\ForeignCurrencyPriceService::class)
+                ->calculateToman((float) $amount, $rate, $this->productSupplier);
+            $this->resetErrorBag("foreignTierAmounts.{$tierIndex}");
+            $this->updateAllCheckPrices();
+        } catch (\InvalidArgumentException $exception) {
+            $this->addError("foreignTierAmounts.{$tierIndex}", $exception->getMessage());
+        }
+    }
+
+    private function syncManualForeignTierPrices(float $rateValue): bool
+    {
+        if ($this->priceCurrency === 'TOM' || $this->autoCalculateTiers) {
+            return true;
+        }
+
+        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+        if (!$cashPriceType) {
+            return false;
+        }
+
+        $rateService = app(\App\Services\ForeignCurrencyPriceService::class);
+        $storedRate = is_numeric($this->productSupplier->foreign_price_rate)
+            && (float) $this->productSupplier->foreign_price_rate > 0
+                ? (float) $this->productSupplier->foreign_price_rate
+                : null;
+
+        foreach ($this->quantityTiers as $tierIndex => $_tier) {
+            $tierIndex = (int) $tierIndex;
+            if ($tierIndex === $this->referenceTierIndex) {
+                continue;
+            }
+
+            $this->normalizeForeignTierAmount($tierIndex);
+            $amount = $this->foreignTierAmounts[$tierIndex] ?? null;
+            if ($amount === null || $amount === '') {
+                if ($this->foreignTierAmountsTouched[$tierIndex] ?? false) {
+                    $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = null;
+                }
+                continue;
+            }
+
+            if (!is_numeric($amount)
+                || (float) $amount <= 0
+                || !preg_match('/^\d+(?:\.\d{1,4})?$/', (string) $amount)) {
+                $this->addError("foreignTierAmounts.{$tierIndex}", 'مبلغ ارزی تیراژ باید بزرگ‌تر از صفر و حداکثر چهار رقم اعشار داشته باشد.');
+                return false;
+            }
+
+            if (($this->foreignTierAmountsTouched[$tierIndex] ?? false) && $this->usingStoredRateFallback) {
+                $this->addError("foreignTierAmounts.{$tierIndex}", 'نرخ خودکار تازه در دسترس نیست؛ مبلغ ارزی جدید را پس از دریافت نرخ معتبر ذخیره کنید.');
+                return false;
+            }
+
+            $storedAmount = is_array($this->productSupplier->foreign_tier_amounts)
+                ? ($this->productSupplier->foreign_tier_amounts[$tierIndex]
+                    ?? $this->productSupplier->foreign_tier_amounts[(string) $tierIndex]
+                    ?? null)
+                : null;
+            $unchangedStoredAmount = is_numeric($storedAmount)
+                && $this->canonicalDecimalString($storedAmount) === $this->canonicalDecimalString($amount);
+            $wasDerivedFromCurrentPrice = (bool) ($this->foreignTierAmountsDerived[$tierIndex] ?? false);
+            $sameRate = $storedRate !== null && !$rateService->hasRateChanged($storedRate, $rateValue);
+            $keepExistingTomanPrice = !($this->foreignTierAmountsTouched[$tierIndex] ?? false)
+                && ($unchangedStoredAmount || $wasDerivedFromCurrentPrice)
+                && $sameRate;
+
+            if (!$keepExistingTomanPrice) {
+                try {
+                    $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = $rateService
+                        ->calculateToman((float) $amount, $rateValue, $this->productSupplier);
+                } catch (\InvalidArgumentException $exception) {
+                    $this->addError("foreignTierAmounts.{$tierIndex}", $exception->getMessage());
+                    return false;
+                }
+            }
+
+            $this->foreignTierAmounts[$tierIndex] = number_format((float) $amount, 4, '.', '');
+            $this->foreignTierAmountsDerived[$tierIndex] = false;
+            $this->resetErrorBag("foreignTierAmounts.{$tierIndex}");
+        }
+
+        return true;
+    }
+
+    private function foreignTierAmountsForStorage(): ?array
+    {
+        if ($this->priceCurrency === 'TOM') {
+            return null;
+        }
+
+        $amounts = [];
+        foreach ($this->foreignTierAmounts as $tierIndex => $amount) {
+            $tierIndex = (int) $tierIndex;
+            if ($tierIndex === $this->referenceTierIndex
+                || !is_numeric($amount)
+                || (float) $amount <= 0) {
+                continue;
+            }
+
+            $amounts[$tierIndex] = number_format((float) $amount, 4, '.', '');
+        }
+
+        return $amounts === [] ? null : $amounts;
+    }
+
     private function restoreProductSupplierDraft(ProductSupplier $productSupplier): ProductSupplier
     {
         $productSupplierId = $productSupplier->getKey();
@@ -460,6 +709,34 @@ class EditPrice extends Component
                         && !preg_match('/^\d+(?:\.\d{1,2})?$/', (string) $value)
                         && !$this->isUnchangedStoredForeignPrice()) {
                         $fail('مبلغ جدید باید حداکثر دو رقم اعشار داشته باشد.');
+                    }
+                },
+            ],
+            'foreignTierAmounts' => ['array'],
+            'foreignTierAmounts.*' => [
+                'nullable',
+                'numeric',
+                'gt:0',
+                'max:9999999999999999',
+                function ($attribute, $value, $fail): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+
+                    preg_match('/foreignTierAmounts\.(\d+)/', $attribute, $matches);
+                    $tierIndex = isset($matches[1]) ? (int) $matches[1] : null;
+                    $unchangedStoredAmount = $tierIndex !== null
+                        && is_array($this->productSupplier?->foreign_tier_amounts)
+                        && $this->canonicalDecimalString(
+                            $this->productSupplier->foreign_tier_amounts[$tierIndex]
+                                ?? $this->productSupplier->foreign_tier_amounts[(string) $tierIndex]
+                                ?? null
+                        ) === $this->canonicalDecimalString($value);
+
+                    if (!preg_match('/^\d+(?:\.\d{1,4})?$/', (string) $value)
+                        && !$unchangedStoredAmount
+                        && ($tierIndex === null || !($this->foreignTierAmountsDerived[$tierIndex] ?? false))) {
+                        $fail('مبلغ ارزی تیراژ باید حداکثر چهار رقم اعشار داشته باشد.');
                     }
                 },
             ],
@@ -717,8 +994,10 @@ class EditPrice extends Component
                 return false;
             }
 
-            if ($this->priceCurrency !== 'TOM') {
-                $this->calculateTierPrices(forceCurrencyDerived: true);
+            if ($this->autoCalculateTiers) {
+                $this->calculateTierPrices();
+            } elseif ($this->priceCurrency === 'TOM') {
+                $this->updateAllCheckPrices();
             }
 
             $this->validate();
@@ -739,6 +1018,7 @@ class EditPrice extends Component
                 'is_active' => (bool)$this->is_active,
                 'price_currency' => $this->priceCurrency,
                 'foreign_price_amount' => $this->foreignPriceAmountForStorage(),
+                'foreign_tier_amounts' => $this->foreignTierAmountsForStorage(),
                 // Automatic refresh policy is stored once per supplier and currency.
                 'foreign_price_auto_update' => false,
                 'foreign_price_refresh_hours' => null,
@@ -939,6 +1219,7 @@ class EditPrice extends Component
         $this->foreignPriceRebasePending = false;
         // ✅ بارگذاری مجدد قیمت‌های ذخیره شده
         $this->initializePriceMatrix();
+        $this->initializeForeignTierAmounts();
         $this->refreshForeignPriceRevisionToken();
 
         \App\Jobs\BroadcastSupplierProductPrices::dispatch(
@@ -1507,9 +1788,9 @@ class EditPrice extends Component
     /**
      * محاسبه خودکار قیمت تیراژها بر اساس تیراژ مرجع
      */
-    public function calculateTierPrices(bool $forceCurrencyDerived = false): void
+    public function calculateTierPrices(): void
     {
-        if (!$this->autoCalculateTiers && !$forceCurrencyDerived) {
+        if (!$this->autoCalculateTiers) {
             return;
         }
         
@@ -1558,6 +1839,15 @@ class EditPrice extends Component
             
             // بروزرسانی در priceMatrix
             $this->priceMatrix[$index][$cashPriceType->id]['price'] = $roundedPrice;
+
+            if ($this->priceCurrency !== 'TOM') {
+                $rate = $this->effectiveForeignConversionRate();
+                if ($rate !== null) {
+                    $this->foreignTierAmounts[$index] = number_format((float) $roundedPrice / $rate, 4, '.', '');
+                    $this->foreignTierAmountsDerived[$index] = true;
+                    $this->foreignTierAmountsTouched[$index] = false;
+                }
+            }
         }
         
         // بروزرسانی قیمت‌های چکی برای همه تیراژها
@@ -1699,8 +1989,21 @@ class EditPrice extends Component
                     ->value('price');
                 $this->priceMatrix[$tierIndex][$priceTypeId]['price'] = $storedPrice;
                 $this->addError('foreignPriceAmount', 'قیمت پایهٔ این محصول باید به ارز انتخاب‌شده وارد شود؛ ورود تومانی در این حالت مجاز نیست.');
+            } elseif ($this->autoCalculateTiers) {
+                $this->calculateTierPrices();
             } else {
-                $this->calculateTierPrices(forceCurrencyDerived: true);
+                $storedPrice = ProductPrice::query()
+                    ->where('product_supplier_id', $this->productSupplier->id)
+                    ->where('price_type_id', $priceType->id)
+                    ->where('tier_index', $tierIndex)
+                    ->whereNull('check_period_id')
+                    ->orderByDesc('updated_at')
+                    ->value('price');
+                $this->priceMatrix[$tierIndex][$priceTypeId]['price'] = $storedPrice;
+                $this->addError(
+                    "foreignTierAmounts.{$tierIndex}",
+                    'قیمت این تیراژ را به ارز پایه وارد کنید؛ مبلغ تومانی مستقیم قابل ویرایش نیست.'
+                );
             }
 
             return;
@@ -1924,8 +2227,13 @@ class EditPrice extends Component
         $this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id]['price'] = $tomanPrice;
         $this->foreignPricePreviewValid = true;
 
-        if ($this->autoCalculateTiers || $this->priceCurrency !== 'TOM') {
-            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
+        if ($this->autoCalculateTiers) {
+            $this->calculateTierPrices();
+        } elseif ($this->priceCurrency !== 'TOM') {
+            if (!$this->syncManualForeignTierPrices($conversionRate)) {
+                return false;
+            }
+            $this->updateAllCheckPrices();
         } else {
             $this->updateAllCheckPrices();
         }

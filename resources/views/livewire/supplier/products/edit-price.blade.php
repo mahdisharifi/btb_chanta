@@ -925,7 +925,11 @@
                                                     نوع قیمت
                                                 </th>
                                                 <th class="px-6 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-b-2 border-gray-300 dark:border-gray-600">
-                                                    {{ $priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex ? 'مبلغ پایه (' . $cashCurrencyLabel . ')' : 'قیمت نهایی (تومان)' }}
+                                                    {{ $priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex
+                                                        ? 'مبلغ پایه (' . $cashCurrencyLabel . ')'
+                                                        : ($priceCurrency !== 'TOM' && !$autoCalculateTiers
+                                                            ? 'نقدی به ' . $cashCurrencyLabel . ' / چکی به تومان'
+                                                            : 'قیمت نهایی (تومان)') }}
                                                 </th>
                                             </tr>
                                         </thead>
@@ -938,6 +942,8 @@
                                                         <x-heroicon-s-banknotes class="w-5 h-5 text-green-600 dark:text-green-400"/>
                                                         <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
                                                             @if($priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex)
+                                                                قیمت نقدی ({{ $cashCurrencyLabel }})
+                                                            @elseif($priceCurrency !== 'TOM' && !$autoCalculateTiers)
                                                                 قیمت نقدی ({{ $cashCurrencyLabel }})
                                                             @elseif($priceCurrency !== 'TOM')
                                                                 قیمت نقدی محاسبه‌شده (تومان)
@@ -956,6 +962,7 @@
                                                             :priceMatrix="$priceMatrix"
                                                             :autoCalculateTiers="$autoCalculateTiers"
                                                             :priceCurrency="$priceCurrency"
+                                                            :foreignTierAmounts="$foreignTierAmounts"
                                                             :foreignPriceRebasePending="$foreignPriceRebasePending"
                                                             :foreignPriceAmount="$foreignPriceAmount"
                                                             :foreignPricePreviewValid="$foreignPricePreviewValid"
@@ -1190,6 +1197,8 @@
                                                 <x-heroicon-s-banknotes class="w-5 h-5 text-green-600 dark:text-green-400"/>
                                                 @if($priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex)
                                                     قیمت نقدی ({{ $cashCurrencyLabel }})
+                                                @elseif($priceCurrency !== 'TOM' && !$autoCalculateTiers)
+                                                    قیمت نقدی ({{ $cashCurrencyLabel }})
                                                 @elseif($priceCurrency !== 'TOM')
                                                     قیمت نقدی محاسبه‌شده (تومان)
                                                 @else
@@ -1207,6 +1216,7 @@
                                                 :priceMatrix="$priceMatrix"
                                                 :autoCalculateTiers="$autoCalculateTiers"
                                                 :priceCurrency="$priceCurrency"
+                                                :foreignTierAmounts="$foreignTierAmounts"
                                                 :foreignPriceRebasePending="$foreignPriceRebasePending"
                                                 :foreignPriceAmount="$foreignPriceAmount"
                                                 :foreignPricePreviewValid="$foreignPricePreviewValid"

@@ -351,7 +351,7 @@
 
         <div class="mt-5 flex flex-col gap-3 border-t border-gray-200 dark:border-gray-700 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p class="text-xs leading-5 text-gray-600 dark:text-gray-400">
-                در حالت خودکار، نرخ در پس‌زمینه دریافت می‌شود و آخرین قیمت ذخیره‌شده تا دریافت نرخ معتبر حفظ خواهد شد.
+                با ذخیرهٔ نرخ دستی، قیمت محصولات به‌طور خودکار در صف محاسبه قرار می‌گیرد. در حالت خودکار، فقط پس از دریافت نرخ تازه و معتبرِ متفاوت، قیمت‌ها به‌روز می‌شوند و تا آن زمان آخرین قیمت ذخیره‌شده حفظ خواهد شد. دکمهٔ اعمال برای اجرای دوباره یا تلاش مجدد است.
             </p>
             <div class="flex flex-col gap-2 sm:flex-row">
                 <button type="button"

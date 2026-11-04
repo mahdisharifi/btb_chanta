@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\UserRole;
 use App\Events\ProductPricesUpdated;
 use App\Models\PriceVisibilitySetting;
+use App\Models\Product;
 use App\Models\ProductPrice;
 use App\Models\ProductSupplier;
 use App\Enums\ProductStatus;
@@ -54,8 +55,36 @@ class ProductPriceBroadcastService
                 $throwOnFailure,
             );
 
-            foreach ($changedProductSuppliers->groupBy('product_id') as $productId => $changedForProduct) {
-                $this->broadcastProduct((int) $productId, $changedForProduct, $revisionAlreadyIncremented, $throwOnFailure);
+            $changedByProduct = $changedProductSuppliers->groupBy('product_id');
+            $changedProductIds = $changedByProduct->keys()->map(fn ($id): int => (int) $id);
+
+            // Preserve the existing product-specific channel for product detail pages.
+            foreach ($changedByProduct as $productId => $changedForProduct) {
+                $this->broadcastProduct(
+                    (int) $productId,
+                    $changedForProduct,
+                    $revisionAlreadyIncremented,
+                    $throwOnFailure,
+                );
+            }
+
+            // Public cards use the canonical family product. A branch-only price
+            // change therefore also needs a family event so those cards refresh.
+            $changedByFamily = $changedProductSuppliers->groupBy(function (ProductSupplier $changed): int {
+                return (int) ($changed->product?->family_product_id ?: $changed->product_id);
+            });
+            foreach ($changedByFamily as $familyProductId => $changedForFamily) {
+                if ((int) $familyProductId === (int) $changedForFamily->first()->product_id
+                    || $changedProductIds->contains((int) $familyProductId)) {
+                    continue;
+                }
+
+                $this->broadcastProduct(
+                    (int) $familyProductId,
+                    $changedForFamily,
+                    false,
+                    $throwOnFailure,
+                );
             }
         } catch (Throwable $exception) {
             Log::warning('Preparing updated product prices for broadcast failed.', [
@@ -77,9 +106,18 @@ class ProductPriceBroadcastService
         bool $throwOnFailure,
     ): void
     {
-        $product = $changedProductSuppliers->first()?->product;
+        $product = Product::query()->find($productId);
         if (!$product?->is_active || $product->status !== ProductStatus::ACTIVE) {
             return;
+        }
+
+        $familyProductIds = Product::query()
+            ->where(fn ($query) => $query->whereKey($productId)->orWhere('family_product_id', $productId))
+            ->where('is_active', true)
+            ->where('status', ProductStatus::ACTIVE->value)
+            ->pluck('id');
+        if (!$familyProductIds->contains($productId)) {
+            $familyProductIds->push($productId);
         }
 
         $priceRevision = $revisionAlreadyIncremented
@@ -112,15 +150,27 @@ class ProductPriceBroadcastService
                     ->activeAndValid()
                     ->with('priceType:id,code'),
             ])
-            ->where('product_id', $productId)
+            ->whereIn('product_id', $familyProductIds->all())
             ->where('is_active', true)
             ->verifiedSupplier()
             ->get();
-        $productPriceRanges = $this->productPriceRanges($productId, $today);
+        $productSuppliers->each(function (ProductSupplier $productSupplier): void {
+            $enabledPrices = $productSupplier->prices->filter(
+                fn (ProductPrice $price): bool => $this->isTierEnabled($productSupplier, (int) $price->tier_index)
+            )->values();
+            $productSupplier->setRelation('prices', $enabledPrices);
+        });
 
-        $productSuppliersById = $productSuppliers->keyBy('id');
-        $requiresPageRefresh = $changedProductSuppliers->contains(
-            fn (ProductSupplier $changedProductSupplier): bool => !$productSuppliersById->has($changedProductSupplier->id)
+        $rootProductSuppliers = $productSuppliers
+            ->where('product_id', $productId)
+            ->values();
+        $productPriceRanges = $this->productPriceRanges($familyProductIds->all(), $today);
+
+        $rootProductSuppliersById = $rootProductSuppliers->keyBy('id');
+        $changedRootOffers = $changedProductSuppliers
+            ->filter(fn (ProductSupplier $changed): bool => (int) $changed->product_id === $productId);
+        $requiresPageRefresh = $changedRootOffers->contains(
+            fn (ProductSupplier $changedProductSupplier): bool => !$rootProductSuppliersById->has($changedProductSupplier->id)
         );
 
         foreach (UserRole::cases() as $role) {
@@ -138,7 +188,7 @@ class ProductPriceBroadcastService
 
             if ($settings->canSeeSupplierInfo()) {
                 foreach ($changedProductSuppliers as $changedProductSupplier) {
-                    $activeSupplier = $productSuppliersById->get($changedProductSupplier->id);
+                    $activeSupplier = $rootProductSuppliersById->get($changedProductSupplier->id);
                     if (!$activeSupplier) {
                         continue;
                     }
@@ -170,7 +220,7 @@ class ProductPriceBroadcastService
                 }
             }
 
-            $productMatrixPrices = $this->productMatrixPayload($productSuppliers, $allowedTypes);
+            $productMatrixPrices = $this->productMatrixPayload($rootProductSuppliers, $allowedTypes);
 
             try {
                 ProductPricesUpdated::dispatch(
@@ -306,25 +356,43 @@ class ProductPriceBroadcastService
         }
     }
 
-    private function productPriceRanges(int $productId, \Carbon\CarbonInterface $today): Collection
+    private function productPriceRanges(array $productIds, \Carbon\CarbonInterface $today): Collection
     {
-        $uniquePrices = ProductPrice::query()
-            ->leftJoin('price_types as range_price_types', 'range_price_types.id', '=', 'product_prices.price_type_id')
-            ->where('product_prices.product_id', $productId)
-            ->where('product_prices.is_active', true)
-            ->where(fn ($query) => $query->whereNull('product_prices.valid_from')->orWhere('product_prices.valid_from', '<=', $today))
-            ->where(fn ($query) => $query->whereNull('product_prices.valid_until')->orWhere('product_prices.valid_until', '>=', $today))
+        $prices = ProductPrice::query()
+            ->with(['priceType:id,code', 'productSupplier:id,tier_enabled'])
+            ->whereIn('product_id', $productIds)
+            ->where('is_active', true)
+            ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
+            ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
             ->whereHas('productSupplier', fn ($query) => $query->where('is_active', true)->verifiedSupplier())
-            ->selectRaw("product_prices.product_supplier_id, COALESCE(range_price_types.code, 'cash') as type, product_prices.tier_index, product_prices.check_period_id, MIN(product_prices.price) as price")
-            ->groupBy('product_prices.product_supplier_id', 'product_prices.tier_index', 'product_prices.check_period_id')
-            ->groupByRaw("COALESCE(range_price_types.code, 'cash')");
-
-        return DB::query()
-            ->fromSub($uniquePrices, 'unique_product_prices')
-            ->selectRaw('type, MIN(price) as lowest, MAX(price) as highest, SUM(price) as total, COUNT(*) as price_count')
-            ->groupBy('type')
             ->get()
-            ->keyBy('type');
+            ->filter(fn (ProductPrice $price): bool => $price->productSupplier
+                && $this->isTierEnabled($price->productSupplier, (int) $price->tier_index));
+
+        $uniquePrices = $prices
+            ->groupBy(fn (ProductPrice $price): string => implode(':', [
+                $price->product_supplier_id,
+                $price->priceType?->code ?? 'cash',
+                $price->tier_index,
+                $price->check_period_id ?? 0,
+            ]))
+            ->map(fn (Collection $rows): ProductPrice => $rows->sortBy('price')->first());
+
+        return $uniquePrices
+            ->groupBy(fn (ProductPrice $price): string => $price->priceType?->code ?? 'cash')
+            ->map(fn (Collection $rows): array => [
+                'lowest' => (int) $rows->min('price'),
+                'highest' => (int) $rows->max('price'),
+                'total' => (int) $rows->sum('price'),
+                'price_count' => $rows->count(),
+            ]);
+    }
+
+    private function isTierEnabled(ProductSupplier $productSupplier, int $tierIndex): bool
+    {
+        $tierEnabled = (array) ($productSupplier->tier_enabled ?? []);
+
+        return empty($tierEnabled) || (bool) ($tierEnabled[$tierIndex] ?? true);
     }
 
     /** @return array<int, array{type: string, tier_index: int, check_period_id: ?int, price: int, warranty_price: ?int}> */
