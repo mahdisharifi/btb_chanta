@@ -82,11 +82,9 @@ final class CatalogExchangeRateBasisResolver
         $rate = $isAuto
             ? $setting?->rate_toman
             : $setting?->manual_rate_toman;
-        $hasRate = is_numeric($rate) && (float) $rate > 0;
-
-        if ($isAuto && !$setting?->fetched_at) {
-            $hasRate = false;
-        }
+        $hasRate = $isAuto
+            ? app(ForeignCurrencyPriceService::class)->isFreshSupplierRate($setting)
+            : is_numeric($rate) && (float) $rate > 0;
 
         $lastFetchedAt = null;
         if ($isAuto && $hasRate) {
@@ -102,7 +100,7 @@ final class CatalogExchangeRateBasisResolver
             'rate_display' => $hasRate ? $this->formatRate($rate) : null,
             'status' => $hasRate
                 ? null
-                : ($isAuto ? 'هنوز نرخ موفقی دریافت نشده' : 'نرخ دستی تنظیم نشده'),
+                : ($isAuto ? 'نرخ خودکار معتبر در بازهٔ انتخاب‌شده موجود نیست' : 'نرخ دستی تنظیم نشده'),
             'last_fetched_at' => $lastFetchedAt,
         ];
     }

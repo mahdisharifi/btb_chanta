@@ -891,8 +891,13 @@
                         @endphp
                         
                         @foreach($orderedTiers as $tierIndex => $tier)
-                            {{-- ✅ فقط تیراژهای فعال را نمایش بده --}}
-                            @if($tierEnabled[$tierIndex] ?? true)
+                            {{-- تیراژ مرجع حتی در حالت غیرفعال برای حفظ مبلغ پایه قابل مشاهده می‌ماند. --}}
+                            @if(($tierEnabled[$tierIndex] ?? true) || (int) $tierIndex === (int) $referenceTierIndex)
+                            @if((int) $tierIndex === (int) $referenceTierIndex && !($tierEnabled[$tierIndex] ?? true))
+                                <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200" role="status" aria-live="polite">
+                                    کارتن برای فروش غیرفعال است، اما مرجع ثابت محاسبهٔ مبلغ ارزی و درصد سایر تیراژها باقی می‌ماند.
+                                </div>
+                            @endif
                             <x-price-tier-table
                                 :tier="$tier"
                                 :tierIndex="$tierIndex"
@@ -1351,7 +1356,7 @@
                                     </div>
                                 </x-slot>
                             </x-price-tier-table>
-                            @endif {{-- پایان شرط tierEnabled --}}
+                            @endif {{-- پایان شرط نمایش تیراژ فعال یا مرجع ثابت --}}
                         @endforeach
                     </div>
                 </div>

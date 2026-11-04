@@ -14,8 +14,8 @@ class NerkhsanjRateProvider
     public function fetch(): array
     {
         $response = Http::acceptJson()
-            ->connectTimeout(2)
-            ->timeout(5)
+            ->connectTimeout(5)
+            ->timeout(10)
             ->withHeaders([
                 'User-Agent' => config('app.name') . '/exchange-rate-fetcher',
                 'Cache-Control' => 'no-cache',
@@ -50,10 +50,13 @@ class NerkhsanjRateProvider
             $rates[$currency] = (float) $value;
         }
 
+        $marketDate = isset($payload['date']) ? trim((string) $payload['date']) : '';
+        $marketTime = isset($payload['time']) ? trim((string) $payload['time']) : '';
+
         return [
             'rates' => $rates,
-            'market_date' => isset($payload['date']) ? Str::limit((string) $payload['date'], 32, '') : null,
-            'market_time' => isset($payload['time']) ? Str::limit((string) $payload['time'], 16, '') : null,
+            'market_date' => $marketDate !== '' ? Str::limit($marketDate, 32, '') : null,
+            'market_time' => $marketTime !== '' ? Str::limit($marketTime, 16, '') : null,
         ];
     }
 }

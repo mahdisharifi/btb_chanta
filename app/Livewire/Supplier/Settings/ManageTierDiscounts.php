@@ -5,14 +5,22 @@ namespace App\Livewire\Supplier\Settings;
 use App\Models\Category;
 use App\Models\ExchangeRate;
 use App\Models\ProductSupplier;
+use App\Helpers\PriceHelper;
+use App\Jobs\ApplySupplierCurrencyPrices;
+use App\Jobs\RebaseSupplierCurrencyPrices;
+use App\Jobs\RefreshDueForeignCurrencyPrices;
 use App\Models\SupplierTierDiscount;
 use App\Models\SupplierExchangeRateSetting;
 use App\Models\Supplier;
+use App\Services\ExchangeRates\ExchangeRateRefreshService;
+use App\Services\ExchangeRates\NerkhsanjRateProvider;
+use App\Services\ForeignCurrencyPriceService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Throwable;
 
 #[Layout('components.layouts.supplier')]
 class ManageTierDiscounts extends Component
@@ -103,32 +111,211 @@ class ManageTierDiscounts extends Component
 
         foreach (self::CURRENCIES as $currency => $_label) {
             $snapshot = ExchangeRate::query()->find($currency);
+            $initialRate = app(ForeignCurrencyPriceService::class)->isFreshRate($snapshot)
+                ? $snapshot?->rate_toman
+                : null;
             $setting = SupplierExchangeRateSetting::query()->firstOrCreate(
                 ['supplier_id' => $supplierId, 'currency' => $currency],
                 [
-                    'rate_toman' => $snapshot?->rate_toman,
-                    'manual_rate_toman' => $snapshot?->rate_toman,
+                    'rate_toman' => $initialRate,
+                    'manual_rate_toman' => $initialRate,
                     'source' => 'manual',
                     'revision' => 1,
                 ]
             );
+            $savedQuoteIsDisplayable = $setting->source === NerkhsanjRateProvider::SOURCE
+                && is_numeric($setting->rate_toman)
+                && (float) $setting->rate_toman > 0;
+            $cachedQuoteIsDisplayable = $snapshot
+                && $snapshot->source === NerkhsanjRateProvider::SOURCE
+                && is_numeric($snapshot->rate_toman)
+                && (float) $snapshot->rate_toman > 0;
+            $displaySnapshot = $savedQuoteIsDisplayable
+                ? $setting
+                : ($cachedQuoteIsDisplayable ? $snapshot : null);
 
             $this->currencySettings[$currency] = [
                 'manual_rate_toman' => $setting->manual_rate_toman === null
                     ? ''
-                    : (string) $setting->manual_rate_toman,
+                    : $this->formatRateForInput($setting->manual_rate_toman),
                 'auto_update' => (bool) $setting->auto_update,
                 'refresh_hours' => $setting->refresh_hours ?? 6,
-                'rate_toman' => $setting->rate_toman === null ? null : (string) $setting->rate_toman,
-                'source' => $setting->source,
-                'fetched_at' => $setting->fetched_at?->timezone('Asia/Tehran')->format('Y/m/d H:i'),
-                'last_error' => $setting->last_error,
+                'rate_toman' => $displaySnapshot?->rate_toman === null
+                    ? null
+                    : $this->formatRateForInput($displaySnapshot->rate_toman),
+                'source' => $displaySnapshot?->source ?? $setting->source,
+                'source_market_at' => trim(implode(' ', array_filter([
+                    $displaySnapshot?->source_market_date,
+                    $displaySnapshot?->source_market_time,
+                ]))) ?: null,
+                'fetched_at' => $displaySnapshot?->fetched_at
+                    ? jdate($displaySnapshot->fetched_at->timezone('Asia/Tehran'))->format('Y/m/d H:i')
+                    : null,
+                'last_error' => $snapshot?->last_error ?: $setting->last_error,
                 'last_apply_error' => $setting->last_apply_error,
             ];
             $this->currencySettingRevisions[$currency] = (int) $setting->revision;
         }
 
         $this->currencySettingsChanged = false;
+    }
+
+    private function formatRateForInput(mixed $rate): ?string
+    {
+        if (!is_numeric($rate)) {
+            return null;
+        }
+
+        $value = (string) $rate;
+        if (!str_contains($value, '.')) {
+            return $value;
+        }
+
+        [$integer, $fraction] = explode('.', $value, 2);
+        $fraction = rtrim($fraction, '0');
+
+        return $fraction === '' ? $integer : $integer . '.' . $fraction;
+    }
+
+    private function setCurrencyRatePreview(string $currency, ExchangeRate|SupplierExchangeRateSetting $snapshot): void
+    {
+        $this->currencySettings[$currency]['rate_toman'] = $this->formatRateForInput($snapshot->rate_toman);
+        $this->currencySettings[$currency]['source'] = $snapshot->source;
+        $this->currencySettings[$currency]['source_market_at'] = trim(implode(' ', array_filter([
+            $snapshot->source_market_date,
+            $snapshot->source_market_time,
+        ]))) ?: null;
+        $this->currencySettings[$currency]['fetched_at'] = $snapshot->fetched_at
+            ? jdate($snapshot->fetched_at->timezone('Asia/Tehran'))->format('Y/m/d H:i')
+            : null;
+    }
+
+    /** Fetch a display-only quote preview; the policy remains unsaved until the save button is used. */
+    public function toggleAutomaticCurrencyRate(string $currency, mixed $enabled): void
+    {
+        $supplierId = $this->authorizedSupplierId();
+        abort_unless(array_key_exists($currency, self::CURRENCIES), 404);
+
+        $enabled = filter_var($enabled, FILTER_VALIDATE_BOOLEAN);
+        $this->currencySettings[$currency]['auto_update'] = $enabled;
+
+        if (!$enabled) {
+            $this->currencySettingsChanged = true;
+            $this->dispatch('notify', message: 'گزینه خاموش شد؛ برای ثبت تغییر، تنظیمات را ذخیره کنید.', type: 'info');
+
+            return;
+        }
+
+        if ($this->pricingCurrency !== $currency) {
+            $this->currencySettings[$currency]['auto_update'] = false;
+            $this->currencySettingsChanged = true;
+            $this->dispatch('notify', message: 'برای دریافت نرخ، ابتدا همین ارز را به‌عنوان ارز پایه انتخاب کنید.', type: 'warning');
+
+            return;
+        }
+
+        $refreshHours = (int) ($this->currencySettings[$currency]['refresh_hours'] ?? 6);
+        if (!in_array($refreshHours, ForeignCurrencyPriceService::REFRESH_HOURS, true)) {
+            $this->currencySettings[$currency]['auto_update'] = false;
+            $this->currencySettingsChanged = true;
+            $this->dispatch('notify', message: 'بازهٔ به‌روزرسانی نرخ معتبر نیست.', type: 'error');
+
+            return;
+        }
+
+        if (($this->currencySettings[$currency]['source'] ?? 'manual') === 'manual') {
+            $this->currencySettings[$currency]['rate_toman'] = null;
+            $this->currencySettings[$currency]['source_market_at'] = null;
+            $this->currencySettings[$currency]['fetched_at'] = null;
+        }
+        $this->currencySettings[$currency]['last_error'] = null;
+        $this->currencySettingsChanged = true;
+        $rateService = app(ForeignCurrencyPriceService::class);
+        $maxAgeMinutes = $rateService->maxAgeMinutesForRefreshHours($refreshHours);
+        $savedSetting = SupplierExchangeRateSetting::query()
+            ->where('supplier_id', $supplierId)
+            ->where('currency', $currency)
+            ->first();
+        $savedQuoteIsDisplayable = $savedSetting
+            && $savedSetting->source === NerkhsanjRateProvider::SOURCE
+            && is_numeric($savedSetting->rate_toman)
+            && (float) $savedSetting->rate_toman > 0;
+        $savedQuoteIsFresh = $savedQuoteIsDisplayable
+            && $rateService->isFreshSupplierRate($savedSetting, $maxAgeMinutes);
+
+        if ($savedQuoteIsDisplayable) {
+            $this->setCurrencyRatePreview($currency, $savedSetting);
+        }
+
+        try {
+            app(ExchangeRateRefreshService::class)->refresh($maxAgeMinutes);
+            $rate = ExchangeRate::query()->find($currency);
+            $cachedQuoteIsDisplayable = $rate
+                && $rate->source === NerkhsanjRateProvider::SOURCE
+                && is_numeric($rate->rate_toman)
+                && (float) $rate->rate_toman > 0;
+            $cachedQuoteIsFresh = $rateService->isFreshRate($rate, $maxAgeMinutes);
+
+            if ($cachedQuoteIsFresh || (!$savedQuoteIsFresh && $cachedQuoteIsDisplayable)) {
+                $this->setCurrencyRatePreview($currency, $rate);
+            }
+
+            $hasFreshQuote = $cachedQuoteIsFresh || $savedQuoteIsFresh;
+            if (!$hasFreshQuote) {
+                $error = $rate?->last_error ?: 'آخرین نرخ معتبر از بازهٔ انتخاب‌شده قدیمی‌تر است.';
+                $this->currencySettings[$currency]['last_error'] = $error;
+                $hasRate = is_numeric($this->currencySettings[$currency]['rate_toman'] ?? null)
+                    && (float) $this->currencySettings[$currency]['rate_toman'] > 0;
+                $message = $hasRate
+                    ? 'دریافت نرخ تازه ناموفق بود؛ آخرین نرخ موجود همراه زمان دریافتش نمایش داده شد. ' . $error
+                    : 'نرخ خودکار در دسترس نیست: ' . $error;
+                $this->dispatch('notify', message: $message, type: 'warning');
+
+                return;
+            }
+
+            $refreshError = $rate?->last_error;
+            if (!$refreshError && !$cachedQuoteIsFresh && $savedQuoteIsFresh) {
+                $refreshError = 'نرخ تازه‌تری از منبع دریافت نشد؛ آخرین نرخ معتبر ذخیره‌شده حفظ شد.';
+            }
+            if (!$refreshError && !$rate) {
+                $refreshError = $savedSetting?->last_error;
+            }
+            if ($refreshError || !$rate) {
+                $warning = $refreshError ?: 'نرخ تازه دریافت نشد؛ آخرین نرخ معتبر حفظ شده است.';
+                $this->currencySettings[$currency]['last_error'] = $warning;
+                $this->dispatch(
+                    'notify',
+                    message: 'دریافت تازه ناموفق بود؛ آخرین نرخ موجود همراه زمان دریافتش نمایش داده شد. ' . $warning,
+                    type: 'warning'
+                );
+
+                return;
+            }
+
+            $this->currencySettings[$currency]['last_error'] = null;
+            $formattedRate = PriceHelper::formatNumber((float) $this->currencySettings[$currency]['rate_toman']);
+            $this->dispatch('notify', message: "نرخ معتبر {$currency} در کادر نمایش داده شد: {$formattedRate} تومان. برای ثبت دریافت خودکار، تنظیمات را ذخیره کنید.", type: 'success');
+        } catch (Throwable $exception) {
+            $error = mb_substr($exception->getMessage(), 0, 500);
+            $rate = ExchangeRate::query()->find($currency);
+            $cachedQuoteIsDisplayable = $rate
+                && $rate->source === NerkhsanjRateProvider::SOURCE
+                && is_numeric($rate->rate_toman)
+                && (float) $rate->rate_toman > 0;
+
+            if (!$savedQuoteIsFresh && $cachedQuoteIsDisplayable) {
+                $this->setCurrencyRatePreview($currency, $rate);
+            }
+
+            $this->currencySettings[$currency]['last_error'] = $error;
+            $hasRate = is_numeric($this->currencySettings[$currency]['rate_toman'] ?? null)
+                && (float) $this->currencySettings[$currency]['rate_toman'] > 0;
+            $message = $hasRate
+                ? 'دریافت نرخ تازه ناموفق بود؛ آخرین نرخ موجود همراه زمان دریافتش نمایش داده شد. ' . $error
+                : 'دریافت نرخ ناموفق بود: ' . $error;
+            $this->dispatch('notify', message: $message, type: 'warning');
+        }
     }
 
     public function saveCurrencySettings(): void
@@ -168,12 +355,20 @@ class ManageTierDiscounts extends Component
 
         $this->validate($rules, $messages);
 
+        $exchangeRates = ExchangeRate::query()
+            ->whereIn('currency', array_keys(self::CURRENCIES))
+            ->get()
+            ->keyBy('currency');
+        $foreignCurrencyPriceService = app(ForeignCurrencyPriceService::class);
+
         $refreshRatesNow = false;
+        $autoUpdateConfigured = false;
+        $automaticRateApplications = [];
         $currencyChanged = false;
         $currencyRevision = 1;
         $staleCurrencySettings = false;
         $staleRateSettings = false;
-        DB::transaction(function () use ($supplierId, &$refreshRatesNow, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
+        DB::transaction(function () use ($supplierId, $exchangeRates, $foreignCurrencyPriceService, &$refreshRatesNow, &$autoUpdateConfigured, &$automaticRateApplications, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
             $supplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
             if ((int) $supplier->pricing_currency_revision !== $this->pricingCurrencyRevision) {
                 $staleCurrencySettings = true;
@@ -224,16 +419,81 @@ class ManageTierDiscounts extends Component
                     : (float) $input['manual_rate_toman'];
 
                 if ($autoUpdate) {
-                    $refreshRatesNow = $refreshRatesNow || $currency === $this->pricingCurrency;
-                    $setting->fill([
+                    $autoUpdateConfigured = true;
+                    $quote = $exchangeRates->get($currency);
+                    $maxAgeMinutes = $foreignCurrencyPriceService->maxAgeMinutesForRefreshHours((int) $input['refresh_hours']);
+                    $hasFreshCachedQuote = $foreignCurrencyPriceService->isFreshRate($quote, $maxAgeMinutes);
+                    $hasFreshSavedQuote = $setting->source === NerkhsanjRateProvider::SOURCE
+                        && $foreignCurrencyPriceService->isFreshSupplierRate($setting, $maxAgeMinutes);
+                    $hasFreshQuote = $hasFreshCachedQuote || $hasFreshSavedQuote;
+                    $cachedQuoteIsDisplayable = $quote
+                        && $quote->source === NerkhsanjRateProvider::SOURCE
+                        && is_numeric($quote->rate_toman)
+                        && (float) $quote->rate_toman > 0;
+                    $savedQuoteIsDisplayable = $setting->source === NerkhsanjRateProvider::SOURCE
+                        && is_numeric($setting->rate_toman)
+                        && (float) $setting->rate_toman > 0;
+                    $useSavedQuote = $savedQuoteIsDisplayable
+                        && (!$cachedQuoteIsDisplayable || (!$hasFreshCachedQuote && $hasFreshSavedQuote));
+                    $quoteToSave = $useSavedQuote ? $setting : $quote;
+                    $hasDisplayableQuote = $useSavedQuote ? $savedQuoteIsDisplayable : $cachedQuoteIsDisplayable;
+                    $quoteError = $hasFreshCachedQuote
+                        ? $quote?->last_error
+                        : ($quote?->last_error ?: $setting->last_error);
+                    if (!$quoteError && !$hasFreshCachedQuote && $hasFreshSavedQuote) {
+                        $quoteError = 'دریافت تازه ناموفق بود؛ آخرین نرخ معتبر ذخیره‌شده حفظ شد.';
+                    }
+                    if (!$quoteError && !$hasFreshQuote) {
+                        $quoteError = 'آخرین نرخ معتبر از بازهٔ انتخاب‌شده قدیمی‌تر است؛ قیمت‌های ثبت‌شده حفظ شدند.';
+                    }
+                    $nextRevision = ((int) $setting->revision) + 1;
+                    $attributes = [
                         'manual_rate_toman' => $manualRate,
                         'auto_update' => true,
                         'refresh_hours' => (int) $input['refresh_hours'],
-                        'next_update_at' => now(),
-                        'last_error' => null,
+                        'next_update_at' => $hasFreshQuote && !$quoteError
+                            ? now()->addHours((int) $input['refresh_hours'])
+                            : now(),
+                        'last_error' => $quoteError,
                         'last_apply_error' => null,
-                        'revision' => ((int) $setting->revision) + 1,
-                    ])->save();
+                        'revision' => $nextRevision,
+                    ];
+
+                    if ($hasDisplayableQuote) {
+                        $attributes += [
+                            'rate_toman' => $quoteToSave->rate_toman,
+                            'source' => $quoteToSave->source,
+                            'source_market_date' => $quoteToSave->source_market_date,
+                            'source_market_time' => $quoteToSave->source_market_time,
+                            'source_updated_at' => $quoteToSave->source_updated_at,
+                            'fetched_at' => $quoteToSave->fetched_at,
+                            'last_attempt_at' => $quoteToSave->last_attempt_at ?? now(),
+                        ];
+                    } elseif (($setting->source ?? 'manual') === 'manual') {
+                        $attributes += [
+                            'rate_toman' => null,
+                            'source_market_date' => null,
+                            'source_market_time' => null,
+                            'source_updated_at' => null,
+                            'fetched_at' => null,
+                        ];
+                    }
+
+                    if ($currency === $this->pricingCurrency) {
+                        if ($hasFreshQuote) {
+                            $automaticRateApplications[] = [
+                                'currency' => $currency,
+                                'setting_revision' => $nextRevision,
+                                'tier_pricing_revision' => (int) $supplier->tier_pricing_revision,
+                            ];
+                        }
+
+                        if (!$hasFreshQuote || $quoteError) {
+                            $refreshRatesNow = true;
+                        }
+                    }
+
+                    $setting->fill($attributes)->save();
                     continue;
                 }
 
@@ -255,12 +515,22 @@ class ManageTierDiscounts extends Component
                 ])->save();
             }
 
-            DB::afterCommit(function () use ($supplierId, $currencyRevision): void {
-                \App\Jobs\RebaseSupplierCurrencyPrices::dispatch(
+            DB::afterCommit(function () use ($supplierId, $currencyRevision, $automaticRateApplications): void {
+                RebaseSupplierCurrencyPrices::dispatch(
                     $supplierId,
                     $this->pricingCurrency,
                     $currencyRevision
                 );
+
+                foreach ($automaticRateApplications as $application) {
+                    ApplySupplierCurrencyPrices::dispatch(
+                        $supplierId,
+                        $application['currency'],
+                        $application['setting_revision'],
+                        true,
+                        $application['tier_pricing_revision'],
+                    );
+                }
             });
         });
 
@@ -282,10 +552,16 @@ class ManageTierDiscounts extends Component
         $this->loadCurrencySettings();
 
         if ($refreshRatesNow) {
-            \App\Jobs\RefreshDueForeignCurrencyPrices::dispatch();
+            RefreshDueForeignCurrencyPrices::dispatch();
             $message = $currencyChanged
                 ? 'ارز پایه ذخیره شد؛ هماهنگ‌سازی امن قیمت‌های قبلی و دریافت نرخ جدید در صف قرار گرفت.'
                 : 'تنظیمات ذخیره شد؛ دریافت نرخ و به‌روزرسانی خودکار در صف قرار گرفت.';
+        } elseif ($automaticRateApplications !== []) {
+            $message = $currencyChanged
+                ? 'ارز پایه ذخیره شد؛ نرخ دریافت‌شده و محاسبهٔ قیمت محصولات در صف قرار گرفت.'
+                : 'تنظیمات ذخیره شد؛ نرخ دریافت‌شده و محاسبهٔ قیمت محصولات در صف قرار گرفت.';
+        } elseif ($autoUpdateConfigured) {
+            $message = 'تنظیمات خودکار ذخیره شد؛ نرخ در نوبت به‌روزرسانی بعدی دریافت می‌شود.';
         } else {
             $message = $currencyChanged
                 ? 'ارز پایه ذخیره شد؛ هماهنگ‌سازی امن قیمت‌های قبلی در صف قرار گرفت.'

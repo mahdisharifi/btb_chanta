@@ -7,6 +7,7 @@ use App\Models\ProductGallery;
 use App\Models\ProductSupplier;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -18,13 +19,18 @@ class SupplierBranchProductCopyService
      * Copy a product into a child supplier branch. The callback runs in the same
      * transaction, which lets transfer state or a quick price be committed atomically.
      */
-    public function copyForBranch(Product $source, Supplier $target, ?callable $withinTransaction = null): Product
+    public function copyForBranch(
+        Product $source,
+        Supplier $target,
+        ?callable $withinTransaction = null,
+        bool $offerIsActive = true,
+    ): Product
     {
         $this->assertChildBranch($target);
         $copiedPaths = [];
 
         try {
-            return DB::transaction(function () use ($source, $target, $withinTransaction, &$copiedPaths): Product {
+            return DB::transaction(function () use ($source, $target, $withinTransaction, $offerIsActive, &$copiedPaths): Product {
                 // Match branch pricing and promotion lock order so a copy cannot
                 // commit a stale root matrix after a concurrent primary edit.
                 $lockedParent = $target->parent_supplier_id !== null
@@ -45,7 +51,7 @@ class SupplierBranchProductCopyService
                 }
 
                 if ($existing) {
-                    $offer = $this->ensureBranchOffer($existing, $target);
+                    $offer = $this->ensureBranchOffer($existing, $target, $offerIsActive);
                     app(SupplierBranchPriceSyncService::class)->syncBranchProduct(
                         $existing,
                         $target,
@@ -82,11 +88,30 @@ class SupplierBranchProductCopyService
                 $product->view_count = 0;
                 $product->save();
 
+                $galleryAttributes = [];
+                $hasPrimaryGallery = false;
                 foreach ($source->galleries()->get() as $gallery) {
-                    $product->galleries()->create($this->copyGalleryAttributes($gallery, $target, $copiedPaths));
+                    $attributes = $this->copyGalleryAttributes($gallery, $target, $copiedPaths);
+                    if ($attributes === null) {
+                        continue;
+                    }
+
+                    $hasPrimaryGallery = $hasPrimaryGallery || (bool) ($attributes['is_primary'] ?? false);
+                    $galleryAttributes[] = $attributes;
                 }
 
-                $offer = $this->ensureBranchOffer($product, $target);
+                // Missing source media must not prevent the product itself from
+                // being accepted. If its primary file was missing, promote the
+                // first successfully copied gallery item.
+                if (!$hasPrimaryGallery && $galleryAttributes) {
+                    $galleryAttributes[0]['is_primary'] = true;
+                }
+
+                foreach ($galleryAttributes as $attributes) {
+                    $product->galleries()->create($attributes);
+                }
+
+                $offer = $this->ensureBranchOffer($product, $target, $offerIsActive);
                 app(SupplierBranchPriceSyncService::class)->syncBranchProduct(
                     $product,
                     $target,
@@ -118,11 +143,17 @@ class SupplierBranchProductCopyService
         }
     }
 
-    private function ensureBranchOffer(Product $product, Supplier $branch): ProductSupplier
+    private function ensureBranchOffer(Product $product, Supplier $branch, bool $isActive): ProductSupplier
     {
         return ProductSupplier::query()->firstOrCreate(
             ['product_id' => $product->id, 'supplier_id' => $branch->id],
-            ['is_active' => true, 'is_primary' => false, 'status' => ProductSupplier::STATUS_ACTIVE]
+            [
+                'is_active' => $isActive,
+                'is_primary' => false,
+                'status' => $isActive ? ProductSupplier::STATUS_ACTIVE : ProductSupplier::STATUS_INACTIVE,
+                'activated_at' => $isActive ? now() : null,
+                'deactivated_at' => $isActive ? null : now(),
+            ]
         );
     }
 
@@ -170,12 +201,18 @@ class SupplierBranchProductCopyService
         return $sku;
     }
 
-    private function copyGalleryAttributes(ProductGallery $gallery, Supplier $branch, array &$copiedPaths): array
+    private function copyGalleryAttributes(ProductGallery $gallery, Supplier $branch, array &$copiedPaths): ?array
     {
         $attributes = $gallery->getAttributes();
         unset($attributes['id'], $attributes['product_id'], $attributes['created_at'], $attributes['updated_at'], $attributes['deleted_at']);
 
         $attributes['file_path'] = $this->copyStoredPath($gallery->file_path, $branch, $copiedPaths);
+        if (!$attributes['file_path']) {
+            // product_galleries.file_path is required, so omit the entire gallery
+            // row when its main file is missing instead of rolling back acceptance.
+            return null;
+        }
+
         if ($gallery->poster_path) {
             $attributes['poster_path'] = $this->copyStoredPath($gallery->poster_path, $branch, $copiedPaths);
         }
@@ -183,9 +220,19 @@ class SupplierBranchProductCopyService
         $versions = $gallery->versions ?? [];
         foreach ($versions as $size => $version) {
             if (is_array($version) && !empty($version['path'])) {
-                $versions[$size]['path'] = $this->copyStoredPath($version['path'], $branch, $copiedPaths);
+                $copiedVersionPath = $this->copyStoredPath($version['path'], $branch, $copiedPaths);
+                if ($copiedVersionPath) {
+                    $versions[$size]['path'] = $copiedVersionPath;
+                } else {
+                    unset($versions[$size]);
+                }
             } elseif (is_string($version)) {
-                $versions[$size] = $this->copyStoredPath($version, $branch, $copiedPaths);
+                $copiedVersionPath = $this->copyStoredPath($version, $branch, $copiedPaths);
+                if ($copiedVersionPath) {
+                    $versions[$size] = $copiedVersionPath;
+                } else {
+                    unset($versions[$size]);
+                }
             }
         }
         $attributes['versions'] = $versions;
@@ -205,7 +252,12 @@ class SupplierBranchProductCopyService
 
         $disk = Storage::disk(ProductGallery::STORAGE_DISK);
         if (!$disk->exists($path)) {
-            throw new RuntimeException('یکی از فایل‌های محصول مبدأ در فضای ذخیره‌سازی پیدا نشد.');
+            Log::warning('Skipping missing product media while copying a product to a branch.', [
+                'source_path' => $path,
+                'target_supplier_id' => $branch->id,
+            ]);
+
+            return null;
         }
 
         $extension = pathinfo($path, PATHINFO_EXTENSION);

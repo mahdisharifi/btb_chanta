@@ -35,6 +35,8 @@ class Create extends Component
     #[Locked]
     public $productId = null;
     public bool $isEdit = false;
+    #[Locked]
+    public bool $supplierDraftMode = false;
 
 
     public $existingGalleries = [];
@@ -113,6 +115,12 @@ class Create extends Component
             $this->status = ProductStatus::DRAFT->value;
             $this->sku = 'محصول-' . strtoupper(Str::random(8));
         }
+    }
+
+    /** Supplier creation reuses this form while enforcing a supplier-owned draft. */
+    protected function isSupplierDraftModeContext(): bool
+    {
+        return false;
     }
 
     // پر کردن فرم از روی محصول موجود (حالت ویرایش)
@@ -670,7 +678,20 @@ class Create extends Component
 
     public function save()
     {
-        if ($this->isEdit) {
+        $isSupplierDraftMode = $this->isSupplierDraftModeContext();
+        $this->supplierDraftMode = $isSupplierDraftMode;
+
+        if ($isSupplierDraftMode) {
+            $supplier = auth()->user()?->currentSupplier();
+            abort_unless($supplier, 403);
+
+            // These fields are always server-controlled for supplier submissions.
+            $this->supplier_id = $supplier->id;
+            $this->status = ProductStatus::DRAFT->value;
+            $this->is_active = false;
+            $this->isEdit = false;
+            $this->productId = null;
+        } elseif ($this->isEdit) {
             Gate::authorize('update', Product::query()->findOrFail((int) $this->productId));
         } else {
             Gate::authorize('create', Product::class);
@@ -951,8 +972,14 @@ class Create extends Component
             $product->markContentUpdated();
         }
 
+        if ($isSupplierDraftMode) {
+            session()->flash('success', 'محصول با موفقیت ایجاد شد و در وضعیت پیش‌نویس قرار گرفت.');
+        }
+
         $this->dispatch('notify', [
-            'message' => $this->isEdit ? 'محصول با موفقیت بروزرسانی شد.' : 'محصول با موفقیت ایجاد شد.',
+            'message' => $isSupplierDraftMode
+                ? 'محصول با موفقیت ایجاد شد و در وضعیت پیش‌نویس قرار گرفت.'
+                : ($this->isEdit ? 'محصول با موفقیت بروزرسانی شد.' : 'محصول با موفقیت ایجاد شد.'),
             'type' => 'success',
         ]);
 
@@ -960,7 +987,7 @@ class Create extends Component
         $this->isEdit = true;
         $this->fillFromProduct($product->fresh());
 
-        return redirect()->route('admin.products.index');
+        return redirect()->route($isSupplierDraftMode ? 'supplier.products.index' : 'admin.products.index');
     }
 
     // ══════════════════════════════════════════════════════════

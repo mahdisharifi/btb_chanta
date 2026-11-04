@@ -256,7 +256,7 @@ class HomeController extends Controller
     {
         $priceVersion = Cache::get('products.prices.version', 'initial');
 
-        return Cache::remember("home:products:featured:priced-first-v2:{$priceVersion}", self::CACHE_TTL_SHORT, function () {
+        return Cache::remember("home:products:featured:priced-first-v3:{$priceVersion}", self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.is_featured', true)
                 ->orderByDesc('products.updated_at')
@@ -269,7 +269,7 @@ class HomeController extends Controller
     {
         $priceVersion = Cache::get('products.prices.version', 'initial');
 
-        return Cache::remember("home:products:latest:priced-first-v2:{$priceVersion}", self::CACHE_TTL_SHORT, function () {
+        return Cache::remember("home:products:latest:priced-first-v3:{$priceVersion}", self::CACHE_TTL_SHORT, function () {
             return $this->buildHomeProductQuery()
                 ->orderByDesc('products.created_at')
                 ->limit(self::LATEST_PRODUCTS_LIMIT)
@@ -281,7 +281,7 @@ class HomeController extends Controller
     {
         $priceVersion = Cache::get('products.prices.version', 'initial');
 
-        return Cache::remember("home:products:popular:priced-first-v2:{$priceVersion}", self::CACHE_TTL_MEDIUM, function () {
+        return Cache::remember("home:products:popular:priced-first-v3:{$priceVersion}", self::CACHE_TTL_MEDIUM, function () {
             return $this->buildHomeProductQuery()
                 ->where('products.view_count', '>', 0)
                 ->orderByDesc('products.view_count')
@@ -315,9 +315,9 @@ class HomeController extends Controller
             ->with([
                 'category:id,name,slug',
                 'supplier:id,company_name,brand_name,slug,logo_path,logo_versions,is_verified',
-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'galleries' => function ($q) {
                     $q->select([
@@ -344,7 +344,7 @@ class HomeController extends Controller
                               });
                       }]);
                 },
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([
@@ -441,9 +441,9 @@ class HomeController extends Controller
             ->with([
                 'category:id,name,slug',
                 'supplier:id,company_name,slug,logo_path,logo_versions,is_verified',
-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
                 'galleries' => function ($q) {
                     $q->select([
@@ -470,7 +470,7 @@ class HomeController extends Controller
                               });
                       }]);
                 },
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 'retailPrices' => function ($q) {
                     $q->select([

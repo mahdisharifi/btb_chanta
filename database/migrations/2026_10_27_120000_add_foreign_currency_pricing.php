@@ -76,7 +76,7 @@ return new class extends Migration
             $table->string('source_market_date', 32)->nullable();
             $table->string('source_market_time', 16)->nullable();
             $table->timestamp('source_updated_at')->nullable();
-            $table->timestamp('fetched_at');
+            $table->timestamp('fetched_at')->useCurrent();
             $table->timestamp('last_attempt_at')->nullable();
             $table->string('last_error', 500)->nullable();
             $table->timestamps();

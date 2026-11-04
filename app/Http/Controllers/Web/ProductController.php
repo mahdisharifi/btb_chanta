@@ -157,7 +157,7 @@ class ProductController extends Controller
 
         foreach ($allCategories as $cat) {
             if (!$cat->parent_id) continue;
-            $childCount  = $aggregated[$cat->id]  ?? 0;
+            $childCount  = $directCounts[$cat->id] ?? 0;
             $parentId    = $cat->parent_id;
 
             // حرکت به بالا در درخت
@@ -198,33 +198,7 @@ class ProductController extends Controller
         $baseQuery = $this->applyFeaturedFilter($baseQuery, $request);
         $baseQuery = $this->applySearch($baseQuery, $request);
 
-        // supplier_id های محصولات فیلترشده (مستقیم)
-        $directSupplierCounts = (clone $baseQuery)
-            ->select('products.supplier_id', DB::raw('COUNT(DISTINCT products.id) as cnt'))
-            ->whereNotNull('products.supplier_id')
-            ->groupBy('products.supplier_id')
-            ->pluck('cnt', 'supplier_id')
-            ->map(fn($v) => (int) $v)
-            ->toArray();
-
-        // supplier_id های از طریق pivot
-        $pivotSupplierCounts = (clone $baseQuery)
-            ->join('product_supplier', 'products.id', '=', 'product_supplier.product_id')
-            ->where('product_supplier.is_active', true)
-            ->select('product_supplier.supplier_id', DB::raw('COUNT(DISTINCT products.id) as cnt'))
-            ->groupBy('product_supplier.supplier_id')
-            ->pluck('cnt', 'supplier_id')
-            ->map(fn($v) => (int) $v)
-            ->toArray();
-
-        // ادغام تعداد (union)
-        $mergedCounts = $directSupplierCounts;
-        foreach ($pivotSupplierCounts as $sid => $cnt) {
-            $mergedCounts[$sid] = ($mergedCounts[$sid] ?? 0) + $cnt;
-            // از double-counting محصولاتی که هم supplier_id دارند هم pivot جلوگیری می‌کنیم
-            // با MAX به جای جمع
-            $mergedCounts[$sid] = max($directSupplierCounts[$sid] ?? 0, $pivotSupplierCounts[$sid] ?? 0);
-        }
+        $mergedCounts = $this->countPricedSupplierProducts($baseQuery);
 
         if (empty($mergedCounts)) {
             return response()->json(['suppliers' => []]);
@@ -839,7 +813,8 @@ class ProductController extends Controller
         $query->where(function ($q) use ($supplierIds) {
             $q->whereIn('products.supplier_id', $supplierIds)
               ->orWhereHas('familyProductSuppliers', function ($offers) use ($supplierIds) {
-                  $offers->whereIn('supplier_id', $supplierIds)->where('is_active', true);
+                  $offers->whereIn('product_supplier.supplier_id', $supplierIds)
+                      ->where('product_supplier.is_active', true);
               });
         });
 
@@ -1352,6 +1327,34 @@ class ProductController extends Controller
     /**
      * داده‌های ساید‌بار صفحه لیست (کش شده)
      */
+    private function countPricedSupplierProducts(Builder $products): array
+    {
+        $today = now()->toDateString();
+
+        // Count each displayed product once per supplier, across its family offers.
+        return (clone $products)
+            ->join('products as priced_offer', 'priced_offer.family_product_id', '=', 'products.family_product_id')
+            ->join('product_supplier as priced_supplier', 'priced_supplier.product_id', '=', 'priced_offer.id')
+            ->where('priced_offer.is_active', true)
+            ->where('priced_offer.status', ProductStatus::ACTIVE->value)
+            ->whereNull('priced_offer.deleted_at')
+            ->where('priced_supplier.is_active', true)
+            ->whereNull('priced_supplier.deleted_at')
+            ->whereExists(function ($prices) use ($today) {
+                $prices->selectRaw('1')->from('product_prices')
+                    ->whereColumn('product_prices.product_supplier_id', 'priced_supplier.id')
+                    ->where('product_prices.is_active', true)
+                    ->where('product_prices.price', '>', 0)
+                    ->where(fn ($q) => $q->whereNull('product_prices.valid_from')->orWhere('product_prices.valid_from', '<=', $today))
+                    ->where(fn ($q) => $q->whereNull('product_prices.valid_until')->orWhere('product_prices.valid_until', '>=', $today));
+            })
+            ->select('priced_supplier.supplier_id', DB::raw('COUNT(DISTINCT products.id) as cnt'))
+            ->groupBy('priced_supplier.supplier_id')
+            ->pluck('cnt', 'supplier_id')
+            ->map(fn ($count) => (int) $count)
+            ->all();
+    }
+
     private function getIndexSidebarData(Request $request): array
     {
         $filterableAttributes = collect();
@@ -1362,7 +1365,8 @@ class ProductController extends Controller
         if (!empty($supplierIds)) {
             $categoriesTree = $this->buildCategoriesTreeForSuppliers($supplierIds);
         } else {
-            $categoriesTree = Cache::remember('categories.tree.active', now()->addHours(6), function () {
+            $categoryGeneration = Cache::get(\App\Services\CategoryCatalog::GENERATION_KEY, 'initial');
+            $categoriesTree = Cache::remember('products.categories.tree.v2.'.$categoryGeneration, now()->addHours(6), function () {
                 return $this->buildCategoriesTree();
             });
         }
@@ -1377,31 +1381,26 @@ class ProductController extends Controller
 
         $canSeeSupplierFilter = in_array($this->resolveUserRole(), ['super_admin', 'supplier', 'retailer_premium']);
 
+        $supplierCounts = [];
+        if ($canSeeSupplierFilter) {
+            $supplierProducts = $this->buildBaseProductQuery();
+            $supplierProducts = $this->applyCategoryFilter($supplierProducts, $request);
+            $supplierProducts = $this->applyPriceFilter($supplierProducts, $request);
+            $supplierProducts = $this->applyStockFilter($supplierProducts, $request);
+            $supplierProducts = $this->applyFeaturedFilter($supplierProducts, $request);
+            $supplierProducts = $this->applySearch($supplierProducts, $request);
+            $supplierCounts = $this->countPricedSupplierProducts($supplierProducts);
+        }
+
         $suppliers = $canSeeSupplierFilter
             ? Supplier::query()
                 ->select('id', 'company_name', 'brand_name', 'logo_path', 'logo_versions', 'is_verified')
                 ->where('is_active', true)
                 ->whereNull('parent_supplier_id')
-                ->selectSub(
-                    DB::table('products')
-                        ->selectRaw('COUNT(*)')
-                        ->where('products.is_active', true)
-                        ->where('products.status', \App\Enums\ProductStatus::ACTIVE->value)
-                        ->whereNull('products.deleted_at')
-                        ->where(function ($q) {
-                            $q->whereColumn('products.supplier_id', 'suppliers.id')
-                              ->orWhereExists(function ($sub) {
-                                  $sub->select(DB::raw(1))
-                                      ->from('product_supplier')
-                                      ->whereColumn('product_supplier.product_id', 'products.id')
-                                      ->whereColumn('product_supplier.supplier_id', 'suppliers.id')
-                                      ->where('product_supplier.is_active', true);
-                              });
-                        }),
-                    'products_count'
-                )
+                ->whereIn('id', array_keys($supplierCounts))
                 ->orderBy('company_name')
                 ->get()
+                ->each(fn ($supplier) => $supplier->setAttribute('products_count', $supplierCounts[$supplier->id] ?? 0))
             : collect();
 
         $sortOptions = [
@@ -1482,14 +1481,14 @@ class ProductController extends Controller
         return Category::query()
             ->whereNull('parent_id')
             ->where('is_active', true)
-            ->withCount(['products as total_products_count' => function ($q) {
+            ->withCount(['products as active_products_count' => function ($q) {
                 $q->where('products.is_active', true)->where('products.status', 'active')
                         ->whereColumn('products.family_product_id', 'products.id');
             }])
             ->with([
                 'children' => function ($q) {
                     $q->where('is_active', true)->orderBy('sort_order')
-                      ->withCount(['products as total_products_count' => function ($sq) {
+                      ->withCount(['products as active_products_count' => function ($sq) {
                           $sq->where('products.is_active', true)->where('products.status', 'active')
                               ->whereColumn('products.family_product_id', 'products.id');
                       }])
@@ -1533,11 +1532,11 @@ class ProductController extends Controller
         return Category::query()
             ->whereNull('parent_id')
             ->where('is_active', true)
-            ->withCount(['products as total_products_count' => $supplierProductsConstraint])
+            ->withCount(['products as active_products_count' => $supplierProductsConstraint])
             ->with([
                 'children' => function ($q) use ($supplierProductsConstraint) {
                     $q->where('is_active', true)->orderBy('sort_order')
-                      ->withCount(['products as total_products_count' => $supplierProductsConstraint])
+                      ->withCount(['products as active_products_count' => $supplierProductsConstraint])
                       ->with([
                           'children' => function ($sq) use ($supplierProductsConstraint) {
                               $sq->where('is_active', true)->orderBy('sort_order')

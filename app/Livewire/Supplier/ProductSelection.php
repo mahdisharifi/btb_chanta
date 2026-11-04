@@ -174,14 +174,6 @@ class ProductSelection extends Component
             return redirect()->route('supplier.products.edit-price', ['product' => $branchProduct->id]);
         }
 
-        $alreadyOwned = (int) $product->supplier_id === (int) $supplier->id;
-        $hasOffer = ProductSupplier::query()
-            ->where('product_id', $product->id)
-            ->where('supplier_id', $supplier->id)
-            ->exists();
-
-        abort_unless($alreadyOwned || $hasOffer, 403, 'این محصول برای قیمت‌گذاری در دسترس شما نیست.');
-
         if ($supplier->pricing_currency !== 'TOM') {
             session()->flash('info', 'برای ثبت قیمت با ارز پایه، از ماتریس قیمت استفاده کنید تا قیمت تومانی و تیراژها درست محاسبه شوند.');
 
@@ -253,29 +245,83 @@ class ProductSelection extends Component
 
     private function saveQuickOffer(Product $product, \App\Models\Supplier $supplier): ProductSupplier
     {
+        if ($supplier->isBranch()) {
+            return DB::transaction(function () use ($product, $supplier): ProductSupplier {
+                $productSupplier = ProductSupplier::query()->firstOrCreate(
+                    ['product_id' => $product->id, 'supplier_id' => $supplier->id],
+                    ['is_active' => true, 'status' => 'active']
+                );
+
+                $this->persistQuickOfferDetails($productSupplier);
+
+                return $productSupplier;
+            });
+        }
+
         return DB::transaction(function () use ($product, $supplier): ProductSupplier {
-            $productSupplier = ProductSupplier::query()->firstOrCreate(
-                ['product_id' => $product->id, 'supplier_id' => $supplier->id],
-                ['is_active' => true, 'status' => 'active']
-            );
-            $productSupplier->update([
-                'stock_quantity' => $this->quickStock,
-                'status' => 'active',
-                'is_active' => true,
-            ]);
+            $productSupplierQuery = ProductSupplier::withTrashed()
+                ->where('product_id', $product->id)
+                ->where('supplier_id', $supplier->id);
 
-            ProductPrice::updateOrCreate(
-                [
-                    'product_supplier_id' => $productSupplier->id,
-                    'price_type' => PriceType::custom->value,
-                ],
-                ['price' => $this->quickPrice]
-            );
+            // A locking read sees the current row under InnoDB repeatable-read,
+            // including rows inserted while an earlier request was in flight.
+            $productSupplier = (clone $productSupplierQuery)
+                ->lockForUpdate()
+                ->first();
 
-            app(\App\Services\ProductPriceRevisionService::class)
-                ->increment((int) $productSupplier->product_id, (int) $productSupplier->supplier_id);
+            if (!$productSupplier) {
+                try {
+                    $productSupplier = ProductSupplier::create([
+                        'product_id' => $product->id,
+                        'supplier_id' => $supplier->id,
+                        'is_active' => false,
+                        'status' => 'active',
+                    ]);
+                } catch (\Illuminate\Database\UniqueConstraintViolationException $exception) {
+                    // If another request won the unique (product_id, supplier_id)
+                    // insert, use a locking current read instead of the transaction's
+                    // repeatable-read snapshot. Re-throw unrelated insert failures.
+                    $productSupplier = (clone $productSupplierQuery)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$productSupplier) {
+                        throw $exception;
+                    }
+                }
+            }
+
+            if ($productSupplier->trashed()) {
+                $productSupplier->forceFill(['is_active' => false]);
+                $productSupplier->restore();
+            }
+
+            $this->persistQuickOfferDetails($productSupplier);
 
             return $productSupplier;
-        });
+        }, attempts: 3);
+    }
+
+    private function persistQuickOfferDetails(ProductSupplier $productSupplier): void
+    {
+        $productSupplier->update([
+            'stock_quantity' => $this->quickStock,
+            'status' => 'active',
+            'is_active' => true,
+        ]);
+
+        ProductPrice::updateOrCreate(
+            [
+                'product_supplier_id' => $productSupplier->id,
+                'price_type' => PriceType::custom->value,
+            ],
+            [
+                'price' => $this->quickPrice,
+                'is_active' => true,
+            ]
+        );
+
+        app(\App\Services\ProductPriceRevisionService::class)
+            ->increment((int) $productSupplier->product_id, (int) $productSupplier->supplier_id);
     }
 }

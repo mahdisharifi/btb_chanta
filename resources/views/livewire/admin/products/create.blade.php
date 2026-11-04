@@ -1,13 +1,18 @@
 <div>
     {{-- عنوان و breadcrumb وابسته به حالت --}}
-    <x-admin.subheader
-        :title="$isEdit ? 'ویرایش محصول' : 'ایجاد محصول جدید'"
-        :breadcrumbs="['مدیریت محصولات' => route('admin.products.index'), ($isEdit ? 'ویرایش محصول' : 'ایجاد محصول') => '#']" />
+    @unless($supplierDraftMode)
+        <x-admin.subheader
+            :title="$isEdit ? 'ویرایش محصول' : 'ایجاد محصول جدید'"
+            :breadcrumbs="['مدیریت محصولات' => route('admin.products.index'), ($isEdit ? 'ویرایش محصول' : 'ایجاد محصول') => '#']" />
+    @endunless
 
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">
             {{ $isEdit ? 'ویرایش محصول' : 'ایجاد محصول جدید' }}
         </h1>
+        @if($supplierDraftMode)
+            <p class="mt-1 text-sm text-amber-600 dark:text-amber-400">محصول پس از ثبت به‌صورت پیش‌نویس برای بررسی ذخیره می‌شود.</p>
+        @endif
     </div>
 
     {{-- 🚨 Error Summary: نمایش تمام خطاها در یک جا --}}
@@ -80,8 +85,8 @@
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2">اطلاعات اصلی</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div id="field-title">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان محصول *</label>
-                    <input type="text" 
+                    <label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان محصول *</label>
+                    <input id="title" type="text"
                            wire:model.live.debounce.500ms="title" 
                            class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm @error('title') border-red-500 dark:border-red-600 @enderror" 
                            required>
@@ -89,14 +94,16 @@
                 </div>
 
                 <div id="field-slug">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <div class="mb-1 flex items-center gap-2">
+                        <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                         نامک (Slug) *
+                        </label>
                         <button type="button" wire:click="resetSlugToAuto"
-                                class="text-gray-400 hover:text-gray-600" title="بازتولید خودکار از عنوان">
+                                class="text-gray-400 hover:text-gray-600" title="بازتولید خودکار از عنوان" aria-label="بازتولید خودکار نامک از عنوان">
                             <x-heroicon-o-arrow-path class="w-4 h-4" />
                         </button>
-                    </label>
-                    <input type="text" 
+                    </div>
+                    <input id="slug" type="text"
                            wire:model="slug" 
                            dir="ltr" 
                            class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left @error('slug') border-red-500 dark:border-red-600 @enderror" 
@@ -106,21 +113,31 @@
 
                 <!-- انتخابگر هوشمند دسته‌بندی -->
                 <div x-data="{ open: false }" class="relative" id="field-category_id">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی (فقط دسته‌های نهایی مجاز هستند) *</label>
+                    <label id="category-label" for="category-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی (فقط دسته‌های نهایی مجاز هستند) *</label>
 
-                    <div @click="open = !open" class="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-lg shadow-sm text-sm px-3 py-2 cursor-pointer flex justify-between items-center bg-white dark:bg-gray-900">
-                        <span class="block truncate">{{ $selectedCategoryName ?: 'یک دسته‌بندی انتخاب کنید...' }}</span>
+                    <button type="button"
+                            id="category-select"
+                            x-ref="categoryTrigger"
+                            aria-labelledby="category-label category-current"
+                            aria-controls="category-options"
+                            :aria-expanded="open.toString()"
+                            @click="open = !open"
+                            @keydown.escape="open = false"
+                            class="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-lg shadow-sm text-sm px-3 py-2 cursor-pointer flex justify-between items-center bg-white dark:bg-gray-900 text-right">
+                        <span id="category-current" class="block truncate">{{ $selectedCategoryName ?: 'یک دسته‌بندی انتخاب کنید...' }}</span>
                         <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </div>
+                    </button>
 
-                    <div x-show="open" @click.away="open = false" style="display: none;" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
+                    <div x-show="open" @click.away="open = false" @keydown.escape.stop.prevent="open = false; $nextTick(() => $refs.categoryTrigger.focus())" style="display: none;" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg">
                         <div class="p-2 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 rounded-t-lg">
-                            <input type="text" wire:model.live.debounce.300ms="searchCategory" placeholder="جستجوی دسته‌بندی..." class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            <input type="text" wire:model.live.debounce.300ms="searchCategory" aria-label="جستجوی دسته‌بندی" placeholder="جستجوی دسته‌بندی..." class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
                         </div>
-                        <ul class="max-h-60 overflow-y-auto">
+                        <ul id="category-options" class="max-h-60 overflow-y-auto">
                             @forelse($searchCategories as $cat)
-                            <li wire:click="selectCategory({{ $cat->id }}, '{{ $cat->name }}')" @click="open = false" class="px-3 py-2.5 text-sm cursor-pointer hover:bg-indigo-50 dark:hover:bg-gray-700 dark:text-gray-300 border-b border-gray-50 dark:border-gray-700/50 last:border-0 transition-colors">
-                                {{ $cat->name }}
+                            <li>
+                                <button type="button" wire:click="selectCategory({{ $cat->id }}, @js($cat->name))" @click="open = false" class="w-full text-right px-3 py-2.5 text-sm cursor-pointer hover:bg-indigo-50 dark:hover:bg-gray-700 dark:text-gray-300 border-b border-gray-50 dark:border-gray-700/50 last:border-0 transition-colors">
+                                    {{ $cat->name }}
+                                </button>
                             </li>
                             @empty
                             <li class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
@@ -136,40 +153,44 @@
                     @error('category_id') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <!-- انتخاب تامین کننده -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تامین کننده *</label>
-                    <select wire:model="supplier_id" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
-                        <option value="">یک تامین کننده انتخاب کنید...</option>
-                        @foreach($suppliers as $supplier)
-                        <option value="{{ $supplier->id }}">{{ $supplier->company_name }}</option>
-                        @endforeach
-                    </select>
-                    @error('supplier_id') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-                </div>
+                @unless($supplierDraftMode)
+                    <!-- انتخاب تامین کننده -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تامین کننده *</label>
+                        <select wire:model="supplier_id" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
+                            <option value="">یک تامین کننده انتخاب کنید...</option>
+                            @foreach($suppliers as $supplier)
+                            <option value="{{ $supplier->id }}">{{ $supplier->company_name }}</option>
+                            @endforeach
+                        </select>
+                        @error('supplier_id') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+                @endunless
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">کد محصول (SKU)</label>
-                    <input type="text" wire:model="sku" dir="ltr" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left">
+                    <label for="sku" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">کد محصول (SKU)</label>
+                    <input id="sku" type="text" wire:model="sku" dir="ltr" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left">
                     @error('sku') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">وضعیت محصول *</label>
-                    <select wire:model="status" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
-                        <option value="">انتخاب وضعیت...</option>
-                        @foreach(\App\Enums\ProductStatus::options() as $value => $label)
-                        <option value="{{ $value }}">{{ $label }}</option>
-                        @endforeach
-                    </select>
-                    @error('status') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-                </div>
+                @unless($supplierDraftMode)
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">وضعیت محصول *</label>
+                        <select wire:model="status" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
+                            <option value="">انتخاب وضعیت...</option>
+                            @foreach(\App\Enums\ProductStatus::options() as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        @error('status') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                    </div>
 
-                <div class="flex items-center mt-6 md:col-span-2">
-                    <input id="is_active" type="checkbox" wire:model="is_active" class="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 dark:focus:ring-indigo-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
-                    <label for="is_active" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300">محصول فعال است و در سایت نمایش داده می‌شود</label>
-                    @error('is_active') <span class="text-red-500 text-xs ml-2">{{ $message }}</span> @enderror
-                </div>
+                    <div class="flex items-center mt-6 md:col-span-2">
+                        <input id="is_active" type="checkbox" wire:model="is_active" class="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 dark:focus:ring-indigo-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
+                        <label for="is_active" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300">محصول فعال است و در سایت نمایش داده می‌شود</label>
+                        @error('is_active') <span class="text-red-500 text-xs ml-2">{{ $message }}</span> @enderror
+                    </div>
+                @endunless
             </div>
         </div>
 
@@ -343,7 +364,7 @@
                 </div>
 
                 {{-- نمایش تعداد تیراژ فعلی --}}
-                <div class="flex items-center justify-between mb-3 px-2">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3 px-2">
                     <span class="text-sm text-gray-600 dark:text-gray-400">
                         تعداد تیراژها: 
                         <strong class="text-gray-900 dark:text-gray-100">{{ count($quantity_tiers) }}</strong> 
@@ -383,7 +404,7 @@
                                     <x-heroicon-s-lock-closed class="w-5 h-5 text-amber-600 dark:text-amber-400"/>
                                 </div>
                             @endif
-                            <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div class="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
                                     <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                                         نام تیراژ
@@ -777,12 +798,12 @@
 
             <!-- فیلد توضیحات کوتاه -->
             <div class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <label for="short_description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     <x-heroicon-o-document-text class="w-5 h-5 text-indigo-600"/>
                     توضیحات کوتاه
                     <span class="text-xs text-gray-500">(خلاصه محصول - 2-3 جمله)</span>
                 </label>
-                <textarea wire:model="short_description" 
+                <textarea id="short_description" wire:model="short_description"
                           rows="3" 
                           placeholder="خلاصه‌ای از محصول که در کارت‌ها و لیست‌ها نمایش داده می‌شود..."
                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-purple-500 focus:ring-purple-500 rounded-lg shadow-sm text-sm"></textarea>
@@ -801,12 +822,12 @@
 
             <!-- فیلد توضیحات کامل -->
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <label for="full_description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     <x-heroicon-o-document-duplicate class="w-5 h-5 text-indigo-600"/>
                     توضیحات تخصصی کامل
                     <span class="text-xs text-gray-500">(توضیحات جامع محصول)</span>
                 </label>
-                <textarea wire:model="full_description" 
+                <textarea id="full_description" wire:model="full_description"
                           rows="8" 
                           placeholder="توضیحات کامل و تخصصی محصول شامل ویژگی‌ها، کاربردها، مزایا و..."
                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-purple-500 focus:ring-purple-500 rounded-lg shadow-sm text-sm"></textarea>
@@ -966,27 +987,27 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <!-- تصویر اصلی -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label for="primary_image" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $isEdit ? 'جایگزینی تصویر اصلی (اختیاری)' : 'تصویر اصلی محصول' }}
                     </label>
-                    <input type="file" wire:model="primary_image" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-md">
+                    <input id="primary_image" type="file" wire:model="primary_image" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-md">
                     <div wire:loading wire:target="primary_image" class="text-sm text-indigo-600 mt-2">در حال آپلود...</div>
                     @error('primary_image') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
 
                     @if ($primary_image)
                     <div class="mt-4">
                         <p class="text-xs text-green-600 mb-2">پیش‌نمایش تصویر اصلی جدید:</p>
-                        <img src="{{ $primary_image->temporaryUrl() }}" class="w-32 h-32 object-cover border-2 border-green-500 rounded-lg shadow-sm">
+                        <img src="{{ $primary_image->temporaryUrl() }}" alt="پیش‌نمایش تصویر اصلی {{ $title }}" class="w-32 h-32 object-cover border-2 border-green-500 rounded-lg shadow-sm">
                     </div>
                     @endif
                 </div>
 
                 <!-- گالری تصاویر -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label for="gallery_images" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $isEdit ? 'افزودن به گالری (انتخاب چندتایی)' : 'گالری تصاویر (انتخاب چندتایی)' }}
                     </label>
-                    <input type="file" wire:model="gallery_images" multiple accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-md">
+                    <input id="gallery_images" type="file" wire:model="gallery_images" multiple accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-md">
                     <div wire:loading wire:target="gallery_images" class="text-sm text-indigo-600 mt-2">در حال آپلود...</div>
                     @error('gallery_images.*') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
 
@@ -995,7 +1016,7 @@
                         <p class="text-xs text-green-600 mb-2">پیش‌نمایش گالری:</p>
                         <div class="flex flex-wrap gap-2">
                             @foreach($gallery_images as $image)
-                            <img src="{{ $image->temporaryUrl() }}" class="w-20 h-20 object-cover border-2 border-green-500 rounded-lg shadow-sm">
+                            <img src="{{ $image->temporaryUrl() }}" alt="پیش‌نمایش تصویر گالری {{ $title }}" class="w-20 h-20 object-cover border-2 border-green-500 rounded-lg shadow-sm">
                             @endforeach
                         </div>
                     </div>
@@ -1004,11 +1025,11 @@
 
                 <!-- ویدئوی محصول -->
                 <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label for="product_video" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $isEdit ? 'جایگزینی ویدئوی محصول (اختیاری)' : 'ویدئوی محصول (اختیاری)' }}
                     </label>
 
-                    <input type="file"
+                    <input id="product_video" type="file"
                            wire:model="product_video"
                            accept="video/mp4,video/webm,video/ogg,video/quicktime"
                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 dark:file:bg-gray-700 dark:file:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-md">
@@ -1032,14 +1053,14 @@
 
                     {{-- ✅ فیلد آپلود تصویر پیش‌نمایش (Poster) --}}
                     <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <label for="video_poster" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             <span class="flex items-center gap-2">
                                 <x-heroicon-o-photo class="w-5 h-5" />
                                 تصویر پیش‌نمایش ویدئو (Thumbnail)
                             </span>
                         </label>
 
-                        <input type="file"
+                        <input id="video_poster" type="file"
                                wire:model="video_poster"
                                accept="image/jpeg,image/jpg,image/png,image/webp"
                                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-600 dark:file:text-gray-300 border border-gray-200 dark:border-gray-600 rounded-md">
@@ -1064,12 +1085,12 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-4 border-t border-gray-200 dark:border-gray-700 pt-6">
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm transition-colors flex items-center justify-center min-w-[150px]">
-                <span wire:loading.remove wire:target="save, primary_image, gallery_images, product_video, video_poster">{{ $isEdit ? 'ذخیره تغییرات' : 'ایجاد محصول' }}</span>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 border-t border-gray-200 dark:border-gray-700 pt-6">
+            <button type="submit" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm transition-colors flex items-center justify-center min-w-[150px]">
+                <span wire:loading.remove wire:target="save, primary_image, gallery_images, product_video, video_poster">{{ $supplierDraftMode ? 'ذخیره به عنوان پیش‌نویس' : ($isEdit ? 'ذخیره تغییرات' : 'ایجاد محصول') }}</span>
                 <span wire:loading wire:target="save, primary_image, gallery_images, product_video, video_poster">در حال پردازش...</span>
             </button>
-            <a href="{{ route('admin.products.index') }}" wire:navigate class="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 px-4 transition-colors">انصراف</a>
+            <a href="{{ $supplierDraftMode ? route('supplier.products.index') : route('admin.products.index') }}" wire:navigate class="text-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2.5 px-4 transition-colors">{{ $supplierDraftMode ? 'بازگشت به محصولات' : 'انصراف' }}</a>
         </div>
 
     </form>

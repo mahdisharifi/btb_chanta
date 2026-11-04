@@ -22,6 +22,19 @@ class ProductTransfers extends Component
         return auth()->user()->currentSupplier();
     }
 
+    public function mount(): void
+    {
+        $user = auth()->user();
+        $branch = $user->currentSupplier();
+
+        if ($branch->isBranch()) {
+            app(SupplierBranchTransferService::class)->seedPendingTransfers(
+                $user->supplier()->firstOrFail(),
+                $branch,
+            );
+        }
+    }
+
     #[Computed]
     public function transfers()
     {
@@ -31,12 +44,11 @@ class ProductTransfers extends Component
 
         return SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $this->currentSupplier->id)
+            ->where('status', SupplierBranchProductTransfer::PENDING)
             ->with([
                 'sourceProduct:id,title,sku,category_id',
                 'sourceProduct.category:id,name',
-                'destinationProduct:id,title,slug',
             ])
-            ->orderByRaw("CASE status WHEN 'pending' THEN 0 WHEN 'accepted' THEN 1 ELSE 2 END")
             ->orderByDesc('id')
             ->paginate(20);
     }
@@ -55,6 +67,7 @@ class ProductTransfers extends Component
                 'type' => 'success',
                 'message' => 'محصول به این شعبه اضافه شد. مشخصات، قیمت و تنظیمات شعبه را تکمیل کنید.',
             ]);
+            $this->resetPage();
             unset($this->transfers);
         } catch (Throwable $exception) {
             report($exception);
@@ -74,8 +87,9 @@ class ProductTransfers extends Component
 
             $this->dispatch('notify', [
                 'type' => $changed ? 'success' : 'error',
-                'message' => $changed ? 'محصول برای این شعبه رد شد.' : 'درخواست قبلاً پذیرفته شده و قابل رد نیست.',
+                'message' => $changed ? 'محصول برای این شعبه رد شد.' : 'این درخواست قبلاً تعیین تکلیف شده و قابل رد نیست.',
             ]);
+            $this->resetPage();
             unset($this->transfers);
         } catch (Throwable $exception) {
             report($exception);

@@ -34,6 +34,12 @@ class CategoryCatalogRegressionTest extends TestCase
         Schema::create('category_slug_redirects', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('category_id'); $t->string('old_slug')->unique(); $t->timestamps();
         });
+        Schema::create('catalog_snapshot_revisions', function (Blueprint $table) {
+            $table->string('scope_type', 24);
+            $table->unsignedBigInteger('scope_id')->default(0);
+            $table->unsignedBigInteger('revision')->default(0);
+            $table->primary(['scope_type', 'scope_id']);
+        });
         Cache::flush();
     }
 
@@ -58,6 +64,29 @@ class CategoryCatalogRegressionTest extends TestCase
         $this->assertCount(6, $catalog->flatten());
         $this->assertSame([], DB::getQueryLog());
         $this->assertCount(5, $root->getAllDescendantIds());
+    }
+
+    public function test_products_sidebar_counts_include_products_in_child_categories(): void
+    {
+        Schema::table('products', function (Blueprint $table) {
+            $table->unsignedBigInteger('family_product_id')->nullable();
+        });
+        $root = $this->category('sidebar-root');
+        $child = $this->category('sidebar-child', $root->id);
+        $leaf = $this->category('sidebar-leaf', $child->id);
+        DB::table('products')->insert([
+            ['id' => 1, 'family_product_id' => 1, 'category_id' => $leaf->id, 'is_active' => true, 'status' => 'active'],
+            ['id' => 2, 'family_product_id' => 1, 'category_id' => $leaf->id, 'is_active' => true, 'status' => 'active'],
+            ['id' => 3, 'family_product_id' => 3, 'category_id' => $child->id, 'is_active' => false, 'status' => 'active'],
+        ]);
+
+        $controller = app(\App\Http\Controllers\Web\ProductController::class);
+        $method = new \ReflectionMethod($controller, 'buildCategoriesTree');
+        $tree = $method->invoke($controller);
+
+        $this->assertSame(1, $tree->first()->total_products_count);
+        $this->assertSame(1, $tree->first()->children->first()->total_products_count);
+        $this->assertSame(1, $tree->first()->children->first()->children->first()->total_products_count);
     }
 
     public function test_inactive_and_deleted_ancestors_prune_the_whole_branch_and_restore_invalidates(): void

@@ -10,7 +10,7 @@
             <a href="{{ route('supplier.branches.index') }}" class="mt-3 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">مدیریت شعبه‌ها</a>
         </div>
     @else
-        <p class="text-sm text-gray-600 dark:text-gray-300">عکس‌ها در این فهرست بارگذاری نمی‌شوند تا محصولات بیشتری هم‌زمان دیده شوند. با تأیید، نسخه‌ای مستقل از محصول ساخته می‌شود؛ قیمت و تنظیمات را بعد از آن تکمیل کنید.</p>
+        <p class="text-sm text-gray-600 dark:text-gray-300">این فهرست فقط درخواست‌های در انتظار بررسی را نشان می‌دهد. با تأیید، نسخه‌ای مستقل از محصول ساخته می‌شود و حالت فعال یا غیرفعال مطابق شعبهٔ اصلی حفظ می‌شود؛ قیمت و تنظیمات را بعد از آن تکمیل کنید. فایل‌های تصویری مفقود مانع اضافه‌شدن محصول نمی‌شوند.</p>
 
         <ul class="space-y-3" aria-label="محصولات قابل بررسی">
             @forelse($this->transfers as $transfer)
@@ -24,22 +24,10 @@
                             </div>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            @if($transfer->status === \App\Models\SupplierBranchProductTransfer::PENDING)
-                                <button type="button" wire:click="accept({{ $transfer->id }})" wire:loading.attr="disabled" wire:target="accept({{ $transfer->id }})"
-                                    class="min-h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-60">تأیید و افزودن</button>
-                                <button type="button" wire:click="reject({{ $transfer->id }})" wire:confirm="این محصول به شعبه اضافه نشود؟"
-                                    class="min-h-11 rounded-lg border border-red-300 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40">رد</button>
-                            @elseif($transfer->status === \App\Models\SupplierBranchProductTransfer::ACCEPTED)
-                                <span class="inline-flex min-h-10 items-center rounded-lg bg-emerald-50 px-3 text-sm font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">تأییدشده</span>
-                                @if($transfer->destination_product_id)
-                                    <a href="{{ route('supplier.products.edit', $transfer->destination_product_id) }}" class="inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700">ویرایش مشخصات</a>
-                                <a href="{{ route('supplier.products.edit-price', $transfer->destination_product_id) }}" class="inline-flex min-h-11 items-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">تعیین درصد قیمت و گارانتی</a>
-                                @endif
-                            @elseif($transfer->status === \App\Models\SupplierBranchProductTransfer::CANCELLED)
-                                <span class="inline-flex min-h-10 items-center rounded-lg bg-gray-100 px-3 text-sm font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">لغوشده</span>
-                            @else
-                                <span class="inline-flex min-h-10 items-center rounded-lg bg-gray-100 px-3 text-sm font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200">ردشده</span>
-                            @endif
+                            <button type="button" wire:click="accept({{ $transfer->id }})" wire:loading.attr="disabled" wire:target="accept({{ $transfer->id }})"
+                                class="min-h-11 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-60">تأیید و افزودن</button>
+                            <button type="button" wire:click="reject({{ $transfer->id }})" wire:confirm="این محصول به شعبه اضافه نشود؟" wire:loading.attr="disabled" wire:target="reject({{ $transfer->id }})"
+                                class="min-h-11 rounded-lg border border-red-300 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40">رد</button>
                         </div>
                     </div>
                 </li>

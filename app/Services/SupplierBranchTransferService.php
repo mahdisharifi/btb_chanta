@@ -24,14 +24,21 @@ class SupplierBranchTransferService
                 ->where(function ($query) use ($primary): void {
                     $query->where('products.supplier_id', $primary->id)
                         ->orWhereHas('productSuppliers', fn ($offers) => $offers
-                            ->where('product_supplier.supplier_id', $primary->id)
-                            ->where('product_supplier.is_active', true));
+                            ->where('product_supplier.supplier_id', $primary->id));
                 })
                 ->whereNotExists(function ($query) use ($branch): void {
                     $query->selectRaw('1')
                         ->from('products as existing_branch_product')
                         ->whereColumn('existing_branch_product.family_product_id', 'products.family_product_id')
                         ->where('existing_branch_product.supplier_id', $branch->id);
+                })
+                ->whereNotExists(function ($query) use ($primary, $branch): void {
+                    $query->selectRaw('1')
+                        ->from('supplier_branch_product_transfers as existing_transfer')
+                        ->join('products as transfer_source_product', 'transfer_source_product.id', '=', 'existing_transfer.source_product_id')
+                        ->where('existing_transfer.source_supplier_id', $primary->id)
+                        ->where('existing_transfer.target_supplier_id', $branch->id)
+                        ->whereColumn('transfer_source_product.family_product_id', 'products.family_product_id');
                 })
                 ->selectRaw(
                     'COALESCE(MIN(CASE WHEN products.supplier_id = ? THEN products.id END), MIN(products.id)) as id',
@@ -81,10 +88,16 @@ class SupplierBranchTransferService
             ->where(function ($query) use ($primary): void {
                 $query->where('supplier_id', $primary->id)
                     ->orWhereHas('productSuppliers', fn ($offers) => $offers
-                        ->where('supplier_id', $primary->id)
-                        ->where('is_active', true));
+                        ->where('supplier_id', $primary->id));
             })
             ->firstOrFail();
+
+        $sourceOffer = $source->productSuppliers()
+            ->where('supplier_id', $primary->id)
+            ->first();
+        $sourceOfferIsActive = $sourceOffer
+            ? (bool) $sourceOffer->is_active
+            : ((int) $source->supplier_id === (int) $primary->id && (bool) $source->is_active);
 
         return app(SupplierBranchProductCopyService::class)->copyForBranch(
             $source,
@@ -109,7 +122,8 @@ class SupplierBranchTransferService
                     'status' => SupplierBranchProductTransfer::ACCEPTED,
                     'decided_at' => now(),
                 ])->save();
-            }
+            },
+            $sourceOfferIsActive,
         );
     }
 

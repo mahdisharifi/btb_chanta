@@ -85,7 +85,7 @@ class EditPrice extends Component
     public array $tierPercentages = []; // [tier_index] => percentage (+/- درصد نسبت به مرجع)
     public array $tierPriceMode = []; // [tier_index] => 'default' | 'percentage' (مشابه checkPriceMode)
     public bool $autoCalculateTiers = false; // فعال/غیرفعال محاسبه خودکار
-    public array $tierEnabled = []; // [tier_index] => true/false (فعال/غیرفعال تیراژ در محاسبه خودکار)
+    public array $tierEnabled = []; // [tier_index] => فعال/غیرفعال بودن فروش؛ مستقل از مرجع محاسباتی
 
     /**
      * Updated hook - اجرا می‌شود وقتی property تغییر می‌کند
@@ -95,6 +95,19 @@ class EditPrice extends Component
         // اگر از custom به گزینه دیگر سویچ شد، قیمت‌های گارانتی در ماتریس را پاک کن
         if ($value !== 'custom') {
             $this->clearWarrantyPricesFromMatrix();
+        }
+    }
+
+    public function updatedTierEnabled($value, $key): void
+    {
+        $tierIndex = (int) $key;
+        if (!array_key_exists($tierIndex, $this->quantityTiers)) {
+            return;
+        }
+
+        // تغییر وضعیت فروش تیراژ نباید مرجع را حذف کند؛ پیش‌نمایش درصدها را تازه کن.
+        if ($this->priceCurrency !== 'TOM' || $this->autoCalculateTiers) {
+            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
         }
     }
     
@@ -125,28 +138,63 @@ class EditPrice extends Component
     {
         $supplier = Auth::user()->currentSupplier();
         $supplierId = $supplier->id;
-        $this->product = Product::query()
-            ->whereKey($product->id)
-            ->where(function ($query) use ($supplierId): void {
-                $query->where('supplier_id', $supplierId)
-                    ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplierId));
-            })
-            ->firstOrFail();
 
-        $this->productSupplier = ProductSupplier::query()
-            ->where('product_id', $this->product->id)
-            ->where('supplier_id', $supplierId)
-            ->first();
+        if ($supplier->isBranch()) {
+            $this->product = Product::query()
+                ->whereKey($product->id)
+                ->where(function ($query) use ($supplierId): void {
+                    $query->where('supplier_id', $supplierId)
+                        ->orWhereHas('productSuppliers', fn ($offers) => $offers->where('supplier_id', $supplierId));
+                })
+                ->firstOrFail();
 
-        if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
-            $this->productSupplier = ProductSupplier::create([
-                'product_id' => $this->product->id,
-                'supplier_id' => $supplierId,
-                'is_active' => false,
-            ]);
+            $this->productSupplier = ProductSupplier::query()
+                ->where('product_id', $this->product->id)
+                ->where('supplier_id', $supplierId)
+                ->first();
+
+            if (!$this->productSupplier && (int) $this->product->supplier_id === (int) $supplierId) {
+                $this->productSupplier = ProductSupplier::create([
+                    'product_id' => $this->product->id,
+                    'supplier_id' => $supplierId,
+                    'is_active' => false,
+                ]);
+            }
+
+            abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
+        } else {
+            $this->product = $product;
+            $this->productSupplier = ProductSupplier::withTrashed()
+                ->where('product_id', $this->product->id)
+                ->where('supplier_id', $supplierId)
+                ->first();
+
+            $isAlreadyOwned = (int) $this->product->supplier_id === (int) $supplierId;
+            $hasActiveOffer = $this->productSupplier && !$this->productSupplier->trashed();
+            if (!$isAlreadyOwned && !$hasActiveOffer) {
+                abort_unless(
+                    Product::query()
+                        ->canonical()
+                        ->where('status', \App\Enums\ProductStatus::ACTIVE->value)
+                        ->whereKey($this->product->id)
+                        ->exists(),
+                    404
+                );
+            }
+
+            if ($this->productSupplier?->trashed()) {
+                $this->productSupplier = $this->restoreProductSupplierDraft($this->productSupplier);
+            } elseif (!$this->productSupplier) {
+                $this->productSupplier = ProductSupplier::withTrashed()->firstOrCreate(
+                    ['product_id' => $this->product->id, 'supplier_id' => $supplierId],
+                    ['is_active' => false]
+                );
+
+                if ($this->productSupplier->trashed()) {
+                    $this->productSupplier = $this->restoreProductSupplierDraft($this->productSupplier);
+                }
+            }
         }
-
-        abort_unless($this->productSupplier, 403, 'این محصول در شعبهٔ جاری ثبت نشده است.');
 
         // Load data
         $this->sku = $this->productSupplier->sku;
@@ -365,6 +413,25 @@ class EditPrice extends Component
         
         // بارگذاری درصدهای مؤثر
         $this->loadEffectivePercentages();
+    }
+
+    private function restoreProductSupplierDraft(ProductSupplier $productSupplier): ProductSupplier
+    {
+        $productSupplierId = $productSupplier->getKey();
+
+        return DB::transaction(function () use ($productSupplierId): ProductSupplier {
+            $productSupplier = ProductSupplier::withTrashed()
+                ->whereKey($productSupplierId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($productSupplier->trashed()) {
+                $productSupplier->forceFill(['is_active' => false]);
+                $productSupplier->restore();
+            }
+
+            return $productSupplier;
+        });
     }
 
     /**
@@ -1469,11 +1536,9 @@ class EditPrice extends Component
                 continue;
             }
             
-            // ✅ بررسی فعال بودن تیراژ در محاسبه خودکار
-            if (!($this->tierEnabled[$index] ?? true)) {
-                continue; // تیراژ غیرفعال → محاسبه نشود
-            }
-            
+            // فعال‌بودن تیراژ فقط فروش آن را کنترل می‌کند؛ قیمت هر تیراژ باید
+            // حتی در حالت غیرفعال هم از مرجع ثابت کارتن و درصد خودش محاسبه شود.
+
             // ✅ تشخیص درصد بر اساس mode
             $mode = $this->tierPriceMode[$index] ?? 'default';
             
