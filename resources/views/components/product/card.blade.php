@@ -418,13 +418,27 @@ $categorySlug = $category?->slug;
             @endif
 
             {{-- Wholesale Price با طراحی مینیمال --}}
-            @if($canSeeWholesalePrice)
-            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200" @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-card-range @if($liveCardSupplierId) data-live-price-card-supplier-id="{{ $liveCardSupplierId }}" @endif @if(!$wholesalePriceData) hidden @endif>
-                <div class="flex items-baseline justify-center gap-1 flex-wrap">
-                    <span class="text-sm sm:text-base font-extrabold text-amber-700" data-live-price-card-min>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['lowest']) : '—' }}</span>
-                    <span class="text-xs sm:text-sm text-amber-600" data-live-price-card-separator @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>تا</span>
-                    <span class="text-xs sm:text-sm font-extrabold text-amber-700" data-live-price-card-max @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['highest']) : '—' }}</span>
-                </div>
+            @if($canSeeWholesalePrice && $wholesalePriceData)
+            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200">
+                @if($wholesalePriceData['has_range'])
+                    {{-- نمایش محدوده قیمت در یک خط --}}
+                    <div class="flex items-baseline justify-center gap-1 flex-wrap">
+                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+                        </span>
+                        <span class="text-[9px] text-amber-600">تا</span>
+                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+                            {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+                        </span>
+                    </div>
+                @else
+                    {{-- قیمت واحد --}}
+                    <div class="flex items-baseline justify-center gap-0.5">
+                        <span class="text-sm sm:text-base font-extrabold text-amber-700">
+                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+                        </span>
+                    </div>
+                @endif
             </div>
             @elseif(!$canSeeWholesalePrice && Route::has('register'))
             <a href="{{ route('register') }}" class="block text-center w-full rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105">
