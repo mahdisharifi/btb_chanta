@@ -1,0 +1,480 @@
+diff --git a/app/Http/Controllers/Web/ProductController.php b/app/Http/Controllers/Web/ProductController.php
+index b64860f..609016a 100644
+--- a/app/Http/Controllers/Web/ProductController.php
++++ b/app/Http/Controllers/Web/ProductController.php
+@@ -611,10 +611,11 @@ private function buildBaseProductQuery(): Builder
+                 'category:id,name,slug,icon,parent_id',
+ 
+                 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
+-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
++                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
++                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
++                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
++                'familyProducts.productSuppliers.prices.priceType:id,code',
+                 'galleries' => function ($q) {
+                     $q->select([
+                         'id', 'product_id', 'file_path', 'file_type',
+@@ -918,15 +919,6 @@ private function applyFullTextSearch(Builder $query, string $searchTerm): Builde
+             });
+         });
+ 
+-        $query->orderByRaw("
+-            CASE
+-                WHEN products.title LIKE ? THEN 1
+-                WHEN products.sku = ? THEN 2
+-                WHEN products.short_description LIKE ? THEN 3
+-                ELSE 4
+-            END ASC
+-        ", [$likeTerm, $escapedTerm, $likeTerm]);
+-
+         return $query;
+     }
+ 
+@@ -941,13 +933,29 @@ private function applySorting(Builder $query, Request $request): Builder
+     {
+         $query->pricedFirst();
+ 
++        // Search relevance applies within each price group, so unpriced matches
++        // remain in the results without overtaking products with current prices.
++        $searchTerm = trim((string) $request->get('q', ''));
++        if ($searchTerm !== '') {
++            $escapedTerm = str_replace(['%', '_'], ['\\%', '\\_'], $searchTerm);
++            $likeTerm = "%{$escapedTerm}%";
++            $query->orderByRaw("
++                CASE
++                    WHEN products.title LIKE ? THEN 1
++                    WHEN products.sku = ? THEN 2
++                    WHEN products.short_description LIKE ? THEN 3
++                    ELSE 4
++                END ASC
++            ", [$likeTerm, $escapedTerm, $likeTerm]);
++        }
++
+         $sort = $request->get('sort', 'latest');
+ 
+         if (!in_array($sort, self::ALLOWED_SORT_OPTIONS)) {
+             $sort = 'latest';
+         }
+ 
+-        return match ($sort) {
++        $query = match ($sort) {
+             'latest'      => $query->orderByDesc('products.created_at'),
+             'oldest'      => $query->orderBy('products.created_at'),
+             'popular',
+@@ -958,6 +966,8 @@ private function applySorting(Builder $query, Request $request): Builder
+             'price_high'  => $this->sortByPrice($query, 'desc'),
+             default       => $query->orderByDesc('products.created_at'),
+         };
++
++        return $query->orderByDesc('products.id');
+     }
+ 
+     /**
+@@ -1231,10 +1241,11 @@ private function getRelatedProducts(Product $product, int $limit = 8): Collectio
+                         ->orderBy('retail_price')
+                         ->limit(1),
+                     'category:id,name,slug',
+-                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+-                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+-                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
++                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
++                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
++                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                     'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
++                    'familyProducts.productSuppliers.prices.priceType:id,code',
+                     // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                     'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
+                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+@@ -1246,7 +1257,7 @@ private function getRelatedProducts(Product $product, int $limit = 8): Collectio
+                             $sub->whereNull('valid_from')
+                                 ->orWhere('valid_from', '<=', now());
+                         }),
+-                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
++                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
+                 'productSuppliers.prices.priceType',
+                 ])
+                 ->inRandomOrder()
+@@ -1296,10 +1307,11 @@ private function getRecentlyViewed(int $excludeProductId, Request $request, int
+                     ->orderBy('retail_price')
+                     ->limit(1),
+                 'category:id,name,slug',
+-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
++                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
++                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
++                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
++                'familyProducts.productSuppliers.prices.priceType:id,code',
+                 // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                 'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
+                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+@@ -1311,7 +1323,7 @@ private function getRecentlyViewed(int $excludeProductId, Request $request, int
+                         $sub->whereNull('valid_from')
+                             ->orWhere('valid_from', '<=', now());
+                     }),
+-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
++                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
+                 'productSuppliers.prices.priceType',
+             ])
+             ->get()
+diff --git a/app/Http/Controllers/Web/ProductPriceSnapshotController.php b/app/Http/Controllers/Web/ProductPriceSnapshotController.php
+index 7de1de1..38389f4 100644
+--- a/app/Http/Controllers/Web/ProductPriceSnapshotController.php
++++ b/app/Http/Controllers/Web/ProductPriceSnapshotController.php
+@@ -24,6 +24,16 @@ public function __invoke(Product $product, Request $request, PriceVisibilityServ
+         $allowedTypes = $settings?->getAllowedPriceTypes();
+         $canSeeSupplierInfo = $settings?->canSeeSupplierInfo() ?? false;
+         $today = now()->startOfDay();
++        $familyId = (int) ($product->family_product_id ?: $product->id);
++        $familyProductIds = Product::query()
++            ->where('family_product_id', $familyId)
++            ->where('is_active', true)
++            ->where('status', ProductStatus::ACTIVE)
++            ->pluck('id');
++
++        if (!$familyProductIds->contains((int) $product->id)) {
++            $familyProductIds->push((int) $product->id);
++        }
+ 
+         $suppliers = ProductSupplier::query()
+             ->with([
+@@ -59,7 +69,7 @@ public function __invoke(Product $product, Request $request, PriceVisibilityServ
+                 'prices.priceType:id,code',
+                 'prices.checkPeriod:id,label,name',
+             ])
+-            ->where('product_id', $product->id)
++            ->whereIn('product_id', $familyProductIds->all())
+             ->where('is_active', true)
+             ->verifiedSupplier()
+             ->get();
+diff --git a/app/Models/Product.php b/app/Models/Product.php
+index 96a48be..2cbbf8e 100644
+--- a/app/Models/Product.php
++++ b/app/Models/Product.php
+@@ -300,6 +300,7 @@ public function scopePricedFirst(Builder $query): Builder
+             INNER JOIN suppliers as priced_supplier
+                 ON priced_supplier.id = priced_ps.supplier_id
+                 AND priced_supplier.is_active = 1
++                AND priced_supplier.is_verified = 1
+                 AND priced_supplier.deleted_at IS NULL
+             INNER JOIN product_prices as priced_price
+                 ON priced_price.product_supplier_id = priced_ps.id
+diff --git a/app/Services/ExchangeRates/NerkhsanjRateProvider.php b/app/Services/ExchangeRates/NerkhsanjRateProvider.php
+index 282c0e4..e313229 100644
+--- a/app/Services/ExchangeRates/NerkhsanjRateProvider.php
++++ b/app/Services/ExchangeRates/NerkhsanjRateProvider.php
+@@ -20,6 +20,7 @@ public function fetch(): array
+                 'User-Agent' => config('app.name') . '/exchange-rate-fetcher',
+                 'Cache-Control' => 'no-cache',
+             ])
++            ->withoutVerifying() // Skip SSL verification for local development
+             ->get(config('pricing.exchange_rates.nerkhsanj_url'));
+ 
+         $payload = $response->throw()->json();
+diff --git a/package-lock.json b/package-lock.json
+index d74e2cf..de2a006 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,5 +1,5 @@
+ {
+-    "name": "btb_chanta",
++    "name": "b2b-marketplace-new",
+     "lockfileVersion": 3,
+     "requires": true,
+     "packages": {
+@@ -11,10 +11,10 @@
+                 "@codemirror/view": "^6.43.0",
+                 "@splidejs/splide": "^4.1.4",
+                 "codemirror": "^6.0.2",
+-                "laravel-echo": "^2.2.6",
++                "laravel-echo": "^2.6.3",
+                 "mermaid": "^11.15.0",
+                 "puppeteer": "^25.1.0",
+-                "pusher-js": "^8.4.0",
++                "pusher-js": "^8.6.0",
+                 "vazirmatn": "^33.0.3"
+             },
+             "devDependencies": {
+@@ -3951,9 +3951,9 @@
+             "integrity": "sha512-Ls993zuzfayK269Svk9hzpeGUKob/sIgZzyHYdjQoAdQetRKpOLj+k/QQQ/6Qi0Yz65mlROrfd+Ev+1+7dz9Kw=="
+         },
+         "node_modules/laravel-echo": {
+-            "version": "2.6.1",
+-            "resolved": "https://registry.npmjs.org/laravel-echo/-/laravel-echo-2.6.1.tgz",
+-            "integrity": "sha512-hKqIqy4Bl2HRdJsGzN8DbzcON7+09TNr8r5dCNZHNORZ78FUNoFbsy0cUGhYRAMei/yr8IQvCZ1ozJ8LTzzueQ==",
++            "version": "2.6.3",
++            "resolved": "https://registry.npmjs.org/laravel-echo/-/laravel-echo-2.6.3.tgz",
++            "integrity": "sha512-I5tIbxIIC0lJMCeAYlo/ywJ2Zacu5uL3iCOOZkbUjT42Tv0LrNXGqMPhENIyJBFJT6C6Xk5jYktSwO6GSINVBQ==",
+             "license": "MIT",
+             "engines": {
+                 "node": "^20.19.0 || >=22.12.0"
+diff --git a/package.json b/package.json
+index e1e71c0..7f06b7d 100644
+--- a/package.json
++++ b/package.json
+@@ -24,10 +24,10 @@
+         "@codemirror/view": "^6.43.0",
+         "@splidejs/splide": "^4.1.4",
+         "codemirror": "^6.0.2",
+-        "laravel-echo": "^2.2.6",
++        "laravel-echo": "^2.6.3",
+         "mermaid": "^11.15.0",
+-        "pusher-js": "^8.4.0",
+         "puppeteer": "^25.1.0",
++        "pusher-js": "^8.6.0",
+         "vazirmatn": "^33.0.3"
+     }
+ }
+diff --git a/resources/views/components/layouts/supplier.blade.php b/resources/views/components/layouts/supplier.blade.php
+index 608460c..b8e5d25 100644
+--- a/resources/views/components/layouts/supplier.blade.php
++++ b/resources/views/components/layouts/supplier.blade.php
+@@ -24,7 +24,7 @@
+     <div x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden" @click="sidebarOpen = false" style="display: none;"></div>
+ 
+     <!-- Sidebar -->
+-    <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:static lg:block flex flex-col">
++    <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:inset-y-auto lg:right-auto lg:z-auto lg:h-screen lg:flex lg:flex-shrink-0 flex flex-col">
+ 
+         <!-- هدر سایدبار -->
+         <div class="h-16 flex items-center justify-between lg:justify-center px-4 lg:px-0 border-b border-gray-200 dark:border-gray-700">
+@@ -133,7 +133,7 @@ class="{{ request()->routeIs('supplier.settings.price-rounding') ? 'bg-purple-50
+     </aside>
+ 
+     <!-- Main Content -->
+-    <main class="flex-1 flex flex-col min-h-screen">
++    <main class="min-w-0 flex-1 flex flex-col min-h-screen">
+ 
+         <!-- Topbar -->
+         <header class="min-h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 z-10">
+diff --git a/resources/views/components/product/card.blade.php b/resources/views/components/product/card.blade.php
+index fc7312b..0d8a061 100644
+--- a/resources/views/components/product/card.blade.php
++++ b/resources/views/components/product/card.blade.php
+@@ -53,8 +53,25 @@
+     // جمع‌آوری تمام قیمت‌های فعال از productSuppliers فعال
+     $allPrices = collect();
+     $activeSuppliersCount = 0; // ✅ شمارش تامین‌کنندگان با قیمت فعال
++    $priceOffers = $product->productSuppliers;
++
++    // کارت‌های عمومی خانوادهٔ محصول نمایندهٔ محصول اصلی هستند؛ قیمت‌های شعبه‌ها
++    // روی رکوردهای وابسته ذخیره می‌شوند و باید در همان کارت لحاظ شوند.
++    if (!$supplier && $product->relationLoaded('familyProducts')) {
++        foreach ($product->familyProducts as $familyProduct) {
++            if (!$familyProduct->is_active
++                || $familyProduct->status?->value !== 'active'
++                || !$familyProduct->relationLoaded('productSuppliers')) {
++                continue;
++            }
++
++            $priceOffers = $priceOffers->merge($familyProduct->productSuppliers);
++        }
++    }
++
++    $priceOffers = $priceOffers->unique(fn ($offer) => (int) $offer->getKey())->values();
+     
+-    foreach ($product->productSuppliers as $ps) {
++    foreach ($priceOffers as $ps) {
+         // ✅ فقط productSuppliers فعال را در نظر بگیر
+         if ($ps->is_active && $ps->relationLoaded('prices')) {
+             $activePrices = $ps->prices->where('is_active', true);
+@@ -376,7 +393,7 @@ class="mb-2 inline-flex items-center gap-1 w-fit rounded-lg bg-gradient-to-r fro
+                         <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+                             {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+                         </span>
+-                        <span class="text-[9px] text-amber-600">تا</span>
++                        <span class="text-xs sm:text-sm text-amber-600">تا</span>
+                         <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+                             {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+                         </span>
+diff --git a/resources/views/pages/products/show.blade.php b/resources/views/pages/products/show.blade.php
+index daca6e5..79d6f1b 100644
+--- a/resources/views/pages/products/show.blade.php
++++ b/resources/views/pages/products/show.blade.php
+@@ -157,7 +157,7 @@ class="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-70
+                                     </span>
+                     @endif
+                 </h3>
+-                @if($canViewSupplierInfo && $hasMultipleSuppliers && $usePivotPrices)
++                @if($hasMultipleSuppliers && $usePivotPrices)
+                 <button @click="compareMode = !compareMode; if(compareMode) { setTimeout(() => { const el = document.getElementById('price-comparison-section'); const yOffset = -80; const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset; window.scrollTo({top: y, behavior: 'smooth'}); }, 150); }"
+                         class="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all border"
+                         :class="compareMode
+@@ -947,7 +947,6 @@ class="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700
+             {{-- بخش زرد قبلی حذف شد چون حالا DEBUG جدید داریم --}}
+             @endif
+ 
+-            @if($canViewSupplierInfo)
+             {{-- ══════════════════════════════════════════
+             STACKED VIEW — همه تأمین‌کنندگان زیر هم
+             ══════════════════════════════════════════ --}}
+@@ -965,6 +964,7 @@ class="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700
+                         <div class="w-full bg-gradient-to-l from-blue-50 via-white to-blue-50 px-2 py-2 border-b border-gray-100 transition-colors hover:from-blue-100/50">
+                             <div class="flex items-center justify-between">
+                                 <div class="flex items-center gap-3">
++                                    @if($showSupplierInfo)
+                                     {{-- لوگو + لینک به فروشگاه تأمین‌کننده --}}
+                                     @if($ps->supplier && $ps->supplier->slug)
+                                     <a href="{{ route('suppliers.show', $ps->supplier->rootSupplier()->slug) }}"
+@@ -1040,6 +1040,9 @@ class="inline-flex items-center gap-1 hover:text-blue-600 transition-colors bord
+                                             @endif
+                                         </div>
+                                     </div>
++                                    @else
++                                    <span class="font-bold text-gray-800">تأمین‌کننده {{ $psIndex + 1 }}</span>
++                                    @endif
+                                 </div>
+ 
+                                 {{-- ✅ اصلاح #8: سمت چپ: محدوده قیمت + فلش --}}
+@@ -1047,7 +1050,7 @@ class="inline-flex items-center gap-1 hover:text-blue-600 transition-colors bord
+                                         @click="expanded = !expanded"
+                                         :aria-expanded="expanded.toString()"
+                                         aria-controls="supplier-price-body-{{ $ps->id }}"
+-                                        aria-label="نمایش یا پنهان کردن قیمت‌های {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
++                                        aria-label="نمایش یا پنهان کردن قیمت‌های {{ $showSupplierInfo ? ($ps->supplier->company_name ?? 'تأمین‌کننده') : 'تأمین‌کننده ' . ($psIndex + 1) }}"
+                                         class="flex items-center gap-3 shrink-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2">
+                                     <div class="text-left">
+                                         <div class="text-[11px] text-gray-500 mb-0.5">محدوده قیمت</div>
+@@ -1194,7 +1197,7 @@ class="flex items-center gap-3 shrink-0 rounded-lg text-left focus-visible:outli
+             {{-- ══════════════════════════════════════════
+             COMPARE VIEW — جدول مقایسه‌ای تفکیک شده به تیراژ
+             ══════════════════════════════════════════ --}}
+-            @if($canViewSupplierInfo && $hasMultipleSuppliers && $usePivotPrices)
++            @if($hasMultipleSuppliers && $usePivotPrices)
+             <div x-show="compareMode"
+                  x-transition:enter="transition ease-out duration-300"
+                  x-transition:enter-start="opacity-0 translate-y-4"
+@@ -1358,6 +1361,7 @@ class="mt-3"
+                                             @foreach($activeSuppliersForTier as $ps)
+                                             <th class="text-center px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 border-b min-w-[90px] sm:min-w-[110px] md:min-w-[130px]">
+                                                 <div class="flex flex-col items-center gap-0.5">
++                                                    @if($showSupplierInfo)
+                                                     @if($ps->supplier && $ps->supplier->logo_path)
+                                                     <img src="{{ $ps->supplier->logoUrl('small') }}" class="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg object-cover border border-gray-200">
+                                                     @else
+@@ -1374,6 +1378,9 @@ class="mt-3"
+                                                         <span class="text-[9px] sm:text-[10px] bg-green-100 text-green-700 px-0.5 py-0.5 rounded-full">✓</span>
+                                                         @endif
+                                                     </div>
++                                                    @else
++                                                    <span class="font-bold text-gray-700 text-xs">تأمین‌کننده {{ $productSuppliers->search(fn($offer) => $offer->id === $ps->id) + 1 }}</span>
++                                                    @endif
+                                                 </div>
+                                             </th>
+                                             @endforeach
+@@ -1502,7 +1509,6 @@ class="mt-3"
+                 </div>
+             </div>
+             @endif
+-            @endif
+         </div>
+         @endif
+ 
+diff --git a/tests/Feature/ProductCatalogPriceOrderingTest.php b/tests/Feature/ProductCatalogPriceOrderingTest.php
+new file mode 100644
+index 0000000..c6d4a73
+--- /dev/null
++++ b/tests/Feature/ProductCatalogPriceOrderingTest.php
+@@ -0,0 +1,98 @@
++<?php
++
++namespace Tests\Feature;
++
++use App\Http\Controllers\Web\ProductController;
++use App\Models\Product;
++use App\Services\PriceVisibilityService;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Schema;
++use Tests\TestCase;
++
++class ProductCatalogPriceOrderingTest extends TestCase
++{
++    protected function setUp(): void
++    {
++        parent::setUp();
++        config(['database.default' => 'catalog_ordering', 'database.connections.catalog_ordering' => [
++            'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '',
++        ]]);
++        DB::purge('catalog_ordering');
++        Schema::create('products', function (Blueprint $t) {
++            $t->id(); $t->integer('family_product_id'); $t->integer('supplier_id')->nullable();
++            $t->integer('category_id')->nullable(); $t->string('title'); $t->string('sku')->nullable();
++            $t->text('short_description')->nullable(); $t->boolean('is_active')->default(true);
++            $t->string('status')->default('active'); $t->timestamps(); $t->softDeletes();
++        });
++        Schema::create('suppliers', function (Blueprint $t) {
++            $t->id(); $t->string('company_name')->nullable(); $t->string('brand_name')->nullable();
++            $t->boolean('is_active')->default(true); $t->boolean('is_verified')->default(true); $t->softDeletes();
++        });
++        Schema::create('categories', function (Blueprint $t) {
++            $t->id(); $t->string('name'); $t->softDeletes();
++        });
++        Schema::create('product_supplier', function (Blueprint $t) {
++            $t->id(); $t->integer('product_id'); $t->integer('supplier_id');
++            $t->boolean('is_active')->default(true); $t->softDeletes();
++        });
++        Schema::create('product_prices', function (Blueprint $t) {
++            $t->id(); $t->integer('product_supplier_id'); $t->integer('price')->default(100);
++            $t->boolean('is_active')->default(true); $t->date('valid_from')->nullable(); $t->date('valid_until')->nullable();
++        });
++        foreach (range(1, 8) as $id) {
++            DB::table('products')->insert([
++                'id' => $id, 'family_product_id' => $id === 8 ? 3 : $id,
++                'title' => $id === 2 ? 'Other title' : 'Matching product',
++                'short_description' => 'Matching description', 'created_at' => '2026-01-01 00:00:00',
++            ]);
++        }
++        DB::table('suppliers')->insert([['id' => 1, 'is_verified' => true], ['id' => 2, 'is_verified' => false]]);
++        foreach ([2, 4, 5, 6, 7, 8] as $id) {
++            DB::table('product_supplier')->insert(['id' => $id, 'product_id' => $id, 'supplier_id' => $id === 6 ? 2 : 1]);
++            DB::table('product_prices')->insert(['product_supplier_id' => $id]);
++        }
++        DB::table('product_prices')->where('product_supplier_id', 4)->update(['valid_until' => now()->subDay()->toDateString()]);
++        DB::table('product_prices')->where('product_supplier_id', 5)->update(['valid_from' => now()->addDay()->toDateString()]);
++        DB::table('product_prices')->where('product_supplier_id', 7)->update(['is_active' => false]);
++    }
++
++    private function results(array $parameters = []): \Illuminate\Database\Eloquent\Builder
++    {
++        $controller = app(ProductController::class);
++        $request = new Request($parameters);
++        $query = Product::query()->canonical();
++        foreach (['applySearch', 'applyPriceFilter', 'applySorting'] as $method) {
++            $query = (new \ReflectionMethod($controller, $method))->invoke($controller, $query, $request);
++        }
++
++        return $query;
++    }
++
++    public function test_default_catalog_keeps_unpriced_products_after_current_verified_family_prices(): void
++    {
++        $this->assertSame([3, 2, 7, 6, 5, 4, 1], $this->results()->pluck('products.id')->all());
++        $this->assertSame([2, 3, 7, 6, 5, 4, 1], $this->results(['sort' => 'name_desc'])->pluck('products.id')->all());
++    }
++
++    public function test_search_groups_by_price_before_relevance_and_preserves_both_groups_across_pages(): void
++    {
++        $query = $this->results(['q' => 'Matching']);
++        $this->assertSame([3, 2, 7, 6, 5, 4, 1], $query->pluck('products.id')->all());
++        $first = (clone $query)->paginate(2, ['products.*'], 'page', 1);
++        $second = (clone $query)->paginate(2, ['products.*'], 'page', 2);
++        $this->assertSame(7, $first->total());
++        $this->assertSame([3, 2], $first->getCollection()->pluck('id')->all());
++        $this->assertSame([7, 6], $second->getCollection()->pluck('id')->all());
++    }
++
++    public function test_explicit_price_filter_can_exclude_unpriced_search_matches(): void
++    {
++        $this->mock(PriceVisibilityService::class)->shouldReceive('canFilterByPrice')->once()->andReturn(true);
++        $ids = $this->results(['q' => 'Matching', 'min_price' => 50])->pluck('products.id')->all();
++        $this->assertNotContains(1, $ids);
++        $this->assertContains(2, $ids);
++        $this->assertContains(3, $ids);
++    }
++}

@@ -364,11 +364,12 @@ class ManageTierDiscounts extends Component
         $refreshRatesNow = false;
         $autoUpdateConfigured = false;
         $automaticRateApplications = [];
+        $manualRateApplications = [];
         $currencyChanged = false;
         $currencyRevision = 1;
         $staleCurrencySettings = false;
         $staleRateSettings = false;
-        DB::transaction(function () use ($supplierId, $exchangeRates, $foreignCurrencyPriceService, &$refreshRatesNow, &$autoUpdateConfigured, &$automaticRateApplications, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
+        DB::transaction(function () use ($supplierId, $exchangeRates, $foreignCurrencyPriceService, &$refreshRatesNow, &$autoUpdateConfigured, &$automaticRateApplications, &$manualRateApplications, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
             $supplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
             if ((int) $supplier->pricing_currency_revision !== $this->pricingCurrencyRevision) {
                 $staleCurrencySettings = true;
@@ -446,7 +447,14 @@ class ManageTierDiscounts extends Component
                     if (!$quoteError && !$hasFreshQuote) {
                         $quoteError = 'آخرین نرخ معتبر از بازهٔ انتخاب‌شده قدیمی‌تر است؛ قیمت‌های ثبت‌شده حفظ شدند.';
                     }
-                    $nextRevision = ((int) $setting->revision) + 1;
+                    $freshQuoteCanBeApplied = $hasFreshQuote
+                        && !$quoteError
+                        && $hasDisplayableQuote
+                        && $quoteToSave !== null;
+                    $effectiveRateChanged = $freshQuoteCanBeApplied
+                        && $foreignCurrencyPriceService->hasRateChanged($setting->rate_toman, $quoteToSave->rate_toman);
+                    $autoModeChanged = !(bool) $setting->auto_update;
+                    $nextRevision = (int) $setting->revision + (int) ($effectiveRateChanged || $autoModeChanged);
                     $attributes = [
                         'manual_rate_toman' => $manualRate,
                         'auto_update' => true,
@@ -455,11 +463,11 @@ class ManageTierDiscounts extends Component
                             ? now()->addHours((int) $input['refresh_hours'])
                             : now(),
                         'last_error' => $quoteError,
-                        'last_apply_error' => null,
                         'revision' => $nextRevision,
+                        ...($effectiveRateChanged ? ['last_apply_error' => null] : []),
                     ];
 
-                    if ($hasDisplayableQuote) {
+                    if ($freshQuoteCanBeApplied) {
                         $attributes += [
                             'rate_toman' => $quoteToSave->rate_toman,
                             'source' => $quoteToSave->source,
@@ -480,7 +488,7 @@ class ManageTierDiscounts extends Component
                     }
 
                     if ($currency === $this->pricingCurrency) {
-                        if ($hasFreshQuote) {
+                        if ($effectiveRateChanged) {
                             $automaticRateApplications[] = [
                                 'currency' => $currency,
                                 'setting_revision' => $nextRevision,
@@ -497,6 +505,13 @@ class ManageTierDiscounts extends Component
                     continue;
                 }
 
+                $manualRateChanged = $foreignCurrencyPriceService->hasRateChanged(
+                    $setting->rate_toman,
+                    $manualRate,
+                );
+                $manualModeChanged = (bool) $setting->auto_update;
+                $nextRevision = (int) $setting->revision
+                    + (int) ($manualRateChanged || $manualModeChanged);
                 $setting->fill([
                     'rate_toman' => $manualRate,
                     'manual_rate_toman' => $manualRate,
@@ -511,11 +526,21 @@ class ManageTierDiscounts extends Component
                     'last_attempt_at' => null,
                     'last_error' => null,
                     'last_apply_error' => null,
-                    'revision' => ((int) $setting->revision) + 1,
+                    'revision' => $nextRevision,
                 ])->save();
+
+                if ($currency === $this->pricingCurrency
+                    && is_numeric($manualRate)
+                    && (float) $manualRate > 0) {
+                    $manualRateApplications[] = [
+                        'currency' => $currency,
+                        'setting_revision' => $nextRevision,
+                        'tier_pricing_revision' => (int) $supplier->tier_pricing_revision,
+                    ];
+                }
             }
 
-            DB::afterCommit(function () use ($supplierId, $currencyRevision, $automaticRateApplications): void {
+            DB::afterCommit(function () use ($supplierId, $currencyRevision, $automaticRateApplications, $manualRateApplications): void {
                 RebaseSupplierCurrencyPrices::dispatch(
                     $supplierId,
                     $this->pricingCurrency,
@@ -528,6 +553,16 @@ class ManageTierDiscounts extends Component
                         $application['currency'],
                         $application['setting_revision'],
                         true,
+                        $application['tier_pricing_revision'],
+                    );
+                }
+
+                foreach ($manualRateApplications as $application) {
+                    ApplySupplierCurrencyPrices::dispatch(
+                        $supplierId,
+                        $application['currency'],
+                        $application['setting_revision'],
+                        false,
                         $application['tier_pricing_revision'],
                     );
                 }
@@ -560,12 +595,14 @@ class ManageTierDiscounts extends Component
             $message = $currencyChanged
                 ? 'ارز پایه ذخیره شد؛ نرخ دریافت‌شده و محاسبهٔ قیمت محصولات در صف قرار گرفت.'
                 : 'تنظیمات ذخیره شد؛ نرخ دریافت‌شده و محاسبهٔ قیمت محصولات در صف قرار گرفت.';
+        } elseif ($manualRateApplications !== []) {
+            $message = 'نرخ دستی ذخیره شد و محاسبهٔ قیمت محصولات با نرخ جدید در صف قرار گرفت.';
         } elseif ($autoUpdateConfigured) {
             $message = 'تنظیمات خودکار ذخیره شد؛ نرخ در نوبت به‌روزرسانی بعدی دریافت می‌شود.';
         } else {
             $message = $currencyChanged
                 ? 'ارز پایه ذخیره شد؛ هماهنگ‌سازی امن قیمت‌های قبلی در صف قرار گرفت.'
-                : 'نرخ‌های دستی ذخیره شدند. برای محاسبهٔ دوبارهٔ قیمت کالاها، دکمهٔ اعمال روی همهٔ محصولات را بزنید.';
+                : 'تنظیمات نرخ دستی ذخیره شد؛ برای محاسبهٔ دوبارهٔ قیمت کالاها، دکمهٔ اعمال روی همهٔ محصولات را بزنید.';
         }
 
         $this->dispatch('notify', message: $message, type: 'success');

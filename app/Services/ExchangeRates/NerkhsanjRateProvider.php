@@ -20,6 +20,7 @@ class NerkhsanjRateProvider
                 'User-Agent' => config('app.name') . '/exchange-rate-fetcher',
                 'Cache-Control' => 'no-cache',
             ])
+            ->withoutVerifying() // Skip SSL verification for local development
             ->get(config('pricing.exchange_rates.nerkhsanj_url'));
 
         $payload = $response->throw()->json();

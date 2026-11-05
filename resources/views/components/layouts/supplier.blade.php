@@ -24,7 +24,7 @@
     <div x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden" @click="sidebarOpen = false" style="display: none;"></div>
 
     <!-- Sidebar -->
-    <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:static lg:block flex flex-col">
+    <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:inset-y-auto lg:right-auto lg:z-auto lg:h-screen lg:flex lg:flex-shrink-0 flex flex-col">
 
         <!-- هدر سایدبار -->
         <div class="h-16 flex items-center justify-between lg:justify-center px-4 lg:px-0 border-b border-gray-200 dark:border-gray-700">
@@ -133,7 +133,7 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col min-h-screen">
+    <main class="min-w-0 flex-1 flex flex-col min-h-screen">
 
         <!-- Topbar -->
         <header class="min-h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 z-10">

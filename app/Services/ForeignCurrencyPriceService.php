@@ -80,6 +80,9 @@ class ForeignCurrencyPriceService
         }
 
         // One provider request refreshes all supported currencies, regardless of product count.
+        // The attempt timestamp lets us distinguish a quote received in this
+        // cycle from an older (even if still displayable) cached quote.
+        $refreshStartedAt = now()->utc()->subSecond();
         try {
             $maxRefreshHours = max(self::REFRESH_HOURS);
             app(\App\Services\ExchangeRates\ExchangeRateRefreshService::class)->refresh(
@@ -129,9 +132,9 @@ class ForeignCurrencyPriceService
             ->keyBy('currency');
         $dispatched = 0;
 
-        $dueSettings->orderBy('id')->chunkById(100, function ($settings) use ($rates, &$dispatched): void {
+        $dueSettings->orderBy('id')->chunkById(100, function ($settings) use ($rates, $refreshStartedAt, &$dispatched): void {
             foreach ($settings as $dueSetting) {
-                DB::transaction(function () use ($dueSetting, $rates, &$dispatched): void {
+                DB::transaction(function () use ($dueSetting, $rates, $refreshStartedAt, &$dispatched): void {
                 $supplier = Supplier::query()
                     ->lockForUpdate()
                     ->find((int) $dueSetting->supplier_id);
@@ -167,24 +170,26 @@ class ForeignCurrencyPriceService
                         'next_update_at' => now()->addMinutes(max(5, (int) config('pricing.exchange_rates.refresh_minutes', 5))),
                     ];
 
-                    if ($rate
-                        && $rate->source === \App\Services\ExchangeRates\NerkhsanjRateProvider::SOURCE
-                        && is_numeric($rate->rate_toman)
-                        && (float) $rate->rate_toman > 0) {
-                        $attributes += [
-                            'rate_toman' => $rate->rate_toman,
-                            'source' => $rate->source,
-                            'source_market_date' => $rate->source_market_date,
-                            'source_market_time' => $rate->source_market_time,
-                            'source_updated_at' => $rate->source_updated_at,
-                            'fetched_at' => $rate->fetched_at,
-                        ];
-                    }
-
                     $setting->forceFill($attributes)->save();
 
                     return;
                 }
+
+                $rateWasReceivedThisCycle = $rate->last_error === null
+                    && $rate->last_attempt_at !== null
+                    && $rate->last_attempt_at->gte($refreshStartedAt);
+                if (!$rateWasReceivedThisCycle) {
+                    $setting->forceFill([
+                        'last_attempt_at' => now(),
+                        'last_error' => 'در این نوبت نرخ تازه‌ای دریافت نشد؛ آخرین نرخ معتبر و قیمت‌های فعلی حفظ شدند.',
+                        'next_update_at' => now()->addMinutes(max(5, (int) config('pricing.exchange_rates.refresh_minutes', 5))),
+                    ])->save();
+
+                    return;
+                }
+
+                $rateChanged = $this->hasRateChanged($setting->rate_toman, $rate->rate_toman);
+                $nextRevision = (int) $setting->revision + ($rateChanged ? 1 : 0);
 
                 $setting->forceFill([
                     'rate_toman' => $rate->rate_toman,
@@ -195,23 +200,23 @@ class ForeignCurrencyPriceService
                     'fetched_at' => $rate->fetched_at,
                     'last_attempt_at' => now(),
                     'last_error' => $rate->last_error,
-                    'last_apply_error' => null,
                     'next_update_at' => now()->addHours($hours),
-                    'revision' => ((int) $setting->revision) + 1,
+                    'revision' => $nextRevision,
+                    ...($rateChanged ? ['last_apply_error' => null] : []),
                 ])->save();
 
-                DB::afterCommit(function () use ($setting, $supplier, &$dispatched): void {
-                    \App\Jobs\RebaseSupplierCurrencyPrices::dispatch(
-                        (int) $setting->supplier_id,
-                        $setting->currency,
-                        (int) $supplier->pricing_currency_revision,
-                    );
+                if (!$rateChanged) {
+                    return;
+                }
+
+                $tierPricingRevision = (int) $supplier->tier_pricing_revision;
+                DB::afterCommit(function () use ($setting, $tierPricingRevision, &$dispatched): void {
                     \App\Jobs\ApplySupplierCurrencyPrices::dispatch(
                         (int) $setting->supplier_id,
                         $setting->currency,
                         (int) $setting->revision,
                         true,
-                        (int) $supplier->tier_pricing_revision,
+                        $tierPricingRevision,
                     );
                     $dispatched++;
                 });
@@ -255,6 +260,21 @@ class ForeignCurrencyPriceService
             && $setting->source_updated_at !== null
             && $setting->fetched_at->gte($cutoff)
             && $setting->source_updated_at->gte($cutoff);
+    }
+
+    /** Compare rates at the precision persisted by supplier exchange settings. */
+    public function hasRateChanged(mixed $currentRate, mixed $candidateRate): bool
+    {
+        if (!is_numeric($candidateRate) || (float) $candidateRate <= 0) {
+            return false;
+        }
+
+        if (!is_numeric($currentRate) || (float) $currentRate <= 0) {
+            return true;
+        }
+
+        return number_format((float) $currentRate, 4, '.', '')
+            !== number_format((float) $candidateRate, 4, '.', '');
     }
 
     /**
@@ -339,6 +359,25 @@ class ForeignCurrencyPriceService
                 ? number_format((float) $referencePrice->price / $rateValue, 4, '.', '')
                 : null;
 
+            $foreignTierAmounts = [];
+            if ($currency !== 'TOM' && $rateValue > 0) {
+                ProductPrice::query()
+                    ->where('product_supplier_id', $productSupplier->id)
+                    ->where('price_type_id', $cashTypeId)
+                    ->whereNull('check_period_id')
+                    ->where('tier_index', '!=', $referenceTier)
+                    ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
+                    ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
+                    ->orderBy('tier_index')
+                    ->get(['tier_index', 'price'])
+                    ->each(function (ProductPrice $price) use (&$foreignTierAmounts, $rateValue): void {
+                        if (is_numeric($price->price) && (float) $price->price > 0) {
+                            $foreignTierAmounts[(int) $price->tier_index]
+                                = number_format((float) $price->price / $rateValue, 4, '.', '');
+                        }
+                    });
+            }
+
             if ($currency !== 'TOM' && $newAmount === null) {
                 return false;
             }
@@ -346,6 +385,9 @@ class ForeignCurrencyPriceService
             $productSupplier->forceFill([
                 'price_currency' => $currency,
                 'foreign_price_amount' => $currency === 'TOM' ? null : $newAmount,
+                'foreign_tier_amounts' => $currency === 'TOM' || $foreignTierAmounts === []
+                    ? null
+                    : $foreignTierAmounts,
                 'foreign_price_rate' => $rateValue > 0 ? $rateValue : null,
                 'foreign_price_source' => $setting
                     ? ($setting->auto_update ? $setting->source : 'manual')
@@ -511,22 +553,31 @@ class ForeignCurrencyPriceService
                 ),
             ];
 
-            $calculateTierPrices = (bool) $productSupplier->auto_calculate_tiers
-                || $productSupplier->price_currency !== 'TOM';
+            $foreignTierAmounts = is_array($productSupplier->foreign_tier_amounts)
+                ? $productSupplier->foreign_tier_amounts
+                : [];
+            $previousRate = is_numeric($productSupplier->foreign_price_rate)
+                && (float) $productSupplier->foreign_price_rate > 0
+                    ? (float) $productSupplier->foreign_price_rate
+                    : null;
+
+            // Currency conversion is independent from the per-product tier toggle.
+            // The toggle controls only whether the non-reference tier prices come
+            // from percentages or from their own stored foreign-currency amounts.
+            $calculateTierPrices = (bool) $productSupplier->auto_calculate_tiers;
             $tierPercentages = $calculateTierPrices
                 ? $this->tierPercentageMap($productSupplier, array_map('intval', array_keys($quantityTiers)))
                 : [];
 
-            if ($calculateTierPrices) {
-                foreach ($quantityTiers as $tierIndex => $_tier) {
-                    $tierIndex = (int) $tierIndex;
+            foreach ($quantityTiers as $tierIndex => $_tier) {
+                $tierIndex = (int) $tierIndex;
+                if ($tierIndex === $referenceTier) {
+                    continue;
+                }
 
-                    // غیرفعال‌بودن تیراژ فقط نمایش/فروش آن را متوقف می‌کند؛
-                    // قیمت ذخیره‌شده‌اش باید با مرجع ثابت کارتن و درصد خودش به‌روز بماند.
-                    if ($tierIndex === $referenceTier) {
-                        continue;
-                    }
-
+                if ($calculateTierPrices) {
+                    // A disabled tier still keeps a current stored price; tier_enabled
+                    // controls visibility and sale availability, not price calculation.
                     $customPercentages = $productSupplier->tier_percentages ?? [];
                     $percentage = array_key_exists($tierIndex, $customPercentages)
                         ? (float) $customPercentages[$tierIndex]
@@ -542,7 +593,41 @@ class ForeignCurrencyPriceService
                         $tierIndex,
                         $tierPrice
                     );
+                    $foreignTierAmounts[$tierIndex] = number_format($tierPrice / $rateValue, 4, '.', '');
+
+                    continue;
                 }
+
+                $foreignAmount = $foreignTierAmounts[$tierIndex]
+                    ?? $foreignTierAmounts[(string) $tierIndex]
+                    ?? null;
+                if (is_numeric($foreignAmount) && (float) $foreignAmount > 0) {
+                    $tierPrice = $this->calculateToman((float) $foreignAmount, $rateValue, $productSupplier);
+                    $foreignTierAmounts[$tierIndex] = number_format((float) $foreignAmount, 4, '.', '');
+                } else {
+                    $oldTomanPrice = $oldCashByTier[$tierIndex] ?? null;
+                    if (!is_numeric($oldTomanPrice) || (float) $oldTomanPrice <= 0) {
+                        continue;
+                    }
+
+                    // Backfill legacy FX offers from the last applied exchange rate.
+                    // If no rate snapshot exists, keep the current Toman value until
+                    // the supplier explicitly enters a foreign amount.
+                    $sourceRate = $previousRate ?? $rateValue;
+                    $foreignTierAmounts[$tierIndex] = number_format((float) $oldTomanPrice / $sourceRate, 4, '.', '');
+                    $sameRateAsStoredPrice = $previousRate !== null
+                        && !$this->hasRateChanged($previousRate, $rateValue);
+                    $tierPrice = $sameRateAsStoredPrice || $previousRate === null
+                        ? (int) round((float) $oldTomanPrice)
+                        : $this->calculateToman((float) $foreignTierAmounts[$tierIndex], $rateValue, $productSupplier);
+                }
+
+                $newCashByTier[$tierIndex] = $this->storeCashPrice(
+                    $productSupplier,
+                    (int) $cashType->id,
+                    $tierIndex,
+                    $tierPrice
+                );
             }
 
             $changedRows = [];
@@ -598,6 +683,7 @@ class ForeignCurrencyPriceService
 
             $productSupplier->forceFill([
                 'foreign_price_rate' => $rateValue,
+                'foreign_tier_amounts' => $foreignTierAmounts === [] ? null : $foreignTierAmounts,
                 'foreign_price_source' => $setting->auto_update ? $setting->source : 'manual',
                 'foreign_price_applied_currency' => $currency,
                 'foreign_price_applied_setting_revision' => $expectedRevision,

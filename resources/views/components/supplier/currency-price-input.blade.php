@@ -5,6 +5,7 @@
     'priceMatrix',
     'autoCalculateTiers',
     'priceCurrency',
+    'foreignTierAmounts' => [],
     'foreignPriceRebasePending' => false,
     'foreignPriceAmount',
     'foreignPricePreviewValid',
@@ -20,7 +21,7 @@
 @php
     $isReferenceTier = (int) $tierIndex === (int) $referenceTierIndex;
     $fieldSuffix = $mobile ? 'mobile' : 'desktop';
-    $isLocked = ($autoCalculateTiers || $priceCurrency !== 'TOM') && !$isReferenceTier;
+    $isLocked = $autoCalculateTiers && !$isReferenceTier;
     $inputClass = $mobile
         ? 'block w-full rounded-lg border-gray-300 px-4 py-3 text-base dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100'
         : 'block w-full rounded-md border-gray-300 px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
@@ -33,7 +34,7 @@
         'AED' => 'درهم',
         default => 'تومان',
     };
-    $isDerivedToman = $priceCurrency !== 'TOM' && !$isReferenceTier;
+    $isDerivedToman = $priceCurrency !== 'TOM' && !$isReferenceTier && $autoCalculateTiers;
 @endphp
 
 @if($isReferenceTier)
@@ -129,30 +130,60 @@
         @error('foreignPriceAmount') <p id="foreign-price-amount-error-{{ $fieldSuffix }}" class="text-xs text-red-600" role="alert">{{ $message }}</p> @else <span id="foreign-price-amount-error-{{ $fieldSuffix }}" class="sr-only"></span> @enderror
     </div>
 @else
-    <div class="relative">
-        <input type="text"
-               wire:ignore
-               x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceTypeId }}.price', true)"
-               x-effect="refresh(state)"
-               x-on:input="input($event)"
-               x-on:blur="sync()"
-               value="{{ $tomanPrice }}"
-               aria-label="{{ $isDerivedToman ? 'قیمت نقدی محاسبه‌شدهٔ تیراژ ' . ($tierIndex + 1) . ' به تومان' : 'قیمت نقدی تیراژ ' . ($tierIndex + 1) . ' به تومان' }}"
-               placeholder="{{ $isDerivedToman ? 'قیمت محاسبه‌شده به تومان' : 'قیمت نقدی' }}"
-               inputmode="numeric"
-               onwheel="this.blur()"
-               @if($isLocked) readonly @endif
-               x-bind:readonly="($wire.autoCalculateTiers || $wire.priceCurrency !== 'TOM') && {{ $tierIndex }} !== $wire.referenceTierIndex"
-               x-bind:class="(($wire.autoCalculateTiers || $wire.priceCurrency !== 'TOM') && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
-               class="{{ $inputClass }}">
-        @if($isLocked)
-            <p class="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                <x-heroicon-o-information-circle class="h-3.5 w-3.5"/>
-                {{ $isDerivedToman ? 'این مبلغ به تومان و از مبلغ ارزی تیراژ مرجع محاسبه می‌شود.' : 'این قیمت از تیراژ مرجع محاسبه می‌شود.' }}
-            </p>
-        @endif
-        @if($isDerivedToman)
-            <span class="sr-only">واحد این مبلغ تومان است.</span>
-        @endif
-    </div>
+    @if($priceCurrency !== 'TOM' && !$autoCalculateTiers)
+        <div class="space-y-2">
+            <label for="foreign-tier-amount-{{ $fieldSuffix }}-{{ $tierIndex }}" class="sr-only">
+                قیمت نقدی تیراژ {{ $tierIndex + 1 }} به {{ $priceCurrency }}
+            </label>
+            <div class="relative">
+                <input type="text"
+                       id="foreign-tier-amount-{{ $fieldSuffix }}-{{ $tierIndex }}"
+                       wire:model.live.debounce.700ms="foreignTierAmounts.{{ $tierIndex }}"
+                       inputmode="decimal"
+                       autocomplete="off"
+                       aria-label="قیمت نقدی تیراژ {{ $tierIndex + 1 }} به {{ $priceCurrency }}"
+                       aria-invalid="@error('foreignTierAmounts.' . $tierIndex) true @else false @enderror"
+                       aria-describedby="foreign-tier-amount-help-{{ $fieldSuffix }}-{{ $tierIndex }} foreign-tier-amount-error-{{ $fieldSuffix }}-{{ $tierIndex }}"
+                       placeholder="مبلغ به {{ $priceCurrency }}"
+                       class="{{ $inputClass }} pl-16">
+                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-xs font-semibold text-gray-500 dark:text-gray-400">{{ $priceCurrency }}</span>
+            </div>
+            @error('foreignTierAmounts.' . $tierIndex)
+                <p id="foreign-tier-amount-error-{{ $fieldSuffix }}-{{ $tierIndex }}" class="text-xs text-red-600" role="alert">{{ $message }}</p>
+            @else
+                <span id="foreign-tier-amount-error-{{ $fieldSuffix }}-{{ $tierIndex }}" class="sr-only"></span>
+            @enderror
+            <div id="foreign-tier-amount-help-{{ $fieldSuffix }}-{{ $tierIndex }}" class="text-xs leading-5 text-gray-600 dark:text-gray-400" aria-live="polite">
+                قیمت تبدیل‌شده به تومان:
+                <strong class="text-gray-800 dark:text-gray-100">{{ is_numeric($tomanPrice) ? \App\Helpers\PriceHelper::formatNumber((float) $tomanPrice) . ' تومان' : 'مبلغ ارز را وارد کنید' }}</strong>
+            </div>
+        </div>
+    @else
+        <div class="relative">
+            <input type="text"
+                   wire:ignore
+                   x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceTypeId }}.price', true)"
+                   x-effect="refresh(state)"
+                   x-on:input="input($event)"
+                   x-on:blur="sync()"
+                   value="{{ $tomanPrice }}"
+                   aria-label="{{ $isDerivedToman ? 'قیمت نقدی محاسبه‌شدهٔ تیراژ ' . ($tierIndex + 1) . ' به تومان' : 'قیمت نقدی تیراژ ' . ($tierIndex + 1) . ' به تومان' }}"
+                   placeholder="{{ $isDerivedToman ? 'قیمت محاسبه‌شده به تومان' : 'قیمت نقدی' }}"
+                   inputmode="numeric"
+                   onwheel="this.blur()"
+                   @if($isLocked) readonly @endif
+                   x-bind:readonly="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
+                   x-bind:class="($wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
+                   class="{{ $inputClass }}">
+            @if($isLocked)
+                <p class="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                    <x-heroicon-o-information-circle class="h-3.5 w-3.5"/>
+                    {{ $isDerivedToman ? 'این مبلغ به تومان و بر اساس درصد تیراژ محاسبه می‌شود.' : 'این قیمت از تیراژ مرجع محاسبه می‌شود.' }}
+                </p>
+            @endif
+            @if($isDerivedToman)
+                <span class="sr-only">واحد این مبلغ تومان است.</span>
+            @endif
+        </div>
+    @endif
 @endif

@@ -300,6 +300,7 @@ class Product extends Model
             INNER JOIN suppliers as priced_supplier
                 ON priced_supplier.id = priced_ps.supplier_id
                 AND priced_supplier.is_active = 1
+                AND priced_supplier.is_verified = 1
                 AND priced_supplier.deleted_at IS NULL
             INNER JOIN product_prices as priced_price
                 ON priced_price.product_supplier_id = priced_ps.id

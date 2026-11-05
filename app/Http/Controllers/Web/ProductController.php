@@ -611,10 +611,11 @@ class ProductController extends Controller
                 'category:id,name,slug,icon,parent_id',
 
                 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                'familyProducts.productSuppliers.prices.priceType:id,code',
                 'galleries' => function ($q) {
                     $q->select([
                         'id', 'product_id', 'file_path', 'file_type',
@@ -918,15 +919,6 @@ class ProductController extends Controller
             });
         });
 
-        $query->orderByRaw("
-            CASE
-                WHEN products.title LIKE ? THEN 1
-                WHEN products.sku = ? THEN 2
-                WHEN products.short_description LIKE ? THEN 3
-                ELSE 4
-            END ASC
-        ", [$likeTerm, $escapedTerm, $likeTerm]);
-
         return $query;
     }
 
@@ -941,13 +933,29 @@ class ProductController extends Controller
     {
         $query->pricedFirst();
 
+        // Search relevance applies within each price group, so unpriced matches
+        // remain in the results without overtaking products with current prices.
+        $searchTerm = trim((string) $request->get('q', ''));
+        if ($searchTerm !== '') {
+            $escapedTerm = str_replace(['%', '_'], ['\\%', '\\_'], $searchTerm);
+            $likeTerm = "%{$escapedTerm}%";
+            $query->orderByRaw("
+                CASE
+                    WHEN products.title LIKE ? THEN 1
+                    WHEN products.sku = ? THEN 2
+                    WHEN products.short_description LIKE ? THEN 3
+                    ELSE 4
+                END ASC
+            ", [$likeTerm, $escapedTerm, $likeTerm]);
+        }
+
         $sort = $request->get('sort', 'latest');
 
         if (!in_array($sort, self::ALLOWED_SORT_OPTIONS)) {
             $sort = 'latest';
         }
 
-        return match ($sort) {
+        $query = match ($sort) {
             'latest'      => $query->orderByDesc('products.created_at'),
             'oldest'      => $query->orderBy('products.created_at'),
             'popular',
@@ -958,6 +966,8 @@ class ProductController extends Controller
             'price_high'  => $this->sortByPrice($query, 'desc'),
             default       => $query->orderByDesc('products.created_at'),
         };
+
+        return $query->orderByDesc('products.id');
     }
 
     /**
@@ -1231,10 +1241,11 @@ class ProductController extends Controller
                         ->orderBy('retail_price')
                         ->limit(1),
                     'category:id,name,slug',
-                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
-                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
+                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                     'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                    'familyProducts.productSuppliers.prices.priceType:id,code',
                     // ✅ اضافه شده: eager loading برای قیمت‌های عمده
                     'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
@@ -1246,7 +1257,7 @@ class ProductController extends Controller
                             $sub->whereNull('valid_from')
                                 ->orWhere('valid_from', '<=', now());
                         }),
-                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
                 ])
                 ->inRandomOrder()
@@ -1296,10 +1307,11 @@ class ProductController extends Controller
                     ->orderBy('retail_price')
                     ->limit(1),
                 'category:id,name,slug',
-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
+                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
+                'familyProducts.productSuppliers.prices.priceType:id,code',
                 // ✅ اضافه شده: eager loading برای قیمت‌های عمده
                 'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
@@ -1311,7 +1323,7 @@ class ProductController extends Controller
                         $sub->whereNull('valid_from')
                             ->orWhere('valid_from', '<=', now());
                     }),
-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
+                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
                 'productSuppliers.prices.priceType',
             ])
             ->get()

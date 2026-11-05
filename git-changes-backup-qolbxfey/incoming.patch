@@ -1,0 +1,1743 @@
+diff --git a/app/Helpers/TierPriceUpdater.php b/app/Helpers/TierPriceUpdater.php
+index 73ae1e2..b6a4cb0 100644
+--- a/app/Helpers/TierPriceUpdater.php
++++ b/app/Helpers/TierPriceUpdater.php
+@@ -98,6 +98,7 @@ public static function updateSupplierPrices(
+                         ->where('ps.supplier_id', $supplierId)
+                         ->where('ps.id', '>', $lastId)
+                         ->where('ps.price_currency', 'TOM')
++                        ->where('ps.auto_calculate_tiers', true)
+                         ->orderBy('ps.id')
+                         ->limit(self::UPDATE_CHUNK_SIZE)
+                         ->select('ps.*', 'p.category_id', 'p.quantity_tiers as product_quantity_tiers');
+@@ -121,7 +122,7 @@ public static function updateSupplierPrices(
+                         ->whereIn('id', $productSupplierIds)
+                         ->orderBy('id')
+                         ->lockForUpdate()
+-                        ->get(['id', 'price_currency', 'is_active'])
++                        ->get(['id', 'price_currency', 'is_active', 'auto_calculate_tiers'])
+                         ->keyBy('id');
+                     $cashRows = DB::table('product_prices')
+                         ->whereIn('product_supplier_id', $productSupplierIds)
+@@ -226,7 +227,8 @@ public static function updateSupplierPrices(
+                             $lockedProductSupplier = $lockedProductSuppliers->get($productSupplier->id);
+ 
+                             if (!$lockedProductSupplier
+-                                || $lockedProductSupplier->price_currency !== 'TOM') {
++                                || $lockedProductSupplier->price_currency !== 'TOM'
++                                || !(bool) $lockedProductSupplier->auto_calculate_tiers) {
+                                 continue;
+                             }
+ 
+@@ -244,7 +246,6 @@ public static function updateSupplierPrices(
+                                 ? $productSupplier->product_quantity_tiers
+                                 : (json_decode((string) $productSupplier->product_quantity_tiers, true) ?: []);
+                             $productTierPercentages = self::decodeJsonArray($productSupplier->tier_percentages ?? null);
+-                            $productTierEnabled = self::decodeJsonArray($productSupplier->tier_enabled ?? null);
+                             $tierIndexes = array_keys($quantityTiers);
+                             if ($tierIndexes === []) {
+                                 $tierIndexes = $fallbackTierIndexes[$productSupplier->id] ?? [];
+@@ -258,13 +259,6 @@ public static function updateSupplierPrices(
+                                     continue;
+                                 }
+ 
+-                                $tierEnabled = $productTierEnabled[$tierIndex]
+-                                    ?? $productTierEnabled[(string) $tierIndex]
+-                                    ?? true;
+-                                if (!(bool) $tierEnabled) {
+-                                    continue;
+-                                }
+-
+                                 $hasProductOverride = array_key_exists($tierIndex, $productTierPercentages)
+                                     || array_key_exists((string) $tierIndex, $productTierPercentages);
+                                 $productOverride = $productTierPercentages[$tierIndex]
+diff --git a/app/Http/Controllers/Web/ProductController.php b/app/Http/Controllers/Web/ProductController.php
+index b64860f..9dcfa4d 100644
+--- a/app/Http/Controllers/Web/ProductController.php
++++ b/app/Http/Controllers/Web/ProductController.php
+@@ -611,10 +611,11 @@ private function buildBaseProductQuery(): Builder
+                 'category:id,name,slug,icon,parent_id',
+ 
+                 'supplier:id,company_name,brand_name,logo_path,logo_versions,is_verified',
+-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
++                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
++                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
++                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
++                'familyProducts.productSuppliers.prices.priceType:id,code',
+                 'galleries' => function ($q) {
+                     $q->select([
+                         'id', 'product_id', 'file_path', 'file_type',
+@@ -1231,10 +1232,11 @@ private function getRelatedProducts(Product $product, int $limit = 8): Collectio
+                         ->orderBy('retail_price')
+                         ->limit(1),
+                     'category:id,name,slug',
+-                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+-                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+-                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
++                    'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
++                    'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
++                    'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                     'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
++                    'familyProducts.productSuppliers.prices.priceType:id,code',
+                     // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                     'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
+                     'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+@@ -1246,7 +1248,7 @@ private function getRelatedProducts(Product $product, int $limit = 8): Collectio
+                             $sub->whereNull('valid_from')
+                                 ->orWhere('valid_from', '<=', now());
+                         }),
+-                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
++                    'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
+                 'productSuppliers.prices.priceType',
+                 ])
+                 ->inRandomOrder()
+@@ -1296,10 +1298,11 @@ private function getRecentlyViewed(int $excludeProductId, Request $request, int
+                     ->orderBy('retail_price')
+                     ->limit(1),
+                 'category:id,name,slug',
+-                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
+-                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true),
+-                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,city',
++                'familyProducts.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
++                'familyProducts.productSuppliers' => fn ($q) => $q->where('is_active', true)->verifiedSupplier(),
++                'familyProducts.productSuppliers.supplier:id,parent_supplier_id,branch_name,company_name,is_active,is_verified,city',
+                 'familyProducts.productSuppliers.prices' => fn ($q) => $q->activeAndValid(),
++                'familyProducts.productSuppliers.prices.priceType:id,code',
+                 // ✅ اضافه شده: eager loading برای قیمت‌های عمده
+                 'productSuppliers' => fn($q) => $q->where('is_active', true)->verifiedSupplier(),
+                 'productSuppliers.prices' => fn($q) => $q->where('is_active', true)
+@@ -1311,7 +1314,7 @@ private function getRecentlyViewed(int $excludeProductId, Request $request, int
+                         $sub->whereNull('valid_from')
+                             ->orWhere('valid_from', '<=', now());
+                     }),
+-                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,parent_supplier_id,branch_name,city',
++                'productSuppliers.supplier:id,company_name,brand_name,slug,is_active,is_verified,parent_supplier_id,branch_name,city',
+                 'productSuppliers.prices.priceType',
+             ])
+             ->get()
+diff --git a/app/Http/Controllers/Web/ProductPriceSnapshotController.php b/app/Http/Controllers/Web/ProductPriceSnapshotController.php
+index 7de1de1..9c41b25 100644
+--- a/app/Http/Controllers/Web/ProductPriceSnapshotController.php
++++ b/app/Http/Controllers/Web/ProductPriceSnapshotController.php
+@@ -24,6 +24,16 @@ public function __invoke(Product $product, Request $request, PriceVisibilityServ
+         $allowedTypes = $settings?->getAllowedPriceTypes();
+         $canSeeSupplierInfo = $settings?->canSeeSupplierInfo() ?? false;
+         $today = now()->startOfDay();
++        $familyId = (int) ($product->family_product_id ?: $product->id);
++        $familyProductIds = Product::query()
++            ->where('family_product_id', $familyId)
++            ->where('is_active', true)
++            ->where('status', ProductStatus::ACTIVE)
++            ->pluck('id');
++
++        if (!$familyProductIds->contains((int) $product->id)) {
++            $familyProductIds->push((int) $product->id);
++        }
+ 
+         $suppliers = ProductSupplier::query()
+             ->with([
+@@ -59,19 +69,25 @@ public function __invoke(Product $product, Request $request, PriceVisibilityServ
+                 'prices.priceType:id,code',
+                 'prices.checkPeriod:id,label,name',
+             ])
+-            ->where('product_id', $product->id)
++            ->whereIn('product_id', $familyProductIds->all())
+             ->where('is_active', true)
+             ->verifiedSupplier()
+             ->get();
+ 
+         $visiblePricesBySupplier = $suppliers->mapWithKeys(function (ProductSupplier $productSupplier) use ($allowedTypes): array {
++            $tierEnabled = (array) ($productSupplier->tier_enabled ?? []);
+             $prices = $productSupplier->prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
+                 $type = $price->priceType?->code ?? 'cash';
+ 
+                 return $price->is_active
+                     && $price->isValid()
+                     && ($allowedTypes === null || in_array($type, $allowedTypes, true));
+-            });
++            })->filter(function (ProductPrice $price) use ($tierEnabled): bool {
++                return empty($tierEnabled) || (bool) ($tierEnabled[(int) $price->tier_index] ?? true);
++            })->values();
++
++            // Keep the matrix and the range snapshot on the same enabled-tier set.
++            $productSupplier->setRelation('prices', $prices);
+ 
+             $prices = $prices
+                 ->groupBy(fn (ProductPrice $price) => implode(':', [
+@@ -145,6 +161,26 @@ public function __invoke(Product $product, Request $request, PriceVisibilityServ
+ 
+         $productPrices = $uniqueVisiblePrices->pluck('price');
+         $productMatrixPrices = $this->productMatrixPayload($suppliers, $allowedTypes);
++        $requestedCardSupplierId = $canSeeSupplierInfo
++            ? filter_var($request->query('card_supplier_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
++            : false;
++        $cardPrices = $uniqueVisiblePrices;
++        if ($requestedCardSupplierId !== false && $requestedCardSupplierId !== null) {
++            $cardOfferIds = $suppliers
++                ->where('supplier_id', (int) $requestedCardSupplierId)
++                ->pluck('id')
++                ->map(fn ($id): int => (int) $id)
++                ->all();
++            $cardPrices = $cardPrices->whereIn('product_supplier_id', $cardOfferIds);
++        } else {
++            $requestedCardSupplierId = null;
++        }
++        $cardPriceValues = $cardPrices->pluck('price');
++        $cardRange = [
++            'lowest' => $cardPriceValues->isEmpty() ? null : (int) $cardPriceValues->min(),
++            'highest' => $cardPriceValues->isEmpty() ? null : (int) $cardPriceValues->max(),
++            'tiers_count' => $cardPrices->pluck('tier_index')->unique()->count(),
++        ];
+         $branchPrices = $canSeeSupplierInfo
+             ? $this->branchPricePayload($product, $allowedTypes, $today, $request->query('supplier_id'))
+             : [];
+@@ -157,6 +193,8 @@ public function __invoke(Product $product, Request $request, PriceVisibilityServ
+             'product_average' => $productPrices->isEmpty() ? null : (int) round($productPrices->avg()),
+             'product_prices' => $productMatrixPrices,
+             'product_tiers_count' => collect($productMatrixPrices)->pluck('tier_index')->unique()->count(),
++            'card_supplier_id' => $requestedCardSupplierId,
++            'card_range' => $cardRange,
+             'suppliers' => $supplierSnapshots,
+             'branches' => $branchPrices,
+         ])->header('Cache-Control', 'private, no-store');
+@@ -296,12 +334,15 @@ private function branchPricePayload(
+             }
+ 
+             $prices = $offer?->prices ?? collect();
++            $tierEnabled = (array) ($offer?->tier_enabled ?? []);
+             $visiblePrices = $prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
+                 $type = $price->priceType?->code ?? 'cash';
+ 
+                 return $price->is_active
+                     && $price->isValid()
+                     && ($allowedTypes === null || in_array($type, $allowedTypes, true));
++            })->filter(function (ProductPrice $price) use ($tierEnabled): bool {
++                return empty($tierEnabled) || (bool) ($tierEnabled[(int) $price->tier_index] ?? true);
+             });
+             $basePrices = $visiblePrices->filter(fn (ProductPrice $price): bool => in_array(
+                 $price->priceType?->code ?? 'cash',
+diff --git a/app/Livewire/Supplier/Products/EditPrice.php b/app/Livewire/Supplier/Products/EditPrice.php
+index 16957ab..57f0c98 100644
+--- a/app/Livewire/Supplier/Products/EditPrice.php
++++ b/app/Livewire/Supplier/Products/EditPrice.php
+@@ -43,6 +43,12 @@ class EditPrice extends Component
+     #[Locked]
+     public int $tierPricingRevision = 1;
+     public ?string $foreignPriceAmount = null;
++    /** @var array<int, string|null> FX amounts for manually managed cash tiers. */
++    public array $foreignTierAmounts = [];
++    #[Locked]
++    public array $foreignTierAmountsTouched = [];
++    #[Locked]
++    public array $foreignTierAmountsDerived = [];
+     public bool $foreignPriceRebasePending = false;
+     public bool $foreignPricePreviewValid = false;
+     public ?string $latestExchangeRate = null;
+@@ -106,10 +112,20 @@ public function updatedTierEnabled($value, $key): void
+         }
+ 
+         // تغییر وضعیت فروش تیراژ نباید مرجع را حذف کند؛ پیش‌نمایش درصدها را تازه کن.
+-        if ($this->priceCurrency !== 'TOM' || $this->autoCalculateTiers) {
+-            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
++        if ($this->autoCalculateTiers) {
++            $this->calculateTierPrices();
+         }
+     }
++
++    public function updatedAutoCalculateTiers(): void
++    {
++        if ($this->autoCalculateTiers) {
++            $this->calculateTierPrices();
++            return;
++        }
++
++        $this->updateAllCheckPrices();
++    }
+     
+     /**
+      * پاک کردن قیمت‌های گارانتی از ماتریس
+@@ -275,6 +291,7 @@ public function mount(Product $product)
+         $this->loadEffectivePercentages();
+         
+         $this->initializePriceMatrix();
++        $this->initializeForeignTierAmounts();
+         $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
+         $this->foreignPriceRebasePending = $cashPriceType !== null
+             && $this->productSupplier->price_currency !== $this->priceCurrency
+@@ -415,6 +432,238 @@ protected function initializePriceMatrix(): void
+         $this->loadEffectivePercentages();
+     }
+ 
++    private function initializeForeignTierAmounts(): void
++    {
++        $this->foreignTierAmounts = [];
++        $this->foreignTierAmountsTouched = [];
++        $this->foreignTierAmountsDerived = [];
++
++        if ($this->priceCurrency === 'TOM') {
++            return;
++        }
++
++        $storedAmounts = is_array($this->productSupplier->foreign_tier_amounts)
++            ? $this->productSupplier->foreign_tier_amounts
++            : [];
++        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
++        if (!$cashPriceType) {
++            return;
++        }
++
++        $rate = $this->productSupplier->price_currency === $this->priceCurrency
++            && is_numeric($this->productSupplier->foreign_price_rate)
++            && (float) $this->productSupplier->foreign_price_rate > 0
++                ? (float) $this->productSupplier->foreign_price_rate
++                : $this->effectiveForeignConversionRate();
++        foreach ($this->quantityTiers as $tierIndex => $_tier) {
++            $tierIndex = (int) $tierIndex;
++            if ($tierIndex === $this->referenceTierIndex) {
++                continue;
++            }
++
++            $storedAmount = $storedAmounts[$tierIndex] ?? $storedAmounts[(string) $tierIndex] ?? null;
++            if (is_numeric($storedAmount) && (float) $storedAmount > 0) {
++                $this->foreignTierAmounts[$tierIndex] = $this->formatForeignAmount($storedAmount);
++                continue;
++            }
++
++            $tomanPrice = $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] ?? null;
++            if ($rate !== null && is_numeric($tomanPrice) && (float) $tomanPrice > 0) {
++                $this->foreignTierAmounts[$tierIndex] = number_format((float) $tomanPrice / $rate, 4, '.', '');
++                $this->foreignTierAmountsDerived[$tierIndex] = true;
++            }
++        }
++    }
++
++    private function effectiveForeignConversionRate(): ?float
++    {
++        if ($this->priceCurrency === 'TOM') {
++            return null;
++        }
++
++        $setting = SupplierExchangeRateSetting::query()
++            ->where('supplier_id', $this->productSupplier->supplier_id)
++            ->where('currency', $this->priceCurrency)
++            ->first();
++        $rateService = app(\App\Services\ForeignCurrencyPriceService::class);
++        if ($rateService->isUsableSupplierRate($setting)) {
++            $rate = $setting->auto_update ? $setting->rate_toman : $setting->manual_rate_toman;
++            return is_numeric($rate) && (float) $rate > 0 ? (float) $rate : null;
++        }
++
++        if ($this->productSupplier->price_currency === $this->priceCurrency
++            && is_numeric($this->productSupplier->foreign_price_rate)
++            && (float) $this->productSupplier->foreign_price_rate > 0) {
++            return (float) $this->productSupplier->foreign_price_rate;
++        }
++
++        return null;
++    }
++
++    private function formatForeignAmount(mixed $amount): string
++    {
++        return rtrim(rtrim(number_format((float) $amount, 4, '.', ''), '0'), '.');
++    }
++
++    private function normalizeForeignTierAmount(int $tierIndex): void
++    {
++        if (!array_key_exists($tierIndex, $this->foreignTierAmounts)
++            || $this->foreignTierAmounts[$tierIndex] === null) {
++            return;
++        }
++
++        $digits = [
++            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
++            '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
++            '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
++            '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
++        ];
++
++        $amount = strtr(trim((string) $this->foreignTierAmounts[$tierIndex]), $digits);
++        $amount = str_replace(['٬', ','], '', $amount);
++        $amount = str_replace('٫', '.', $amount);
++        $this->foreignTierAmounts[$tierIndex] = $amount === '' ? null : $amount;
++    }
++
++    public function updatedForeignTierAmounts(mixed $value, string|int $key): void
++    {
++        $tierIndex = (int) $key;
++        if ($this->priceCurrency === 'TOM'
++            || $this->autoCalculateTiers
++            || $tierIndex === $this->referenceTierIndex
++            || !array_key_exists($tierIndex, $this->quantityTiers)) {
++            return;
++        }
++
++        $this->foreignTierAmountsTouched[$tierIndex] = true;
++        $this->foreignTierAmountsDerived[$tierIndex] = false;
++        $this->normalizeForeignTierAmount($tierIndex);
++
++        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
++        if (!$cashPriceType) {
++            return;
++        }
++
++        $amount = $this->foreignTierAmounts[$tierIndex] ?? null;
++        if ($amount === null || $amount === '') {
++            $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = null;
++            $this->resetErrorBag("foreignTierAmounts.{$tierIndex}");
++            $this->updateAllCheckPrices();
++            return;
++        }
++
++        $rate = $this->effectiveForeignConversionRate();
++        if ($rate === null) {
++            $this->addError("foreignTierAmounts.{$tierIndex}", 'برای تبدیل مبلغ این تیراژ، نرخ معتبر ارز لازم است.');
++            return;
++        }
++
++        try {
++            $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = app(\App\Services\ForeignCurrencyPriceService::class)
++                ->calculateToman((float) $amount, $rate, $this->productSupplier);
++            $this->resetErrorBag("foreignTierAmounts.{$tierIndex}");
++            $this->updateAllCheckPrices();
++        } catch (\InvalidArgumentException $exception) {
++            $this->addError("foreignTierAmounts.{$tierIndex}", $exception->getMessage());
++        }
++    }
++
++    private function syncManualForeignTierPrices(float $rateValue): bool
++    {
++        if ($this->priceCurrency === 'TOM' || $this->autoCalculateTiers) {
++            return true;
++        }
++
++        $cashPriceType = $this->priceTypes->firstWhere('code', 'cash');
++        if (!$cashPriceType) {
++            return false;
++        }
++
++        $rateService = app(\App\Services\ForeignCurrencyPriceService::class);
++        $storedRate = is_numeric($this->productSupplier->foreign_price_rate)
++            && (float) $this->productSupplier->foreign_price_rate > 0
++                ? (float) $this->productSupplier->foreign_price_rate
++                : null;
++
++        foreach ($this->quantityTiers as $tierIndex => $_tier) {
++            $tierIndex = (int) $tierIndex;
++            if ($tierIndex === $this->referenceTierIndex) {
++                continue;
++            }
++
++            $this->normalizeForeignTierAmount($tierIndex);
++            $amount = $this->foreignTierAmounts[$tierIndex] ?? null;
++            if ($amount === null || $amount === '') {
++                if ($this->foreignTierAmountsTouched[$tierIndex] ?? false) {
++                    $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = null;
++                }
++                continue;
++            }
++
++            if (!is_numeric($amount)
++                || (float) $amount <= 0
++                || !preg_match('/^\d+(?:\.\d{1,4})?$/', (string) $amount)) {
++                $this->addError("foreignTierAmounts.{$tierIndex}", 'مبلغ ارزی تیراژ باید بزرگ‌تر از صفر و حداکثر چهار رقم اعشار داشته باشد.');
++                return false;
++            }
++
++            if (($this->foreignTierAmountsTouched[$tierIndex] ?? false) && $this->usingStoredRateFallback) {
++                $this->addError("foreignTierAmounts.{$tierIndex}", 'نرخ خودکار تازه در دسترس نیست؛ مبلغ ارزی جدید را پس از دریافت نرخ معتبر ذخیره کنید.');
++                return false;
++            }
++
++            $storedAmount = is_array($this->productSupplier->foreign_tier_amounts)
++                ? ($this->productSupplier->foreign_tier_amounts[$tierIndex]
++                    ?? $this->productSupplier->foreign_tier_amounts[(string) $tierIndex]
++                    ?? null)
++                : null;
++            $unchangedStoredAmount = is_numeric($storedAmount)
++                && $this->canonicalDecimalString($storedAmount) === $this->canonicalDecimalString($amount);
++            $wasDerivedFromCurrentPrice = (bool) ($this->foreignTierAmountsDerived[$tierIndex] ?? false);
++            $sameRate = $storedRate !== null && !$rateService->hasRateChanged($storedRate, $rateValue);
++            $keepExistingTomanPrice = !($this->foreignTierAmountsTouched[$tierIndex] ?? false)
++                && ($unchangedStoredAmount || $wasDerivedFromCurrentPrice)
++                && $sameRate;
++
++            if (!$keepExistingTomanPrice) {
++                try {
++                    $this->priceMatrix[$tierIndex][$cashPriceType->id]['price'] = $rateService
++                        ->calculateToman((float) $amount, $rateValue, $this->productSupplier);
++                } catch (\InvalidArgumentException $exception) {
++                    $this->addError("foreignTierAmounts.{$tierIndex}", $exception->getMessage());
++                    return false;
++                }
++            }
++
++            $this->foreignTierAmounts[$tierIndex] = number_format((float) $amount, 4, '.', '');
++            $this->foreignTierAmountsDerived[$tierIndex] = false;
++            $this->resetErrorBag("foreignTierAmounts.{$tierIndex}");
++        }
++
++        return true;
++    }
++
++    private function foreignTierAmountsForStorage(): ?array
++    {
++        if ($this->priceCurrency === 'TOM') {
++            return null;
++        }
++
++        $amounts = [];
++        foreach ($this->foreignTierAmounts as $tierIndex => $amount) {
++            $tierIndex = (int) $tierIndex;
++            if ($tierIndex === $this->referenceTierIndex
++                || !is_numeric($amount)
++                || (float) $amount <= 0) {
++                continue;
++            }
++
++            $amounts[$tierIndex] = number_format((float) $amount, 4, '.', '');
++        }
++
++        return $amounts === [] ? null : $amounts;
++    }
++
+     private function restoreProductSupplierDraft(ProductSupplier $productSupplier): ProductSupplier
+     {
+         $productSupplierId = $productSupplier->getKey();
+@@ -463,6 +712,34 @@ function ($attribute, $value, $fail) {
+                     }
+                 },
+             ],
++            'foreignTierAmounts' => ['array'],
++            'foreignTierAmounts.*' => [
++                'nullable',
++                'numeric',
++                'gt:0',
++                'max:9999999999999999',
++                function ($attribute, $value, $fail): void {
++                    if ($value === null || $value === '') {
++                        return;
++                    }
++
++                    preg_match('/foreignTierAmounts\.(\d+)/', $attribute, $matches);
++                    $tierIndex = isset($matches[1]) ? (int) $matches[1] : null;
++                    $unchangedStoredAmount = $tierIndex !== null
++                        && is_array($this->productSupplier?->foreign_tier_amounts)
++                        && $this->canonicalDecimalString(
++                            $this->productSupplier->foreign_tier_amounts[$tierIndex]
++                                ?? $this->productSupplier->foreign_tier_amounts[(string) $tierIndex]
++                                ?? null
++                        ) === $this->canonicalDecimalString($value);
++
++                    if (!preg_match('/^\d+(?:\.\d{1,4})?$/', (string) $value)
++                        && !$unchangedStoredAmount
++                        && ($tierIndex === null || !($this->foreignTierAmountsDerived[$tierIndex] ?? false))) {
++                        $fail('مبلغ ارزی تیراژ باید حداکثر چهار رقم اعشار داشته باشد.');
++                    }
++                },
++            ],
+             
+             // ✅ قیمت‌گذاری چک
+             'checkPriceMode' => ['array'],
+@@ -717,8 +994,10 @@ public function save()
+                 return false;
+             }
+ 
+-            if ($this->priceCurrency !== 'TOM') {
+-                $this->calculateTierPrices(forceCurrencyDerived: true);
++            if ($this->autoCalculateTiers) {
++                $this->calculateTierPrices();
++            } elseif ($this->priceCurrency === 'TOM') {
++                $this->updateAllCheckPrices();
+             }
+ 
+             $this->validate();
+@@ -739,6 +1018,7 @@ public function save()
+                 'is_active' => (bool)$this->is_active,
+                 'price_currency' => $this->priceCurrency,
+                 'foreign_price_amount' => $this->foreignPriceAmountForStorage(),
++                'foreign_tier_amounts' => $this->foreignTierAmountsForStorage(),
+                 // Automatic refresh policy is stored once per supplier and currency.
+                 'foreign_price_auto_update' => false,
+                 'foreign_price_refresh_hours' => null,
+@@ -939,6 +1219,7 @@ public function save()
+         $this->foreignPriceRebasePending = false;
+         // ✅ بارگذاری مجدد قیمت‌های ذخیره شده
+         $this->initializePriceMatrix();
++        $this->initializeForeignTierAmounts();
+         $this->refreshForeignPriceRevisionToken();
+ 
+         \App\Jobs\BroadcastSupplierProductPrices::dispatch(
+@@ -1507,9 +1788,9 @@ private function assertPriceWriteContext(
+     /**
+      * محاسبه خودکار قیمت تیراژها بر اساس تیراژ مرجع
+      */
+-    public function calculateTierPrices(bool $forceCurrencyDerived = false): void
++    public function calculateTierPrices(): void
+     {
+-        if (!$this->autoCalculateTiers && !$forceCurrencyDerived) {
++        if (!$this->autoCalculateTiers) {
+             return;
+         }
+         
+@@ -1558,6 +1839,15 @@ public function calculateTierPrices(bool $forceCurrencyDerived = false): void
+             
+             // بروزرسانی در priceMatrix
+             $this->priceMatrix[$index][$cashPriceType->id]['price'] = $roundedPrice;
++
++            if ($this->priceCurrency !== 'TOM') {
++                $rate = $this->effectiveForeignConversionRate();
++                if ($rate !== null) {
++                    $this->foreignTierAmounts[$index] = number_format((float) $roundedPrice / $rate, 4, '.', '');
++                    $this->foreignTierAmountsDerived[$index] = true;
++                    $this->foreignTierAmountsTouched[$index] = false;
++                }
++            }
+         }
+         
+         // بروزرسانی قیمت‌های چکی برای همه تیراژها
+@@ -1699,8 +1989,21 @@ public function updatedPriceMatrix($value, $key): void
+                     ->value('price');
+                 $this->priceMatrix[$tierIndex][$priceTypeId]['price'] = $storedPrice;
+                 $this->addError('foreignPriceAmount', 'قیمت پایهٔ این محصول باید به ارز انتخاب‌شده وارد شود؛ ورود تومانی در این حالت مجاز نیست.');
++            } elseif ($this->autoCalculateTiers) {
++                $this->calculateTierPrices();
+             } else {
+-                $this->calculateTierPrices(forceCurrencyDerived: true);
++                $storedPrice = ProductPrice::query()
++                    ->where('product_supplier_id', $this->productSupplier->id)
++                    ->where('price_type_id', $priceType->id)
++                    ->where('tier_index', $tierIndex)
++                    ->whereNull('check_period_id')
++                    ->orderByDesc('updated_at')
++                    ->value('price');
++                $this->priceMatrix[$tierIndex][$priceTypeId]['price'] = $storedPrice;
++                $this->addError(
++                    "foreignTierAmounts.{$tierIndex}",
++                    'قیمت این تیراژ را به ارز پایه وارد کنید؛ مبلغ تومانی مستقیم قابل ویرایش نیست.'
++                );
+             }
+ 
+             return;
+@@ -1924,8 +2227,13 @@ private function syncForeignPriceToToman(bool $requireAmount = false, ?SupplierE
+         $this->priceMatrix[$this->referenceTierIndex][$cashPriceType->id]['price'] = $tomanPrice;
+         $this->foreignPricePreviewValid = true;
+ 
+-        if ($this->autoCalculateTiers || $this->priceCurrency !== 'TOM') {
+-            $this->calculateTierPrices(forceCurrencyDerived: $this->priceCurrency !== 'TOM');
++        if ($this->autoCalculateTiers) {
++            $this->calculateTierPrices();
++        } elseif ($this->priceCurrency !== 'TOM') {
++            if (!$this->syncManualForeignTierPrices($conversionRate)) {
++                return false;
++            }
++            $this->updateAllCheckPrices();
+         } else {
+             $this->updateAllCheckPrices();
+         }
+diff --git a/app/Livewire/Supplier/Settings/ManageTierDiscounts.php b/app/Livewire/Supplier/Settings/ManageTierDiscounts.php
+index 8736aaa..394fcde 100644
+--- a/app/Livewire/Supplier/Settings/ManageTierDiscounts.php
++++ b/app/Livewire/Supplier/Settings/ManageTierDiscounts.php
+@@ -364,11 +364,12 @@ function ($attribute, $value, $fail) use ($currency): void {
+         $refreshRatesNow = false;
+         $autoUpdateConfigured = false;
+         $automaticRateApplications = [];
++        $manualRateApplications = [];
+         $currencyChanged = false;
+         $currencyRevision = 1;
+         $staleCurrencySettings = false;
+         $staleRateSettings = false;
+-        DB::transaction(function () use ($supplierId, $exchangeRates, $foreignCurrencyPriceService, &$refreshRatesNow, &$autoUpdateConfigured, &$automaticRateApplications, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
++        DB::transaction(function () use ($supplierId, $exchangeRates, $foreignCurrencyPriceService, &$refreshRatesNow, &$autoUpdateConfigured, &$automaticRateApplications, &$manualRateApplications, &$currencyChanged, &$currencyRevision, &$staleCurrencySettings, &$staleRateSettings): void {
+             $supplier = Supplier::query()->lockForUpdate()->findOrFail($supplierId);
+             if ((int) $supplier->pricing_currency_revision !== $this->pricingCurrencyRevision) {
+                 $staleCurrencySettings = true;
+@@ -446,7 +447,14 @@ function ($attribute, $value, $fail) use ($currency): void {
+                     if (!$quoteError && !$hasFreshQuote) {
+                         $quoteError = 'آخرین نرخ معتبر از بازهٔ انتخاب‌شده قدیمی‌تر است؛ قیمت‌های ثبت‌شده حفظ شدند.';
+                     }
+-                    $nextRevision = ((int) $setting->revision) + 1;
++                    $freshQuoteCanBeApplied = $hasFreshQuote
++                        && !$quoteError
++                        && $hasDisplayableQuote
++                        && $quoteToSave !== null;
++                    $effectiveRateChanged = $freshQuoteCanBeApplied
++                        && $foreignCurrencyPriceService->hasRateChanged($setting->rate_toman, $quoteToSave->rate_toman);
++                    $autoModeChanged = !(bool) $setting->auto_update;
++                    $nextRevision = (int) $setting->revision + (int) ($effectiveRateChanged || $autoModeChanged);
+                     $attributes = [
+                         'manual_rate_toman' => $manualRate,
+                         'auto_update' => true,
+@@ -455,11 +463,11 @@ function ($attribute, $value, $fail) use ($currency): void {
+                             ? now()->addHours((int) $input['refresh_hours'])
+                             : now(),
+                         'last_error' => $quoteError,
+-                        'last_apply_error' => null,
+                         'revision' => $nextRevision,
++                        ...($effectiveRateChanged ? ['last_apply_error' => null] : []),
+                     ];
+ 
+-                    if ($hasDisplayableQuote) {
++                    if ($freshQuoteCanBeApplied) {
+                         $attributes += [
+                             'rate_toman' => $quoteToSave->rate_toman,
+                             'source' => $quoteToSave->source,
+@@ -480,7 +488,7 @@ function ($attribute, $value, $fail) use ($currency): void {
+                     }
+ 
+                     if ($currency === $this->pricingCurrency) {
+-                        if ($hasFreshQuote) {
++                        if ($effectiveRateChanged) {
+                             $automaticRateApplications[] = [
+                                 'currency' => $currency,
+                                 'setting_revision' => $nextRevision,
+@@ -497,6 +505,13 @@ function ($attribute, $value, $fail) use ($currency): void {
+                     continue;
+                 }
+ 
++                $manualRateChanged = $foreignCurrencyPriceService->hasRateChanged(
++                    $setting->rate_toman,
++                    $manualRate,
++                );
++                $manualModeChanged = (bool) $setting->auto_update;
++                $nextRevision = (int) $setting->revision
++                    + (int) ($manualRateChanged || $manualModeChanged);
+                 $setting->fill([
+                     'rate_toman' => $manualRate,
+                     'manual_rate_toman' => $manualRate,
+@@ -511,11 +526,21 @@ function ($attribute, $value, $fail) use ($currency): void {
+                     'last_attempt_at' => null,
+                     'last_error' => null,
+                     'last_apply_error' => null,
+-                    'revision' => ((int) $setting->revision) + 1,
++                    'revision' => $nextRevision,
+                 ])->save();
++
++                if ($currency === $this->pricingCurrency
++                    && is_numeric($manualRate)
++                    && (float) $manualRate > 0) {
++                    $manualRateApplications[] = [
++                        'currency' => $currency,
++                        'setting_revision' => $nextRevision,
++                        'tier_pricing_revision' => (int) $supplier->tier_pricing_revision,
++                    ];
++                }
+             }
+ 
+-            DB::afterCommit(function () use ($supplierId, $currencyRevision, $automaticRateApplications): void {
++            DB::afterCommit(function () use ($supplierId, $currencyRevision, $automaticRateApplications, $manualRateApplications): void {
+                 RebaseSupplierCurrencyPrices::dispatch(
+                     $supplierId,
+                     $this->pricingCurrency,
+@@ -531,6 +556,16 @@ function ($attribute, $value, $fail) use ($currency): void {
+                         $application['tier_pricing_revision'],
+                     );
+                 }
++
++                foreach ($manualRateApplications as $application) {
++                    ApplySupplierCurrencyPrices::dispatch(
++                        $supplierId,
++                        $application['currency'],
++                        $application['setting_revision'],
++                        false,
++                        $application['tier_pricing_revision'],
++                    );
++                }
+             });
+         });
+ 
+@@ -560,12 +595,14 @@ function ($attribute, $value, $fail) use ($currency): void {
+             $message = $currencyChanged
+                 ? 'ارز پایه ذخیره شد؛ نرخ دریافت‌شده و محاسبهٔ قیمت محصولات در صف قرار گرفت.'
+                 : 'تنظیمات ذخیره شد؛ نرخ دریافت‌شده و محاسبهٔ قیمت محصولات در صف قرار گرفت.';
++        } elseif ($manualRateApplications !== []) {
++            $message = 'نرخ دستی ذخیره شد و محاسبهٔ قیمت محصولات با نرخ جدید در صف قرار گرفت.';
+         } elseif ($autoUpdateConfigured) {
+             $message = 'تنظیمات خودکار ذخیره شد؛ نرخ در نوبت به‌روزرسانی بعدی دریافت می‌شود.';
+         } else {
+             $message = $currencyChanged
+                 ? 'ارز پایه ذخیره شد؛ هماهنگ‌سازی امن قیمت‌های قبلی در صف قرار گرفت.'
+-                : 'نرخ‌های دستی ذخیره شدند. برای محاسبهٔ دوبارهٔ قیمت کالاها، دکمهٔ اعمال روی همهٔ محصولات را بزنید.';
++                : 'تنظیمات نرخ دستی ذخیره شد؛ برای محاسبهٔ دوبارهٔ قیمت کالاها، دکمهٔ اعمال روی همهٔ محصولات را بزنید.';
+         }
+ 
+         $this->dispatch('notify', message: $message, type: 'success');
+diff --git a/app/Models/ProductSupplier.php b/app/Models/ProductSupplier.php
+index f3ff56d..ae9c044 100644
+--- a/app/Models/ProductSupplier.php
++++ b/app/Models/ProductSupplier.php
+@@ -67,6 +67,7 @@ class ProductSupplier extends Model
+         'is_active',
+         'price_currency',
+         'foreign_price_amount',
++        'foreign_tier_amounts',
+         'foreign_price_auto_update',
+         'foreign_price_refresh_hours',
+         'foreign_price_rate',
+@@ -110,6 +111,7 @@ protected function casts(): array
+             'is_primary'              => 'boolean',
+             'is_active'               => 'boolean',
+             'foreign_price_amount'    => 'decimal:4',
++            'foreign_tier_amounts'    => 'array',
+             'foreign_price_auto_update' => 'boolean',
+             'foreign_price_refresh_hours' => 'integer',
+             'foreign_price_rate'      => 'decimal:4',
+diff --git a/app/Services/ForeignCurrencyPriceService.php b/app/Services/ForeignCurrencyPriceService.php
+index 52cdc82..d9c7c1b 100644
+--- a/app/Services/ForeignCurrencyPriceService.php
++++ b/app/Services/ForeignCurrencyPriceService.php
+@@ -80,6 +80,9 @@ public function processDue(): int
+         }
+ 
+         // One provider request refreshes all supported currencies, regardless of product count.
++        // The attempt timestamp lets us distinguish a quote received in this
++        // cycle from an older (even if still displayable) cached quote.
++        $refreshStartedAt = now()->utc()->subSecond();
+         try {
+             $maxRefreshHours = max(self::REFRESH_HOURS);
+             app(\App\Services\ExchangeRates\ExchangeRateRefreshService::class)->refresh(
+@@ -129,9 +132,9 @@ public function processDue(): int
+             ->keyBy('currency');
+         $dispatched = 0;
+ 
+-        $dueSettings->orderBy('id')->chunkById(100, function ($settings) use ($rates, &$dispatched): void {
++        $dueSettings->orderBy('id')->chunkById(100, function ($settings) use ($rates, $refreshStartedAt, &$dispatched): void {
+             foreach ($settings as $dueSetting) {
+-                DB::transaction(function () use ($dueSetting, $rates, &$dispatched): void {
++                DB::transaction(function () use ($dueSetting, $rates, $refreshStartedAt, &$dispatched): void {
+                 $supplier = Supplier::query()
+                     ->lockForUpdate()
+                     ->find((int) $dueSetting->supplier_id);
+@@ -167,25 +170,27 @@ public function processDue(): int
+                         'next_update_at' => now()->addMinutes(max(5, (int) config('pricing.exchange_rates.refresh_minutes', 5))),
+                     ];
+ 
+-                    if ($rate
+-                        && $rate->source === \App\Services\ExchangeRates\NerkhsanjRateProvider::SOURCE
+-                        && is_numeric($rate->rate_toman)
+-                        && (float) $rate->rate_toman > 0) {
+-                        $attributes += [
+-                            'rate_toman' => $rate->rate_toman,
+-                            'source' => $rate->source,
+-                            'source_market_date' => $rate->source_market_date,
+-                            'source_market_time' => $rate->source_market_time,
+-                            'source_updated_at' => $rate->source_updated_at,
+-                            'fetched_at' => $rate->fetched_at,
+-                        ];
+-                    }
+-
+                     $setting->forceFill($attributes)->save();
+ 
+                     return;
+                 }
+ 
++                $rateWasReceivedThisCycle = $rate->last_error === null
++                    && $rate->last_attempt_at !== null
++                    && $rate->last_attempt_at->gte($refreshStartedAt);
++                if (!$rateWasReceivedThisCycle) {
++                    $setting->forceFill([
++                        'last_attempt_at' => now(),
++                        'last_error' => 'در این نوبت نرخ تازه‌ای دریافت نشد؛ آخرین نرخ معتبر و قیمت‌های فعلی حفظ شدند.',
++                        'next_update_at' => now()->addMinutes(max(5, (int) config('pricing.exchange_rates.refresh_minutes', 5))),
++                    ])->save();
++
++                    return;
++                }
++
++                $rateChanged = $this->hasRateChanged($setting->rate_toman, $rate->rate_toman);
++                $nextRevision = (int) $setting->revision + ($rateChanged ? 1 : 0);
++
+                 $setting->forceFill([
+                     'rate_toman' => $rate->rate_toman,
+                     'source' => $rate->source,
+@@ -195,23 +200,23 @@ public function processDue(): int
+                     'fetched_at' => $rate->fetched_at,
+                     'last_attempt_at' => now(),
+                     'last_error' => $rate->last_error,
+-                    'last_apply_error' => null,
+                     'next_update_at' => now()->addHours($hours),
+-                    'revision' => ((int) $setting->revision) + 1,
++                    'revision' => $nextRevision,
++                    ...($rateChanged ? ['last_apply_error' => null] : []),
+                 ])->save();
+ 
+-                DB::afterCommit(function () use ($setting, $supplier, &$dispatched): void {
+-                    \App\Jobs\RebaseSupplierCurrencyPrices::dispatch(
+-                        (int) $setting->supplier_id,
+-                        $setting->currency,
+-                        (int) $supplier->pricing_currency_revision,
+-                    );
++                if (!$rateChanged) {
++                    return;
++                }
++
++                $tierPricingRevision = (int) $supplier->tier_pricing_revision;
++                DB::afterCommit(function () use ($setting, $tierPricingRevision, &$dispatched): void {
+                     \App\Jobs\ApplySupplierCurrencyPrices::dispatch(
+                         (int) $setting->supplier_id,
+                         $setting->currency,
+                         (int) $setting->revision,
+                         true,
+-                        (int) $supplier->tier_pricing_revision,
++                        $tierPricingRevision,
+                     );
+                     $dispatched++;
+                 });
+@@ -257,6 +262,21 @@ public function isFreshSupplierRate(?SupplierExchangeRateSetting $setting, ?int
+             && $setting->source_updated_at->gte($cutoff);
+     }
+ 
++    /** Compare rates at the precision persisted by supplier exchange settings. */
++    public function hasRateChanged(mixed $currentRate, mixed $candidateRate): bool
++    {
++        if (!is_numeric($candidateRate) || (float) $candidateRate <= 0) {
++            return false;
++        }
++
++        if (!is_numeric($currentRate) || (float) $currentRate <= 0) {
++            return true;
++        }
++
++        return number_format((float) $currentRate, 4, '.', '')
++            !== number_format((float) $candidateRate, 4, '.', '');
++    }
++
+     /**
+      * Reinterpret a saved Toman base safely when a supplier changes its global
+      * currency. The previous numeric foreign amount is never copied to the new
+@@ -339,6 +359,25 @@ public function rebaseProductCurrency(
+                 ? number_format((float) $referencePrice->price / $rateValue, 4, '.', '')
+                 : null;
+ 
++            $foreignTierAmounts = [];
++            if ($currency !== 'TOM' && $rateValue > 0) {
++                ProductPrice::query()
++                    ->where('product_supplier_id', $productSupplier->id)
++                    ->where('price_type_id', $cashTypeId)
++                    ->whereNull('check_period_id')
++                    ->where('tier_index', '!=', $referenceTier)
++                    ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
++                    ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
++                    ->orderBy('tier_index')
++                    ->get(['tier_index', 'price'])
++                    ->each(function (ProductPrice $price) use (&$foreignTierAmounts, $rateValue): void {
++                        if (is_numeric($price->price) && (float) $price->price > 0) {
++                            $foreignTierAmounts[(int) $price->tier_index]
++                                = number_format((float) $price->price / $rateValue, 4, '.', '');
++                        }
++                    });
++            }
++
+             if ($currency !== 'TOM' && $newAmount === null) {
+                 return false;
+             }
+@@ -346,6 +385,9 @@ public function rebaseProductCurrency(
+             $productSupplier->forceFill([
+                 'price_currency' => $currency,
+                 'foreign_price_amount' => $currency === 'TOM' ? null : $newAmount,
++                'foreign_tier_amounts' => $currency === 'TOM' || $foreignTierAmounts === []
++                    ? null
++                    : $foreignTierAmounts,
+                 'foreign_price_rate' => $rateValue > 0 ? $rateValue : null,
+                 'foreign_price_source' => $setting
+                     ? ($setting->auto_update ? $setting->source : 'manual')
+@@ -511,22 +553,31 @@ private function applyRate(
+                 ),
+             ];
+ 
+-            $calculateTierPrices = (bool) $productSupplier->auto_calculate_tiers
+-                || $productSupplier->price_currency !== 'TOM';
++            $foreignTierAmounts = is_array($productSupplier->foreign_tier_amounts)
++                ? $productSupplier->foreign_tier_amounts
++                : [];
++            $previousRate = is_numeric($productSupplier->foreign_price_rate)
++                && (float) $productSupplier->foreign_price_rate > 0
++                    ? (float) $productSupplier->foreign_price_rate
++                    : null;
++
++            // Currency conversion is independent from the per-product tier toggle.
++            // The toggle controls only whether the non-reference tier prices come
++            // from percentages or from their own stored foreign-currency amounts.
++            $calculateTierPrices = (bool) $productSupplier->auto_calculate_tiers;
+             $tierPercentages = $calculateTierPrices
+                 ? $this->tierPercentageMap($productSupplier, array_map('intval', array_keys($quantityTiers)))
+                 : [];
+ 
+-            if ($calculateTierPrices) {
+-                foreach ($quantityTiers as $tierIndex => $_tier) {
+-                    $tierIndex = (int) $tierIndex;
+-
+-                    // غیرفعال‌بودن تیراژ فقط نمایش/فروش آن را متوقف می‌کند؛
+-                    // قیمت ذخیره‌شده‌اش باید با مرجع ثابت کارتن و درصد خودش به‌روز بماند.
+-                    if ($tierIndex === $referenceTier) {
+-                        continue;
+-                    }
++            foreach ($quantityTiers as $tierIndex => $_tier) {
++                $tierIndex = (int) $tierIndex;
++                if ($tierIndex === $referenceTier) {
++                    continue;
++                }
+ 
++                if ($calculateTierPrices) {
++                    // A disabled tier still keeps a current stored price; tier_enabled
++                    // controls visibility and sale availability, not price calculation.
+                     $customPercentages = $productSupplier->tier_percentages ?? [];
+                     $percentage = array_key_exists($tierIndex, $customPercentages)
+                         ? (float) $customPercentages[$tierIndex]
+@@ -542,7 +593,41 @@ private function applyRate(
+                         $tierIndex,
+                         $tierPrice
+                     );
++                    $foreignTierAmounts[$tierIndex] = number_format($tierPrice / $rateValue, 4, '.', '');
++
++                    continue;
+                 }
++
++                $foreignAmount = $foreignTierAmounts[$tierIndex]
++                    ?? $foreignTierAmounts[(string) $tierIndex]
++                    ?? null;
++                if (is_numeric($foreignAmount) && (float) $foreignAmount > 0) {
++                    $tierPrice = $this->calculateToman((float) $foreignAmount, $rateValue, $productSupplier);
++                    $foreignTierAmounts[$tierIndex] = number_format((float) $foreignAmount, 4, '.', '');
++                } else {
++                    $oldTomanPrice = $oldCashByTier[$tierIndex] ?? null;
++                    if (!is_numeric($oldTomanPrice) || (float) $oldTomanPrice <= 0) {
++                        continue;
++                    }
++
++                    // Backfill legacy FX offers from the last applied exchange rate.
++                    // If no rate snapshot exists, keep the current Toman value until
++                    // the supplier explicitly enters a foreign amount.
++                    $sourceRate = $previousRate ?? $rateValue;
++                    $foreignTierAmounts[$tierIndex] = number_format((float) $oldTomanPrice / $sourceRate, 4, '.', '');
++                    $sameRateAsStoredPrice = $previousRate !== null
++                        && !$this->hasRateChanged($previousRate, $rateValue);
++                    $tierPrice = $sameRateAsStoredPrice || $previousRate === null
++                        ? (int) round((float) $oldTomanPrice)
++                        : $this->calculateToman((float) $foreignTierAmounts[$tierIndex], $rateValue, $productSupplier);
++                }
++
++                $newCashByTier[$tierIndex] = $this->storeCashPrice(
++                    $productSupplier,
++                    (int) $cashType->id,
++                    $tierIndex,
++                    $tierPrice
++                );
+             }
+ 
+             $changedRows = [];
+@@ -598,6 +683,7 @@ private function applyRate(
+ 
+             $productSupplier->forceFill([
+                 'foreign_price_rate' => $rateValue,
++                'foreign_tier_amounts' => $foreignTierAmounts === [] ? null : $foreignTierAmounts,
+                 'foreign_price_source' => $setting->auto_update ? $setting->source : 'manual',
+                 'foreign_price_applied_currency' => $currency,
+                 'foreign_price_applied_setting_revision' => $expectedRevision,
+diff --git a/app/Services/ProductPriceBroadcastService.php b/app/Services/ProductPriceBroadcastService.php
+index d1738af..bd2661d 100644
+--- a/app/Services/ProductPriceBroadcastService.php
++++ b/app/Services/ProductPriceBroadcastService.php
+@@ -5,6 +5,7 @@
+ use App\Enums\UserRole;
+ use App\Events\ProductPricesUpdated;
+ use App\Models\PriceVisibilitySetting;
++use App\Models\Product;
+ use App\Models\ProductPrice;
+ use App\Models\ProductSupplier;
+ use App\Enums\ProductStatus;
+@@ -54,8 +55,36 @@ public function broadcastMany(
+                 $throwOnFailure,
+             );
+ 
+-            foreach ($changedProductSuppliers->groupBy('product_id') as $productId => $changedForProduct) {
+-                $this->broadcastProduct((int) $productId, $changedForProduct, $revisionAlreadyIncremented, $throwOnFailure);
++            $changedByProduct = $changedProductSuppliers->groupBy('product_id');
++            $changedProductIds = $changedByProduct->keys()->map(fn ($id): int => (int) $id);
++
++            // Preserve the existing product-specific channel for product detail pages.
++            foreach ($changedByProduct as $productId => $changedForProduct) {
++                $this->broadcastProduct(
++                    (int) $productId,
++                    $changedForProduct,
++                    $revisionAlreadyIncremented,
++                    $throwOnFailure,
++                );
++            }
++
++            // Public cards use the canonical family product. A branch-only price
++            // change therefore also needs a family event so those cards refresh.
++            $changedByFamily = $changedProductSuppliers->groupBy(function (ProductSupplier $changed): int {
++                return (int) ($changed->product?->family_product_id ?: $changed->product_id);
++            });
++            foreach ($changedByFamily as $familyProductId => $changedForFamily) {
++                if ((int) $familyProductId === (int) $changedForFamily->first()->product_id
++                    || $changedProductIds->contains((int) $familyProductId)) {
++                    continue;
++                }
++
++                $this->broadcastProduct(
++                    (int) $familyProductId,
++                    $changedForFamily,
++                    false,
++                    $throwOnFailure,
++                );
+             }
+         } catch (Throwable $exception) {
+             Log::warning('Preparing updated product prices for broadcast failed.', [
+@@ -77,11 +106,20 @@ private function broadcastProduct(
+         bool $throwOnFailure,
+     ): void
+     {
+-        $product = $changedProductSuppliers->first()?->product;
++        $product = Product::query()->find($productId);
+         if (!$product?->is_active || $product->status !== ProductStatus::ACTIVE) {
+             return;
+         }
+ 
++        $familyProductIds = Product::query()
++            ->where(fn ($query) => $query->whereKey($productId)->orWhere('family_product_id', $productId))
++            ->where('is_active', true)
++            ->where('status', ProductStatus::ACTIVE->value)
++            ->pluck('id');
++        if (!$familyProductIds->contains($productId)) {
++            $familyProductIds->push($productId);
++        }
++
+         $priceRevision = $revisionAlreadyIncremented
+             ? DB::table('products')->where('id', $productId)->value('price_revision')
+             : DB::transaction(function () use ($productId): ?int {
+@@ -112,15 +150,27 @@ private function broadcastProduct(
+                     ->activeAndValid()
+                     ->with('priceType:id,code'),
+             ])
+-            ->where('product_id', $productId)
++            ->whereIn('product_id', $familyProductIds->all())
+             ->where('is_active', true)
+             ->verifiedSupplier()
+             ->get();
+-        $productPriceRanges = $this->productPriceRanges($productId, $today);
++        $productSuppliers->each(function (ProductSupplier $productSupplier): void {
++            $enabledPrices = $productSupplier->prices->filter(
++                fn (ProductPrice $price): bool => $this->isTierEnabled($productSupplier, (int) $price->tier_index)
++            )->values();
++            $productSupplier->setRelation('prices', $enabledPrices);
++        });
+ 
+-        $productSuppliersById = $productSuppliers->keyBy('id');
+-        $requiresPageRefresh = $changedProductSuppliers->contains(
+-            fn (ProductSupplier $changedProductSupplier): bool => !$productSuppliersById->has($changedProductSupplier->id)
++        $rootProductSuppliers = $productSuppliers
++            ->where('product_id', $productId)
++            ->values();
++        $productPriceRanges = $this->productPriceRanges($familyProductIds->all(), $today);
++
++        $rootProductSuppliersById = $rootProductSuppliers->keyBy('id');
++        $changedRootOffers = $changedProductSuppliers
++            ->filter(fn (ProductSupplier $changed): bool => (int) $changed->product_id === $productId);
++        $requiresPageRefresh = $changedRootOffers->contains(
++            fn (ProductSupplier $changedProductSupplier): bool => !$rootProductSuppliersById->has($changedProductSupplier->id)
+         );
+ 
+         foreach (UserRole::cases() as $role) {
+@@ -138,7 +188,7 @@ private function broadcastProduct(
+ 
+             if ($settings->canSeeSupplierInfo()) {
+                 foreach ($changedProductSuppliers as $changedProductSupplier) {
+-                    $activeSupplier = $productSuppliersById->get($changedProductSupplier->id);
++                    $activeSupplier = $rootProductSuppliersById->get($changedProductSupplier->id);
+                     if (!$activeSupplier) {
+                         continue;
+                     }
+@@ -170,7 +220,7 @@ private function broadcastProduct(
+                 }
+             }
+ 
+-            $productMatrixPrices = $this->productMatrixPayload($productSuppliers, $allowedTypes);
++            $productMatrixPrices = $this->productMatrixPayload($rootProductSuppliers, $allowedTypes);
+ 
+             try {
+                 ProductPricesUpdated::dispatch(
+@@ -306,25 +356,43 @@ private function invalidateSupplierStatsCaches(array $supplierIds, bool $throwOn
+         }
+     }
+ 
+-    private function productPriceRanges(int $productId, \Carbon\CarbonInterface $today): Collection
++    private function productPriceRanges(array $productIds, \Carbon\CarbonInterface $today): Collection
+     {
+-        $uniquePrices = ProductPrice::query()
+-            ->leftJoin('price_types as range_price_types', 'range_price_types.id', '=', 'product_prices.price_type_id')
+-            ->where('product_prices.product_id', $productId)
+-            ->where('product_prices.is_active', true)
+-            ->where(fn ($query) => $query->whereNull('product_prices.valid_from')->orWhere('product_prices.valid_from', '<=', $today))
+-            ->where(fn ($query) => $query->whereNull('product_prices.valid_until')->orWhere('product_prices.valid_until', '>=', $today))
++        $prices = ProductPrice::query()
++            ->with(['priceType:id,code', 'productSupplier:id,tier_enabled'])
++            ->whereIn('product_id', $productIds)
++            ->where('is_active', true)
++            ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
++            ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', $today))
+             ->whereHas('productSupplier', fn ($query) => $query->where('is_active', true)->verifiedSupplier())
+-            ->selectRaw("product_prices.product_supplier_id, COALESCE(range_price_types.code, 'cash') as type, product_prices.tier_index, product_prices.check_period_id, MIN(product_prices.price) as price")
+-            ->groupBy('product_prices.product_supplier_id', 'product_prices.tier_index', 'product_prices.check_period_id')
+-            ->groupByRaw("COALESCE(range_price_types.code, 'cash')");
+-
+-        return DB::query()
+-            ->fromSub($uniquePrices, 'unique_product_prices')
+-            ->selectRaw('type, MIN(price) as lowest, MAX(price) as highest, SUM(price) as total, COUNT(*) as price_count')
+-            ->groupBy('type')
+             ->get()
+-            ->keyBy('type');
++            ->filter(fn (ProductPrice $price): bool => $price->productSupplier
++                && $this->isTierEnabled($price->productSupplier, (int) $price->tier_index));
++
++        $uniquePrices = $prices
++            ->groupBy(fn (ProductPrice $price): string => implode(':', [
++                $price->product_supplier_id,
++                $price->priceType?->code ?? 'cash',
++                $price->tier_index,
++                $price->check_period_id ?? 0,
++            ]))
++            ->map(fn (Collection $rows): ProductPrice => $rows->sortBy('price')->first());
++
++        return $uniquePrices
++            ->groupBy(fn (ProductPrice $price): string => $price->priceType?->code ?? 'cash')
++            ->map(fn (Collection $rows): array => [
++                'lowest' => (int) $rows->min('price'),
++                'highest' => (int) $rows->max('price'),
++                'total' => (int) $rows->sum('price'),
++                'price_count' => $rows->count(),
++            ]);
++    }
++
++    private function isTierEnabled(ProductSupplier $productSupplier, int $tierIndex): bool
++    {
++        $tierEnabled = (array) ($productSupplier->tier_enabled ?? []);
++
++        return empty($tierEnabled) || (bool) ($tierEnabled[$tierIndex] ?? true);
+     }
+ 
+     /** @return array<int, array{type: string, tier_index: int, check_period_id: ?int, price: int, warranty_price: ?int}> */
+diff --git a/database/migrations/2026_11_04_120000_add_foreign_tier_amounts_to_product_supplier.php b/database/migrations/2026_11_04_120000_add_foreign_tier_amounts_to_product_supplier.php
+new file mode 100644
+index 0000000..09638a8
+--- /dev/null
++++ b/database/migrations/2026_11_04_120000_add_foreign_tier_amounts_to_product_supplier.php
+@@ -0,0 +1,33 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class extends Migration
++{
++    public function up(): void
++    {
++        if (!Schema::hasTable('product_supplier')
++            || Schema::hasColumn('product_supplier', 'foreign_tier_amounts')) {
++            return;
++        }
++
++        Schema::table('product_supplier', function (Blueprint $table): void {
++            $table->json('foreign_tier_amounts')
++                ->nullable()
++                ->after('foreign_price_amount')
++                ->comment('مبالغ ارزی تیراژهای نقدیِ دستی، بر اساس ارز پایه تامین‌کننده');
++        });
++    }
++
++    public function down(): void
++    {
++        if (Schema::hasTable('product_supplier')
++            && Schema::hasColumn('product_supplier', 'foreign_tier_amounts')) {
++            Schema::table('product_supplier', function (Blueprint $table): void {
++                $table->dropColumn('foreign_tier_amounts');
++            });
++        }
++    }
++};
+diff --git a/resources/js/app.js b/resources/js/app.js
+index d98fb6c..de53cd7 100644
+--- a/resources/js/app.js
++++ b/resources/js/app.js
+@@ -231,6 +231,49 @@ function applyProductPriceSummary(update) {
+     });
+ }
+ 
++function applyProductCardPriceSnapshot(productId, snapshot) {
++    if (!snapshot || typeof snapshot !== 'object') return;
++
++    const snapshotSupplierId = snapshot.card_supplier_id === null || snapshot.card_supplier_id === undefined
++        ? null
++        : String(snapshot.card_supplier_id);
++    const range = snapshot.card_range || {};
++    const hasPrice = range.lowest !== null && range.lowest !== undefined;
++    const hasRange = hasPrice
++        && range.highest !== null
++        && range.highest !== undefined
++        && Number(range.lowest) !== Number(range.highest);
++
++    document.querySelectorAll('[data-live-price-card-range][data-live-price-product]').forEach((wrapper) => {
++        if (wrapper.dataset.livePriceProduct !== String(productId)) return;
++
++        const wrapperSupplierId = wrapper.dataset.livePriceCardSupplierId || null;
++        if (wrapperSupplierId !== snapshotSupplierId) return;
++
++        const minimum = wrapper.querySelector('[data-live-price-card-min]');
++        const maximum = wrapper.querySelector('[data-live-price-card-max]');
++        const separator = wrapper.querySelector('[data-live-price-card-separator]');
++        const tierCount = wrapper.querySelector('[data-live-price-card-count]');
++        if (minimum) minimum.textContent = hasPrice ? formatLivePrice(range.lowest) : '—';
++        if (maximum) {
++            maximum.textContent = hasPrice ? formatLivePrice(range.highest) : '—';
++            maximum.hidden = !hasRange;
++        }
++        if (separator) separator.hidden = !hasRange;
++        if (tierCount) {
++            const count = Number(range.tiers_count || 0);
++            tierCount.textContent = `(${formatLivePrice(count)} تیراژ)`;
++            tierCount.hidden = count <= 1;
++        }
++        wrapper.hidden = !hasPrice;
++
++        const card = wrapper.closest('.group');
++        card?.querySelectorAll('[data-live-price-empty-label][data-live-price-range="card"]').forEach((label) => {
++            if (label.dataset.livePriceProduct === String(productId)) label.hidden = hasPrice;
++        });
++    });
++}
++
+ function applyBranchPriceSnapshot(productId, branches) {
+     if (!Array.isArray(branches)) return;
+ 
+@@ -331,6 +374,7 @@ function refreshProductPriceSnapshot(productId) {
+                 && snapshotRevision < currentRevision) return;
+ 
+             applyBranchPriceSnapshot(productId, snapshot.branches);
++            applyProductCardPriceSnapshot(productId, snapshot);
+ 
+             const suppliers = Object.values(snapshot.suppliers || {});
+             if (suppliers.length === 0) {
+diff --git a/resources/views/components/layouts/supplier.blade.php b/resources/views/components/layouts/supplier.blade.php
+index 608460c..b8e5d25 100644
+--- a/resources/views/components/layouts/supplier.blade.php
++++ b/resources/views/components/layouts/supplier.blade.php
+@@ -24,7 +24,7 @@
+     <div x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden" @click="sidebarOpen = false" style="display: none;"></div>
+ 
+     <!-- Sidebar -->
+-    <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:static lg:block flex flex-col">
++    <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:inset-y-auto lg:right-auto lg:z-auto lg:h-screen lg:flex lg:flex-shrink-0 flex flex-col">
+ 
+         <!-- هدر سایدبار -->
+         <div class="h-16 flex items-center justify-between lg:justify-center px-4 lg:px-0 border-b border-gray-200 dark:border-gray-700">
+@@ -133,7 +133,7 @@ class="{{ request()->routeIs('supplier.settings.price-rounding') ? 'bg-purple-50
+     </aside>
+ 
+     <!-- Main Content -->
+-    <main class="flex-1 flex flex-col min-h-screen">
++    <main class="min-w-0 flex-1 flex flex-col min-h-screen">
+ 
+         <!-- Topbar -->
+         <header class="min-h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm flex flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-6 z-10">
+diff --git a/resources/views/components/product/card.blade.php b/resources/views/components/product/card.blade.php
+index fc7312b..060f305 100644
+--- a/resources/views/components/product/card.blade.php
++++ b/resources/views/components/product/card.blade.php
+@@ -7,12 +7,21 @@
+ @php
+ use App\Helpers\PriceHelper;
+ 
+-// ✅ استفاده از Service برای دریافت دسترسی‌ها
++// ✅ یک بار تنظیمات نقش را می‌گیریم تا هر کارت چند کوئری تکراری نزند.
+ $priceVisibilityService = app(\App\Services\PriceVisibilityService::class);
+ $user = auth()->user();
+-
+-$canSeeSupplier = $priceVisibilityService->canSeeSupplierInfo($user);
+-$canSeeWholesalePrice = $priceVisibilityService->canSeeWholesalePrice($user);
++$cardVisibilitySettings = $priceVisibilityService->getSettings($user);
++$canSeeSupplier = $cardVisibilitySettings?->canSeeSupplierInfo() ?? false;
++$canSeeWholesalePrice = $cardVisibilitySettings?->canSeeWholesalePrice() ?? false;
++$allowedCardPriceTypes = $cardVisibilitySettings?->getAllowedPriceTypes();
++$liveCardSupplierId = $supplier && $canSeeSupplier ? (int) $supplier->id : null;
++$canSubscribeCardPrices = auth()->check() && $canSeeWholesalePrice && (!$supplier || $canSeeSupplier);
++$priceSnapshotUrl = $canSubscribeCardPrices && Route::has('products.price-snapshot')
++    ? route('products.price-snapshot', [
++        'product' => $product->id,
++        ...($liveCardSupplierId ? ['card_supplier_id' => $liveCardSupplierId] : []),
++    ])
++    : null;
+ 
+ // اگر supplier مشخص شده (در صفحه supplier)، قیمت‌های آن supplier را نمایش بده
+ $productSupplier = $supplier ?? ($product->relationLoaded('supplier') ? $product->supplier : null);
+@@ -53,17 +62,56 @@
+     // جمع‌آوری تمام قیمت‌های فعال از productSuppliers فعال
+     $allPrices = collect();
+     $activeSuppliersCount = 0; // ✅ شمارش تامین‌کنندگان با قیمت فعال
++    $priceOffers = $product->productSuppliers;
++
++    // کارت‌های عمومی خانوادهٔ محصول نمایندهٔ محصول اصلی هستند؛ قیمت‌های شعبه‌ها
++    // روی رکوردهای وابسته ذخیره می‌شوند و باید در همان کارت لحاظ شوند.
++    if (!$supplier && $product->relationLoaded('familyProducts')) {
++        foreach ($product->familyProducts as $familyProduct) {
++            if (!$familyProduct->is_active
++                || $familyProduct->status?->value !== 'active'
++                || !$familyProduct->relationLoaded('productSuppliers')) {
++                continue;
++            }
++
++            $priceOffers = $priceOffers->merge($familyProduct->productSuppliers);
++        }
++    }
++
++    $priceOffers = $priceOffers->unique(fn ($offer) => (int) $offer->getKey())->values();
+     
+-    foreach ($product->productSuppliers as $ps) {
++    foreach ($priceOffers as $ps) {
+         // ✅ فقط productSuppliers فعال را در نظر بگیر
+-        if ($ps->is_active && $ps->relationLoaded('prices')) {
+-            $activePrices = $ps->prices->where('is_active', true);
++        $offerSupplier = $ps->relationLoaded('supplier') ? $ps->supplier : null;
++        if ($ps->is_active
++            && $ps->relationLoaded('prices')
++            && (!$ps->relationLoaded('supplier') || ($offerSupplier?->is_active && $offerSupplier?->is_verified))) {
++            $tierEnabled = (array) ($ps->tier_enabled ?? []);
++            $activePrices = $ps->prices->filter(function ($price) use ($allowedCardPriceTypes, $tierEnabled): bool {
++                $type = $price->priceType?->code ?? 'cash';
++                $tierIndex = (int) $price->tier_index;
++
++                return $price->is_active
++                    && $price->isValid()
++                    && ($allowedCardPriceTypes === null || in_array($type, $allowedCardPriceTypes, true))
++                    && (empty($tierEnabled) || (bool) ($tierEnabled[$tierIndex] ?? true));
++            });
+             if ($activePrices->isNotEmpty()) {
+                 $allPrices = $allPrices->merge($activePrices);
+                 $activeSuppliersCount++; // ✅ افزایش شمارنده فقط اگر قیمت فعال دارد
+             }
+         }
+     }
++
++    $allPrices = $allPrices
++        ->groupBy(fn ($price) => implode(':', [
++            $price->product_supplier_id,
++            $price->price_type_id,
++            $price->tier_index,
++            $price->check_period_id ?? 0,
++        ]))
++        ->map(fn ($rows) => $rows->sortBy('price')->first())
++        ->values();
+     
+     if ($allPrices->isNotEmpty()) {
+         // اگر supplier مشخص شده، فقط قیمت‌های آن supplier را نمایش بده
+@@ -114,7 +162,8 @@
+ @endphp
+ 
+ @if($view === 'list')
+-<div class="group flex flex-row overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-200 hover:shadow-md">
++<div class="group flex flex-row overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-200 hover:shadow-md"
++     @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" data-live-price-channel-role="{{ $priceVisibilityService->getUserRole($user) }}" data-live-price-snapshot-url="{{ $priceSnapshotUrl }}" @endif>
+     <a href="{{ $productUrl }}" class="relative min-h-[170px] w-44 flex-shrink-0 overflow-hidden bg-gray-50 sm:w-52" 
+        x-data="{
+            handleError(event) {
+@@ -176,25 +225,20 @@ class="mb-1 inline-block text-[11px] font-medium text-amber-700 transition hover
+                 </div>
+                 @endif
+ 
+-                @if($canSeeWholesalePrice && $wholesalePriceData)
+-                <div class="mt-0.5 flex items-center gap-1">
++                @if($canSeeWholesalePrice)
++                <div class="mt-0.5 flex items-center gap-1" @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-card-range @if($liveCardSupplierId) data-live-price-card-supplier-id="{{ $liveCardSupplierId }}" @endif @if(!$wholesalePriceData) hidden @endif>
+                     <x-heroicon-o-arrow-trending-up class="h-3 w-3 text-amber-600" />
+                     <span class="text-xs font-semibold text-amber-700">
+                         @if($supplier)
+-                            @if($wholesalePriceData['has_range'])
+-                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+-                            @else
+-                                قیمت این تامین‌کننده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+-                            @endif
++                            قیمت این تامین‌کننده:
+                         @else
+-                            @if($wholesalePriceData['has_range'])
+-                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }} - {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+-                                @if($wholesalePriceData['tiers_count'] > 1)
+-                                    <span class="text-[10px]">({{ $wholesalePriceData['tiers_count'] }} تیراژ)</span>
+-                                @endif
+-                            @else
+-                                عمده: {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+-                            @endif
++                            عمده:
++                        @endif
++                        <span data-live-price-card-min>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['lowest']) : '—' }}</span>
++                        <span data-live-price-card-separator @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif> - </span>
++                        <span data-live-price-card-max @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['highest']) : '—' }}</span>
++                        @if(!$supplier)
++                        <span data-live-price-card-count @if(!$wholesalePriceData || $wholesalePriceData['tiers_count'] <= 1) hidden @endif>({{ $wholesalePriceData['tiers_count'] ?? 0 }} تیراژ)</span>
+                         @endif
+                     </span>
+                 </div>
+@@ -204,7 +248,12 @@ class="mb-1 inline-block text-[11px] font-medium text-amber-700 transition hover
+                 </a>
+                 @endif
+ 
+-                @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
++                @if(!$retailPrice && $canSeeWholesalePrice)
++                <div @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-empty-label data-live-price-range="card" class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1" @if($wholesalePriceData) hidden @endif>
++                    <svg class="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
++                    <x-product-unpriced-label class="text-xs font-bold text-red-600" />
++                </div>
++                @elseif(!$retailPrice && !$canSeeWholesalePrice)
+                 <div class="inline-flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1">
+                     <svg class="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                     <x-product-unpriced-label class="text-xs font-bold text-red-600" />
+@@ -266,6 +315,7 @@ class="h-5 w-5 rounded-full border object-cover"
+      طراحی شده با همکاری کارشناسان گرافیک، فرانت‌اند و UX
+      ═══════════════════════════════════════════════════════════ --}}
+ <div class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-amber-300 hover:shadow-xl hover:-translate-y-1"
++     @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" data-live-price-channel-role="{{ $priceVisibilityService->getUserRole($user) }}" data-live-price-snapshot-url="{{ $priceSnapshotUrl }}" @endif
+      x-data="{ imageLoaded: false }"
+      x-init="$nextTick(() => { imageLoaded = true; })">
+     
+@@ -368,27 +418,14 @@ class="mb-2 inline-flex items-center gap-1 w-fit rounded-lg bg-gradient-to-r fro
+             @endif
+ 
+             {{-- Wholesale Price با طراحی مینیمال --}}
+-            @if($canSeeWholesalePrice && $wholesalePriceData)
+-            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200">
+-                @if($wholesalePriceData['has_range'])
+-                    {{-- نمایش محدوده قیمت در یک خط --}}
+-                    <div class="flex items-baseline justify-center gap-1 flex-wrap">
+-                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+-                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+-                        </span>
+-                        <span class="text-[9px] text-amber-600">تا</span>
+-                        <span class="text-xs sm:text-sm font-extrabold text-amber-700">
+-                            {{ PriceHelper::formatNumber($wholesalePriceData['highest']) }}
+-                        </span>
+-                    </div>
+-                @else
+-                    {{-- قیمت واحد --}}
+-                    <div class="flex items-baseline justify-center gap-0.5">
+-                        <span class="text-sm sm:text-base font-extrabold text-amber-700">
+-                            {{ PriceHelper::formatNumber($wholesalePriceData['lowest']) }}
+-                        </span>
+-                    </div>
+-                @endif
++            @if($canSeeWholesalePrice)
++            <div class="rounded-xl bg-amber-50 p-2.5 border border-amber-200" @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-card-range @if($liveCardSupplierId) data-live-price-card-supplier-id="{{ $liveCardSupplierId }}" @endif @if(!$wholesalePriceData) hidden @endif>
++                <div class="flex items-baseline justify-center gap-1 flex-wrap">
++                    <span class="text-xs sm:text-sm font-extrabold text-amber-700" data-live-price-card-min>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['lowest']) : '—' }}</span>
++                    <span class="text-[9px] text-amber-600" data-live-price-card-separator @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>تا</span>
++                    <span class="text-xs sm:text-sm font-extrabold text-amber-700" data-live-price-card-max @if(!$wholesalePriceData || !$wholesalePriceData['has_range']) hidden @endif>{{ $wholesalePriceData ? PriceHelper::formatNumber($wholesalePriceData['highest']) : '—' }}</span>
++                    <span class="text-[9px] text-amber-600" data-live-price-card-count @if(!$wholesalePriceData || $wholesalePriceData['tiers_count'] <= 1) hidden @endif>({{ $wholesalePriceData['tiers_count'] ?? 0 }} تیراژ)</span>
++                </div>
+             </div>
+             @elseif(!$canSeeWholesalePrice && Route::has('register'))
+             <a href="{{ route('register') }}" class="block text-center w-full rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:shadow-amber-500/40 hover:scale-105">
+@@ -400,7 +437,12 @@ class="mb-2 inline-flex items-center gap-1 w-fit rounded-lg bg-gradient-to-r fro
+             @endif
+ 
+             {{-- Contact for Price - بهبود یافته (Updated: 2026-09-26) --}}
+-            @if(!$retailPrice && !($canSeeWholesalePrice && $wholesalePriceData))
++            @if(!$retailPrice && $canSeeWholesalePrice)
++            <div @if($canSubscribeCardPrices) data-live-price-product="{{ $product->id }}" @endif data-live-price-empty-label data-live-price-range="card" class="flex items-center justify-center gap-1.5 rounded-xl bg-red-50 border border-red-200 px-3 py-2" @if($wholesalePriceData) hidden @endif>
++                <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
++                <x-product-unpriced-label class="text-xs font-bold text-red-600 sm:text-sm" />
++            </div>
++            @elseif(!$retailPrice && !$canSeeWholesalePrice)
+             <div class="flex items-center justify-center gap-1.5 rounded-xl bg-red-50 border border-red-200 px-3 py-2">
+                 <svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                 <x-product-unpriced-label class="text-xs font-bold text-red-600 sm:text-sm" />
+diff --git a/resources/views/components/supplier/currency-price-input.blade.php b/resources/views/components/supplier/currency-price-input.blade.php
+index cc2608b..8b3daed 100644
+--- a/resources/views/components/supplier/currency-price-input.blade.php
++++ b/resources/views/components/supplier/currency-price-input.blade.php
+@@ -5,6 +5,7 @@
+     'priceMatrix',
+     'autoCalculateTiers',
+     'priceCurrency',
++    'foreignTierAmounts' => [],
+     'foreignPriceRebasePending' => false,
+     'foreignPriceAmount',
+     'foreignPricePreviewValid',
+@@ -20,7 +21,7 @@
+ @php
+     $isReferenceTier = (int) $tierIndex === (int) $referenceTierIndex;
+     $fieldSuffix = $mobile ? 'mobile' : 'desktop';
+-    $isLocked = ($autoCalculateTiers || $priceCurrency !== 'TOM') && !$isReferenceTier;
++    $isLocked = $autoCalculateTiers && !$isReferenceTier;
+     $inputClass = $mobile
+         ? 'block w-full rounded-lg border-gray-300 px-4 py-3 text-base dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100'
+         : 'block w-full rounded-md border-gray-300 px-4 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
+@@ -33,7 +34,7 @@
+         'AED' => 'درهم',
+         default => 'تومان',
+     };
+-    $isDerivedToman = $priceCurrency !== 'TOM' && !$isReferenceTier;
++    $isDerivedToman = $priceCurrency !== 'TOM' && !$isReferenceTier && $autoCalculateTiers;
+ @endphp
+ 
+ @if($isReferenceTier)
+@@ -129,30 +130,60 @@ class="{{ $inputClass }} pl-16">
+         @error('foreignPriceAmount') <p id="foreign-price-amount-error-{{ $fieldSuffix }}" class="text-xs text-red-600" role="alert">{{ $message }}</p> @else <span id="foreign-price-amount-error-{{ $fieldSuffix }}" class="sr-only"></span> @enderror
+     </div>
+ @else
+-    <div class="relative">
+-        <input type="text"
+-               wire:ignore
+-               x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceTypeId }}.price', true)"
+-               x-effect="refresh(state)"
+-               x-on:input="input($event)"
+-               x-on:blur="sync()"
+-               value="{{ $tomanPrice }}"
+-               aria-label="{{ $isDerivedToman ? 'قیمت نقدی محاسبه‌شدهٔ تیراژ ' . ($tierIndex + 1) . ' به تومان' : 'قیمت نقدی تیراژ ' . ($tierIndex + 1) . ' به تومان' }}"
+-               placeholder="{{ $isDerivedToman ? 'قیمت محاسبه‌شده به تومان' : 'قیمت نقدی' }}"
+-               inputmode="numeric"
+-               onwheel="this.blur()"
+-               @if($isLocked) readonly @endif
+-               x-bind:readonly="($wire.autoCalculateTiers || $wire.priceCurrency !== 'TOM') && {{ $tierIndex }} !== $wire.referenceTierIndex"
+-               x-bind:class="(($wire.autoCalculateTiers || $wire.priceCurrency !== 'TOM') && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
+-               class="{{ $inputClass }}">
+-        @if($isLocked)
+-            <p class="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+-                <x-heroicon-o-information-circle class="h-3.5 w-3.5"/>
+-                {{ $isDerivedToman ? 'این مبلغ به تومان و از مبلغ ارزی تیراژ مرجع محاسبه می‌شود.' : 'این قیمت از تیراژ مرجع محاسبه می‌شود.' }}
+-            </p>
+-        @endif
+-        @if($isDerivedToman)
+-            <span class="sr-only">واحد این مبلغ تومان است.</span>
+-        @endif
+-    </div>
++    @if($priceCurrency !== 'TOM' && !$autoCalculateTiers)
++        <div class="space-y-2">
++            <label for="foreign-tier-amount-{{ $fieldSuffix }}-{{ $tierIndex }}" class="sr-only">
++                قیمت نقدی تیراژ {{ $tierIndex + 1 }} به {{ $priceCurrency }}
++            </label>
++            <div class="relative">
++                <input type="text"
++                       id="foreign-tier-amount-{{ $fieldSuffix }}-{{ $tierIndex }}"
++                       wire:model.live.debounce.700ms="foreignTierAmounts.{{ $tierIndex }}"
++                       inputmode="decimal"
++                       autocomplete="off"
++                       aria-label="قیمت نقدی تیراژ {{ $tierIndex + 1 }} به {{ $priceCurrency }}"
++                       aria-invalid="@error('foreignTierAmounts.' . $tierIndex) true @else false @enderror"
++                       aria-describedby="foreign-tier-amount-help-{{ $fieldSuffix }}-{{ $tierIndex }} foreign-tier-amount-error-{{ $fieldSuffix }}-{{ $tierIndex }}"
++                       placeholder="مبلغ به {{ $priceCurrency }}"
++                       class="{{ $inputClass }} pl-16">
++                <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-xs font-semibold text-gray-500 dark:text-gray-400">{{ $priceCurrency }}</span>
++            </div>
++            @error('foreignTierAmounts.' . $tierIndex)
++                <p id="foreign-tier-amount-error-{{ $fieldSuffix }}-{{ $tierIndex }}" class="text-xs text-red-600" role="alert">{{ $message }}</p>
++            @else
++                <span id="foreign-tier-amount-error-{{ $fieldSuffix }}-{{ $tierIndex }}" class="sr-only"></span>
++            @enderror
++            <div id="foreign-tier-amount-help-{{ $fieldSuffix }}-{{ $tierIndex }}" class="text-xs leading-5 text-gray-600 dark:text-gray-400" aria-live="polite">
++                قیمت تبدیل‌شده به تومان:
++                <strong class="text-gray-800 dark:text-gray-100">{{ is_numeric($tomanPrice) ? \App\Helpers\PriceHelper::formatNumber((float) $tomanPrice) . ' تومان' : 'مبلغ ارز را وارد کنید' }}</strong>
++            </div>
++        </div>
++    @else
++        <div class="relative">
++            <input type="text"
++                   wire:ignore
++                   x-data="formattedPriceInput($wire, 'priceMatrix.{{ $tierIndex }}.{{ $cashPriceTypeId }}.price', true)"
++                   x-effect="refresh(state)"
++                   x-on:input="input($event)"
++                   x-on:blur="sync()"
++                   value="{{ $tomanPrice }}"
++                   aria-label="{{ $isDerivedToman ? 'قیمت نقدی محاسبه‌شدهٔ تیراژ ' . ($tierIndex + 1) . ' به تومان' : 'قیمت نقدی تیراژ ' . ($tierIndex + 1) . ' به تومان' }}"
++                   placeholder="{{ $isDerivedToman ? 'قیمت محاسبه‌شده به تومان' : 'قیمت نقدی' }}"
++                   inputmode="numeric"
++                   onwheel="this.blur()"
++                   @if($isLocked) readonly @endif
++                   x-bind:readonly="$wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex"
++                   x-bind:class="($wire.autoCalculateTiers && {{ $tierIndex }} !== $wire.referenceTierIndex) ? 'opacity-60 cursor-not-allowed bg-gray-100 dark:bg-gray-800' : ''"
++                   class="{{ $inputClass }}">
++            @if($isLocked)
++                <p class="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
++                    <x-heroicon-o-information-circle class="h-3.5 w-3.5"/>
++                    {{ $isDerivedToman ? 'این مبلغ به تومان و بر اساس درصد تیراژ محاسبه می‌شود.' : 'این قیمت از تیراژ مرجع محاسبه می‌شود.' }}
++                </p>
++            @endif
++            @if($isDerivedToman)
++                <span class="sr-only">واحد این مبلغ تومان است.</span>
++            @endif
++        </div>
++    @endif
+ @endif
+diff --git a/resources/views/livewire/supplier/products/edit-price.blade.php b/resources/views/livewire/supplier/products/edit-price.blade.php
+index 134803b..4f0aa88 100644
+--- a/resources/views/livewire/supplier/products/edit-price.blade.php
++++ b/resources/views/livewire/supplier/products/edit-price.blade.php
+@@ -925,7 +925,11 @@ class="inline-flex items-center gap-2 text-xs font-medium text-blue-700 dark:tex
+                                                     نوع قیمت
+                                                 </th>
+                                                 <th class="px-6 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-b-2 border-gray-300 dark:border-gray-600">
+-                                                    {{ $priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex ? 'مبلغ پایه (' . $cashCurrencyLabel . ')' : 'قیمت نهایی (تومان)' }}
++                                                    {{ $priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex
++                                                        ? 'مبلغ پایه (' . $cashCurrencyLabel . ')'
++                                                        : ($priceCurrency !== 'TOM' && !$autoCalculateTiers
++                                                            ? 'نقدی به ' . $cashCurrencyLabel . ' / چکی به تومان'
++                                                            : 'قیمت نهایی (تومان)') }}
+                                                 </th>
+                                             </tr>
+                                         </thead>
+@@ -939,6 +943,8 @@ class="inline-flex items-center gap-2 text-xs font-medium text-blue-700 dark:tex
+                                                         <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                                             @if($priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex)
+                                                                 قیمت نقدی ({{ $cashCurrencyLabel }})
++                                                            @elseif($priceCurrency !== 'TOM' && !$autoCalculateTiers)
++                                                                قیمت نقدی ({{ $cashCurrencyLabel }})
+                                                             @elseif($priceCurrency !== 'TOM')
+                                                                 قیمت نقدی محاسبه‌شده (تومان)
+                                                             @else
+@@ -956,6 +962,7 @@ class="inline-flex items-center gap-2 text-xs font-medium text-blue-700 dark:tex
+                                                             :priceMatrix="$priceMatrix"
+                                                             :autoCalculateTiers="$autoCalculateTiers"
+                                                             :priceCurrency="$priceCurrency"
++                                                            :foreignTierAmounts="$foreignTierAmounts"
+                                                             :foreignPriceRebasePending="$foreignPriceRebasePending"
+                                                             :foreignPriceAmount="$foreignPriceAmount"
+                                                             :foreignPricePreviewValid="$foreignPricePreviewValid"
+@@ -1190,6 +1197,8 @@ class="block w-full px-4 py-2.5 text-sm border-gray-300 dark:border-gray-600 dar
+                                                 <x-heroicon-s-banknotes class="w-5 h-5 text-green-600 dark:text-green-400"/>
+                                                 @if($priceCurrency !== 'TOM' && $tierIndex === $referenceTierIndex)
+                                                     قیمت نقدی ({{ $cashCurrencyLabel }})
++                                                @elseif($priceCurrency !== 'TOM' && !$autoCalculateTiers)
++                                                    قیمت نقدی ({{ $cashCurrencyLabel }})
+                                                 @elseif($priceCurrency !== 'TOM')
+                                                     قیمت نقدی محاسبه‌شده (تومان)
+                                                 @else
+@@ -1207,6 +1216,7 @@ class="block w-full px-4 py-2.5 text-sm border-gray-300 dark:border-gray-600 dar
+                                                 :priceMatrix="$priceMatrix"
+                                                 :autoCalculateTiers="$autoCalculateTiers"
+                                                 :priceCurrency="$priceCurrency"
++                                                :foreignTierAmounts="$foreignTierAmounts"
+                                                 :foreignPriceRebasePending="$foreignPriceRebasePending"
+                                                 :foreignPriceAmount="$foreignPriceAmount"
+                                                 :foreignPricePreviewValid="$foreignPricePreviewValid"
+diff --git a/resources/views/livewire/supplier/settings/manage-tier-discounts.blade.php b/resources/views/livewire/supplier/settings/manage-tier-discounts.blade.php
+index 5172e03..b8f3621 100644
+--- a/resources/views/livewire/supplier/settings/manage-tier-discounts.blade.php
++++ b/resources/views/livewire/supplier/settings/manage-tier-discounts.blade.php
+@@ -243,6 +243,7 @@ class="w-full rounded-md border-gray-300 bg-white px-3 py-3 text-sm text-gray-90
+                             {{ $currencySettings[$currency]['auto_update'] ? 'آخرین نرخ موجود هر واحد به تومان' : 'نرخ دستی هر واحد به تومان' }}
+                         </label>
+                         <input id="manual-currency-rate-{{ $currency }}"
++                               wire:key="currency-rate-input-{{ $currency }}-{{ $currencySettings[$currency]['auto_update'] ? 'automatic' : 'manual' }}"
+                                type="number"
+                                min="0.0001"
+                                step="0.0001"
+@@ -351,7 +352,7 @@ class="w-full rounded-md border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-
+ 
+         <div class="mt-5 flex flex-col gap-3 border-t border-gray-200 dark:border-gray-700 pt-4 sm:flex-row sm:items-center sm:justify-between">
+             <p class="text-xs leading-5 text-gray-600 dark:text-gray-400">
+-                در حالت خودکار، نرخ در پس‌زمینه دریافت می‌شود و آخرین قیمت ذخیره‌شده تا دریافت نرخ معتبر حفظ خواهد شد.
++                با ذخیرهٔ نرخ دستی، قیمت محصولات به‌طور خودکار در صف محاسبه قرار می‌گیرد. در حالت خودکار، فقط پس از دریافت نرخ تازه و معتبرِ متفاوت، قیمت‌ها به‌روز می‌شوند و تا آن زمان آخرین قیمت ذخیره‌شده حفظ خواهد شد. دکمهٔ اعمال برای اجرای دوباره یا تلاش مجدد است.
+             </p>
+             <div class="flex flex-col gap-2 sm:flex-row">
+                 <button type="button"

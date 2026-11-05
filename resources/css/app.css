@@ -41,4 +41,10 @@
 @tailwind utilities;
 [x-cloak] { display: none !important; }
 
+/* Price visibility must override the flex layout on grid and list cards. */
+[data-live-price-empty-label][hidden],
+[data-live-price-card-range][hidden] {
+    display: none !important;
+}
+
 

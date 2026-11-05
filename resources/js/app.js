@@ -231,6 +231,49 @@ function applyProductPriceSummary(update) {
     });
 }
 
+function applyProductCardPriceSnapshot(productId, snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+
+    const snapshotSupplierId = snapshot.card_supplier_id === null || snapshot.card_supplier_id === undefined
+        ? null
+        : String(snapshot.card_supplier_id);
+    const range = snapshot.card_range || {};
+    const hasPrice = range.lowest !== null && range.lowest !== undefined;
+    const hasRange = hasPrice
+        && range.highest !== null
+        && range.highest !== undefined
+        && Number(range.lowest) !== Number(range.highest);
+
+    document.querySelectorAll('[data-live-price-card-range][data-live-price-product]').forEach((wrapper) => {
+        if (wrapper.dataset.livePriceProduct !== String(productId)) return;
+
+        const wrapperSupplierId = wrapper.dataset.livePriceCardSupplierId || null;
+        if (wrapperSupplierId !== snapshotSupplierId) return;
+
+        const minimum = wrapper.querySelector('[data-live-price-card-min]');
+        const maximum = wrapper.querySelector('[data-live-price-card-max]');
+        const separator = wrapper.querySelector('[data-live-price-card-separator]');
+        const tierCount = wrapper.querySelector('[data-live-price-card-count]');
+        if (minimum) minimum.textContent = hasPrice ? formatLivePrice(range.lowest) : '—';
+        if (maximum) {
+            maximum.textContent = hasPrice ? formatLivePrice(range.highest) : '—';
+            maximum.hidden = !hasRange;
+        }
+        if (separator) separator.hidden = !hasRange;
+        if (tierCount) {
+            const count = Number(range.tiers_count || 0);
+            tierCount.textContent = `(${formatLivePrice(count)} تیراژ)`;
+            tierCount.hidden = count <= 1;
+        }
+        wrapper.hidden = !hasPrice;
+
+        const card = wrapper.closest('.group');
+        card?.querySelectorAll('[data-live-price-empty-label][data-live-price-range="card"]').forEach((label) => {
+            if (label.dataset.livePriceProduct === String(productId)) label.hidden = hasPrice;
+        });
+    });
+}
+
 function applyBranchPriceSnapshot(productId, branches) {
     if (!Array.isArray(branches)) return;
 
@@ -331,6 +374,7 @@ function refreshProductPriceSnapshot(productId) {
                 && snapshotRevision < currentRevision) return;
 
             applyBranchPriceSnapshot(productId, snapshot.branches);
+            applyProductCardPriceSnapshot(productId, snapshot);
 
             const suppliers = Object.values(snapshot.suppliers || {});
             if (suppliers.length === 0) {

@@ -24,6 +24,16 @@ class ProductPriceSnapshotController extends Controller
         $allowedTypes = $settings?->getAllowedPriceTypes();
         $canSeeSupplierInfo = $settings?->canSeeSupplierInfo() ?? false;
         $today = now()->startOfDay();
+        $familyId = (int) ($product->family_product_id ?: $product->id);
+        $familyProductIds = Product::query()
+            ->where('family_product_id', $familyId)
+            ->where('is_active', true)
+            ->where('status', ProductStatus::ACTIVE)
+            ->pluck('id');
+
+        if (!$familyProductIds->contains((int) $product->id)) {
+            $familyProductIds->push((int) $product->id);
+        }
 
         $suppliers = ProductSupplier::query()
             ->with([
@@ -59,19 +69,25 @@ class ProductPriceSnapshotController extends Controller
                 'prices.priceType:id,code',
                 'prices.checkPeriod:id,label,name',
             ])
-            ->where('product_id', $product->id)
+            ->whereIn('product_id', $familyProductIds->all())
             ->where('is_active', true)
             ->verifiedSupplier()
             ->get();
 
         $visiblePricesBySupplier = $suppliers->mapWithKeys(function (ProductSupplier $productSupplier) use ($allowedTypes): array {
+            $tierEnabled = (array) ($productSupplier->tier_enabled ?? []);
             $prices = $productSupplier->prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
                 $type = $price->priceType?->code ?? 'cash';
 
                 return $price->is_active
                     && $price->isValid()
                     && ($allowedTypes === null || in_array($type, $allowedTypes, true));
-            });
+            })->filter(function (ProductPrice $price) use ($tierEnabled): bool {
+                return empty($tierEnabled) || (bool) ($tierEnabled[(int) $price->tier_index] ?? true);
+            })->values();
+
+            // Keep the matrix and the range snapshot on the same enabled-tier set.
+            $productSupplier->setRelation('prices', $prices);
 
             $prices = $prices
                 ->groupBy(fn (ProductPrice $price) => implode(':', [
@@ -145,6 +161,26 @@ class ProductPriceSnapshotController extends Controller
 
         $productPrices = $uniqueVisiblePrices->pluck('price');
         $productMatrixPrices = $this->productMatrixPayload($suppliers, $allowedTypes);
+        $requestedCardSupplierId = $canSeeSupplierInfo
+            ? filter_var($request->query('card_supplier_id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
+            : false;
+        $cardPrices = $uniqueVisiblePrices;
+        if ($requestedCardSupplierId !== false && $requestedCardSupplierId !== null) {
+            $cardOfferIds = $suppliers
+                ->where('supplier_id', (int) $requestedCardSupplierId)
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->all();
+            $cardPrices = $cardPrices->whereIn('product_supplier_id', $cardOfferIds);
+        } else {
+            $requestedCardSupplierId = null;
+        }
+        $cardPriceValues = $cardPrices->pluck('price');
+        $cardRange = [
+            'lowest' => $cardPriceValues->isEmpty() ? null : (int) $cardPriceValues->min(),
+            'highest' => $cardPriceValues->isEmpty() ? null : (int) $cardPriceValues->max(),
+            'tiers_count' => $cardPrices->pluck('tier_index')->unique()->count(),
+        ];
         $branchPrices = $canSeeSupplierInfo
             ? $this->branchPricePayload($product, $allowedTypes, $today, $request->query('supplier_id'))
             : [];
@@ -157,6 +193,8 @@ class ProductPriceSnapshotController extends Controller
             'product_average' => $productPrices->isEmpty() ? null : (int) round($productPrices->avg()),
             'product_prices' => $productMatrixPrices,
             'product_tiers_count' => collect($productMatrixPrices)->pluck('tier_index')->unique()->count(),
+            'card_supplier_id' => $requestedCardSupplierId,
+            'card_range' => $cardRange,
             'suppliers' => $supplierSnapshots,
             'branches' => $branchPrices,
         ])->header('Cache-Control', 'private, no-store');
@@ -296,12 +334,15 @@ class ProductPriceSnapshotController extends Controller
             }
 
             $prices = $offer?->prices ?? collect();
+            $tierEnabled = (array) ($offer?->tier_enabled ?? []);
             $visiblePrices = $prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
                 $type = $price->priceType?->code ?? 'cash';
 
                 return $price->is_active
                     && $price->isValid()
                     && ($allowedTypes === null || in_array($type, $allowedTypes, true));
+            })->filter(function (ProductPrice $price) use ($tierEnabled): bool {
+                return empty($tierEnabled) || (bool) ($tierEnabled[(int) $price->tier_index] ?? true);
             });
             $basePrices = $visiblePrices->filter(fn (ProductPrice $price): bool => in_array(
                 $price->priceType?->code ?? 'cash',

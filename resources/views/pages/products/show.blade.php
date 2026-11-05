@@ -157,7 +157,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                                     </span>
                     @endif
                 </h3>
-                @if($canViewSupplierInfo && $hasMultipleSuppliers && $usePivotPrices)
+                @if($hasMultipleSuppliers && $usePivotPrices)
                 <button @click="compareMode = !compareMode; if(compareMode) { setTimeout(() => { const el = document.getElementById('price-comparison-section'); const yOffset = -80; const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset; window.scrollTo({top: y, behavior: 'smooth'}); }, 150); }"
                         class="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all border"
                         :class="compareMode
@@ -947,7 +947,6 @@ $formatBranchPercentage = static function (float $percentage): string {
             {{-- بخش زرد قبلی حذف شد چون حالا DEBUG جدید داریم --}}
             @endif
 
-            @if($canViewSupplierInfo)
             {{-- ══════════════════════════════════════════
             STACKED VIEW — همه تأمین‌کنندگان زیر هم
             ══════════════════════════════════════════ --}}
@@ -965,6 +964,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                         <div class="w-full bg-gradient-to-l from-blue-50 via-white to-blue-50 px-2 py-2 border-b border-gray-100 transition-colors hover:from-blue-100/50">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
+                                    @if($showSupplierInfo)
                                     {{-- لوگو + لینک به فروشگاه تأمین‌کننده --}}
                                     @if($ps->supplier && $ps->supplier->slug)
                                     <a href="{{ route('suppliers.show', $ps->supplier->rootSupplier()->slug) }}"
@@ -1040,6 +1040,9 @@ $formatBranchPercentage = static function (float $percentage): string {
                                             @endif
                                         </div>
                                     </div>
+                                    @else
+                                    <span class="font-bold text-gray-800">تأمین‌کننده {{ $psIndex + 1 }}</span>
+                                    @endif
                                 </div>
 
                                 {{-- ✅ اصلاح #8: سمت چپ: محدوده قیمت + فلش --}}
@@ -1047,7 +1050,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                                         @click="expanded = !expanded"
                                         :aria-expanded="expanded.toString()"
                                         aria-controls="supplier-price-body-{{ $ps->id }}"
-                                        aria-label="نمایش یا پنهان کردن قیمت‌های {{ $ps->supplier->company_name ?? 'تأمین‌کننده' }}"
+                                        aria-label="نمایش یا پنهان کردن قیمت‌های {{ $showSupplierInfo ? ($ps->supplier->company_name ?? 'تأمین‌کننده') : 'تأمین‌کننده ' . ($psIndex + 1) }}"
                                         class="flex items-center gap-3 shrink-0 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2">
                                     <div class="text-left">
                                         <div class="text-[11px] text-gray-500 mb-0.5">محدوده قیمت</div>
@@ -1194,7 +1197,7 @@ $formatBranchPercentage = static function (float $percentage): string {
             {{-- ══════════════════════════════════════════
             COMPARE VIEW — جدول مقایسه‌ای تفکیک شده به تیراژ
             ══════════════════════════════════════════ --}}
-            @if($canViewSupplierInfo && $hasMultipleSuppliers && $usePivotPrices)
+            @if($hasMultipleSuppliers && $usePivotPrices)
             <div x-show="compareMode"
                  x-transition:enter="transition ease-out duration-300"
                  x-transition:enter-start="opacity-0 translate-y-4"
@@ -1358,6 +1361,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                                             @foreach($activeSuppliersForTier as $ps)
                                             <th class="text-center px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-2.5 border-b min-w-[90px] sm:min-w-[110px] md:min-w-[130px]">
                                                 <div class="flex flex-col items-center gap-0.5">
+                                                    @if($showSupplierInfo)
                                                     @if($ps->supplier && $ps->supplier->logo_path)
                                                     <img src="{{ $ps->supplier->logoUrl('small') }}" class="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg object-cover border border-gray-200">
                                                     @else
@@ -1374,6 +1378,9 @@ $formatBranchPercentage = static function (float $percentage): string {
                                                         <span class="text-[9px] sm:text-[10px] bg-green-100 text-green-700 px-0.5 py-0.5 rounded-full">✓</span>
                                                         @endif
                                                     </div>
+                                                    @else
+                                                    <span class="font-bold text-gray-700 text-xs">تأمین‌کننده {{ $productSuppliers->search(fn($offer) => $offer->id === $ps->id) + 1 }}</span>
+                                                    @endif
                                                 </div>
                                             </th>
                                             @endforeach
@@ -1501,7 +1508,6 @@ $formatBranchPercentage = static function (float $percentage): string {
                     </div>
                 </div>
             </div>
-            @endif
             @endif
         </div>
         @endif
