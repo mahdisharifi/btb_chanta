@@ -11,7 +11,7 @@
         </div>
 
         {{-- کارت‌های انتخاب --}}
-        <div class="grid md:grid-cols-2 gap-8">
+        <div class="mx-auto grid max-w-2xl gap-8">
 
             {{-- کارت تامین‌کننده --}}
             <button
@@ -66,6 +66,8 @@
             </button>
 
             {{-- کارت خرده‌فروش --}}
+            {{-- Retailer registration is hidden for now. --}}
+            @if (false)
             <button
                 wire:click="selectRetailer"
                 class="group relative bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border-2 border-transparent hover:border-purple-500 focus:outline-none focus:ring-4 focus:ring-purple-200"
@@ -116,6 +118,7 @@
                 {{-- افکت نور --}}
                 <div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             </button>
+            @endif
 
         </div>
 

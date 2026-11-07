@@ -196,8 +196,29 @@ Route::middleware('auth')->group(function () {
             return redirectByRole(Auth::user());
         }
 
+        $otpService = app(OtpService::class);
+        $mobile = (string) Auth::user()->mobile;
+        $result = null;
+        $state = $otpService->pageState($mobile);
+        $sessionKey = 'otp_page.'.hash('sha256', $mobile);
+        $retryUntil = (int) session($sessionKey.'.retry_until', 0);
+        $needsSend = !$state['codeExpiresAt'] && $state['retryAfter'] === 0
+            && $retryUntil <= time() && !session($sessionKey.'.visited', false);
+        session([$sessionKey.'.visited' => true]);
+        if ($needsSend) {
+            $result = $otpService->sendOtp($mobile, request()->ip());
+            $state = $otpService->pageState($mobile);
+            $retryUntil = time() + (int) ($result['retry_after'] ?? 0);
+            session([$sessionKey.'.retry_until' => $retryUntil]);
+        }
+
         return view('livewire.pages.auth.verify-mobile', [
-            'mobile' => Auth::user()->mobile,
+            'mobile' => $mobile,
+            'sendResult' => $result,
+            'sentAutomatically' => $needsSend,
+            'retryAfter' => max($state['retryAfter'], $retryUntil - time(), 0),
+            'codeExpiresAt' => $state['codeExpiresAt'],
+            'limits' => OtpService::limits(),
         ]);
     })->name('verify.mobile');
 
@@ -211,16 +232,28 @@ Route::middleware('auth')->group(function () {
 
         $result = $otpService->sendOtp($user->mobile, $request->ip());
 
+        $sessionKey = 'otp_page.'.hash('sha256', (string) $user->mobile);
+        session([
+            $sessionKey.'.visited' => true,
+            $sessionKey.'.retry_until' => time() + (int) ($result['retry_after'] ?? 0),
+        ]);
+
         return back()->with(
             $result['success'] ? 'success' : 'error',
             $result['message']
         );
-    })->name('verify.mobile.resend');
+    })->middleware('throttle:10,1')->name('verify.mobile.resend');
 
     // تایید کد OTP
     Route::post('/verify-mobile/verify', function (Request $request, OtpService $otpService) {
+        if (is_string($request->input('code'))) {
+            $request->merge(['code' => strtr($request->input('code'), array_combine(
+                preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
+                str_split('01234567890123456789')
+            ))]);
+        }
         $validated = $request->validate([
-            'code' => 'required|string|size:6',
+            'code' => ['required', 'string', 'size:6', 'regex:/^[0-9]{6}$/'],
         ], [
             'code.required' => 'کد تایید الزامی است',
             'code.size' => 'کد تایید باید 6 رقم باشد',
@@ -246,7 +279,7 @@ Route::middleware('auth')->group(function () {
         // redirect بر اساس نقش
         return redirectByRole($user)->with('success', 'موبایل شما با موفقیت تایید شد');
 
-    })->name('verify.mobile.verify');
+    })->middleware('throttle:20,1')->name('verify.mobile.verify');
 
 });
 

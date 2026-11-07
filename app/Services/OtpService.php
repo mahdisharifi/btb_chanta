@@ -8,22 +8,22 @@ use Carbon\Carbon;
 class OtpService
 {
     /** فاصله زمانی مجاز بین دو ارسال متوالی (ثانیه) */
-    private const RESEND_COOLDOWN = 5;
+    private const RESEND_COOLDOWN = 120;
 
     /** حداکثر تعداد ارسال موفق برای هر شماره در یک ساعت */
-    private const MAX_SENDS_PER_HOUR = 5;
+    private const MAX_SENDS_PER_HOUR = 10;
 
     /** حداکثر تعداد ارسال موفق برای هر شماره در یک شبانه‌روز */
-    private const MAX_SENDS_PER_DAY = 15;
+    private const MAX_SENDS_PER_DAY = 20;
 
     /** حداکثر تعداد ارسال از یک IP در یک ساعت (ضد اسپم گسترده) */
-    private const MAX_SENDS_PER_IP_HOUR = 15;
+    private const MAX_SENDS_PER_IP_HOUR = 30;
 
     /** حداکثر تعداد تلاش نادرست برای تأیید یک کد */
     private const MAX_VERIFY_ATTEMPTS = 5;
 
     /** مدت اعتبار کد (دقیقه) */
-    private const OTP_TTL_MINUTES = 5;
+    private const OTP_TTL_MINUTES = 2;
 
     public function __construct(
         protected KavenegarService $kavenegarService
@@ -43,8 +43,8 @@ class OtpService
 
         if ($last) {
             $elapsed = $last->created_at->diffInSeconds($now);
-            if ($elapsed < self::RESEND_COOLDOWN) {
-                $retryAfter = self::RESEND_COOLDOWN - $elapsed;
+            if ($elapsed < self::limits()['cooldown_seconds']) {
+                $retryAfter = (int) ceil(self::limits()['cooldown_seconds'] - $elapsed);
 
                 return [
                     'success'     => false,
@@ -59,7 +59,8 @@ class OtpService
         $hourSends  = OtpVerification::forMobile($mobile)
             ->where('created_at', '>=', $hourWindow)
             ->orderBy('created_at')
-            ->get();
+            ->limit(self::MAX_SENDS_PER_HOUR)
+            ->get(['created_at']);
 
         if ($hourSends->count() >= self::MAX_SENDS_PER_HOUR) {
             $retryAfter = $this->retryAfterFromOldest($hourSends->first(), 3600, $now);
@@ -77,7 +78,8 @@ class OtpService
         $daySends  = OtpVerification::forMobile($mobile)
             ->where('created_at', '>=', $dayWindow)
             ->orderBy('created_at')
-            ->get();
+            ->limit(self::MAX_SENDS_PER_DAY)
+            ->get(['created_at']);
 
         if ($daySends->count() >= self::MAX_SENDS_PER_DAY) {
             $retryAfter = $this->retryAfterFromOldest($daySends->first(), 86400, $now);
@@ -95,7 +97,8 @@ class OtpService
             $ipSends = OtpVerification::where('ip_address', $ip)
                 ->where('created_at', '>=', $hourWindow)
                 ->orderBy('created_at')
-                ->get();
+                ->limit(self::MAX_SENDS_PER_IP_HOUR)
+                ->get(['created_at']);
 
             if ($ipSends->count() >= self::MAX_SENDS_PER_IP_HOUR) {
                 $retryAfter = $this->retryAfterFromOldest($ipSends->first(), 3600, $now);
@@ -118,7 +121,7 @@ class OtpService
         $otp = OtpVerification::create([
             'mobile'     => $mobile,
             'code'       => $code,
-            'expires_at' => $now->copy()->addMinutes(self::OTP_TTL_MINUTES),
+            'expires_at' => $now->copy()->addSeconds(self::limits()['ttl_seconds']),
             'ip_address' => $ip,
         ]);
 
@@ -138,7 +141,7 @@ class OtpService
         return [
             'success'     => true,
             'message'     => 'کد تایید ارسال شد',
-            'retry_after' => self::RESEND_COOLDOWN,
+            'retry_after' => self::limits()['cooldown_seconds'],
         ];
     }
 
@@ -210,6 +213,23 @@ class OtpService
         return OtpVerification::forMobile($mobile)->valid()->exists();
     }
 
+    /** Read the verification page state in one query, without loading the secret code. */
+    public function pageState(string $mobile): array
+    {
+        $last = OtpVerification::forMobile($mobile)->latest('created_at')->latest('id')
+            ->first(['created_at', 'expires_at', 'is_used', 'attempts']);
+        $now = now();
+        $active = $last && !$last->is_used && $last->attempts < self::MAX_VERIFY_ATTEMPTS
+            && $last->expires_at->greaterThan($now);
+
+        return [
+            'codeExpiresAt' => $active ? $last->expires_at->toIso8601String() : null,
+            'retryAfter' => $last
+                ? max(0, (int) ceil($now->diffInSeconds($last->created_at->copy()->addSeconds(self::limits()['cooldown_seconds']), false)))
+                : 0,
+        ];
+    }
+
     /**
      * زمان باقی‌مانده تا امکان ارسال مجدد (ثانیه) یا null.
      */
@@ -225,9 +245,38 @@ class OtpService
 
         $elapsed = $last->created_at->diffInSeconds(now());
 
-        return $elapsed < self::RESEND_COOLDOWN
-            ? self::RESEND_COOLDOWN - $elapsed
+        return $elapsed < self::limits()['cooldown_seconds']
+            ? (int) ceil(self::limits()['cooldown_seconds'] - $elapsed)
             : null;
+    }
+
+    /** Seconds until a new code can be requested; zero means available now. */
+    public function getSecondsUntilResend(string $mobile): int
+    {
+        return max(0, (int) ($this->getRetryAfter($mobile) ?? 0));
+    }
+
+    /** ISO timestamp for the active code's expiry, if one exists. */
+    public function getCodeExpiresAt(string $mobile): ?string
+    {
+        $otp = OtpVerification::forMobile($mobile)
+            ->valid()
+            ->latest('created_at')
+            ->first();
+
+        return $otp?->expires_at?->toIso8601String();
+    }
+
+    /** Public description of the limits shown on the verification page. */
+    public static function limits(): array
+    {
+        return [
+            'ttl_seconds' => max(1, (int) config('otp.ttl_seconds', self::OTP_TTL_MINUTES * 60)),
+            'cooldown_seconds' => max(1, (int) config('otp.cooldown_seconds', self::RESEND_COOLDOWN)),
+            'per_hour' => self::MAX_SENDS_PER_HOUR,
+            'per_day' => self::MAX_SENDS_PER_DAY,
+            'wrong_attempts' => self::MAX_VERIFY_ATTEMPTS,
+        ];
     }
 
     /**
