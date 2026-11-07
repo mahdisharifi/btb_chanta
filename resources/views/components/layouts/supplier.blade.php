@@ -43,6 +43,7 @@
                 داشبورد
             </a>
 
+            {{-- Branch navigation is currently hidden.
             <a href="{{ route('supplier.branches.index') }}"
                class="{{ request()->routeIs('supplier.branches.index') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
                 <x-heroicon-o-building-office-2 class="ml-3 h-6 w-6 flex-shrink-0 text-gray-400" />
@@ -54,6 +55,7 @@
                 <x-heroicon-o-clipboard-document-check class="ml-3 h-6 w-6 flex-shrink-0 text-gray-400" />
                 بررسی محصولات شعبه
             </a>
+            --}}
 
             <!-- اطلاعات فروشگاه -->
             @if(auth()->user()?->supplier)
@@ -85,13 +87,14 @@
                 محصولات پیشنهادی
             </a>
 
-            <!-- افزودن محصول جدید به‌صورت پیش‌نویس -->
+            {{-- Product creation navigation is currently hidden.
             <a href="{{ route('supplier.products.create') }}"
                @if(request()->routeIs('supplier.products.create')) aria-current="page" @endif
                class="{{ request()->routeIs('supplier.products.create') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex min-h-11 items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
                 <x-heroicon-o-plus-circle class="{{ request()->routeIs('supplier.products.create') ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-300' }} ml-3 flex-shrink-0 h-6 w-6 transition-colors" />
                 افزودن محصول
             </a>
+            --}}
 
             <!-- کاتالوگ PDF -->
             <a href="{{ route('supplier.catalog.index') }}"

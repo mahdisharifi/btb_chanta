@@ -72,6 +72,7 @@ Schedule::command('queue:work', [
 ])
     ->everyMinute()
     ->name('shared-hosting-queue-worker')
+    ->when(fn () => getenv('APP_SERVE_QUEUE_RUNNING') !== '1')
     ->withoutOverlapping(5)
     ->appendOutputTo(storage_path('logs/queue-worker.log'));
 

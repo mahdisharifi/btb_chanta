@@ -39,6 +39,19 @@ class SharedHostingQueueScheduleTest extends TestCase
         $this->assertStringContainsString('--queue=', $worker->command);
     }
 
+    public function test_hosting_worker_is_skipped_only_while_serve_manages_the_queue(): void
+    {
+        $previous = getenv('APP_SERVE_QUEUE_RUNNING');
+        try {
+            putenv('APP_SERVE_QUEUE_RUNNING=1');
+            $this->assertFalse($this->workerForQueue('default')->filtersPass($this->app));
+            putenv('APP_SERVE_QUEUE_RUNNING');
+            $this->assertTrue($this->workerForQueue('default')->filtersPass($this->app));
+        } finally {
+            putenv($previous === false ? 'APP_SERVE_QUEUE_RUNNING' : 'APP_SERVE_QUEUE_RUNNING='.$previous);
+        }
+    }
+
     private function workerForQueue(string $queue): Event
     {
         config()->set('queue.default', 'database');
