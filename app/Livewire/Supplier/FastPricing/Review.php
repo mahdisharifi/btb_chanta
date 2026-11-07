@@ -98,6 +98,8 @@ class Review extends Component
                     // ✅ Step 1: ذخیره قیمت‌های نقدی (manual) که کاربر وارد کرده
                     $cashPrices = []; // [tier_index] => price
                     
+                    $cashChanges = [];
+
                     foreach ($item->new_prices as $key => $priceData) {
                         if (!is_array($priceData) || !isset($priceData['price'])) {
                             continue;
@@ -144,20 +146,14 @@ class Review extends Component
                         // ✅ شناسایی قیمت نقدی (price_type_id = 1 معمولاً نقدی است)
                         // بهتر است با code چک کنیم
                         $priceType = \App\Models\PriceType::find($priceTypeId);
-                        if (($supplier->pricing_currency !== 'TOM' || $productSupplier->price_currency !== 'TOM')
-                            && $priceType?->code === 'cash') {
-                            if ($currentPrice && $cleanPrice > 0 && (int) $currentPrice->price === (int) $cleanPrice) {
-                                continue;
-                            }
-
-                            throw new RuntimeException(
-                                'قیمت نقدی این کالا بر پایهٔ ارز ' . $supplier->pricing_currency
-                                . ' است؛ مبلغ ارزی را در صفحهٔ ماتریس قیمت تغییر دهید.'
-                            );
-                        }
-
                         if ($priceType && $priceType->code === 'cash' && $cleanPrice > 0) {
                             $cashPrices[$tierIndex] = $cleanPrice;
+                            if ($oldPrice === null || (int) $oldPrice !== $cleanPrice) {
+                                $cashChanges[$tierIndex] = [
+                                    'old' => $oldPrice === null ? null : (int) $oldPrice,
+                                    'new' => (int) $cleanPrice,
+                                ];
+                            }
                         }
 
                         if ($cleanPrice <= 0) {
@@ -314,6 +310,11 @@ class Review extends Component
                 // ═══════════════════════════════════════════════════════════
                 if ($item->new_is_active !== null && $item->new_is_active !== '') {
                     $productSupplier->is_active = (bool) $item->new_is_active;
+                }
+
+                if (!empty($cashChanges)) {
+                    app(\App\Services\PriceMatrixForeignAmountSyncService::class)
+                        ->syncCashChanges($productSupplier, $cashChanges);
                 }
 
                 $productSupplier->save();

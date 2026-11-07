@@ -387,6 +387,12 @@ class PercentageUpdate extends Component
                         throw new RuntimeException('فهرست قیمت‌های یکی از کالاها پس از ساخت پیش‌نمایش تغییر کرده است. پیش‌نویس را لغو و دوباره ایجاد کنید.');
                     }
 
+                    // Foreign-currency offers keep a stored foreign amount. A
+                    // percentage or manual cash change must move that amount by
+                    // the same ratio, otherwise the next rate application would
+                    // silently undo the supplier's chosen price.
+                    $foreignCashChanges = [];
+
                     foreach ($newPrices as $key => $priceData) {
                         $this->assertValidSnapshot($key, $priceData, $oldPrices);
                         $oldPriceData = $oldPrices[$key];
@@ -396,17 +402,21 @@ class PercentageUpdate extends Component
                             throw new RuntimeException('یکی از قیمت‌ها پس از ساخت پیش‌نمایش تغییر کرده است. پیش‌نویس را لغو و دوباره ایجاد کنید.');
                         }
 
-                        if (($supplier->pricing_currency !== 'TOM' || $productSupplier->price_currency !== 'TOM')
-                            && $price->priceType?->code === 'cash'
+                        if ($price->priceType?->code === 'cash'
                             && (int) $priceData['price'] !== (int) $oldPriceData['price']) {
-                            throw new RuntimeException(
-                                'قیمت نقدی این کالا از مبلغ ارزی محاسبه می‌شود؛ برای تغییر آن از صفحهٔ ماتریس قیمت ارزی استفاده کنید.'
-                            );
+                            $foreignCashChanges[(int) $price->tier_index] = [
+                                'old' => (int) $oldPriceData['price'],
+                                'new' => (int) $priceData['price'],
+                            ];
                         }
 
                         $price->update(['price' => (int) $priceData['price']]);
                     }
 
+                    if ($foreignCashChanges !== []) {
+                        app(\App\Services\PriceMatrixForeignAmountSyncService::class)
+                            ->syncCashChanges($productSupplier, $foreignCashChanges);
+                    }
                     $productSupplier->is_active = (bool) $item->new_is_active;
                     $productSupplier->save();
                     $changedProductSupplierIds[(int) $productSupplier->id] = (int) $productSupplier->id;
