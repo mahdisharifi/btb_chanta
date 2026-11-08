@@ -92,9 +92,14 @@ Route::middleware('guest')->group(function () {
         $validated = request()->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'string', 'email', 'max:255', 'unique:'.User::class],
-            'mobile' => [ 'string', 'regex:/^09\d{9}$/', 'unique:'.User::class],
-            'password' => ['required', 'confirmed', 'min:8'],
+            'mobile' => ['required', 'string', 'regex:/^09\d{9}$/', 'unique:'.User::class],
+            'password' => ['required', 'string', 'confirmed', \Illuminate\Validation\Rules\Password::min(8)->mixedCase()->numbers()->symbols()],
         ], [
+            'password.required' => 'رمز عبور را وارد کنید.',
+            'password.confirmed' => 'تکرار رمز عبور با رمز عبور یکسان نیست.',
+            'password.mixed' => 'رمز عبور باید حرف بزرگ و حرف کوچک داشته باشد.',
+            'password.numbers' => 'رمز عبور باید حداقل یک عدد داشته باشد.',
+            'password.symbols' => 'رمز عبور باید حداقل یک نماد یا فاصله داشته باشد.',
             'mobile.regex' => 'فرمت موبایل باید 09xxxxxxxxx باشد.',
             'mobile.unique' => 'این شماره موبایل قبلاً ثبت شده است.',
             'password.min' => 'رمز عبور باید حداقل 8 کاراکتر باشد.',
@@ -109,10 +114,10 @@ Route::middleware('guest')->group(function () {
         event(new Registered($user));
 
         Auth::login($user);
+        request()->session()->regenerate();
 
         // کاربر جدید باید ابتدا موبایل را تأیید کند، سپس نقش انتخاب کند
         if ($user->needsMobileVerification()) {
-            app(OtpService::class)->sendOtp($user->mobile);
             return redirect()->route('verify.mobile');
         }
 
@@ -226,6 +231,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/verify-mobile/resend', function (Request $request, OtpService $otpService) {
         $user = Auth::user();
 
+        if ($request->expectsJson() && !$user->needsMobileVerification()) {
+            return response()->json(['success' => true, 'redirect' => redirectByRole($user)->getTargetUrl()]);
+        }
+
         if (!$user->needsMobileVerification()) {
             return back()->with('error', 'موبایل شما قبلاً تایید شده است');
         }
@@ -238,6 +247,17 @@ Route::middleware('auth')->group(function () {
             $sessionKey.'.retry_until' => time() + (int) ($result['retry_after'] ?? 0),
         ]);
 
+        if ($request->expectsJson()) {
+            $state = $otpService->pageState((string) $user->mobile);
+            return response()->json([
+                'success' => $result['success'],
+                'message' => $result['message'],
+                'codeExpiresAt' => $state['codeExpiresAt'],
+                'retryAfter' => max($state['retryAfter'], (int) ($result['retry_after'] ?? 0)),
+                'serverNow' => now()->toIso8601String(),
+            ], $result['success'] ? 200 : (!empty($result['blocked']) ? 429 : 422));
+        }
+
         return back()->with(
             $result['success'] ? 'success' : 'error',
             $result['message']
@@ -246,6 +266,9 @@ Route::middleware('auth')->group(function () {
 
     // تایید کد OTP
     Route::post('/verify-mobile/verify', function (Request $request, OtpService $otpService) {
+        if ($request->expectsJson() && !$request->user()->needsMobileVerification()) {
+            return response()->json(['success' => true, 'redirect' => redirectByRole($request->user())->getTargetUrl()]);
+        }
         if (is_string($request->input('code'))) {
             $request->merge(['code' => strtr($request->input('code'), array_combine(
                 preg_split('//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY),
@@ -268,13 +291,30 @@ Route::middleware('auth')->group(function () {
         $result = $otpService->verifyOtp($user->mobile, $validated['code']);
 
         if (!$result['success']) {
+            $message = $result['message'];
+            if (isset($result['remaining_attempts'])) {
+                $message = 'کد واردشده صحیح نیست.';
+            } elseif (!empty($result['blocked'])) {
+                $message = 'کد را ۵ بار اشتباه وارد کردید و این کد دیگر قابل استفاده نیست. پس از پایان زمان انتظار، کد جدید درخواست کنید.';
+            }
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'can_retry' => isset($result['remaining_attempts']),
+                ], 422);
+            }
             return back()
-                ->withErrors(['code' => $result['message']])
+                ->withErrors(['code' => $message])
                 ->withInput();
         }
 
         // علامت‌گذاری موبایل به عنوان تایید شده
         $user->markMobileAsVerified();
+
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'redirect' => redirectByRole($user)->getTargetUrl()]);
+        }
 
         // redirect بر اساس نقش
         return redirectByRole($user)->with('success', 'موبایل شما با موفقیت تایید شد');

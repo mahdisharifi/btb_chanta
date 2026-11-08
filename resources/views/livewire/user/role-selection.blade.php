@@ -1,5 +1,7 @@
 <div class="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center px-4 py-12">
     <div class="max-w-5xl w-full">
+        <x-registration-logo class="mx-auto mb-6 h-20 w-20" />
+        <p class="mb-6 text-center text-sm text-gray-600">شماره موبایل شما تأیید شد. نقش خود را انتخاب کنید و اطلاعات پروفایل آن را تکمیل کنید؛ پس از ثبت اطلاعات، به صفحهٔ انتظار تأیید حساب می‌روید.</p>
         {{-- هدر --}}
         <div class="text-center mb-12">
             <h1 class="text-4xl font-bold text-gray-900 mb-3">
@@ -16,6 +18,7 @@
             {{-- کارت تامین‌کننده --}}
             <button
                 wire:click="selectSupplier"
+                wire:loading.attr="disabled"
                 class="group relative bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border-2 border-transparent hover:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-200"
             >
                 <div class="p-8 text-center">
@@ -70,6 +73,7 @@
             @if (false)
             <button
                 wire:click="selectRetailer"
+                wire:loading.attr="disabled"
                 class="group relative bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border-2 border-transparent hover:border-purple-500 focus:outline-none focus:ring-4 focus:ring-purple-200"
             >
                 <div class="p-8 text-center">

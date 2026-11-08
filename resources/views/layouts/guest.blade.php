@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="icon" type="image/jpeg" href="{{ asset('favicon.jpg') }}">
     <meta name="robots" content="noindex, nofollow">
     <meta name="description" content="{{ $description ?? '' }}">
     <title>@yield('title', config('app.name', 'پنل مدیریت'))</title>
@@ -18,7 +19,7 @@
     {{-- Brand / Logo --}}
     <div class="text-center mb-6">
         <a href="{{ route('home') }}" class="inline-block">
-            <x-application-logo class="w-16 h-16 mx-auto fill-current text-[#d4af37]" />
+            <x-registration-logo class="w-20 h-20 mx-auto" />
         </a>
     </div>
 

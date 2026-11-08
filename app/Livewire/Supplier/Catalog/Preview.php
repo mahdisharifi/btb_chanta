@@ -20,7 +20,7 @@ use PDF;
 
 class Preview extends Component
 {
-    private const CATALOG_DATA_CACHE_VERSION = 2;
+    private const CATALOG_DATA_CACHE_VERSION = 3;
 
     #[Locked]
     public bool $isAdmin = false;
@@ -617,6 +617,8 @@ class Preview extends Component
             fn ($priceTypeId) => ($priceTypesById[$priceTypeId]?->code ?? null) === 'check'
         );
         $checkPeriodsBySupplier = collect();
+        $adminPeriodIdsByDays = collect();
+        $adminSelectedDaysByTier = [];
         if ($usesCheckPrices) {
             $supplierIds = $products
                 ->flatMap(static fn ($product) => $product->productSuppliers->pluck('supplier_id'))
@@ -644,6 +646,19 @@ class Preview extends Component
             $checkPeriodsBySupplier = \App\Models\CheckPeriod::getActiveForSuppliers($periodSupplierIds->all())
                 ->groupBy(static fn ($period) => (int) $period->resolved_supplier_id)
                 ->map(static fn ($periods) => $periods->values());
+
+            if ($isAdmin) {
+                $adminPeriodIdsByDays = $checkPeriodsBySupplier->flatten(1)
+                    ->groupBy('days')
+                    ->map(static fn ($periods) => (int) $periods->min('id'));
+                $selectedIds = collect($this->selectedCheckPeriods)->flatten()->unique()->all();
+                $daysById = \App\Models\CheckPeriod::whereIn('id', $selectedIds)->pluck('days', 'id');
+                foreach ($this->selectedCheckPeriods as $tier => $ids) {
+                    $adminSelectedDaysByTier[$tier] = collect($ids)
+                        ->map(static fn ($id) => $daysById->get($id))
+                        ->filter(static fn ($days) => $days !== null)->all();
+                }
+            }
 
             if (!$isAdmin && $primaryBranchSupplierId) {
                 $primaryPeriods = $checkPeriodsBySupplier->get((int) $primaryBranchSupplierId, collect());
@@ -803,7 +818,9 @@ class Preview extends Component
                             $selectedCheckPeriodsForTier = $this->selectedCheckPeriods[$tierIndex] ?? [];
                             
                             $activeSupplierPeriods = $checkPeriodsBySupplier[(int) $ps->supplier_id] ?? collect();
-                            if (!empty($selectedCheckPeriodsForTier)) {
+                            if ($isAdmin && array_key_exists($tierIndex, $adminSelectedDaysByTier)) {
+                                $checkPeriods = $activeSupplierPeriods->whereIn('days', $adminSelectedDaysByTier[$tierIndex])->sortBy('days')->values();
+                            } elseif (!empty($selectedCheckPeriodsForTier)) {
                                 // Intersect selected periods with the supplier's preloaded active periods.
                                 $activePeriodIds = $activeSupplierPeriods->pluck('id')->all();
                                 $validPeriodIds = array_intersect($selectedCheckPeriodsForTier, $activePeriodIds);
@@ -821,7 +838,8 @@ class Preview extends Component
                                 
                                 if ($checkPriceRecord && $checkPriceRecord->price > 0) {
                                     // کلید برای ذخیره: tier_index + price_type_id + check_period_id
-                                    $checkStoreKey = "{$tierIndex}_{$priceTypeId}_{$period->id}";
+                                    $displayPeriodId = $isAdmin ? $adminPeriodIdsByDays->get($period->days) : $period->id;
+                                    $checkStoreKey = "{$tierIndex}_{$priceTypeId}_{$displayPeriodId}";
                                     
                                     if (!isset($prices[$checkStoreKey]) || $checkPriceRecord->price < ($prices[$checkStoreKey]['price'] ?? PHP_INT_MAX)) {
                                         // ✅ محاسبه قیمت گارانتی از product_supplier
@@ -855,10 +873,10 @@ class Preview extends Component
                                             ...$this->catalogPriceCurrencyMetadata($checkPriceRecord, $ps),
                                             'tier_index' => (int)$tierIndex,
                                             'price_type_id' => (int)$priceTypeId,
-                                            'check_period_id' => (int)$period->id,
+                                            'check_period_id' => (int)$displayPeriodId,
                                             'check_period_days' => (int)$period->days,
                                             'check_period_name' => (string) $period->name,
-                                            'check_period_label' => $period->display_name ?? $period->name,
+                                            'check_period_label' => $isAdmin ? $period->days . ' روزه' : ($period->display_name ?? $period->name),
                                             'warranty_type' => $warrantyType,
                                             'warranty_duration' => $warrantyDuration,
                                             'warranty_price' => $warrantyPrice,

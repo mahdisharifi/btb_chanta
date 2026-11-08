@@ -9,18 +9,26 @@
     const error = document.getElementById('otp-code-error');
     const clock = document.getElementById('otp-clock');
     const label = document.getElementById('otp-timer-label');
-    const started = Date.now();
-    const serverNow = Date.parse(form.dataset.serverNow);
-    const expiry = Date.parse(form.dataset.expiresAt) || 0;
-    const expiresAt = started + Math.max(0, expiry - serverNow);
-    const resendAt = started + Math.max(0, Number(form.dataset.retryAfter) || 0) * 1000;
-    let wasActive = expiry > serverNow;
+    let expiresAt = 0;
+    let resendAt = 0;
+    let wasActive = false;
     let submitting = false;
+    let verifyingRequest = false;
     let timer;
 
+    function syncTiming(state) {
+        const now = Date.now();
+        const expiry = Date.parse(state.codeExpiresAt) || 0;
+        const serverNow = Date.parse(state.serverNow) || now;
+        expiresAt = now + Math.max(0, expiry - serverNow);
+        resendAt = now + Math.max(0, Number(state.retryAfter) || 0) * 1000;
+    }
+    syncTiming({ codeExpiresAt: form.dataset.expiresAt, serverNow: form.dataset.serverNow, retryAfter: form.dataset.retryAfter });
+    wasActive = expiresAt > Date.now();
+
     function normalizeCode() {
-        input.value = input.value.replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 1776))
-            .replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 1632)).replace(/[^0-9]/g, '').slice(0, 6);
+        input.value = input.value.replace(/[\u06f0-\u06f9]/g, c => String(c.charCodeAt(0) - 1776))
+            .replace(/[\u0660-\u0669]/g, c => String(c.charCodeAt(0) - 1632)).replace(/[^0-9]/g, '').slice(0, 6);
     }
 
     function render() {
@@ -31,7 +39,7 @@
         expired.hidden = active;
         input.disabled = !active || submitting;
         input.required = active;
-        if (!active) form.action = form.dataset.resendAction;
+        form.action = active ? form.dataset.verifyAction : form.dataset.resendAction;
         if (wasActive && !active) {
             notice.textContent = 'اعتبار کد به پایان رسید. برای ادامه، کد جدید دریافت کنید.';
             error.hidden = true;
@@ -44,33 +52,72 @@
         if (clock.textContent !== time) clock.textContent = time;
         action.disabled = submitting || (!active && remaining > 0);
         action.textContent = submitting
-            ? (active ? 'در حال بررسی کد…' : 'در حال ارسال کد…')
+            ? (verifyingRequest ? 'در حال بررسی کد…' : 'در حال ارسال کد…')
             : (active ? 'تأیید کد' : 'ارسال مجدد کد');
         return active || remaining > 0;
     }
 
     function resume() {
         clearTimeout(timer);
-        const running = render();
-        if (running && !document.hidden && !submitting) timer = setTimeout(resume, 1000);
+        if (render() && !document.hidden) timer = setTimeout(resume, 1000);
     }
 
     input.addEventListener('input', normalizeCode);
-    form.addEventListener('submit', event => {
-        if (submitting) { event.preventDefault(); return; }
-        // An Enter press at expiry must not unexpectedly request an SMS.
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (submitting) return;
         const wasVerifying = wasActive;
         render();
-        if (wasVerifying && !wasActive) { event.preventDefault(); resume(); return; }
-        if (action.disabled) { event.preventDefault(); return; }
+        // Enter pressed at the expiry boundary must not request a new SMS.
+        if (wasVerifying && !wasActive) { resume(); return; }
+        if (action.disabled) return;
         normalizeCode();
-        if (!form.reportValidity()) { event.preventDefault(); return; }
+        if (!form.reportValidity()) return;
+        const payload = new FormData(form);
+        const endpoint = form.action;
+        verifyingRequest = wasActive;
         submitting = true;
         form.setAttribute('aria-busy', 'true');
-        action.disabled = true;
-        action.textContent = wasActive ? 'در حال بررسی کد…' : 'در حال ارسال کد…';
-        // Keep the code enabled until the browser serializes the submitted form.
-        clearTimeout(timer);
+        error.hidden = true;
+        input.setAttribute('aria-invalid', 'false');
+        resume();
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST', body: payload, credentials: 'same-origin', redirect: 'error',
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok && data.success && data.redirect) {
+                window.location.assign(data.redirect);
+                return;
+            }
+            if (!verifyingRequest && Object.hasOwn(data, 'retryAfter')) {
+                syncTiming(data);
+                resume();
+            }
+            if (response.ok && data.success && !verifyingRequest) {
+                input.value = '';
+                notice.textContent = 'کد تأیید جدید ارسال شد. کد ۶ رقمی پیامک‌شده را وارد کنید.';
+                return;
+            }
+            if (data.can_retry === false) { expiresAt = 0; render(); }
+            const message = response.status === 419 || response.status === 401
+                ? 'نشست شما پایان یافته است. برای ادامه دوباره وارد حساب شوید.'
+                : response.status === 429 && !data.retryAfter
+                    ? 'درخواست‌های زیادی ارسال شده است. کمی صبر کنید و دوباره تلاش کنید.'
+                    : data.errors?.code?.[0] || data.message || 'انجام درخواست ممکن نشد. دوباره تلاش کنید.';
+            error.textContent = message;
+            error.hidden = false;
+            if (verifyingRequest) input.setAttribute('aria-invalid', 'true');
+        } catch {
+            error.textContent = 'ارتباط با سرور برقرار نشد. اتصال اینترنت را بررسی کنید و دوباره تلاش کنید.';
+            error.hidden = false;
+        } finally {
+            submitting = false;
+            form.removeAttribute('aria-busy');
+            resume();
+            if (wasActive) { input.focus(); input.select(); }
+        }
     });
     document.addEventListener('visibilitychange', resume);
     window.addEventListener('pageshow', () => {

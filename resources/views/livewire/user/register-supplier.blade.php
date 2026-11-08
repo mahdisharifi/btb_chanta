@@ -4,9 +4,7 @@
 
         {{-- Header --}}
         <div class="text-center mb-10">
-            <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
-                <x-heroicon-o-building-office-2 class="w-8 h-8 text-indigo-600" />
-            </div>
+            <x-registration-logo class="mx-auto mb-4 h-20 w-20" />
             <h1 class="text-3xl font-bold text-gray-900">ثبت‌نام به عنوان تامین‌کننده</h1>
             <p class="mt-2 text-gray-600">اطلاعات کسب‌وکار خود را تکمیل کنید</p>
         </div>

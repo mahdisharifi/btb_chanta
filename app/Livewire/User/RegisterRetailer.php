@@ -228,7 +228,7 @@ class RegisterRetailer extends Component
 
             session()->flash('message', 'ثبت‌نام شما با موفقیت انجام شد. پروفایل شما در حال بررسی است.');
 
-            return redirect()->route('retailer.dashboard');
+            return redirect()->route('account.pending');
         } catch (\Exception $e) {
             DB::rollBack();
             if ($newLogo && ! $logoSaved) {
@@ -240,7 +240,6 @@ class RegisterRetailer extends Component
 
     public function render()
     {
-        return view('livewire.user.register-retailer')
-            ->layout('components.layouts.guest');
+        return view('livewire.user.register-retailer');
     }
 }

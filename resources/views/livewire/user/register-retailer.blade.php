@@ -4,9 +4,7 @@
 
         {{-- Header --}}
         <div class="text-center mb-10">
-            <div class="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4">
-                <x-heroicon-o-building-storefront class="w-8 h-8 text-emerald-600" />
-            </div>
+            <x-registration-logo class="mx-auto mb-4 h-20 w-20" />
             <h1 class="text-3xl font-bold text-gray-900">
                 {{ $editMode ? 'ویرایش اطلاعات کسب‌وکار' : 'ثبت‌نام به عنوان کاسب' }}
             </h1>

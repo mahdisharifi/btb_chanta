@@ -9,6 +9,16 @@ use Illuminate\Support\Facades\Auth;
 
 class Pending extends Component
 {
+    public function mount()
+    {
+        $user = Auth::user();
+        abort_unless($user, 403);
+        if ($user->needsMobileVerification() || !$user->supplier
+            || $user->supplier->verification_status !== 'pending') {
+            return redirectByRole($user);
+        }
+    }
+
     public function logout()
     {
         Auth::guard('web')->logout();

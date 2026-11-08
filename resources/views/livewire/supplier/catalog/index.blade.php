@@ -459,7 +459,8 @@
                                                     @if($isCheckType && $priceSelected)
                                                         @php
                                                             $selectedCheckPeriodsForTier = $selectedCheckPeriods[$tierIndex] ?? [];
-                                                            $checkPeriodsCount = count($selectedCheckPeriodsForTier);
+                                                            $selectedCheckDays = $isAdmin ? \App\Models\CheckPeriod::whereIn('id', $selectedCheckPeriodsForTier)->pluck('days')->all() : [];
+                                                            $checkPeriodsCount = $isAdmin ? count(array_unique($selectedCheckDays)) : count($selectedCheckPeriodsForTier);
                                                         @endphp
                                                         <span class="mr-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
                                                             {{ $checkPeriodsCount }} دوره
@@ -474,7 +475,7 @@
                                                     <div class="space-y-1">
                                                         @foreach($this->availableCheckPeriods as $checkPeriod)
                                                         @php
-                                                            $checkPeriodSelected = in_array($checkPeriod->id, $selectedCheckPeriodsForTier);
+                                                            $checkPeriodSelected = $isAdmin ? in_array($checkPeriod->days, $selectedCheckDays) : in_array($checkPeriod->id, $selectedCheckPeriodsForTier);
                                                         @endphp
                                                         <label class="flex items-center p-1.5 hover:bg-white rounded cursor-pointer transition-colors">
                                                             <input type="checkbox" 
@@ -482,7 +483,7 @@
                                                                    {{ $checkPeriodSelected ? 'checked' : '' }}
                                                                    class="rounded border-gray-300 text-green-600 shadow-sm focus:ring-green-500 mr-2 w-3.5 h-3.5">
                                                             <span class="text-xs {{ $checkPeriodSelected ? 'text-green-700 font-medium' : 'text-gray-600' }}">
-                                                                {{ $checkPeriod->display_label }}
+                                                                {{ $isAdmin ? $checkPeriod->days . ' روزه' : $checkPeriod->display_label }}
                                                             </span>
                                                         </label>
                                                         @endforeach

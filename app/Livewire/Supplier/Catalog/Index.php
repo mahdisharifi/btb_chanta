@@ -445,11 +445,14 @@ class Index extends Component
     {
         // ✅ دریافت فقط دوره‌های چک فعال شده توسط تامین‌کننده
         if ($this->isAdmin) {
-            // ادمین: دوره‌های global
-            return \App\Models\CheckPeriod::active()
-                ->whereNull('supplier_id')
-                ->orderBy('days')
-                ->get();
+            $supplierIds = !empty($this->selectedSuppliers)
+                ? $this->selectedSuppliers
+                : Supplier::where('verification_status', 'approved')->pluck('id')->all();
+
+            return \App\Models\CheckPeriod::getActiveForSuppliers($supplierIds)
+                ->sortBy('days')
+                ->unique('days')
+                ->values();
         } else {
             // For a combined catalog, expose the union of periods enabled by every
             // selected branch. Preview still resolves each price against its own
@@ -652,6 +655,18 @@ class Index extends Component
     {
         if (!isset($this->selectedCheckPeriods[$tierIndex])) {
             $this->selectedCheckPeriods[$tierIndex] = [];
+        }
+
+        if ($this->isAdmin) {
+            $days = \App\Models\CheckPeriod::whereKey($checkPeriodId)->value('days');
+            $matchingIds = \App\Models\CheckPeriod::whereIn('id', $this->selectedCheckPeriods[$tierIndex])
+                ->where('days', $days)->pluck('id')->all();
+            if ($matchingIds !== []) {
+                $this->selectedCheckPeriods[$tierIndex] = array_values(array_diff($this->selectedCheckPeriods[$tierIndex], $matchingIds));
+            } else {
+                $this->selectedCheckPeriods[$tierIndex][] = (int) $checkPeriodId;
+            }
+            return;
         }
         
         $key = array_search($checkPeriodId, $this->selectedCheckPeriods[$tierIndex]);

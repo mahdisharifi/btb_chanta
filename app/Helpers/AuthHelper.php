@@ -12,11 +12,28 @@ if (! function_exists('redirectByRole')) {
      */
     function redirectByRole(User $user)
     {
+        if ($user->needsMobileVerification()) {
+            return redirect()->route('verify.mobile');
+        }
+
+        if ($user->hasAnyRole(['supplier', 'regular_supplier', 'retailer_basic', 'retailer_premium'])
+            && $user->supplier) {
+            $route = match ($user->supplier->verification_status) {
+                'pending' => 'account.pending',
+                'under_review' => 'account.under-review',
+                'rejected' => 'account.rejected',
+                default => null,
+            };
+            if ($route) {
+                return redirect()->route($route);
+            }
+        }
+
         if ($user->hasRole(UserRole::SUPER_ADMIN)) {
             return redirect()->route('admin.dashboard');
         }
 
-        if ($user->hasRole(UserRole::SUPPLIER)) {
+        if ($user->hasAnyRole([UserRole::SUPPLIER, UserRole::REGULAR_SUPPLIER])) {
             return redirect()->route('supplier.dashboard');
         }
 

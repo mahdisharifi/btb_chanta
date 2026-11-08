@@ -51,6 +51,41 @@ try {
         $check(!$service->verifyOtp($mobile, $otp->code)['success'], 'Used code accepted');
         echo "PASS: {$duration}s expiry, resend boundary, timer reset, single-use verification\n";
     }
+    config(['otp.ttl_seconds' => 120, 'otp.cooldown_seconds' => 120]);
+    foreach ([4, 5] as $mistakes) {
+        $start = Carbon\Carbon::parse('2031-01-01 12:00:00')->addDays($mistakes);
+        Carbon\Carbon::setTestNow($start);
+        $mobile = '09000000000';
+        $check($service->sendOtp($mobile)['success'], 'Test code send failed');
+        $otp = App\Models\OtpVerification::forMobile($mobile)->latest('id')->firstOrFail();
+        $wrongCode = $otp->code === '111111' ? '222222' : '111111';
+        $sentBefore = $gateway->sent;
+        for ($attempt = 1; $attempt <= $mistakes; $attempt++) {
+            Carbon\Carbon::setTestNow($start->copy()->addSeconds($attempt * 10));
+            $result = $service->verifyOtp($mobile, $wrongCode);
+            $check(!$result['success'], 'Wrong code accepted');
+            $check($otp->fresh()->attempts === $attempt, 'Wrong attempt count');
+            $check($otp->fresh()->expires_at->equalTo($start->copy()->addSeconds(120)), 'Mistake changed code expiry');
+            if ($attempt < 5) {
+                $check($result['remaining_attempts'] === 5 - $attempt, 'Wrong remaining attempts');
+                $check($service->pageState($mobile)['codeExpiresAt'] !== null, 'Retry form unavailable');
+            } else {
+                $check(!empty($result['blocked']), 'Fifth mistake did not block');
+                $check($service->pageState($mobile)['codeExpiresAt'] === null, 'Blocked code still active');
+            }
+        }
+        $check($gateway->sent === $sentBefore, 'Mistake sent another SMS');
+        $result = $service->verifyOtp($mobile, $otp->code);
+        $check($result['success'] === ($mistakes < 5), 'Correct code retry behavior invalid');
+        if ($mistakes === 5) {
+            $check(!$service->sendOtp($mobile)['success'], 'Blocked code bypassed resend cooldown');
+            Carbon\Carbon::setTestNow($start->copy()->addSeconds(120));
+            $check($service->sendOtp($mobile)['success'], 'New code unavailable after cooldown');
+            $freshOtp = App\Models\OtpVerification::forMobile($mobile)->latest('id')->firstOrFail();
+            $check((int) $freshOtp->attempts === 0, 'New code retained old attempts');
+        }
+        echo "PASS: {$mistakes} mistakes, correct-code retry, unchanged expiry and resend cooldown\n";
+    }
 } finally {
     Illuminate\Support\Facades\DB::rollBack();
     Carbon\Carbon::setTestNow();

@@ -1,6 +1,8 @@
 <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50 px-4">
     <div class="max-w-md w-full">
         <div class="bg-white rounded-2xl shadow-xl p-8 text-center">
+            <x-registration-logo class="mx-auto mb-6 h-20 w-20" />
+            <p class="mb-4 text-sm leading-6 text-gray-600">اطلاعات پروفایل شما ثبت شده و حساب در انتظار تأیید است. در صورت نیاز می‌توانید اطلاعات ثبت‌شده را ویرایش کنید.</p>
             <!-- آیکن -->
             <div class="mb-6">
                 <div class="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto ring-8 ring-amber-50">

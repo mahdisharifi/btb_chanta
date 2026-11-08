@@ -234,10 +234,6 @@ class User extends Authenticatable
     {
 
         // کاربران عادی (END_USER) نیازی به تایید موبایل ندارند
-        if ($this->isEndUser()) {
-            return false;
-        }
-
         // اگر موبایل ندارد، نیاز به تایید ندارد
         if (empty($this->mobile)) {
             return false;

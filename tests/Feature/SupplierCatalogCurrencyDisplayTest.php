@@ -1267,6 +1267,43 @@ class SupplierCatalogCurrencyDisplayTest extends TestCase
         $this->assertPdfDownloadRoute($component, 'downloadPdf2');
     }
 
+    public function test_admin_catalog_combines_supplier_check_periods_by_days(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole(UserRole::ADMIN->value);
+        $owner = Supplier::factory()->create(['user_id' => $admin->id, 'verification_status' => 'approved', 'is_active' => true]);
+        $other = Supplier::factory()->create(['verification_status' => 'approved', 'is_active' => true]);
+        $check = PriceType::query()->create(['code' => 'check', 'name' => 'Check', 'sort_order' => 2, 'is_active' => true]);
+        $periods = [];
+        foreach ([$this->supplier, $other] as $supplier) {
+            $period = CheckPeriod::query()->create(['supplier_id' => $supplier->id, 'scope' => 'supplier', 'name' => '30 days', 'days' => 30, 'sort_order' => 1, 'is_active' => true]);
+            DB::table('supplier_check_period')->insert(['supplier_id' => $supplier->id, 'check_period_id' => $period->id, 'percentage_increase' => 10, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
+            $product = Product::factory()->create(['supplier_id' => $supplier->id, 'category_id' => $this->category->id]);
+            $offer = ProductSupplier::query()->create(['product_id' => $product->id, 'supplier_id' => $supplier->id, 'is_active' => true]);
+            ProductPrice::query()->create(['product_id' => $product->id, 'product_supplier_id' => $offer->id, 'price_type_id' => $check->id, 'tier_index' => 0, 'check_period_id' => $period->id, 'price' => $supplier->id === $other->id ? 220000 : 110000, 'is_active' => true]);
+            $periods[] = $period;
+        }
+
+        $index = Livewire::actingAs($admin)->test(Index::class)
+            ->set('selectedSuppliers', [$this->supplier->id, $other->id]);
+        $this->assertCount(1, $index->instance()->availableCheckPeriods);
+        $index->call('toggleTierPrice', 0, $check->id)->assertSee('30 روزه');
+        $index->set('selectedSuppliers', [$other->id])->assertSee('30 روزه');
+
+        $template = CatalogTemplate::query()->create([
+            'supplier_id' => $owner->id, 'name' => 'Check catalog',
+            'selected_categories' => [$this->category->id], 'selected_price_types' => [$check->id],
+            'settings' => ['categories' => 'all', 'prices' => ['0' => [$check->id]], 'check_periods' => ['0' => [$periods[0]->id]], 'show_cover_page' => false],
+            'config' => ['supplier_ids' => [$this->supplier->id, $other->id]],
+        ]);
+        $preview = Livewire::actingAs($admin)->test(Preview::class, ['catalog' => $template->id])
+            ->assertSee('110,000')->assertSee('220,000');
+        $snapshot = Cache::get($preview->instance()->catalogDataCacheKey);
+        $prices = collect($snapshot['grouped_products']['all'])->flatMap(fn ($item) => array_values($item['prices']));
+        $this->assertCount(2, $prices);
+        $this->assertCount(1, $prices->pluck('check_period_id')->unique());
+    }
+
     public function test_admin_multi_supplier_catalog_does_not_claim_a_single_currency_rate(): void
     {
         $otherSupplier = Supplier::factory()->create([

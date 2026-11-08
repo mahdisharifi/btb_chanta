@@ -7,7 +7,7 @@
     ایجاد حساب کاربری
 </h2>
 
-<form method="POST" action="{{ route('register.store') }}" class="space-y-6">
+<form id="registration-form" method="POST" action="{{ route('register.store') }}" class="space-y-6">
     @csrf
 
     {{-- Name --}}
@@ -83,6 +83,8 @@
             type="password"
             name="password"
             id="password"
+            minlength="8"
+            aria-describedby="password-rules"
             required
             autocomplete="new-password"
             class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm
@@ -94,6 +96,27 @@
         @enderror
     </div>
 
+    <div id="password-rules" class="rounded-lg bg-gray-50 p-3 text-sm">
+        <p class="mb-2 font-medium text-gray-700">شرایط رمز عبور:</p>
+        <ul class="space-y-2">
+            @foreach ([
+                'length' => 'حداقل ۸ نویسه',
+                'lowercase' => 'حداقل یک حرف کوچک، مانند a',
+                'uppercase' => 'حداقل یک حرف بزرگ، مانند A',
+                'number' => 'حداقل یک عدد',
+                'symbol' => 'حداقل یک نماد مانند @ یا #، یا فاصله',
+                'match' => 'تکرار رمز عبور یکسان باشد',
+            ] as $rule => $label)
+                <li data-password-rule="{{ $rule }}" class="flex items-start gap-2 text-gray-500">
+                    <span data-rule-icon aria-hidden="true">○</span>
+                    <span>{{ $label }}</span>
+                    <span data-rule-state class="sr-only">رعایت نشده</span>
+                </li>
+            @endforeach
+        </ul>
+        <p id="password-rule-status" class="mt-2 text-sm" role="status" aria-live="polite"></p>
+    </div>
+
     {{-- Confirm Password --}}
     <div>
         <label for="password_confirmation" class="block text-sm font-medium text-gray-700 mb-1">
@@ -103,6 +126,7 @@
             type="password"
             name="password_confirmation"
             id="password_confirmation"
+            aria-describedby="password-rules"
             required
             autocomplete="new-password"
             class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
@@ -120,6 +144,10 @@
         ثبت‌نام
     </button>
 </form>
+<style>
+    #password-rules [data-password-rule][data-met="true"] { color: #15803d; }
+</style>
+<script src="{{ asset('js/register-password.js') }}?v={{ filemtime(public_path('js/register-password.js')) }}" defer></script>
 
 {{-- Login Link --}}
 <p class="mt-6 text-center text-sm text-gray-600">

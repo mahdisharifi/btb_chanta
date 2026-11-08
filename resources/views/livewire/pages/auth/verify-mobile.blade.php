@@ -10,6 +10,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/jpeg" href="{{ asset('favicon.jpg') }}">
     <title>تأیید شماره موبایل</title>
     @vite('resources/css/app.css')
     <style>
@@ -25,7 +26,7 @@
 <main class="min-h-screen flex items-center justify-center py-8 px-4 sm:py-12">
     <section class="max-w-md w-full space-y-6" aria-labelledby="page-title">
         <header class="text-center">
-            <x-application-logo class="mx-auto h-12 w-auto" aria-hidden="true" />
+            <x-registration-logo class="mx-auto h-20 w-20" />
             <h1 id="page-title" class="mt-6 text-2xl font-bold">تأیید شماره موبایل</h1>
             <p class="mt-3 text-sm text-gray-600">شماره موبایل شما: <bdi class="font-bold text-gray-900" dir="ltr">{{ $mobile }}</bdi></p>
         </header>
@@ -45,7 +46,8 @@
 
         <form id="otp-form" method="POST" action="{{ $active ? route('verify.mobile.verify') : route('verify.mobile.resend') }}" class="space-y-4"
               data-expires-at="{{ $codeExpiresAt }}" data-server-now="{{ now()->toIso8601String() }}"
-              data-retry-after="{{ (int) $retryAfter }}" data-resend-action="{{ route('verify.mobile.resend') }}">
+              data-retry-after="{{ (int) $retryAfter }}" data-resend-action="{{ route('verify.mobile.resend') }}"
+              data-verify-action="{{ route('verify.mobile.verify') }}">
             @csrf
             <div class="otp-panel">
                 <div id="otp-entry" @if (!$active) hidden @endif>
@@ -71,10 +73,6 @@
             <noscript><p class="text-sm text-gray-600">برای نمایش شمارش معکوس، جاوااسکریپت مرورگر را فعال کنید یا پس از پایان زمان صفحه را تازه کنید.</p></noscript>
         </form>
 
-        <div class="rounded-lg bg-gray-100 p-4 text-sm leading-6 text-gray-600">
-            <p>کد تا {{ $limits['ttl_seconds'] }} ثانیه معتبر است؛ فاصلهٔ ارسال‌ها حداقل {{ $limits['cooldown_seconds'] }} ثانیه است.</p>
-            <p class="mt-1">حداکثر {{ $limits['per_hour'] }} ارسال در ساعت، {{ $limits['per_day'] }} ارسال در ۲۴ ساعت و {{ $limits['wrong_attempts'] }} ورود اشتباه برای هر کد مجاز است.</p>
-        </div>
         <form method="POST" action="{{ route('logout') }}" class="text-center">
             @csrf
             <button type="submit" class="min-h-[44px] px-3 text-sm font-medium text-gray-600 hover:text-gray-900">خروج از حساب</button>
