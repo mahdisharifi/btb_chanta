@@ -1,4 +1,7 @@
-<div>
+<div data-check-periods-guide
+     data-product-tour-welcome-title="راهنمای تنظیم دوره‌های چکی"
+     data-product-tour-welcome-description="در این صفحه دوره‌های پرداخت چکی، درصد افزایش هر دوره و استثناهای دسته‌بندی را تنظیم می‌کنید. راهنما فقط بخش‌ها را نشان می‌دهد و هیچ مقداری را ذخیره یا فعال نمی‌کند."
+     data-product-tour-welcome-hint="تغییرات هر بخش فقط با زدن دکمهٔ همان بخش ثبت می‌شود؛ برای خروج از راهنما هر زمان «بستن» را بزنید.">
     {{-- Notification Toast --}}
     <div x-data="{ show: false, message: '', type: 'success', linkUrl: null, linkText: null }" 
          @notify.window="
@@ -101,7 +104,13 @@
         
         {{-- Modal Dialog --}}
         <div class="flex min-h-full items-center justify-center p-4">
-            <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all"
+            <div data-product-tour-step="deactivation-confirm-action"
+                 data-product-tour-order="96"
+                 data-product-tour-title="تأیید نهایی غیرفعال‌سازی"
+                 data-product-tour-description="این دکمه اقدام را اجرا می‌کند و قیمت‌های چکی ثبت‌شدهٔ دوره را هم غیرفعال می‌کند. راهنما آن را به‌جای شما نمی‌زند؛ فقط وقتی ادامه دهید که این تغییر را می‌خواهید."
+                 data-product-tour-target=".check-periods-guide-confirm-action"
+                 data-product-tour-label=".check-periods-guide-confirm-title"
+                 class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all"
                  @click.stop>
                 
                 {{-- Warning Icon --}}
@@ -112,7 +121,11 @@
                 </div>
                 
                 {{-- Title --}}
-                <h3 class="text-lg font-bold text-gray-900 text-center mb-3">
+                    <h3 data-product-tour-step="deactivation-confirm-title"
+                        data-product-tour-order="95"
+                        data-product-tour-title="تأیید غیرفعال‌سازی دوره"
+                        data-product-tour-description="این تأیید زمانی باز می‌شود که دورهٔ فعال را غیرفعال می‌کنید. با تأیید، دوره و تمام قیمت‌های چکی ثبت‌شدهٔ همین دوره برای این تأمین‌کننده غیرفعال می‌شوند؛ اگر مطمئن نیستید «انصراف» را بزنید."
+                        class="check-periods-guide-confirm-title text-lg font-bold text-gray-900 text-center mb-3">
                     تایید غیرفعال کردن
                 </h3>
                 
@@ -121,17 +134,20 @@
                 
                 {{-- Actions --}}
                 <div class="flex gap-3">
-                    <button @click="showConfirm = false"
+                    <button data-check-guide-deactivation-cancel
+                            @click="showConfirm = false"
+                            type="button"
                             class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors">
                         انصراف
                     </button>
-                    <button @click="
+                    <button class="check-periods-guide-confirm-action flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors"
+                            @click="
                                 if (confirmAction === 'deactivate') {
                                     $wire.confirmDeactivatePeriod(confirmPeriodId);
                                 }
                                 showConfirm = false;
                             "
-                            class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors">
+                            type="button">
                         بله، غیرفعال کن
                     </button>
                 </div>
@@ -140,11 +156,14 @@
     </div>
 
     {{-- ═══════════ Page Header ═══════════ --}}
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-800">مدیریت دوره‌های پرداخت چکی</h1>
-        <p class="text-sm text-gray-600 mt-1">
-            تعیین دوره‌های چک و درصد افزایش قیمت نسبت به نقدی برای هر دوره
-        </p>
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <h1 data-product-tour-welcome class="text-2xl font-bold text-gray-800">مدیریت دوره‌های پرداخت چکی</h1>
+            <p class="text-sm text-gray-600 mt-1">
+                تعیین دوره‌های چک و درصد افزایش قیمت نسبت به نقدی برای هر دوره
+            </p>
+        </div>
+        <x-interactive-guide-launcher />
     </div>
 
     {{-- ═══════════ راهنمای کامل ═══════════ --}}
@@ -190,7 +209,12 @@
                 </div>
 
                 <form wire:submit="save" class="p-6 space-y-5">
-                    <div>
+                    <div data-product-tour-step="new-period-days"
+                         data-product-tour-order="10"
+                         data-product-tour-title="تعداد روز تا سررسید"
+                         data-product-tour-description="مدت چک را به روز وارد کنید؛ مقدار باید بین ۱ تا ۳۶۵ باشد. این عدد مشخص می‌کند موعد پرداخت این دوره چند روز بعد است."
+                         data-product-tour-target="input"
+                         data-product-tour-label="label">
                         <label for="days" class="block text-sm font-bold text-gray-700 mb-2">
                             تعداد روز چک <span class="text-red-500">*</span>
                         </label>
@@ -200,7 +224,12 @@
                         <x-input-error :messages="$errors->get('days')" class="mt-2" />
                     </div>
 
-                    <div>
+                    <div data-product-tour-step="new-period-name"
+                         data-product-tour-order="11"
+                         data-product-tour-title="نام دوره"
+                         data-product-tour-description="یک نام روشن برای نمایش دوره بنویسید؛ نام باید ۳ تا ۵۰ نویسه باشد و حروف فارسی، عدد یا فاصله داشته باشد."
+                         data-product-tour-target="input"
+                         data-product-tour-label="label">
                         <label for="name" class="block text-sm font-bold text-gray-700 mb-2">
                             نام دوره <span class="text-red-500">*</span>
                         </label>
@@ -210,7 +239,12 @@
                         <x-input-error :messages="$errors->get('name')" class="mt-2" />
                     </div>
 
-                    <div>
+                    <div data-product-tour-step="new-period-percentage"
+                         data-product-tour-order="12"
+                         data-product-tour-title="درصد افزایش قیمت دوره"
+                         data-product-tour-description="درصد این دوره نسبت به قیمت نقدی محاسبه می‌شود و می‌تواند از ۰ تا ۱۰۰ باشد. مقدار ۰ یعنی قیمت چکی با قیمت نقدی برابر است."
+                         data-product-tour-target="input"
+                         data-product-tour-label="label">
                         <label for="percentage_increase" class="block text-sm font-bold text-gray-700 mb-2">
                             درصد افزایش قیمت <span class="text-red-500">*</span>
                         </label>
@@ -238,7 +272,12 @@
                     </div>
 
                     <div class="pt-4 border-t border-gray-200">
-                        <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2">
+                        <button type="submit"
+                                data-product-tour-step="new-period-save"
+                                data-product-tour-order="13"
+                                data-product-tour-title="ثبت دوره برای تأمین‌کننده"
+                                data-product-tour-description="با زدن این دکمه، دوره و درصد برای حساب شما ذخیره می‌شود. اگر دوره‌ای با همین تعداد روز در تنظیمات عمومی وجود داشته باشد، همان دوره به فهرست شما اضافه می‌شود و نامی که نوشته‌اید برچسب نمایشی شما خواهد بود. قیمت‌های موجود خودکار بازنویسی نمی‌شوند؛ پس از ذخیره می‌توانید از لینک قیمت‌گذاری سریع استفاده کنید."
+                                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2">
                             <x-heroicon-o-check-circle class="w-5 h-5"/>
                             افزودن دوره
                         </button>
@@ -252,7 +291,11 @@
             {{-- دوره‌های پیش‌فرض سیستم --}}
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="bg-gradient-to-r from-yellow-400 to-orange-500 px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <h2 data-product-tour-step="global-periods-intro"
+                        data-product-tour-order="20"
+                        data-product-tour-title="دوره‌های پیش‌فرض سامانه"
+                        data-product-tour-description="این بازه‌ها برای همهٔ تأمین‌کنندگان تعریف شده‌اند؛ هر تأمین‌کننده می‌تواند دوره را برای حساب خودش فعال کند و درصد خودش را داشته باشد. تغییر درصد یک دورهٔ عمومی در این فهرست، فقط تنظیم حساب شما را تغییر می‌دهد."
+                        class="text-lg font-bold text-white flex items-center gap-2">
                         <x-heroicon-s-star class="w-6 h-6"/>
                         دوره‌های پیش‌فرض سیستم
                     </h2>
@@ -268,7 +311,11 @@
                     </p>
 
                     @if(empty($globalPeriods))
-                        <div class="text-center py-12 text-gray-400">
+                        <div data-product-tour-step="global-periods-empty"
+                             data-product-tour-order="21"
+                             data-product-tour-title="دورهٔ عمومی موجود نیست"
+                             data-product-tour-description="در حال حاضر دورهٔ عمومی برای نمایش وجود ندارد. می‌توانید از فرم «افزودن دوره جدید» یک دوره برای حساب خودتان بسازید."
+                             class="text-center py-12 text-gray-400">
                             <x-heroicon-o-inbox class="w-16 h-16 mx-auto mb-3 opacity-30"/>
                             <p class="text-sm font-medium">هیچ دوره پیش‌فرضی تعریف نشده است</p>
                         </div>
@@ -295,7 +342,15 @@
                                                 @endif
                                             </div>
                                             
-                                            <div class="flex items-center gap-3">
+                                            <div class="flex items-center gap-3"
+                                                 @if($loop->first)
+                                                     data-product-tour-step="global-period-percentage"
+                                                     data-product-tour-order="21"
+                                                     data-product-tour-title="درصد دورهٔ عمومی برای حساب شما"
+                                                     data-product-tour-description="این درصد فقط برای حساب شما و همین دوره است؛ مقدار باید بین ۰ تا ۱۰۰ باشد. با تغییر این فیلد و خروج از آن، مقدار ذخیره می‌شود و منطق فعلی صفحه دوره را برای شما فعال می‌کند. عدد ۰ قیمت چکی را برابر قیمت نقدی می‌گذارد."
+                                                     data-product-tour-target="input"
+                                                     data-product-tour-label="label"
+                                                 @endif>
                                                 <label class="text-xs font-medium text-gray-600">درصد افزایش:</label>
                                                 <div class="relative">
                                                     <input 
@@ -322,6 +377,12 @@
                                         </div>
                                         
                                         <button 
+                                            @if($loop->first)
+                                                data-product-tour-step="global-period-toggle"
+                                                data-product-tour-order="22"
+                                                data-product-tour-title="فعال یا غیرفعال کردن دورهٔ عمومی"
+                                                data-product-tour-description="اگر دوره غیرفعال باشد، با این دکمه فعال می‌شود. برای غیرفعال‌کردن دورهٔ فعال، ابتدا پنجرهٔ تأیید باز می‌شود؛ پس از تأیید، قیمت‌های چکی ثبت‌شدهٔ همین دوره برای همهٔ تیراژهای شما نیز غیرفعال می‌شوند. راهنما هیچ‌کدام از این دکمه‌ها را به‌جای شما اجرا نمی‌کند."
+                                            @endif
                                             wire:click="toggleGlobalPeriod({{ $period['id'] }}, {{ $period['supplier_percentage'] }})"
                                             class="flex-shrink-0 px-4 py-2 rounded-lg font-medium text-sm transition-all {{ $period['is_enabled'] ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }}">
                                             {{ $period['is_enabled'] ? 'غیرفعال کردن' : 'فعال کردن' }}
@@ -337,7 +398,11 @@
             {{-- دوره‌های اختصاصی تامین‌کننده --}}
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <h2 data-product-tour-step="supplier-periods-intro"
+                        data-product-tour-order="30"
+                        data-product-tour-title="دوره‌های اختصاصی شما"
+                        data-product-tour-description="این دوره‌ها را فقط برای حساب خودتان تعریف می‌کنید. اگر تعداد روز با دورهٔ عمومی یکسان باشد، هنگام افزودن همان دورهٔ عمومی به فهرست شما وصل می‌شود؛ در غیر این صورت یک دورهٔ اختصاصی ساخته می‌شود."
+                        class="text-lg font-bold text-white flex items-center gap-2">
                         <x-heroicon-s-cog-6-tooth class="w-6 h-6"/>
                         دوره‌های اختصاصی من
                     </h2>
@@ -352,7 +417,11 @@
                     </p>
 
                     @if(empty($supplierPeriods))
-                        <div class="text-center py-12 text-gray-400">
+                        <div data-product-tour-step="supplier-periods-empty"
+                             data-product-tour-order="31"
+                             data-product-tour-title="فهرست دوره‌های اختصاصی خالی است"
+                             data-product-tour-description="هنوز دورهٔ اختصاصی ندارید. برای ساختن یکی از فرم «افزودن دوره جدید» استفاده کنید؛ پس از ثبت، امکان ویرایش نام و درصد آن از این فهرست فراهم می‌شود."
+                             class="text-center py-12 text-gray-400">
                             <x-heroicon-o-document-plus class="w-20 h-20 mx-auto mb-4 opacity-30"/>
                             <p class="text-base font-bold mb-1">هنوز دوره اختصاصی ایجاد نکرده‌اید</p>
                             <p class="text-sm">از فرم سمت چپ برای افزودن استفاده کنید</p>
@@ -370,7 +439,14 @@
                                         
                                         <div class="space-y-4 mb-4">
                                             {{-- نام دوره --}}
-                                            <div>
+                                            <div @if($loop->first)
+                                                     data-product-tour-step="supplier-edit-name"
+                                                     data-product-tour-order="33"
+                                                     data-product-tour-title="ویرایش نام دوره"
+                                                     data-product-tour-description="نام نمایشی این دوره را تغییر دهید. نام باید ۳ تا ۵۰ نویسه و شامل حروف فارسی، عدد یا فاصله باشد."
+                                                     data-product-tour-target="input"
+                                                     data-product-tour-label="label"
+                                                 @endif>
                                                 <label class="block text-xs font-bold text-gray-700 mb-1">نام دوره</label>
                                                 <input 
                                                     wire:model="inlineName" 
@@ -382,7 +458,14 @@
                                             </div>
                                             
                                             {{-- تعداد روز (فقط نمایش) --}}
-                                            <div>
+                                            <div @if($loop->first)
+                                                     data-product-tour-step="supplier-edit-days"
+                                                     data-product-tour-order="34"
+                                                     data-product-tour-title="تعداد روز دوره"
+                                                     data-product-tour-description="تعداد روز این دوره پس از ساخت قابل تغییر نیست؛ این کادر فقط برای یادآوری مدت سررسید نمایش داده می‌شود."
+                                                     data-product-tour-target="input"
+                                                     data-product-tour-label="label"
+                                                 @endif>
                                                 <label class="block text-xs font-bold text-gray-700 mb-1">تعداد روز</label>
                                                 <div class="flex items-center gap-2">
                                                     <input 
@@ -399,7 +482,14 @@
                                             </div>
                                             
                                             {{-- درصد افزایش --}}
-                                            <div>
+                                            <div @if($loop->first)
+                                                     data-product-tour-step="supplier-edit-percentage"
+                                                     data-product-tour-order="35"
+                                                     data-product-tour-title="ویرایش درصد دوره"
+                                                     data-product-tour-description="درصد جدید نسبت به قیمت نقدی حساب می‌شود و بین ۰ تا ۱۰۰ است. مقدار صفر، قیمت چکی را برابر قیمت نقدی می‌کند. پس از ذخیره، برای به‌روزرسانی قیمت‌های موجود از قیمت‌گذاری سریع استفاده کنید."
+                                                     data-product-tour-target="input"
+                                                     data-product-tour-label="label"
+                                                 @endif>
                                                 <label class="block text-xs font-bold text-gray-700 mb-1">درصد افزایش قیمت <span class="text-red-500">*</span></label>
                                                 <div class="relative">
                                                     <input 
@@ -430,7 +520,15 @@
                                             </div>
                                             
                                             {{-- وضعیت فعال --}}
-                                            <div class="flex items-center gap-2">
+                                            <div class="flex items-center gap-2"
+                                                 @if($loop->first)
+                                                     data-product-tour-step="supplier-edit-active"
+                                                     data-product-tour-order="36"
+                                                     data-product-tour-title="وضعیت فعال دوره"
+                                                     data-product-tour-description="این تیک وضعیت اصلی دوره را در فرم ویرایش تعیین می‌کند. برای غیرفعال‌کردن دوره و غیرفعال‌شدن قیمت‌های چکی ثبت‌شده، از دکمهٔ وضعیت در فهرست استفاده کنید تا هشدار تأیید هم نمایش داده شود."
+                                                     data-product-tour-target="input"
+                                                     data-product-tour-label="label"
+                                                 @endif>
                                                 <input 
                                                     wire:model="inlineIsActive" 
                                                     type="checkbox" 
@@ -445,6 +543,12 @@
                                         
                                         <div class="flex items-center gap-2 pt-3 border-t border-gray-200">
                                             <button 
+                                                @if($loop->first)
+                                                    data-product-tour-step="supplier-edit-save"
+                                                    data-product-tour-order="37"
+                                                    data-product-tour-title="ذخیرهٔ ویرایش دوره"
+                                                    data-product-tour-description="نام و درصد را ثبت می‌کند. قیمت‌های فعلی به‌صورت خودکار بازنویسی نمی‌شوند؛ پیام پس از ذخیره لینک قیمت‌گذاری سریع را نشان می‌دهد."
+                                                @endif
                                                 wire:click="saveInlineEdit"
                                                 class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
                                                 <x-heroicon-o-check class="w-4 h-4"/>
@@ -483,6 +587,12 @@
                                             <div class="flex items-center gap-2">
                                                 {{-- دکمه ویرایش --}}
                                                 <button 
+                                                    @if($loop->first)
+                                                        data-product-tour-step="supplier-period-edit"
+                                                        data-product-tour-order="32"
+                                                        data-product-tour-title="بازکردن ویرایش دوره"
+                                                        data-product-tour-description="با این دکمه نام و درصد دوره را ویرایش می‌کنید؛ تعداد روز ثابت می‌ماند. با بازشدن فرم، راهنما برای فیلدهای ویرایش چند مرحلهٔ جداگانه نشان می‌دهد."
+                                                    @endif
                                                     wire:click="startInlineEdit({{ $period['id'] }})"
                                                     class="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
                                                     title="ویرایش">
@@ -491,6 +601,12 @@
                                                 
                                                 {{-- دکمه فعال/غیرفعال --}}
                                                 <button 
+                                                    @if($loop->first)
+                                                        data-product-tour-step="supplier-period-toggle"
+                                                        data-product-tour-order="38"
+                                                        data-product-tour-title="فعال یا غیرفعال کردن دورهٔ اختصاصی"
+                                                        data-product-tour-description="فعال‌کردن دوره آن را برای قیمت‌گذاری در دسترس قرار می‌دهد. غیرفعال‌کردن ابتدا تأیید می‌خواهد و پس از تأیید، قیمت‌های چکی ثبت‌شدهٔ همین دوره برای همهٔ تیراژها نیز غیرفعال می‌شوند."
+                                                    @endif
                                                     wire:click="toggleSupplierPeriod({{ $period['id'] }})"
                                                     class="px-3 py-1.5 rounded-lg font-medium text-xs transition-all {{ $period['is_active'] ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-green-100 text-green-700 hover:bg-green-200' }}"
                                                     title="{{ $period['is_active'] ? 'غیرفعال کردن' : 'فعال کردن' }}">
@@ -508,7 +624,12 @@
 
             {{-- ═══════════ بخش دسته‌بندی‌ها (Accordion) ═══════════ --}}
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" x-data="{ open: false }">
-                <button 
+                <button data-product-tour-step="category-section"
+                    data-product-tour-order="40"
+                    data-product-tour-title="تنظیم درصد ویژه برای یک دسته"
+                    data-product-tour-description="این بخش را باز کنید تا ببینید چطور برای یک دسته‌بندی، درصد جداگانهٔ چک تعیین می‌شود. تا وقتی این بخش باز نشود، مراحل انتخاب دسته و درصدهایش در راهنما نمایش داده نمی‌شوند."
+                    data-check-guide-category-toggle
+                    :aria-expanded="open"
                     @click="open = !open"
                     class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4 flex items-center justify-between hover:from-indigo-600 hover:to-purple-700 transition-all">
                     <div class="flex items-center gap-3">
@@ -526,14 +647,18 @@
                     </div>
                 </button>
 
-                <div x-show="open" x-collapse class="border-t-2 border-gray-100">
+                <div data-check-guide-category-content x-show="open" x-collapse class="border-t-2 border-gray-100">
                     <div class="p-6">
                         {{-- راهنما --}}
                         <div class="mb-6 bg-purple-50 border-l-4 border-purple-400 p-4 rounded-r-lg">
                             <div class="flex items-start gap-3">
                                 <x-heroicon-s-information-circle class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5"/>
                                 <div class="text-sm text-purple-900">
-                                    <p class="font-bold mb-1">📊 سلسله مراتب اولویت درصد</p>
+                                    <p data-product-tour-step="category-percentage-priority"
+                                       data-product-tour-order="41"
+                                       data-product-tour-title="اولویت درصدها هنگام محاسبه"
+                                       data-product-tour-description="اگر محصول درصد اختصاصی خودش را داشته باشد، همان اولویت دارد. در غیر این صورت درصدی که اینجا برای دسته و دوره تعیین می‌کنید جای درصد عمومی همان دوره برای شما را می‌گیرد؛ برای دوره‌هایی که اینجا خالی بمانند، درصد عمومی استفاده می‌شود."
+                                       class="font-bold mb-1">📊 سلسله مراتب اولویت درصد</p>
                                     <p class="text-xs mb-2"><strong>1.</strong> محصول (درصد اختصاصی محصول) → <strong>2.</strong> دسته‌بندی (این بخش) → <strong>3.</strong> پیش‌فرض (دوره‌های بالا)</p>
                                     <p class="text-xs text-purple-700">💡 فقط دسته‌بندی‌های سطح آخر (که محصول دارند) قابل انتخاب هستند.</p>
                                 </div>
@@ -550,11 +675,16 @@
 
                                 <div class="space-y-4">
                                     {{-- انتخاب دسته‌بندی --}}
-                                    <div>
+                                    <div data-product-tour-step="category-select"
+                                         data-product-tour-order="42"
+                                         data-product-tour-title="انتخاب دسته‌بندی"
+                                         data-product-tour-description="یک دستهٔ نهایی را انتخاب کنید؛ فقط دسته‌هایی که محصول دارند در فهرست می‌آیند. سپس درصدهای دوره‌های فعال برای همین دسته نمایش داده می‌شوند. اگر برای دسته‌ای از قبل تنظیم دارید، به‌جای افزودن دوباره، ردیف همان دسته را در پایین ویرایش کنید."
+                                         data-product-tour-target="select"
+                                         data-product-tour-label="label">
                                         <label class="block text-sm font-bold text-gray-700 mb-2">
                                             دسته‌بندی <span class="text-red-500">*</span>
                                         </label>
-                                        <select 
+                                        <select data-check-guide-category-select
                                             wire:model="selectedCategoryId"
                                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                                             <option value="">-- انتخاب دسته‌بندی --</option>
@@ -574,7 +704,14 @@
                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             @foreach($activePeriods as $period)
                                                 @if($period->is_enabled_for_supplier)
-                                                    <div wire:key="add-category-period-{{ $period->id }}" class="bg-white border border-indigo-200 rounded-lg p-3">
+                                                    <div wire:key="add-category-period-{{ $period->id }}"
+                                                         data-product-tour-step="category-new-period-{{ $period->id }}"
+                                                         data-product-tour-order="{{ 50 + ($loop->index / 100) }}"
+                                                         data-product-tour-title="درصد ویژهٔ دورهٔ {{ $period->display_name }}"
+                                                         data-product-tour-description="برای ساختن استثنا، مقدار ۰ تا ۱۰۰ را فقط برای این دسته و همین دوره وارد کنید. با ثبت آن، این درصد جای درصد عمومی همین دوره را می‌گیرد؛ برای پیروی از درصد عمومی این خانه را خالی بگذارید."
+                                                         data-product-tour-target="input"
+                                                         data-product-tour-label="label"
+                                                         class="bg-white border border-indigo-200 rounded-lg p-3">
                                                         <label for="add-category-period-{{ $period->id }}-percentage" class="block text-xs font-medium text-gray-600 mb-1">
                                                             {{ $period->display_name }}
                                                         </label>
@@ -597,12 +734,19 @@
                                             @endforeach
                                         </div>
                                         <x-input-error :messages="$errors->get('newCategoryPercentages')" class="mt-1" />
-                                        <p class="text-xs text-gray-500 mt-2">💡 فقط دوره‌هایی که فعال کرده‌اید نمایش داده می‌شود</p>
+                                        <p data-product-tour-step="category-periods-note"
+                                           data-product-tour-order="69"
+                                           data-product-tour-title="کدام دوره‌ها برای دسته نمایش داده می‌شوند؟"
+                                           data-product-tour-description="فقط دوره‌هایی که برای حساب شما فعال شده‌اند در این فرم هستند. اگر هیچ کادر درصدی نمی‌بینید، ابتدا یک دوره را در بخش دوره‌های عمومی یا اختصاصی فعال کنید."
+                                           class="text-xs text-gray-500 mt-2">💡 فقط دوره‌هایی که فعال کرده‌اید نمایش داده می‌شود</p>
                                     </div>
 
                                     {{-- دکمه افزودن --}}
                                     <div class="pt-3 border-t border-gray-200">
-                                        <button 
+                                        <button data-product-tour-step="category-save"
+                                            data-product-tour-order="70"
+                                            data-product-tour-title="ثبت درصدهای دسته‌بندی"
+                                            data-product-tour-description="دسته را همراه با درصدهایی که وارد کرده‌اید ذخیره می‌کند؛ برای ساختن استثنا دست‌کم یک درصد را پر کنید. خانه‌های خالی استثنایی نمی‌سازند و از درصد عمومی همان دوره پیروی می‌کنند. قیمت‌های موجود خودکار بازنویسی نمی‌شوند؛ پس از ذخیره، در صورت نیاز از قیمت‌گذاری سریع استفاده کنید."
                                             wire:click="addCategory"
                                             class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2">
                                             <x-heroicon-o-check-circle class="w-5 h-5"/>
@@ -615,7 +759,11 @@
 
                         {{-- لیست دسته‌بندی‌های تنظیم شده --}}
                         @if(empty($categoryPeriods) && !$editingCategoryId)
-                            <div class="text-center py-12 text-gray-400">
+                            <div data-product-tour-step="category-overrides-empty"
+                                 data-product-tour-order="75"
+                                 data-product-tour-title="استثناهای دسته‌بندی"
+                                 data-product-tour-description="هنوز دسته‌ای با درصد چک جداگانه ثبت نشده است. با فرم بالا می‌توانید چنین استثنایی بسازید؛ بعداً درصدهایش را ویرایش کنید یا تنظیم آن دسته را حذف کنید تا دوباره از نرخ عمومی پیروی کند."
+                                 class="text-center py-12 text-gray-400">
                                 <x-heroicon-o-folder-open class="w-20 h-20 mx-auto mb-4 opacity-30"/>
                                 <p class="text-base font-bold mb-1">هنوز دسته‌بندی‌ای تنظیم نکرده‌اید</p>
                                 <p class="text-sm">در صورت نیاز از فرم بالا استفاده کنید</p>
@@ -634,7 +782,14 @@
                                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                                                 @foreach($activePeriods as $period)
                                                     @if($period->is_enabled_for_supplier)
-                                                        <div wire:key="edit-category-{{ $cat['category_id'] }}-period-{{ $period->id }}" class="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                                                        <div wire:key="edit-category-{{ $cat['category_id'] }}-period-{{ $period->id }}"
+                                                             data-product-tour-step="category-edit-period-{{ $period->id }}"
+                                                             data-product-tour-order="{{ 76 + ($loop->index / 100) }}"
+                                                             data-product-tour-title="ویرایش درصد دورهٔ {{ $period->display_name }}"
+                                                             data-product-tour-description="درصد را برای همین دسته و دوره تغییر دهید. خالی‌کردن خانه، استثنای قبلی همین دوره را حذف می‌کند تا درصد عمومی دوره اعمال شود."
+                                                             data-product-tour-target="input"
+                                                             data-product-tour-label="label"
+                                                             class="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
                                                             <label for="edit-category-{{ $cat['category_id'] }}-period-{{ $period->id }}-percentage" class="block text-xs font-medium text-gray-600 mb-1">
                                                                 {{ $period->display_name }}
                                                             </label>
@@ -658,7 +813,10 @@
                                             <x-input-error :messages="$errors->get('categoryPercentages')" class="mt-2" />
 
                                             <div class="flex items-center gap-2 pt-3 border-t border-gray-200">
-                                                <button 
+                                                <button data-product-tour-step="category-edit-save"
+                                                    data-product-tour-order="86"
+                                                    data-product-tour-title="ذخیرهٔ تغییرات دسته"
+                                                    data-product-tour-description="درصدهای جدید را ثبت می‌کند. خانه‌های خالی حذف می‌شوند و برای همان دوره به درصد عمومی برمی‌گردند؛ قیمت‌های موجود را در صورت نیاز از قیمت‌گذاری سریع به‌روزرسانی کنید."
                                                     wire:click="saveCategoryEdit"
                                                     class="min-h-11 flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
                                                     <x-heroicon-o-check class="w-4 h-4"/>
@@ -673,10 +831,18 @@
                                         </div>
                                     @else
                                         {{-- نمایش عادی --}}
-                                        <div class="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-4">
+                                        <div class="bg-indigo-50 border-2 border-indigo-200 rounded-xl p-4"
+                                             @if($loop->first)
+                                                 data-product-tour-step="category-existing-override"
+                                                 data-product-tour-order="75"
+                                                 data-product-tour-title="مرور استثناهای ثبت‌شده"
+                                                 data-product-tour-description="این ردیف درصدهای جداگانهٔ دسته را نشان می‌دهد. با «ویرایش» مقادیر هر دوره را عوض کنید؛ با «حذف» همهٔ استثناهای دسته پاک می‌شوند و نرخ عمومی دوباره مبنا می‌شود."
+                                                 data-product-tour-target=".check-guide-category-edit"
+                                                 data-product-tour-label=".check-guide-category-title"
+                                             @endif>
                                             <div class="flex items-start justify-between gap-4">
                                                 <div class="flex-1">
-                                                    <h3 class="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                                    <h3 class="check-guide-category-title font-bold text-gray-800 mb-2 flex items-center gap-2">
                                                         <x-heroicon-s-folder class="w-5 h-5 text-indigo-600"/>
                                                         {{ $cat['category_name'] }}
                                                     </h3>
@@ -692,11 +858,21 @@
                                                 <div class="flex items-center gap-2 flex-shrink-0">
                                                     <button 
                                                         wire:click="startEditCategory({{ $cat['category_id'] }})"
-                                                        class="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                                                        @if($loop->first)
+                                                            class="check-guide-category-edit p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                                                        @else
+                                                            class="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
+                                                        @endif
                                                         title="ویرایش">
                                                         <x-heroicon-o-pencil class="w-5 h-5"/>
                                                     </button>
                                                     <button 
+                                                        @if($loop->first)
+                                                            data-product-tour-step="category-remove-override"
+                                                            data-product-tour-order="87"
+                                                            data-product-tour-title="حذف استثنای دسته"
+                                                            data-product-tour-description="پس از تأیید، تمام درصدهای جداگانهٔ این دسته حذف می‌شود؛ از آن به بعد درصد عمومی تأمین‌کننده برای دوره‌ها به کار می‌رود. راهنما حذف را اجرا نمی‌کند."
+                                                        @endif
                                                         wire:click="removeCategory({{ $cat['category_id'] }})"
                                                         wire:confirm="آیا مطمئن هستید؟ تنظیمات این دسته‌بندی حذف خواهد شد."
                                                         class="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"

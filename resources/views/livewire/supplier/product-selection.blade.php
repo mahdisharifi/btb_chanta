@@ -11,39 +11,59 @@
     <div class="bg-white rounded-2xl shadow-sm border border-gray-200 mb-6">
         <div class="p-4 border-b border-gray-100 bg-gray-50/50">
             <!-- Search -->
-            <div class="relative max-w-2xl">
+            <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+            <div class="relative max-w-2xl flex-1">
                 <div class="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
                 <input wire:model.live.debounce.500ms="search" type="text" placeholder="جستجو با نام یا کد کالا (SKU)..." class="w-full pl-10 pr-12 py-2.5 border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 text-sm shadow-sm transition-shadow">
+                <span wire:loading.flex wire:target="search" role="status" aria-label="در حال جست‌وجو" class="absolute left-12 inset-y-0 items-center text-indigo-500">
+                    <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                </span>
                 @if($search)
                 <button wire:click="$set('search', '')" class="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-400 hover:text-red-500 transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
                 @endif
             </div>
+            @if($products->isNotEmpty())
+            <a href="{{ route('supplier.products.create') }}" class="inline-flex shrink-0 items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors text-sm font-bold shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                <x-heroicon-o-plus class="w-5 h-5" />
+                افزودن محصول جدید
+            </a>
+            @endif
+            </div>
         </div>
 
         <div class="p-4 flex flex-col lg:flex-row gap-4 items-center justify-between">
             <!-- Filters -->
             <div class="w-full lg:w-auto grid grid-cols-1 sm:grid-cols-3 gap-3 flex-grow max-w-4xl">
+                <label class="block text-sm font-medium text-gray-700">
+                    <span class="mb-1 block">دسته‌بندی</span>
                 <select wire:model.live="categoryId" class="w-full bg-white border border-gray-200 text-gray-700 py-2 px-3 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm">
                     <option value="">همه دسته‌ها</option>
                     @foreach($categories as $category)
                     <option value="{{ $category->id }}">{{ $category->name }}</option>
                     @endforeach
                 </select>
+                </label>
 
+                <label class="block text-sm font-medium text-gray-700">
+                    <span class="mb-1 block">وضعیت قیمت‌گذاری</span>
                 <select wire:model.live="pricingStatus" class="w-full bg-white border border-gray-200 text-gray-700 py-2 px-3 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm">
                     <option value="all">همه محصولات (کاتالوگ کامل)</option>
                     <option value="unpriced">فروش نرفته</option>
                     <option value="priced">در حال فروش من</option>
                 </select>
+                </label>
 
+                <label class="block text-sm font-medium text-gray-700">
+                    <span class="mb-1 block">مرتب‌سازی</span>
                 <select wire:model.live="sort" class="w-full bg-white border border-gray-200 text-gray-700 py-2 px-3 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm">
                     <option value="latest">جدیدترین‌ها</option>
                     <option value="title_asc">حروف الفبا</option>
                 </select>
+                </label>
             </div>
 
             <!-- View Toggle & Export -->
@@ -66,7 +86,7 @@
     </div>
 
     <!-- Loading State -->
-    <div wire:loading.flex wire:target="search, categoryId, pricingStatus, sort, viewMode, gotoPage, nextPage, previousPage" class="fixed inset-0 z-50 flex items-center justify-center bg-white bg-opacity-70 backdrop-blur-sm">
+    <div wire:loading.flex wire:target="categoryId, pricingStatus, sort, viewMode, gotoPage, nextPage, previousPage" class="fixed inset-0 z-50 flex items-center justify-center bg-white bg-opacity-70 backdrop-blur-sm">
         <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
     </div>
 
@@ -126,8 +146,34 @@
         @empty
         <div class="col-span-full py-16 bg-white rounded-2xl border border-gray-200 text-center shadow-sm">
             <svg class="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
-            <h3 class="text-lg font-bold text-gray-900 mb-1">محصولی یافت نشد</h3>
+            @php
+                $emptyStateFilters = [];
+                $selectedCategory = $categories->firstWhere('id', $categoryId);
+                if ($pricingStatus === 'priced') {
+                    $emptyStateFilters[] = 'وضعیت قیمت: فقط کالاهای قیمت‌گذاری‌شده';
+                } elseif ($pricingStatus === 'unpriced') {
+                    $emptyStateFilters[] = 'وضعیت قیمت: فقط کالاهای قیمت‌گذاری‌نشده';
+                }
+            @endphp
+            <h3 class="text-lg font-bold text-gray-900 mb-1">
+                @if(filled($search) && $selectedCategory)
+                    محصولی با نام «{{ $search }}» در دسته‌بندی «{{ $selectedCategory->name }}» یافت نشد
+                @elseif(filled($search))
+                    محصولی با نام «{{ $search }}» یافت نشد
+                @elseif($selectedCategory)
+                    محصولی در دسته‌بندی «{{ $selectedCategory->name }}» یافت نشد
+                @elseif($emptyStateFilters)
+                    محصولی با فیلترهای انتخاب‌شده یافت نشد
+                @else
+                    محصولی یافت نشد
+                @endif
+                @if($pricingStatus === 'priced') (فیلتر وضعیت قیمت‌گذاری: فقط کالاهای قیمت‌گذاری‌شده)@elseif($pricingStatus === 'unpriced') (فیلتر وضعیت قیمت‌گذاری: فقط کالاهای قیمت‌گذاری‌نشده)@endif
+            </h3>
             <p class="text-sm text-gray-500">با تغییر فیلترها دوباره تلاش کنید.</p>
+            <a href="{{ route('supplier.products.create') }}" class="mt-5 inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors text-sm font-bold shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                <x-heroicon-o-plus class="w-5 h-5" />
+                افزودن محصول جدید
+            </a>
         </div>
         @endforelse
     </div>
@@ -196,7 +242,36 @@
             @empty
             <tr>
                 <td colspan="5" class="px-4 py-12 text-center text-gray-500 text-sm">
-                    محصولی با این مشخصات یافت نشد.
+                    @php
+                        $emptyStateFilters = [];
+                        $selectedCategory = $categories->firstWhere('id', $categoryId);
+                        if ($pricingStatus === 'priced') {
+                            $emptyStateFilters[] = 'وضعیت قیمت: فقط کالاهای قیمت‌گذاری‌شده';
+                        } elseif ($pricingStatus === 'unpriced') {
+                            $emptyStateFilters[] = 'وضعیت قیمت: فقط کالاهای قیمت‌گذاری‌نشده';
+                        }
+                    @endphp
+                    <div class="flex flex-col items-center">
+                        <p class="text-lg font-bold text-gray-900 mb-1">
+                            @if(filled($search) && $selectedCategory)
+                                محصولی با نام «{{ $search }}» در دسته‌بندی «{{ $selectedCategory->name }}» یافت نشد
+                            @elseif(filled($search))
+                                محصولی با نام «{{ $search }}» یافت نشد
+                            @elseif($selectedCategory)
+                                محصولی در دسته‌بندی «{{ $selectedCategory->name }}» یافت نشد
+                            @elseif($emptyStateFilters)
+                                محصولی با فیلترهای انتخاب‌شده یافت نشد
+                            @else
+                                محصولی یافت نشد
+                            @endif
+                            @if($pricingStatus === 'priced') (فیلتر وضعیت قیمت‌گذاری: فقط کالاهای قیمت‌گذاری‌شده)@elseif($pricingStatus === 'unpriced') (فیلتر وضعیت قیمت‌گذاری: فقط کالاهای قیمت‌گذاری‌نشده)@endif
+                        </p>
+                        <p>با تغییر فیلترها دوباره تلاش کنید.</p>
+                        <a href="{{ route('supplier.products.create') }}" class="mt-5 inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors text-sm font-bold shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                            <x-heroicon-o-plus class="w-5 h-5" />
+                            افزودن محصول جدید
+                        </a>
+                    </div>
                 </td>
             </tr>
             @endforelse

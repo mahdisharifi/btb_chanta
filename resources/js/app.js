@@ -5,6 +5,7 @@ import Pusher from 'pusher-js';
 // ✅ Import slider utilities (shared components)
 import './components/slider-utils.js';
 import './components/formatted-price-input.js';
+import './components/product-create-guide.js';
 
 const pusherKey = import.meta.env.VITE_PUSHER_APP_KEY;
 const pusherCluster = import.meta.env.VITE_PUSHER_APP_CLUSTER;

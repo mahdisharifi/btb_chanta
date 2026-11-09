@@ -59,6 +59,109 @@ class Create extends Component
 
     public $primary_image;
     public $gallery_images = [];
+    public $incomingImages = [];
+    public ?string $uploadedSeoImage = null;
+    #[\Livewire\Attributes\Locked]
+    public int $galleryDragVersion = 0;
+
+    protected function authorizeSeoImage(): void
+    {
+        abort_if($this->isSupplierDraftModeContext(), 403);
+        if ($this->isEdit) {
+            Gate::authorize('update', Product::query()->findOrFail((int) $this->productId));
+        } else {
+            Gate::authorize('create', Product::class);
+        }
+    }
+
+    public function toggleUploadedSeoImage(string $filename): void
+    {
+        $this->authorizeSeoImage();
+        $images = array_filter([$this->primary_image, ...$this->gallery_images]);
+        abort_unless(collect($images)->contains(fn ($image) => $image->getFilename() === $filename), 422);
+        $this->uploadedSeoImage = $this->uploadedSeoImage === $filename ? null : $filename;
+        if ($this->uploadedSeoImage) {
+            foreach ($this->existingGalleries as &$gallery) {
+                $gallery['is_seo_image'] = false;
+            }
+            unset($gallery);
+        }
+    }
+
+    public function updatedIncomingImages(): void
+    {
+        $this->validate(['incomingImages.*' => 'required|image|max:2048']);
+        foreach ($this->incomingImages as $image) {
+            if (!$this->primary_image && !collect($this->existingGalleries)->contains(fn ($item) => ($item['file_type'] ?? 'image') === 'image' && ($item['is_primary'] ?? false))) {
+                $this->primary_image = $image;
+            } else {
+                $this->gallery_images[] = $image;
+            }
+        }
+        $this->incomingImages = [];
+    }
+
+    public function selectUploadedPrimary(int $index): void
+    {
+        if (!isset($this->gallery_images[$index])) {
+            return;
+        }
+        $image = $this->gallery_images[$index];
+        if ($this->primary_image) {
+            $this->gallery_images[$index] = $this->primary_image;
+        } else {
+            unset($this->gallery_images[$index]);
+            $this->gallery_images = array_values($this->gallery_images);
+        }
+        $this->primary_image = $image;
+    }
+
+    public function removeUploadedImage(?int $index = null): void
+    {
+        $removed = $index === null ? $this->primary_image : ($this->gallery_images[$index] ?? null);
+        if ($removed && $this->uploadedSeoImage === $removed->getFilename()) {
+            $this->uploadedSeoImage = null;
+        }
+        if ($index === null) {
+            $this->primary_image = array_shift($this->gallery_images);
+        } else {
+            unset($this->gallery_images[$index]);
+            $this->gallery_images = array_values($this->gallery_images);
+        }
+    }
+
+    public function reorderUploadedImages(int $from, int $to): void
+    {
+        $images = $this->primary_image ? [$this->primary_image, ...$this->gallery_images] : array_values($this->gallery_images);
+        if ($from === $to || !isset($images[$from], $images[$to])) {
+            return;
+        }
+        $image = array_splice($images, $from, 1);
+        array_splice($images, $to, 0, $image);
+        $this->primary_image = array_shift($images);
+        $this->gallery_images = array_values($images);
+        if (count($images) >= 2) {
+            $this->galleryDragVersion++;
+        }
+    }
+
+    public function reorderExistingImages(int $from, int $to): void
+    {
+        $images = collect($this->existingGalleries)->where('file_type', 'image')->values()->all();
+        if ($from === $to || !isset($images[$from], $images[$to])) {
+            return;
+        }
+        $image = array_splice($images, $from, 1);
+        array_splice($images, $to, 0, $image);
+        foreach ($images as $index => &$item) {
+            $item['is_primary'] = ($index === 0);
+        }
+        unset($item);
+        $videos = collect($this->existingGalleries)->where('file_type', 'video')->values();
+        $this->existingGalleries = $videos->concat($images)->values()->all();
+        $this->galleryOrder = array_map(fn ($item) => (string) $item['id'], $images);
+        $this->updateSeoPreviewImage();
+    }
     public $product_video;
     public $video_poster;  // ✅ اضافه شد - thumbnail ویدئو
 
@@ -644,6 +747,8 @@ class Create extends Component
      */
     public function toggleSeoImage(int $galleryId): void
     {
+        $this->authorizeSeoImage();
+        $this->uploadedSeoImage = null;
         $images = collect($this->existingGalleries)
             ->where('file_type', 'image')
             ->values()
@@ -680,6 +785,9 @@ class Create extends Component
     {
         $isSupplierDraftMode = $this->isSupplierDraftModeContext();
         $this->supplierDraftMode = $isSupplierDraftMode;
+        if ($isSupplierDraftMode) {
+            $this->uploadedSeoImage = null;
+        }
 
         if ($isSupplierDraftMode) {
             $supplier = auth()->user()?->currentSupplier();
@@ -722,7 +830,8 @@ class Create extends Component
             'is_active' => 'boolean',
             'short_description' => 'nullable|string',
             'full_description' => 'nullable|string',
-            'primary_image' => 'nullable|image|max:2048',
+            'primary_image' => ($isSupplierDraftMode ? 'required' : 'nullable').'|image|max:2048',
+            'gallery_images' => 'array',
             'gallery_images.*' => 'nullable|image|max:2048',
             'product_video' => 'nullable|file|mimes:mp4,webm,ogg,mov|max:51200',
             'video_poster' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
@@ -739,7 +848,9 @@ class Create extends Component
             'quantity_tiers.*.max_quantity' => 'nullable|integer',
         ];
 
-        $this->validate($rules);
+        $this->validate($rules, [
+            'primary_image.required' => 'حداقل یک تصویر اصلی برای محصول اضافه کنید.',
+        ]);
 
         // ✅ Validation پیشرفته تیراژها
         if (!empty($this->quantity_tiers)) {
@@ -847,6 +958,8 @@ class Create extends Component
 
             $oldMetadata = $oldPrimary ? ['file_path' => $oldPrimary->file_path, 'versions' => $oldPrimary->versions ?? []] : [];
             $primaryMetadata = [
+                'is_seo_image' => $this->uploadedSeoImage === $this->primary_image->getFilename()
+                    || (!$this->uploadedSeoImage && !collect($this->existingGalleries)->contains(fn ($image) => ($image['is_seo_image'] ?? false) && ($image['id'] ?? null) !== $oldPrimary?->id)),
                 'base_name' => $meta['base_name'],
                 'file_name' => $meta['file_name'],
                 'file_path' => $meta['file_path'],
@@ -888,6 +1001,9 @@ class Create extends Component
                 throw $exception;
             }
             $product->galleries()->where('file_type', 'image')->where('id', '!=', $primaryGallery->id)->update(['is_primary' => false]);
+            if ($primaryGallery->is_seo_image) {
+                $product->galleries()->where('id', '!=', $primaryGallery->id)->update(['is_seo_image' => false]);
+            }
             $this->primary_image = null;
             if ($oldMetadata !== []) {
                 $this->deleteUnreferencedImageFiles($product, $oldMetadata);
@@ -901,6 +1017,10 @@ class Create extends Component
             $lastSortOrder = $product->galleries()->where('file_type', 'image')->max('sort_order') ?? 0;
 
             foreach ($this->gallery_images as $uploadIndex => $galImage) {
+                $isSeoImage = !$isSupplierDraftMode && $this->uploadedSeoImage === $galImage->getFilename();
+                if ($isSeoImage) {
+                    $product->galleries()->update(['is_seo_image' => false]);
+                }
                 $lastSortOrder++;
                 $meta = $imageService->process($galImage->getRealPath(), $product->slug, $lastSortOrder, baseName: 'product-'.$product->id.'-'.Str::uuid());
 
@@ -920,6 +1040,7 @@ class Create extends Component
 
                     'file_type'  => 'image',
                     'is_primary' => false,
+                    'is_seo_image' => $isSeoImage,
                     'file_size'  => $meta['file_size'],
                     'title'      => $this->title . ' - تصویر ' . $lastSortOrder,
                     'alt_text'   => $this->title . ' - تصویر ' . $lastSortOrder,

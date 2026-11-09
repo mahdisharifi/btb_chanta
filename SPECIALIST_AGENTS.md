@@ -176,6 +176,7 @@
   - Breadcrumbs و wayfinding
   - Content hierarchy
   - Search functionality
+  - Search results must update asynchronously without reloading the full page; use a local loading indicator and preserve the user's input and context.
 - [ ] **User Flows:**
   - Onboarding flow
   - Checkout/process flows

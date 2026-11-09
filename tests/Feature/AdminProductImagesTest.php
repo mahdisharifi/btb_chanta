@@ -74,8 +74,9 @@ class AdminProductImagesTest extends TestCase
             ->set('category_id', Category::factory()->create()->id)
             ->set('supplier_id', Supplier::factory()->create()->id)
             ->set('quantity_tiers', $this->tiers())
-            ->set('primary_image', UploadedFile::fake()->image('main.png', 1200, 900))
-            ->set('gallery_images', [UploadedFile::fake()->image('extra.png', 900, 900)])
+            ->set('incomingImages', [UploadedFile::fake()->image('main.png', 1200, 900)])
+            ->set('incomingImages', [UploadedFile::fake()->image('extra.png', 900, 900)])
+            ->call('selectUploadedPrimary', 0)
             ->call('save')->assertHasNoErrors()->assertSet('primary_image', null)->assertSet('gallery_images', []);
         $product = Product::findOrFail($component->get('productId'));
         $this->assertSame(2, $product->galleries()->count());
