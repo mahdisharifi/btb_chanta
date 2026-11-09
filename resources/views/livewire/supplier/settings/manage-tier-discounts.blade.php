@@ -1,4 +1,8 @@
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div data-tier-discounts-guide
+     data-product-tour-welcome-title="راهنمای تنظیمات تیراژ و نرخ ارز"
+     data-product-tour-welcome-description="در این صفحه درصدهای پیش‌فرض تیراژ، ارز پایه و نرخ محصولات، و استثناهای هر دسته‌بندی را تنظیم می‌کنید. راهنما چیزی را ذخیره یا اعمال نمی‌کند؛ هر ذخیره یا باز‌محاسبه فقط با اقدام خودتان انجام می‌شود."
+     data-product-tour-welcome-hint="با «مرحله بعد» جلو بروید. برای خروج، ضربدر یا «بستن» را بزنید."
+     class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {{-- Notification Toast --}}
     <div x-data="{ show: false, message: '', type: 'success' }" 
          @notify.window="
@@ -56,13 +60,16 @@
     </div>
 
     {{-- Header --}}
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+        <h1 data-product-tour-welcome class="text-2xl font-bold text-gray-900 dark:text-gray-100">
             تنظیمات درصد تیراژ نقدی
         </h1>
         <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
             مدیریت درصد افزایش/کاهش قیمت نقدی هر تیراژ نسبت به تیراژ مرجع (کارتن)
         </p>
+        </div>
+        <x-interactive-guide-launcher />
     </div>
 
     {{-- راهنما --}}
@@ -86,7 +93,11 @@
     {{-- بخش 1: تنظیمات پیشفرض --}}
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 mb-6">
         <div class="flex items-center justify-between mb-6">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h2 data-product-tour-step="default-settings-intro"
+                data-product-tour-order="10"
+                data-product-tour-title="درصدهای پیش‌فرض تیراژ"
+                data-product-tour-description="این مقادیر برای همهٔ محصولات مبنا هستند. درصد مثبت قیمت را نسبت به کارتن بالاتر می‌برد و درصد منفی آن را پایین‌تر می‌آورد."
+                class="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 ⚙️ تنظیمات پیشفرض تیراژ
             </h2>
             <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -98,11 +109,17 @@
         <form wire:submit.prevent="save">
             <div class="space-y-4">
                 @foreach($tierSettings as $index => $tier)
-                <div class="border-b border-gray-200 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
+                <div data-product-tour-step="default-tier-{{ $tier['tier_index'] }}"
+                     data-product-tour-order="{{ 20 + $tier['tier_index'] }}"
+                     data-product-tour-title="{{ $tier['name'] }}"
+                     data-product-tour-description="{{ $tier['tier_index'] === 1 ? 'کارتن تیراژ مرجع است و همیشه با درصد صفر می‌ماند؛ امکان ویرایش این فیلد وجود ندارد.' : 'درصد این تیراژ نسبت به قیمت کارتن محاسبه می‌شود. عدد مثبت قیمت را بیشتر و عدد منفی آن را کمتر می‌کند؛ مثال قیمت کنار فیلد اثر مقدار را نشان می‌دهد. مقدار مجاز از منفی ۱۰۰ تا مثبت ۱۰۰ درصد است.' }}"
+                     data-product-tour-target="input"
+                     data-product-tour-label=".tier-guide-label"
+                     class="border-b border-gray-200 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                         {{-- نام تیراژ --}}
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <label class="tier-guide-label block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 {{ $tier['name'] }}
                                 @if($tier['tier_index'] === 1)
                                     <span class="text-xs text-gray-500">(مرجع)</span>
@@ -113,11 +130,10 @@
                         {{-- درصد تغییر --}}
                         <div>
                             <div class="relative">
-                                <input type="number" 
+                                <input class="tier-guide-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 @if($tier['tier_index'] === 1) bg-gray-100 cursor-not-allowed @endif" type="number"
                                        step="0.01"
                                        wire:model="tierSettings.{{ $index }}.percentage_change"
                                        @if($tier['tier_index'] === 1) readonly @endif
-                                       class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 @if($tier['tier_index'] === 1) bg-gray-100 cursor-not-allowed @endif"
                                        placeholder="0.00">
                                 <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">%</span>
                             </div>
@@ -154,11 +170,19 @@
                     @endif
                     
                     <button type="button"
+                            data-product-tour-step="reset-default-tiers"
+                            data-product-tour-order="28"
+                            data-product-tour-title="بازنشانی درصدها"
+                            data-product-tour-description="این دکمه مقدارهای فرم را به پیش‌فرض سامانه برمی‌گرداند: زیرکارتن ۵٪، کارتن صفر، عمده منفی ۵٪ و بار منفی ۱۰٪. برای ثبت آن‌ها باید جداگانه «ذخیره» را بزنید."
                             wire:click="resetToDefaults"
                             class="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm">
                         پیشفرض
                     </button>
                     <button type="submit"
+                            data-product-tour-step="save-default-tiers"
+                            data-product-tour-order="29"
+                            data-product-tour-title="ذخیرهٔ درصدهای عمومی"
+                            data-product-tour-description="این کار قانون عمومی تیراژ را ذخیره می‌کند. برای باز‌محاسبهٔ قیمت‌های نقدی موجود، پس از ذخیره دکمهٔ جداگانهٔ به‌روزرسانی را بزنید و تأیید کنید."
                             class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium text-sm">
                         ذخیره
                     </button>
@@ -177,6 +201,10 @@
                     <span class="text-xs text-green-700 dark:text-green-300">با تغییر درصدها، می‌توانید قیمت‌های موجود را بروز کنید</span>
                 </div>
                 <button type="button"
+                        data-product-tour-step="update-existing-tier-prices"
+                        data-product-tour-order="30"
+                        data-product-tour-title="بازمحاسبهٔ قیمت‌های موجود"
+                        data-product-tour-description="این گزینه پس از ذخیرهٔ درصدها ظاهر می‌شود. با انتخاب آن، پنجرهٔ تأیید باز می‌شود و فقط با تأیید خودتان باز‌محاسبه در صف قرار می‌گیرد؛ عملیات قابل بازگشت نیست."
                         wire:click="confirmUpdatePrices"
                         class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors">
                     بروزرسانی قیمت‌ها
@@ -195,7 +223,12 @@
     <section class="bg-white dark:bg-gray-800 shadow rounded-lg p-4 sm:p-6 mb-6" aria-labelledby="currency-settings-title">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-5">
             <div>
-                <h2 id="currency-settings-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                <h2 id="currency-settings-title"
+                    data-product-tour-step="currency-settings-intro"
+                    data-product-tour-order="40"
+                    data-product-tour-title="ارز و قیمت محصولات"
+                    data-product-tour-description="ارز پایه برای قیمت نقدی همهٔ محصولات تأمین‌کننده استفاده می‌شود. تومان نیازی به نرخ تبدیل ندارد؛ انتخاب دلار، یوان یا درهم نرخ هر واحد را به تومان مشخص می‌کند."
+                    class="text-lg font-semibold text-gray-900 dark:text-gray-100">
                     💱 ارز پایه و نرخ محصولات
                 </h2>
                 <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
@@ -207,8 +240,15 @@
             @endif
         </div>
 
-        <div class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-            <label for="supplier-pricing-currency" class="mb-2 block text-sm font-semibold text-gray-900 dark:text-gray-100">ارز قیمت‌گذاری همهٔ محصولات</label>
+        <div data-product-tour-step="tier-currency-base"
+             data-product-tour-order="41"
+             data-product-tour-title="انتخاب ارز پایه"
+             data-product-tour-description="یکی از تومان، دلار، یوان یا درهم را برای قیمت‌گذاری همهٔ محصولات انتخاب کنید. با انتخاب ارز ارزی، راهنما اول فیلد اختیاری نرخ دستی را نشان می‌دهد، بعد روش دریافت خودکار و دورهٔ به‌روزرسانی را توضیح می‌دهد. تغییرات تا زدن دکمهٔ ذخیره ثبت نمی‌شوند."
+             data-product-tour-hint="با ذخیرهٔ تغییر ارز، سامانه قیمت‌های قبلی را از روی معادل تومانی هماهنگ می‌کند. اگر نرخ لازم در دسترس نباشد، مبلغ تومانی حفظ می‌شود و مبلغ ارزی قبلی ممکن است تا ورود نرخ معتبر دوباره نمایش داده نشود."
+             data-product-tour-target="#supplier-pricing-currency"
+             data-product-tour-label=".tier-guide-currency-label"
+             class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <label for="supplier-pricing-currency" class="tier-guide-currency-label mb-2 block text-sm font-semibold text-gray-900 dark:text-gray-100">ارز قیمت‌گذاری همهٔ محصولات</label>
             <select id="supplier-pricing-currency"
                     wire:model.live="pricingCurrency"
                     aria-describedby="supplier-pricing-currency-help"
@@ -238,8 +278,14 @@
                 <div wire:key="supplier-currency-setting-{{ $currency }}" class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
                     <h3 class="font-semibold text-gray-900 dark:text-gray-100">{{ $currencyLabel }} <span class="text-sm text-gray-500">({{ $currency }})</span></h3>
 
-                    <div>
-                        <label for="manual-currency-rate-{{ $currency }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <div data-product-tour-step="currency-rate-input"
+                         data-product-tour-order="42"
+                         data-product-tour-title="نرخ هر واحد به تومان"
+                         data-product-tour-description="{{ $currencySettings[$currency]['auto_update'] ? 'در حالت خودکار این کادر فقط آخرین نرخ معتبر را نمایش می‌دهد و قابل ویرایش نیست. برای نرخ دستی، تیک دریافت خودکار را خاموش کنید.' : 'وارد کردن نرخ دستی اختیاری است. اگر دستی قیمت‌گذاری می‌کنید، نرخ هر یک واحد از این ارز را به تومان وارد کنید؛ اگر نرخ را نمی‌دانید، فیلد را خالی بگذارید و در گام بعد دریافت خودکار را روشن کنید.' }}"
+                         data-product-tour-hint="{{ $currencySettings[$currency]['auto_update'] ? 'نرخ دستی لازم نیست؛ نرخ فعلی از سامانه دریافت شده است.' : 'این فیلد اختیاری است؛ می‌توانید نرخ دلخواه را وارد کنید یا خالی بگذارید.' }}"
+                         data-product-tour-target="input"
+                         data-product-tour-label=".tier-guide-currency-rate-label">
+                        <label for="manual-currency-rate-{{ $currency }}" class="tier-guide-currency-rate-label block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             {{ $currencySettings[$currency]['auto_update'] ? 'آخرین نرخ موجود هر واحد به تومان' : 'نرخ دستی هر واحد به تومان' }}
                         </label>
                         <input id="manual-currency-rate-{{ $currency }}"
@@ -270,7 +316,13 @@
                         @enderror
                     </div>
 
-                    <label for="currency-auto-{{ $currency }}" class="flex min-h-[44px] items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-900 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-100">
+                    <label for="currency-auto-{{ $currency }}"
+                           data-product-tour-step="currency-auto-toggle"
+                           data-product-tour-order="43"
+                           data-product-tour-title="انتخاب روش دریافت نرخ"
+                           data-product-tour-description="فیلد نرخ دستی اختیاری است. برای دیدن روش خودکار، این تیک را روشن کنید؛ سامانه نرخ را دریافت می‌کند، کادر نرخ فقط‌خواندنی می‌شود و دورهٔ به‌روزرسانی نمایش داده می‌شود. تغییرات را در پایان با «ذخیرهٔ تنظیمات ارز» ثبت کنید."
+                           data-product-tour-hint="{{ $currencySettings[$currency]['auto_update'] ? 'دریافت خودکار از قبل روشن است؛ مرحلهٔ بعد دورهٔ به‌روزرسانی را نشان می‌دهد.' : 'برای ادامهٔ این آموزش، تیک دریافت خودکار را روشن کنید؛ بعد از دریافت نرخ، دورهٔ به‌روزرسانی را انتخاب می‌کنیم.' }}"
+                           class="flex min-h-[44px] items-center gap-2 rounded-md border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-900 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-100">
                         <input id="currency-auto-{{ $currency }}"
                                type="checkbox"
                                wire:change="toggleAutomaticCurrencyRate('{{ $currency }}', $event.target.checked)"
@@ -288,7 +340,12 @@
                     </p>
 
                     @if($currencySettings[$currency]['auto_update'])
-                        <div>
+                        <div data-product-tour-step="currency-refresh-interval"
+                             data-product-tour-order="44"
+                             data-product-tour-title="فاصلهٔ دریافت نرخ خودکار"
+                             data-product-tour-description="یکی از دوره‌های ۲، ۶، ۱۲ یا ۲۴ ساعت را برای دریافت خودکار انتخاب کنید. این انتخاب همراه ارز پایه با دکمهٔ «ذخیرهٔ تنظیمات ارز» ثبت می‌شود."
+                             data-product-tour-target="select"
+                             data-product-tour-label="label">
                             <label for="currency-interval-{{ $currency }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">بازهٔ به‌روزرسانی</label>
                             <select id="currency-interval-{{ $currency }}"
                                     wire:model="currencySettings.{{ $currency }}.refresh_hours"
@@ -306,7 +363,11 @@
                     @endif
 
                     @if($currencySettings[$currency]['auto_update'])
-                        <div class="rounded-md bg-white px-3 py-2 text-xs leading-5 text-gray-600 dark:bg-gray-800 dark:text-gray-300" aria-live="polite">
+                        <div data-product-tour-step="currency-rate-status"
+                             data-product-tour-order="45"
+                             data-product-tour-title="وضعیت نرخ دریافتی"
+                             data-product-tour-description="نرخ، زمان ثبت در منبع و زمان دریافت در سامانه را اینجا ببینید. اگر نرخ تازه و معتبر در دسترس نباشد هشدار نمایش داده می‌شود و قیمت ذخیره‌شدهٔ محصول حفظ می‌شود."
+                             class="rounded-md bg-white px-3 py-2 text-xs leading-5 text-gray-600 dark:bg-gray-800 dark:text-gray-300" aria-live="polite">
                             @if($currencySettings[$currency]['rate_toman'])
                                 <div>آخرین نرخ موجود: {{ \App\Helpers\PriceHelper::formatNumber((float) $currencySettings[$currency]['rate_toman']) }} تومان</div>
                                 @if($currencySettings[$currency]['source_market_at'])
@@ -356,6 +417,10 @@
             </p>
             <div class="flex flex-col gap-2 sm:flex-row">
                 <button type="button"
+                        data-product-tour-step="apply-currency-rates"
+                        data-product-tour-order="47"
+                        data-product-tour-title="اعمال یا تلاش دوبارهٔ نرخ"
+                        data-product-tour-description="این دکمه محاسبهٔ قیمت محصولات با نرخ ذخیره‌شده را در صف می‌گذارد؛ برای تنظیمات ذخیره‌نشده غیرفعال است. دریافت خودکار نرخ تازه نیز طبق زمان‌بندی خودش اعمال می‌شود."
                         wire:click="applyCurrencyRatesToProducts"
                         wire:loading.attr="disabled"
                         wire:target="applyCurrencyRatesToProducts"
@@ -365,6 +430,10 @@
                     <span wire:loading wire:target="applyCurrencyRatesToProducts">در حال قرار دادن در صف…</span>
                 </button>
                 <button type="button"
+                        data-product-tour-step="save-currency-settings"
+                        data-product-tour-order="46"
+                        data-product-tour-title="ذخیرهٔ ارز و نرخ"
+                        data-product-tour-description="ذخیره، ارز پایه و روش نرخ‌گذاری را ثبت می‌کند. با ذخیرهٔ نرخ دستی، محاسبهٔ قیمت محصولات در صف قرار می‌گیرد؛ در حالت خودکار نرخ تازهٔ معتبر و متفاوت باعث به‌روزرسانی می‌شود. تغییر ارز پایه نیز هماهنگ‌سازی قیمت‌های قبلی را در صف می‌گذارد."
                         wire:click="saveCurrencySettings"
                         wire:loading.attr="disabled"
                         wire:target="saveCurrencySettings"
@@ -379,7 +448,11 @@
     {{-- بخش 2: تنظیمات اختصاصی دسته‌بندی --}}
     <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
         <div class="flex items-center justify-between mb-6">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h2 data-product-tour-step="category-overrides-intro"
+                data-product-tour-order="60"
+                data-product-tour-title="درصدهای اختصاصی دسته‌بندی"
+                data-product-tour-description="برای هر دسته می‌توانید درصدهای تیراژ جدا تعیین کنید. هر درصد اختصاصی فقط جای درصد عمومی همان تیراژ را در همان دسته می‌گیرد؛ تیراژهای بدون مقدار اختصاصی از تنظیم عمومی پیروی می‌کنند."
+                class="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 📂 تنظیمات اختصاصی دسته‌بندی
             </h2>
             <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -392,9 +465,14 @@
         <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">افزودن دسته‌بندی جدید</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+                <div data-product-tour-step="tier-category-select"
+                     data-product-tour-order="61"
+                     data-product-tour-title="انتخاب دسته‌بندی"
+                     data-product-tour-description="دستهٔ نهایی محصول را انتخاب کنید. درصدهایی که در این فرم ثبت می‌کنید فقط روی همین دسته اثر دارند؛ اگر دسته‌ای تنظیم نداشته باشد، درصدهای عمومی استفاده می‌شوند."
+                     data-product-tour-target="select"
+                     data-product-tour-label="label">
                     <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی</label>
-                    <select wire:model="selectedCategoryId"
+                    <select data-tier-guide-category-select wire:model="selectedCategoryId"
                             class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                         <option value="">انتخاب کنید...</option>
                         @foreach($categories as $id => $name)
@@ -406,8 +484,13 @@
                 {{-- درصدهای تیراژ (غیر از مرجع) --}}
                 <div class="grid grid-cols-3 gap-2">
                     @foreach([0, 2, 3] as $tierIndex)
-                        <div>
-                            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        <div data-product-tour-step="category-tier-{{ $tierIndex }}"
+                             data-product-tour-order="{{ 62 + $tierIndex }}"
+                             data-product-tour-title="{{ App\Livewire\Supplier\Settings\ManageTierDiscounts::DEFAULT_TIER_NAMES[$tierIndex] }} برای این دسته"
+                             data-product-tour-description="این عدد فقط درصد عمومی همین تیراژ را برای دستهٔ انتخاب‌شده جایگزین می‌کند. مقدار داخل placeholder صرفاً درصد عمومی فعلی است؛ فیلد خالی به همان مقدار عمومی برمی‌گردد. درصد مجاز از منفی ۱۰۰ تا مثبت ۱۰۰ است."
+                             data-product-tour-target="input"
+                             data-product-tour-label=".tier-guide-category-label">
+                            <label class="tier-guide-category-label block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 {{ App\Livewire\Supplier\Settings\ManageTierDiscounts::DEFAULT_TIER_NAMES[$tierIndex] }}
                             </label>
                             <div class="relative">
@@ -425,6 +508,10 @@
             
             <div class="mt-3 flex justify-end">
                 <button type="button"
+                        data-product-tour-step="add-category-override"
+                        data-product-tour-order="66"
+                        data-product-tour-title="ثبت درصدهای این دسته"
+                        data-product-tour-description="برای افزودن، یک دسته‌بندی و دست‌کم یک درصد معتبر وارد کنید. فیلدهای خالی ثبت نمی‌شوند و برای همان تیراژ از درصد عمومی استفاده خواهد شد؛ اگر این دسته قبلاً تنظیم شده، از «ویرایش» استفاده کنید."
                         wire:click="addCategory"
                         class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors">
                     افزودن
@@ -444,8 +531,13 @@
                     <div class="font-medium text-gray-900 dark:text-gray-100">{{ $setting['category_name'] }}</div>
                     <div class="grid grid-cols-3 gap-2">
                         @foreach([0, 2, 3] as $tierIndex)
-                            <div>
-                                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                            <div data-product-tour-step="edit-category-tier-{{ $setting['category_id'] }}-{{ $tierIndex }}"
+                                 data-product-tour-order="{{ 80 + $tierIndex }}"
+                                 data-product-tour-title="ویرایش {{ App\Livewire\Supplier\Settings\ManageTierDiscounts::DEFAULT_TIER_NAMES[$tierIndex] }}"
+                                 data-product-tour-description="عدد این فیلد درصد اختصاصی همین دسته برای این تیراژ است. برای نگه‌داشتن استثنا، مقدار معتبر را ویرایش کنید؛ خانه‌های خالی که پیش‌تر استثنا نداشته‌اند همچنان از درصد عمومی پیروی می‌کنند."
+                                 data-product-tour-target="input"
+                                 data-product-tour-label=".tier-guide-edit-category-label">
+                                <label class="tier-guide-edit-category-label block text-xs text-gray-600 dark:text-gray-400 mb-1">
                                     {{ App\Livewire\Supplier\Settings\ManageTierDiscounts::DEFAULT_TIER_NAMES[$tierIndex] }}
                                 </label>
                                 <div class="relative">
@@ -465,6 +557,10 @@
                             انصراف
                         </button>
                         <button type="button"
+                                data-product-tour-step="save-category-override-{{ $setting['category_id'] }}"
+                                data-product-tour-order="84"
+                                data-product-tour-title="ذخیرهٔ استثنای دسته"
+                                data-product-tour-description="مقادیر ویرایش‌شده را برای این دسته ثبت می‌کند. برای بازگشت کامل دسته به درصدهای عمومی، از دکمهٔ حذف تنظیمات آن دسته استفاده کنید."
                                 wire:click="saveCategoryEdit"
                                 class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
                             ذخیره
@@ -473,9 +569,17 @@
                 </div>
                 @else
                 {{-- حالت نمایش --}}
-                <div class="flex items-center justify-between">
+                <div @if($loop->first)
+                         data-product-tour-step="existing-category-override"
+                         data-product-tour-order="67"
+                         data-product-tour-title="ویرایش درصدهای ثبت‌شده"
+                         data-product-tour-description="هر ردیف نشان می‌دهد کدام تیراژ برای دسته استثنا دارد. با «ویرایش» مقادیر موجود را تغییر دهید؛ فقط درصدهای ثبت‌شده جای مقدار عمومی همان تیراژ را می‌گیرند."
+                         data-product-tour-target=".tier-guide-category-edit"
+                         data-product-tour-label=".tier-guide-category-name"
+                     @endif
+                     class="flex items-center justify-between">
                     <div>
-                        <div class="font-medium text-gray-900 dark:text-gray-100">{{ $setting['category_name'] }}</div>
+                        <div class="tier-guide-category-name font-medium text-gray-900 dark:text-gray-100">{{ $setting['category_name'] }}</div>
                         <div class="flex gap-3 mt-1">
                             @foreach($setting['tiers'] as $tier)
                                 <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -489,11 +593,17 @@
                     </div>
                     <div class="flex gap-2">
                         <button type="button"
-                                wire:click="startEditCategory({{ $setting['category_id'] }})"
-                                class="text-blue-600 dark:text-blue-400 hover:text-blue-800 text-sm">
+                                class="tier-guide-category-edit text-blue-600 dark:text-blue-400 hover:text-blue-800 text-sm"
+                                wire:click="startEditCategory({{ $setting['category_id'] }})">
                             ویرایش
                         </button>
                         <button type="button"
+                                @if($loop->first)
+                                    data-product-tour-step="remove-category-override"
+                                    data-product-tour-order="68"
+                                    data-product-tour-title="حذف استثنای دسته‌بندی"
+                                    data-product-tour-description="این عمل پس از تأیید، همهٔ درصدهای اختصاصی همین دسته را حذف می‌کند؛ قیمت‌گذاری آن دسته دوباره از درصدهای عمومی پیروی می‌کند. راهنما حذف را اجرا نمی‌کند."
+                                @endif
                                 wire:click="removeCategory({{ $setting['category_id'] }})"
                                 class="text-red-600 dark:text-red-400 hover:text-red-800 text-sm"
                                 onclick="return confirm('آیا مطمئن هستید؟')">
@@ -506,7 +616,11 @@
             @endforeach
         </div>
         @else
-        <div class="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+        <div data-product-tour-step="empty-category-overrides"
+             data-product-tour-order="67"
+             data-product-tour-title="تنظیمات دسته‌بندی ثبت‌شده"
+             data-product-tour-description="پس از انتخاب دسته و ثبت دست‌کم یک درصد اختصاصی، ردیف آن اینجا ظاهر می‌شود و می‌توانید درصدهای ثبت‌شده را ویرایش یا همهٔ استثناهای همان دسته را حذف کنید."
+             class="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
             هیچ دسته‌بندی با تنظیمات اختصاصی وجود ندارد
         </div>
         @endif
@@ -530,7 +644,11 @@
                         </svg>
                     </div>
                     <div class="flex-1">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                        <h3 data-product-tour-step="update-prices-confirmation"
+                            data-product-tour-order="31"
+                            data-product-tour-title="تأیید باز‌محاسبه"
+                            data-product-tour-description="این پنجره تعداد قیمت‌های تحت‌تأثیر را نشان می‌دهد و هشدار می‌دهد که باز‌محاسبه قابل بازگشت نیست. فقط در صورت اطمینان، خودتان ادامه دهید."
+                            class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
                             بروزرسانی قیمت‌های نقدی
                         </h3>
                         <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -544,11 +662,19 @@
                 
                 <div class="flex items-center justify-end gap-3 mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
                     <button type="button"
+                            data-product-tour-step="cancel-tier-price-update"
+                            data-product-tour-order="32"
+                            data-product-tour-title="انصراف از باز‌محاسبه"
+                            data-product-tour-description="بستن این تأیید قیمت‌های فعلی را تغییر نمی‌دهد."
                             wire:click="cancelUpdate"
                             class="px-4 py-2 text-gray-700 dark:text-gray-300 text-sm">
                         انصراف
                     </button>
                     <button type="button"
+                            data-product-tour-step="confirm-tier-price-update"
+                            data-product-tour-order="33"
+                            data-product-tour-title="اجرای باز‌محاسبه"
+                            data-product-tour-description="با انتخاب این دکمه، قیمت‌ها برای پردازش در صف قرار می‌گیرند و عملیات قابل بازگشت نیست. راهنما این کار را به‌جای شما انجام نمی‌دهد."
                             wire:click="updatePrices"
                             class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg">
                         بله، بروزرسانی کن

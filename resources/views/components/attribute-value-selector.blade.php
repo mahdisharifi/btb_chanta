@@ -108,7 +108,7 @@
      >
     <div class="bg-gray-50 px-4 py-3 dark:bg-gray-900">
         <div class="flex items-center justify-between">
-            <h4 class="font-semibold text-gray-800 dark:text-gray-200">{{ $attribute->name }}@if($workspace && $attribute->is_required)<span class="mr-1 text-xs text-red-600">(اجباری)</span>@endif</h4>
+            <h4 data-product-tour-field-label class="font-semibold text-gray-800 dark:text-gray-200">{{ $attribute->name }}@if($workspace && $attribute->is_required)<span class="mr-1 text-xs text-red-600">(اجباری)</span>@endif</h4>
             <div class="flex items-center gap-2">
                 <span class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">{{ $attribute->is_multiple ? 'چند انتخابی' : 'تک انتخابی' }}</span>
                 <span x-cloak x-show="selectedIds.length + proposals.length" class="rounded bg-[#d4af37]/10 px-2 py-1 text-xs font-medium text-[#d4af37]" x-text="(selectedIds.length + proposals.length) + ' انتخاب شده'"></span>
@@ -138,7 +138,7 @@
             <div class="relative flex-1">
                 <x-heroicon-o-magnifying-glass class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 @if($workspace)<label class="mb-1 block text-xs text-gray-600">جستجو یا پیشنهاد مقدار جدید برای {{ $attribute->name }}</label>@endif
-                <input type="text" x-model="search" x-on:input="error = ''; rejectedSearch = null; queueSearch()" x-on:keydown.enter.prevent="if (canAdd) add()" maxlength="{{ $workspace ? config('product_completion.validation.attribute_proposed_value_max', 255) : 255 }}"
+                <input type="text" data-product-tour-field-control x-model="search" x-on:input="error = ''; rejectedSearch = null; queueSearch()" x-on:keydown.enter.prevent="if (canAdd) add()" maxlength="{{ $workspace ? config('product_completion.validation.attribute_proposed_value_max', 255) : 255 }}"
                        aria-label="جستجو یا مقدار جدید برای {{ $attribute->name }}" placeholder="جستجو یا مقدار جدید..."
                        class="w-full rounded-lg border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-[#d4af37] focus:ring-[#d4af37] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
             </div>

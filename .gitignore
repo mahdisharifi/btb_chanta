@@ -81,7 +81,8 @@ public_html/hot
 *.zip
 
 # Documentation Directory
-/docs/
+/docs/*
+!/docs/INTERACTIVE_GUIDE_STANDARD.md
 
 # Semantic Review Directory
 /semantic-review/

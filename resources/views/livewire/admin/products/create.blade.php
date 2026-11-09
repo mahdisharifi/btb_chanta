@@ -1,4 +1,4 @@
-<div>
+<div data-product-create-guide>
     {{-- عنوان و breadcrumb وابسته به حالت --}}
     @unless($supplierDraftMode)
         <x-admin.subheader
@@ -6,12 +6,17 @@
             :breadcrumbs="['مدیریت محصولات' => route('admin.products.index'), ($isEdit ? 'ویرایش محصول' : 'ایجاد محصول') => '#']" />
     @endunless
 
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+        <h1 data-product-tour-welcome class="text-2xl font-bold text-gray-800 dark:text-gray-200">
             {{ $isEdit ? 'ویرایش محصول' : 'ایجاد محصول جدید' }}
         </h1>
         @if($supplierDraftMode)
             <p class="mt-1 text-sm text-amber-600 dark:text-amber-400">محصول پس از ثبت به‌صورت پیش‌نویس برای بررسی ذخیره می‌شود.</p>
+        @endif
+        </div>
+        @if($supplierDraftMode && !$isEdit)
+            <x-interactive-guide-launcher />
         @endif
     </div>
 
@@ -84,7 +89,7 @@
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2">اطلاعات اصلی</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div id="field-title">
+                <div id="field-title" data-product-tour-step="title" data-product-tour-order="10" data-product-tour-target="#title" data-product-tour-title="عنوان محصول" data-product-tour-description="نامی را بنویس که مشتری‌ها برای پیدا کردن محصول می‌شناسند. این فیلد برای ثبت محصول الزامی است.">
                     <label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان محصول *</label>
                     <input id="title" type="text"
                            wire:model.live.debounce.500ms="title" 
@@ -93,7 +98,7 @@
                     @error('title') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <div id="field-slug">
+                <div id="field-slug" data-product-tour-step="slug" data-product-tour-order="20" data-product-tour-target="#slug" data-product-tour-title="نامک صفحه (Slug)" data-product-tour-description="نامک از عنوان محصول ساخته می‌شود و در نشانی صفحه قرار می‌گیرد. با دکمهٔ کنار عنوان می‌توانید آن را دوباره از روی عنوان بسازید؛ نامک باید یکتا بماند.">
                     <div class="mb-1 flex items-center gap-2">
                         <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                         نامک (Slug) *
@@ -112,7 +117,7 @@
                 </div>
 
                 <!-- انتخابگر هوشمند دسته‌بندی -->
-                <div x-data="{ open: false }" class="relative" id="field-category_id">
+                <div x-data="{ open: false }" class="relative" id="field-category_id" data-product-tour-step="category" data-product-tour-order="30" data-product-tour-target="#category-select" data-product-tour-title="انتخاب دسته‌بندی" data-product-tour-description="یک دستهٔ نهایی را جست‌وجو و انتخاب کنید. با انتخاب دسته، ویژگی‌های مخصوص همان دسته به فرم اضافه می‌شوند. اگر دسته را عوض کنید، انتخاب ویژگی‌های قبلی پاک می‌شود." data-product-tour-category-selected="{{ $category_id ? 'true' : 'false' }}">
                     <label id="category-label" for="category-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی (فقط دسته‌های نهایی مجاز هستند) *</label>
 
                     <button type="button"
@@ -155,7 +160,7 @@
 
                 @unless($supplierDraftMode)
                     <!-- انتخاب تامین کننده -->
-                    <div>
+                    <div data-product-tour-step="supplier" data-product-tour-order="40" data-product-tour-target="select" data-product-tour-title="تأمین‌کننده" data-product-tour-description="این فیلد فقط در فرم مدیریت نمایش داده می‌شود؛ در پنل تأمین‌کننده، محصول به‌طور خودکار به حساب و شعبهٔ فعال شما وصل می‌شود.">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تامین کننده *</label>
                         <select wire:model="supplier_id" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
                             <option value="">یک تامین کننده انتخاب کنید...</option>
@@ -167,14 +172,14 @@
                     </div>
                 @endunless
 
-                <div>
+                <div id="field-sku" data-product-tour-step="sku" data-product-tour-order="50" data-product-tour-target="#sku" data-product-tour-title="کد محصول (SKU)" data-product-tour-description="کد داخلی شناسایی محصول است. در این مسیر یک کد اولیه به‌صورت خودکار ساخته شده و در صورت نیاز می‌توانید آن را ویرایش کنید.">
                     <label for="sku" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">کد محصول (SKU)</label>
                     <input id="sku" type="text" wire:model="sku" dir="ltr" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left">
                     @error('sku') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
                 @unless($supplierDraftMode)
-                    <div>
+                    <div data-product-tour-step="status" data-product-tour-order="60" data-product-tour-target="select" data-product-tour-title="وضعیت محصول" data-product-tour-description="این انتخاب برای فرم مدیریت است. پیشنهاد تأمین‌کننده در این مسیر مستقل از انتشار عمومی، به‌صورت پیش‌نویس ذخیره می‌شود.">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">وضعیت محصول *</label>
                         <select wire:model="status" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
                             <option value="">انتخاب وضعیت...</option>
@@ -185,7 +190,7 @@
                         @error('status') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
-                    <div class="flex items-center mt-6 md:col-span-2">
+                    <div data-product-tour-step="active" data-product-tour-order="70" data-product-tour-target="#is_active" data-product-tour-title="نمایش عمومی محصول" data-product-tour-description="این گزینه فقط در فرم مدیریت وجود دارد. محصول پیشنهادی تأمین‌کننده تا زمان بررسی و تأیید، فعال و عمومی نمی‌شود." class="flex items-center mt-6 md:col-span-2">
                         <input id="is_active" type="checkbox" wire:model="is_active" class="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 dark:focus:ring-indigo-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">
                         <label for="is_active" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300">محصول فعال است و در سایت نمایش داده می‌شود</label>
                         @error('is_active') <span class="text-red-500 text-xs ml-2">{{ $message }}</span> @enderror
@@ -195,7 +200,7 @@
         </div>
 
         <!-- بخش واحد بسته‌بندی و تیراژبندی خودکار -->
-        <div id="field-packaging" 
+        <div id="field-packaging" data-product-tour-step="packaging" data-product-tour-order="80" data-product-tour-target="h2" data-product-tour-tiers-applied="{{ $tiersApplied ? 'true' : 'false' }}" data-product-tour-title="بسته‌بندی و واحد فروش" data-product-tour-description="این بخش مشخص می‌کند محصول با چه واحدی فروخته می‌شود و هر بسته چند واحد دارد. همین اطلاعات برای ساخت تیراژهای فروش استفاده می‌شود."
              class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 
                     @error('packaging_unit_type') border-red-500 dark:border-red-600 @enderror 
                     @error('quantity_per_packaging') border-red-500 dark:border-red-600 @enderror">
@@ -206,7 +211,7 @@
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 {{-- نوع واحد بسته‌بندی --}}
-                <div>
+                <div data-product-tour-step="packaging-unit" data-product-tour-order="90" data-product-tour-target="#packaging_unit_type" data-product-tour-title="واحد فروش" data-product-tour-description="واحد متناسب با محصول را انتخاب کنید: کارتن، جین، جفت، بسته، شیرینگ، طاقه یا عدد. برای طاقه تعداد بر حسب متر و برای جوراب بر حسب جفت تفسیر می‌شود.">
                     <x-input-label for="packaging_unit_type" value="واحد فروش" />
                     <select wire:model="packaging_unit_type"
                             id="packaging_unit_type" 
@@ -223,7 +228,7 @@
                 </div>
                 
                 {{-- تعداد در هر واحد --}}
-                <div>
+                <div data-product-tour-step="packaging-quantity" data-product-tour-order="100" data-product-tour-target="#quantity_per_packaging" data-product-tour-title="تعداد در هر واحد بسته‌بندی" data-product-tour-description="تعداد داخل یک واحد فروش را وارد کنید؛ مثلاً ۴ عدد در هر کارتن یا ۱۰۰ متر در هر طاقه. پس از وارد کردن تعداد، پیشنهاد تیراژبندی ظاهر می‌شود.">
                     <x-input-label for="quantity_per_packaging" value="تعداد در هر واحد بسته‌بندی" />
                     <div class="relative">
                         <input type="number"
@@ -262,7 +267,7 @@
                             پیشنهاد تیراژبندی خودکار
                         </h3>
                         <div class="flex gap-2">
-                            <button type="button" 
+                            <button type="button" data-product-tour-step="auto-tiers" data-product-tour-order="110" data-product-tour-title="پیشنهاد خودکار تیراژها" data-product-tour-description="پیشنهاد فقط بعد از تأیید شما اعمال می‌شود. با زدن این دکمه سه سطح اولیه ساخته می‌شود؛ سپس راهنما هر سطح و نحوهٔ تنظیم سقف آن را توضیح می‌دهد."
                                     wire:click="applyAutoTiers"
                                     class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors flex items-center gap-1">
                                 <x-heroicon-s-check class="w-4 h-4"/>
@@ -300,7 +305,7 @@
                     </p>
                 </div>
             @elseif($quantity_per_packaging <= 0)
-                <div class="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 mt-4">
+                <div data-product-tour-step="auto-tiers" data-product-tour-order="110" data-product-tour-target="#quantity_per_packaging" data-product-tour-title="پیشنهاد خودکار تیراژها" data-product-tour-description="ابتدا تعداد داخل هر واحد بسته‌بندی را وارد کنید. سپس دکمهٔ اعمال پیشنهاد را بزنید تا سه سطح اولیهٔ خرید ساخته شوند." class="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 mt-4">
                     <div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm">
                         <x-heroicon-o-exclamation-triangle class="w-5 h-5"/>
                         <span>برای مشاهده پیشنهاد تیراژبندی خودکار، ابتدا <strong>تعداد در هر واحد بسته‌بندی</strong> را مشخص کنید.</span>
@@ -310,7 +315,7 @@
         </div>
 
         <!-- بخش تیراژهای محصول -->
-        <div id="field-quantity_tiers" 
+        <div id="field-quantity_tiers" data-product-tour-step="tiers-overview" data-product-tour-order="120" data-product-tour-target="h2" data-product-tour-title="تیراژهای ساخته‌شده و قواعد فروش" data-product-tour-description="با اعمال پیشنهاد، سه سطح خرید ساخته شده‌اند. نام و حداقل تعداد هر سطح به‌صورت خودکار تعیین می‌شود؛ سقف‌ها را طوری تنظیم کنید که بازه‌ها هم‌پوشانی نداشته باشند و سقف آخر خالی بماند تا بدون محدودیت باشد."
              class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700
                     @error('quantity_tiers') border-red-500 dark:border-red-600 @enderror
                     @error('quantity_tiers.*') border-red-500 dark:border-red-600 @enderror">
@@ -398,7 +403,7 @@
                                     ->exists();
                             }
                         @endphp
-                        <div wire:key="tier-{{ $index }}" class="flex items-center gap-3 p-4 rounded-lg border {{ $hasPrices ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700' }}">
+                        <div wire:key="tier-{{ $index }}" data-product-tour-step="tier-{{ $index }}" data-product-tour-order="{{ 130 + $index }}" data-product-tour-target="#quantity-tier-max-{{ $index }}" data-product-tour-title="تنظیم تیراژ {{ $index + 1 }}" data-product-tour-description="نام و حداقل تعداد این سطح خودکار محاسبه می‌شود. سقف تعداد را تنظیم کنید تا بازه‌ها پیوسته و بدون تداخل باشند؛ برای آخرین تیراژ، سقف را خالی بگذارید." class="flex items-center gap-3 p-4 rounded-lg border {{ $hasPrices ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700' }}">
                             @if($hasPrices)
                                 <div class="flex-shrink-0">
                                     <x-heroicon-s-lock-closed class="w-5 h-5 text-amber-600 dark:text-amber-400"/>
@@ -424,7 +429,7 @@
                                         حداقل تعداد
                                         <span class="text-xs text-gray-500">(خودکار)</span>
                                     </label>
-                                    <input type="number" 
+                                    <input id="quantity-tier-max-{{ $index }}" type="number"
                                            wire:model="quantity_tiers.{{ $index }}.min_quantity" 
                                            min="0"
                                            placeholder="100"
@@ -435,7 +440,7 @@
                                     @enderror
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداکثر تعداد</label>
+                                    <label for="quantity-tier-max-{{ $index }}" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداکثر تعداد</label>
                                     <input type="number" 
                                            wire:model.blur="quantity_tiers.{{ $index }}.max_quantity"
                                            min="0"
@@ -484,7 +489,7 @@
                     @endforelse
 
                     @if(count($quantity_tiers) < 4)
-                        <button type="button" 
+                        <button type="button" data-product-tour-step="add-tier" data-product-tour-order="150" data-product-tour-title="افزودن تیراژ" data-product-tour-description="تا چهار تیراژ می‌توانید داشته باشید. برای افزودن سطح بعدی ابتدا سقف تیراژ آخر را وارد کنید؛ حداقل تعداد سطح جدید خودکار تنظیم می‌شود."
                                 wire:click="addQuantityTier" 
                                 @disabled(! $this->canAddQuantityTier())
                                 class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-300">
@@ -516,7 +521,8 @@
 
         <!-- بخش ویژگی‌ها -->
         @if($categoryAttributes)
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div data-product-tour-step="category-attributes" data-product-tour-order="200" data-product-tour-target="h2" data-product-tour-title="ویژگی‌های دسته‌بندی" data-product-tour-description="ویژگی‌های این بخش با دسته‌ای که انتخاب کردید ساخته شده‌اند. هر کارت را جداگانه مرور کنید؛ بعضی ویژگی‌ها یک انتخاب دارند و بعضی چند انتخابی هستند."
+             class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2 flex items-center gap-2">
                 <x-heroicon-o-adjustments-horizontal class="w-5 h-5 text-[#d4af37]"/>
                 ویژگی‌های محصول
@@ -524,7 +530,15 @@
 
             <div class="space-y-4">
                 @foreach($categoryAttributes as $attribute)
-                @include('components.attribute-value-selector', ['attribute' => $attribute])
+                <div wire:key="product-guide-attribute-{{ $attribute->id }}"
+                     data-product-tour-step="category-attribute-{{ $attribute->id }}"
+                     data-product-tour-order="{{ 210 + $loop->index }}"
+                     data-product-tour-target="[data-product-tour-field-control]"
+                     data-product-tour-label="[data-product-tour-field-label]"
+                     data-product-tour-title="ویژگی: {{ $attribute->name }}"
+                     data-product-tour-description="{{ $attribute->is_multiple ? 'برای این ویژگی می‌توانید چند مقدار انتخاب کنید.' : 'برای این ویژگی یک مقدار انتخاب کنید.' }} مقادیر موجود را جست‌وجو کنید؛ اگر مورد مناسب نیست، مقدار تازه را بنویسید و افزودن را بزنید.">
+                    @include('components.attribute-value-selector', ['attribute' => $attribute])
+                </div>
                 @endforeach
             </div>
         </div>
@@ -533,13 +547,13 @@
 
 
         {{-- SEO --}}
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 space-y-4">
+        <div id="field-seo" data-product-tour-step="seo-overview" data-product-tour-order="300" data-product-tour-target="h3" data-product-tour-title="تنظیمات نمایش در گوگل (SEO)" data-product-tour-description="این فیلدها عنوان و خلاصه‌ای را کنترل می‌کنند که موتورهای جست‌وجو می‌توانند برای محصول نمایش دهند. همهٔ فیلدهای SEO اختیاری‌اند و پیش‌نمایش پایین بخش، نتیجه را نشان می‌دهد." class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 space-y-4">
             <div class="flex items-center justify-between">
                 <h3 class="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <x-heroicon-o-magnifying-glass class="w-5 h-5 text-[#d4af37]"/>
                     بهینه‌سازی موتور جستجو (SEO)
                 </h3>
-                <button type="button" wire:click="generateSeo"
+                <button type="button" data-product-tour-step="seo-generate" data-product-tour-order="310" data-product-tour-title="تولید خودکار SEO" data-product-tour-description="این دکمه عنوان، توضیحات، کلمات کلیدی و نشانی اصلی را از اطلاعاتی که تا اینجا وارد کرده‌اید می‌سازد. بعد از تولید، می‌توانید همه را ویرایش کنید." wire:click="generateSeo"
                         class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[#d4af37]/10 text-[#d4af37] hover:bg-[#d4af37]/20 transition">
                     <x-heroicon-o-sparkles class="w-4 h-4"/>
                     تولید خودکار
@@ -562,7 +576,7 @@
                 </div>
             </div>
 
-            <div>
+            <div data-product-tour-step="seo-title" data-product-tour-order="320" data-product-tour-target="input" data-product-tour-title="عنوان SEO" data-product-tour-description="عنوانی کوتاه برای نتیجهٔ جست‌وجو است و حداکثر ۶۰ نویسه می‌پذیرد. اگر خالی بماند، عنوان محصول جای آن استفاده می‌شود.">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان SEO</label>
                 <input type="text" wire:model.live="seo_title" maxlength="60"
                        class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm"
@@ -571,7 +585,7 @@
                 @error('seo_title') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
             </div>
 
-            <div>
+            <div data-product-tour-step="seo-description" data-product-tour-order="330" data-product-tour-target="textarea" data-product-tour-title="توضیحات SEO" data-product-tour-description="خلاصه‌ای برای نتیجهٔ جست‌وجو بنویسید؛ حداکثر ۱۶۰ نویسه. این متن با توضیحات کامل محصول فرق دارد.">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">توضیحات SEO</label>
                 <textarea wire:model.live="seo_description" rows="3" maxlength="160"
                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm"
@@ -580,7 +594,7 @@
                 @error('seo_description') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
             </div>
 
-            <div>
+            <div data-product-tour-step="seo-keywords" data-product-tour-order="340" data-product-tour-target="input" data-product-tour-title="کلمات کلیدی" data-product-tour-description="عبارت‌های مرتبط را با ویرگول جدا کنید. این فیلد اختیاری است و سقف آن ۲۵۵ نویسه است.">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     کلمات کلیدی
                 </label>
@@ -600,7 +614,7 @@
                 @enderror
             </div>
 
-            <div>
+            <div data-product-tour-step="seo-canonical" data-product-tour-order="350" data-product-tour-target="input[type=url]" data-product-tour-title="نشانی Canonical" data-product-tour-description="در حالت عادی این نشانی خودکار از نامک محصول ساخته می‌شود. فقط وقتی صفحهٔ اصلی محصول نشانی دیگری دارد، URL کامل و یکتا را وارد کنید.">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center gap-2">
                     <span>آدرس Canonical (اختیاری)</span>
                     <span class="relative group">
@@ -637,7 +651,7 @@
 
             {{-- پیش‌نمایش گوگل - بهبود یافته با تصویر --}}
             @if($seo_title || $seo_description || $title)
-            <div class="mt-4 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-5 shadow-sm">
+            <div data-product-tour-step="seo-preview" data-product-tour-order="360" data-product-tour-target="h3" data-product-tour-title="پیش‌نمایش گوگل" data-product-tour-description="این پیش‌نمایش تقریبی عنوان، نشانی و توضیحات را کنار هم نشان می‌دهد. Google ممکن است متن نهایی را کوتاه یا بازنویسی کند." class="mt-4 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-5 shadow-sm">
                 <div class="flex items-center gap-2 mb-3">
                     <div class="w-10 h-10 rounded-lg bg-white dark:bg-gray-700 flex items-center justify-center shadow-sm">
                         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -735,7 +749,7 @@
         </div>
 
         <!-- بخش تولید توضیحات با هوش مصنوعی -->
-        <div class="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-lg shadow-sm border-2 border-purple-200 dark:border-purple-800">
+        <div id="field-ai-description" data-product-tour-step="ai-overview" data-product-tour-order="400" data-product-tour-target="h2" data-product-tour-title="ساخت توضیحات با کمک هوش مصنوعی" data-product-tour-description="این بخش خودش به سرویس هوش مصنوعی وصل نمی‌شود. مشخصات را آماده می‌کند تا پرامپت را کپی کنید، در ابزار دلخواهتان بفرستید و متن نهایی را در دو فیلد پایین وارد کنید." class="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-lg shadow-sm border-2 border-purple-200 dark:border-purple-800">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <x-heroicon-o-sparkles class="w-6 h-6 text-purple-600"/>
@@ -764,7 +778,7 @@
             </div>
 
             <!-- دکمه کپی پرامپت -->
-            <div class="mb-6"
+            <div data-product-tour-step="ai-copy-prompt" data-product-tour-order="410" data-product-tour-target="button" data-product-tour-title="کپی پرامپت" data-product-tour-description="با این دکمه، پرامپتی شامل نام، دسته، بسته‌بندی و ویژگی‌های انتخاب‌شده در کلیپ‌بورد کپی می‌شود. آن را در ابزار هوش مصنوعی دلخواهتان بچسبانید؛ سپس متن پاسخ را خودتان در فیلدهای توضیحات وارد کنید." class="mb-6"
                  x-data="{
                      copied: false,
                      async copyPrompt() {
@@ -797,7 +811,7 @@
             </div>
 
             <!-- فیلد توضیحات کوتاه -->
-            <div class="mb-6">
+            <div data-product-tour-step="short-description" data-product-tour-order="420" data-product-tour-target="textarea" data-product-tour-title="توضیحات کوتاه" data-product-tour-description="خلاصهٔ دو یا سه‌جمله‌ای محصول را بنویسید. این متن در کارت‌ها و فهرست‌ها نشان داده می‌شود و حداکثر ۲۰۰ نویسه دارد." class="mb-6">
                 <label for="short_description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     <x-heroicon-o-document-text class="w-5 h-5 text-indigo-600"/>
                     توضیحات کوتاه
@@ -821,7 +835,7 @@
             </div>
 
             <!-- فیلد توضیحات کامل -->
-            <div>
+            <div data-product-tour-step="full-description" data-product-tour-order="430" data-product-tour-target="textarea" data-product-tour-title="توضیحات کامل" data-product-tour-description="جزئیات، کاربردها و مزایای محصول را بنویسید. این متن در صفحهٔ جزئیات محصول نمایش داده می‌شود.">
                 <label for="full_description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
                     <x-heroicon-o-document-duplicate class="w-5 h-5 text-indigo-600"/>
                     توضیحات تخصصی کامل
@@ -870,7 +884,7 @@
         </div>
 
         <!-- تصاویر و ویدئوی محصول -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div id="field-media" data-product-tour-step="media-overview" data-product-tour-order="500" data-product-tour-target="h2" data-product-tour-title="تصاویر و ویدئوی محصول" data-product-tour-description="رسانه‌ها به مشتری کمک می‌کنند کالا را بشناسد. تصویر اصلی و گالری عکس اختیاری‌اند؛ می‌توانید ویدئو و تصویر بندانگشتی آن را هم اضافه کنید." class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2">تصاویر و ویدئوی محصول</h2>
 
             {{-- نمایش رسانه‌های موجود فقط در حالت ویرایش --}}
@@ -986,7 +1000,7 @@
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <!-- تصویر اصلی -->
-                <div>
+                <div data-product-tour-step="primary-image" data-product-tour-order="510" data-product-tour-target="input[type=file]" data-product-tour-title="تصویر اصلی" data-product-tour-description="یک تصویر شاخص برای نمایش محصول انتخاب کنید. تصویر باید عکس باشد و حجم مجاز آن تا ۲ مگابایت است؛ پس از انتخاب، پیش‌نمایش را بررسی کنید.">
                     <label for="primary_image" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $isEdit ? 'جایگزینی تصویر اصلی (اختیاری)' : 'تصویر اصلی محصول' }}
                     </label>
@@ -1003,7 +1017,7 @@
                 </div>
 
                 <!-- گالری تصاویر -->
-                <div>
+                <div data-product-tour-step="gallery-images" data-product-tour-order="520" data-product-tour-target="input[type=file]" data-product-tour-title="گالری تصاویر" data-product-tour-description="می‌توانید چند تصویر دیگر را هم‌زمان انتخاب کنید. بعد از انتخاب، پیش‌نمایش آن‌ها را می‌بینید؛ هر تصویر حداکثر ۲ مگابایت باشد.">
                     <label for="gallery_images" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $isEdit ? 'افزودن به گالری (انتخاب چندتایی)' : 'گالری تصاویر (انتخاب چندتایی)' }}
                     </label>
@@ -1024,7 +1038,7 @@
                 </div>
 
                 <!-- ویدئوی محصول -->
-                <div class="md:col-span-2">
+                <div data-product-tour-step="product-video" data-product-tour-order="530" data-product-tour-target="input[type=file]" data-product-tour-title="ویدئوی محصول" data-product-tour-description="افزودن ویدئو اختیاری است. فرمت‌های MP4، WebM، OGG و MOV پذیرفته می‌شوند و حجم فایل نباید از ۵۰ مگابایت بیشتر باشد." class="md:col-span-2">
                     <label for="product_video" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         {{ $isEdit ? 'جایگزینی ویدئوی محصول (اختیاری)' : 'ویدئوی محصول (اختیاری)' }}
                     </label>
@@ -1052,7 +1066,7 @@
                     @endif
 
                     {{-- ✅ فیلد آپلود تصویر پیش‌نمایش (Poster) --}}
-                    <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <div data-product-tour-step="video-poster" data-product-tour-order="540" data-product-tour-target="input[type=file]" data-product-tour-title="تصویر بندانگشتی ویدئو" data-product-tour-description="این تصویر به‌عنوان پیش‌نمایش ویدئو در گالری استفاده می‌شود. فقط وقتی ویدئو دارید لازم است آن را انتخاب کنید؛ تصویر JPG، PNG یا WebP تا ۲ مگابایت باشد." class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
                         <label for="video_poster" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             <span class="flex items-center gap-2">
                                 <x-heroicon-o-photo class="w-5 h-5" />
@@ -1085,7 +1099,7 @@
             </div>
         </div>
 
-        <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 border-t border-gray-200 dark:border-gray-700 pt-6">
+        <div data-product-tour-step="submit-draft" data-product-tour-order="600" data-product-tour-target="button[type=submit]" data-product-tour-title="ثبت پیشنهاد برای بررسی" data-product-tour-description="دکمهٔ ذخیره، محصول را به‌صورت پیش‌نویس برای بررسی می‌فرستد؛ آن را همان لحظه عمومی نمی‌کند. راهنما خودش چیزی ثبت نمی‌کند—وقتی آماده بودید، دکمه را بزنید." class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 border-t border-gray-200 dark:border-gray-700 pt-6">
             <button type="submit" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm transition-colors flex items-center justify-center min-w-[150px]">
                 <span wire:loading.remove wire:target="save, primary_image, gallery_images, product_video, video_poster">{{ $supplierDraftMode ? 'ذخیره به عنوان پیش‌نویس' : ($isEdit ? 'ذخیره تغییرات' : 'ایجاد محصول') }}</span>
                 <span wire:loading wire:target="save, primary_image, gallery_images, product_video, video_poster">در حال پردازش...</span>
