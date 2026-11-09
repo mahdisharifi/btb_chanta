@@ -15,6 +15,89 @@
         </div>
     @endif
 
+    @if($canChangeRules)
+        <section class="mb-6 rounded-xl border border-indigo-200 bg-white p-4" aria-label="تغییر گروهی قانون پورسانت">
+            <h2 class="text-lg font-bold text-indigo-900">تغییر گروهی قانون و محاسبه مجدد پورسانت</h2>
+            <p class="mt-2 text-sm text-slate-600">پیمانکار و نوع تسک را انتخاب کنید. همهٔ پورسانت‌های قابل تغییر مطابق این فیلترها، در تمام صفحه‌ها بررسی می‌شوند. فیلتر وضعیت پایین صفحه روی این عملیات اثری ندارد.</p>
+            <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label class="text-sm" for="bulk-rule-contractor">پیمانکار محتوا
+                    <select id="bulk-rule-contractor" wire:model.live="bulkUserId" class="mt-1 w-full rounded-lg border-slate-300">
+                        <option value="">انتخاب پیمانکار</option>
+                        @foreach($contractors as $contractor)
+                            <option value="{{ $contractor->id }}">{{ $contractor->name }} ({{ $contractor->id }})</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="text-sm" for="bulk-rule-task-type">نوع تسک
+                    <select id="bulk-rule-task-type" wire:model.live="bulkTaskType" class="mt-1 w-full rounded-lg border-slate-300">
+                        @foreach($taskTypes as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
+                    </select>
+                </label>
+                <label class="text-sm" for="bulk-rule-source">قانون فعلی
+                    <select id="bulk-rule-source" wire:model.live="bulkSourceRuleId" class="mt-1 w-full rounded-lg border-slate-300">
+                        <option value="">همهٔ قوانین این نوع تسک</option>
+                        @foreach($sourceRules as $rule)
+                            <option value="{{ $rule->id }}">{{ $rule->name }} — نسخه {{ $rule->version }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="text-sm" for="bulk-rule-target">قانون جدید
+                    <select id="bulk-rule-target" wire:model.live="bulkRuleId" class="mt-1 w-full rounded-lg border-slate-300">
+                        <option value="">انتخاب قانون جدید</option>
+                        @foreach($rules->filter(fn ($rule) => $rule->task_type->value === $bulkTaskType) as $rule)
+                            <option value="{{ $rule->id }}">{{ $rule->name }} — نسخه {{ $rule->version }} ({{ $rule->currency }})</option>
+                        @endforeach
+                    </select>
+                </label>
+            </div>
+            <p class="mt-3 text-xs text-slate-500">فقط تسک‌های تکمیل‌شده دارای پورسانت بررسی می‌شوند. موارد پرداخت‌شده، متصل به صورتحساب تسویه یا دارای ارز متفاوت از قانون جدید از عملیات خارج هستند.</p>
+            <button type="button" wire:click="previewBulkRule" wire:loading.attr="disabled" class="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-60">پیش‌نمایش گروهی</button>
+
+            @if($bulkPreview !== [])
+                <div class="mt-4 border-t pt-4">
+                    <p class="text-sm">تعداد قابل تغییر: <strong>{{ count($bulkPreview['rows']) }}</strong> — تعداد خارج از عملیات: <strong>{{ $bulkPreview['excluded_count'] }}</strong></p>
+                    @if($bulkPreview['rows'] === [])
+                        <p class="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">پورسانت قابل تغییری با این فیلترها پیدا نشد.</p>
+                    @else
+                        <div class="my-3 flex flex-wrap gap-3 text-sm">
+                            <button type="button" wire:click="selectAllBulk" class="font-semibold text-indigo-700">انتخاب همهٔ {{ count($bulkPreview['rows']) }} مورد</button>
+                            <button type="button" wire:click="clearBulkSelection" class="text-slate-600">لغو انتخاب همه</button>
+                        </div>
+                        <div class="max-h-96 overflow-auto rounded-lg border">
+                            <table class="min-w-full text-right text-sm">
+                                <thead class="sticky top-0 bg-slate-100"><tr><th class="p-2">انتخاب</th><th class="p-2">محصول / شناسه تسک</th><th class="p-2">قانون فعلی</th><th class="p-2">مبلغ فعلی</th><th class="p-2">مبلغ جدید</th></tr></thead>
+                                <tbody>
+                                    @foreach($bulkPreview['rows'] as $publicId => $row)
+                                        <tr wire:key="bulk-commission-{{ $publicId }}" class="border-t">
+                                            <td class="p-2"><input type="checkbox" wire:model.live="bulkSelected" value="{{ $publicId }}" aria-label="انتخاب تسک {{ $row['task_public_id'] }}" class="rounded border-slate-300 text-indigo-600"></td>
+                                            <td class="p-2">{{ $row['product_title'] }}<span class="mt-1 block text-xs text-slate-500">{{ $row['task_public_id'] }}</span></td>
+                                            <td class="p-2">{{ $row['old_rule'] }} — نسخه {{ $row['old_rule_version'] }}</td>
+                                            <td class="p-2">{{ number_format((float) $row['old_total'], 2) }}</td>
+                                            <td class="p-2 font-semibold">{{ number_format((float) $row['new_total'], 2) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-3 grid gap-3 rounded-lg bg-indigo-50 p-3 text-sm md:grid-cols-4">
+                            <p>تعداد منتخب: <strong>{{ $bulkSummary['count'] }}</strong></p>
+                            <p>جمع فعلی: <strong>{{ number_format((float) $bulkSummary['old_total'], 2) }}</strong></p>
+                            <p>جمع جدید: <strong>{{ number_format((float) $bulkSummary['new_total'], 2) }}</strong></p>
+                            <p>اختلاف: <strong>{{ number_format((float) $bulkSummary['difference'], 2) }}</strong> {{ $bulkPreview['currency'] }}</p>
+                        </div>
+                        <form wire:submit="changeBulkRule" wire:confirm="قانون همهٔ تسک‌های منتخب تغییر کند و پورسانت آن‌ها دوباره محاسبه شود؟ تأیید مالی قبلی لغو خواهد شد." class="mt-3 space-y-3">
+                            <label class="block text-sm" for="bulk-rule-reason">دلیل تغییر گروهی
+                                <textarea id="bulk-rule-reason" wire:model="bulkReason" maxlength="2000" required rows="2" class="mt-1 w-full rounded-lg border-slate-300"></textarea>
+                            </label>
+                            <p class="text-xs text-amber-800">پاداش و کسورات دستی حفظ می‌شوند. همهٔ موارد منتخب پس از تغییر به تأیید مجدد مالی نیاز دارند و سابقهٔ هر تغییر ثبت می‌شود.</p>
+                            <button type="submit" wire:loading.attr="disabled" @disabled($bulkSummary['count'] === 0) class="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white disabled:opacity-50">ثبت گروهی و محاسبه مجدد {{ $bulkSummary['count'] }} تسک</button>
+                        </form>
+                    @endif
+                </div>
+            @endif
+        </section>
+    @endif
+
     <div class="mb-4">
         <label for="admin-commission-status" class="mb-1 block text-sm font-medium text-slate-700">فیلتر وضعیت</label>
         <select id="admin-commission-status" wire:model.live="status" class="rounded-lg border-slate-300">
@@ -52,6 +135,34 @@
                     <div><p class="text-xs text-slate-500">مبلغ / میانگین نرخ محتوا</p><p class="font-semibold text-emerald-700">{{ number_format((float) $commission->total_amount) }} {{ $commission->currency }}</p><p class="text-xs text-slate-500">{{ $commission->task?->commission_rate_percentage }}٪</p></div>
                     <div><p class="text-xs text-slate-500">وضعیت</p><p class="font-semibold">{{ $commission->status->label() }}</p></div>
                 </div>
+
+                @can('changeRule', $commission)
+                    @if($commission->settlement_id === null && in_array($commission->status, [\App\Enums\ProductCompletionCommissionStatus::CALCULATED, \App\Enums\ProductCompletionCommissionStatus::UNDER_REVIEW, \App\Enums\ProductCompletionCommissionStatus::APPROVED, \App\Enums\ProductCompletionCommissionStatus::PAYABLE], true))
+                    <details class="mt-4 rounded-lg border border-indigo-200 p-3">
+                        <summary class="cursor-pointer font-semibold text-indigo-700">تغییر قانون و محاسبه مجدد</summary>
+                        <p class="mt-2 text-sm">قانون فعلی: {{ $commission->commissionRule?->name }}، نسخه {{ $commission->commissionRule?->version }}</p>
+                        <div class="mt-3 grid gap-3 md:grid-cols-2">
+                            <label class="text-sm">قانون جدید
+                                <select wire:model="ruleIds.{{ $commission->public_id }}" class="mt-1 w-full rounded-lg border-slate-300">
+                                    <option value="">انتخاب قانون</option>
+                                    @foreach($rules->filter(fn ($rule) => $rule->task_type === $commission->task?->task_type && $rule->currency === $commission->currency) as $rule)
+                                        <option value="{{ $rule->id }}">{{ $rule->name }} — نسخه {{ $rule->version }}</option>
+                                    @endforeach
+                                </select>
+                            </label>
+                            <label class="text-sm">دلیل تغییر
+                                <input type="text" maxlength="2000" wire:model="ruleReasons.{{ $commission->public_id }}" class="mt-1 w-full rounded-lg border-slate-300">
+                            </label>
+                        </div>
+                        <button type="button" wire:click="previewRule('{{ $commission->public_id }}')" wire:loading.attr="disabled" class="mt-3 rounded-lg border border-indigo-600 px-4 py-2 text-sm text-indigo-700">پیش‌نمایش محاسبه</button>
+                        @if(isset($rulePreviews[$commission->public_id]) && (int) ($ruleIds[$commission->public_id] ?? 0) === (int) $rulePreviews[$commission->public_id]['rule_id'])
+                            <p class="mt-3 text-sm">مبلغ فعلی: {{ number_format((float) $rulePreviews[$commission->public_id]['old_total'], 2) }} — مبلغ جدید: {{ number_format((float) $rulePreviews[$commission->public_id]['new_total'], 2) }} {{ $commission->currency }}</p>
+                            <p class="mt-1 text-xs text-amber-700">پس از ثبت، پورسانت نیازمند تأیید مجدد مالی خواهد بود.</p>
+                            <button type="button" wire:click="changeRule('{{ $commission->public_id }}')" wire:confirm="قانون تغییر کند و پورسانت دوباره محاسبه شود؟" wire:loading.attr="disabled" class="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white">ثبت تغییر و محاسبه مجدد</button>
+                        @endif
+                    </details>
+                    @endif
+                @endcan
 
                 @php($breakdown = is_array($commission->breakdown_json ?? null) ? $commission->breakdown_json : [])
                 @if($breakdown !== [])

@@ -244,10 +244,8 @@
 
                 <!-- ویدئوی محصول -->
                 <div data-product-tour-step="product-video" data-product-tour-order="5" data-product-tour-target="input[type=file]" data-product-tour-title="ویدئوی محصول" data-product-tour-description="افزودن ویدئو اختیاری است. فرمت‌های MP4، WebM، OGG و MOV پذیرفته می‌شوند و حجم فایل نباید از ۵۰ مگابایت بیشتر باشد." class="md:col-span-2">
-                    <label for="product_video" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        {{ $isEdit ? 'جایگزینی ویدئوی محصول (اختیاری)' : 'ویدئوی محصول (اختیاری)' }}
-                    </label>
 
+                    <div class="flex flex-wrap items-start gap-4">
                     <label for="product_video" class="flex w-32 min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-3 text-indigo-600 hover:bg-indigo-50 focus-within:ring-2 focus-within:ring-indigo-500">
                         <svg aria-hidden="true" class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="6" width="14" height="12" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="m16 10 6-4v12l-6-4z"/></svg>
                         <span class="text-sm">{{ $product_video ? 'تغییر ویدئو' : 'افزودن ویدئو' }}</span>
@@ -256,6 +254,30 @@
                            accept="video/mp4,video/webm,video/ogg,video/quicktime"
                            class="sr-only">
                     </label>
+                    <div data-product-tour-step="video-poster" data-product-tour-order="6" data-product-tour-target="input[type=file]" data-product-tour-title="تصویر بندانگشتی ویدئو" data-product-tour-description="این تصویر به‌عنوان پیش‌نمایش ویدئو در گالری استفاده می‌شود. فقط وقتی ویدئو دارید لازم است آن را انتخاب کنید؛ تصویر JPG، PNG یا WebP تا ۲ مگابایت باشد." class="max-w-xs">
+                        <label for="video_poster" class="flex w-32 min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-3 text-indigo-600 hover:bg-indigo-50 focus-within:ring-2 focus-within:ring-indigo-500">
+                            <svg aria-hidden="true" class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m3 17 5-5 4 4 3-3 6 6"/></svg>
+                            <span class="text-sm text-center">{{ $video_poster ? 'تغییر تصویر ویدئو' : 'تصویر پیش‌نمایش ویدئو' }}</span>
+                            <input id="video_poster" type="file" wire:model="video_poster" accept="image/jpeg,image/jpg,image/png,image/webp" class="sr-only">
+                        </label>
+
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            این تصویر در گالری محصول به عنوان پیش‌نمایش ویدئو نمایش داده می‌شود
+                        </p>
+
+                        <div wire:loading wire:target="video_poster" class="text-sm text-indigo-600 mt-2">در حال آپلود تصویر...</div>
+                        @error('video_poster') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+
+                        @if ($video_poster)
+                        <div class="mt-3">
+                            <p class="text-xs text-green-600 mb-2">پیش‌نمایش thumbnail:</p>
+                            <img src="{{ $video_poster->temporaryUrl() }}"
+                                 class="w-32 h-24 object-cover rounded-lg border-2 border-green-500 shadow-sm"
+                                 alt="Video Poster Preview">
+                        </div>
+                        @endif
+                    </div>
+                    </div>
 
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
                         فرمت‌های مجاز: mp4، webm، ogg، mov - حداکثر حجم: ۵۰ مگابایت
@@ -275,35 +297,7 @@
                     @endif
 
                     {{-- ✅ فیلد آپلود تصویر پیش‌نمایش (Poster) --}}
-                    <div data-product-tour-step="video-poster" data-product-tour-order="6" data-product-tour-target="input[type=file]" data-product-tour-title="تصویر بندانگشتی ویدئو" data-product-tour-description="این تصویر به‌عنوان پیش‌نمایش ویدئو در گالری استفاده می‌شود. فقط وقتی ویدئو دارید لازم است آن را انتخاب کنید؛ تصویر JPG، PNG یا WebP تا ۲ مگابایت باشد." class="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                        <label for="video_poster" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            <span class="flex items-center gap-2">
-                                <x-heroicon-o-photo class="w-5 h-5" />
-                                تصویر پیش‌نمایش ویدئو (Thumbnail)
-                            </span>
-                        </label>
 
-                        <input id="video_poster" type="file"
-                               wire:model="video_poster"
-                               accept="image/jpeg,image/jpg,image/png,image/webp"
-                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-600 dark:file:text-gray-300 border border-gray-200 dark:border-gray-600 rounded-md">
-
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            این تصویر در گالری محصول به عنوان پیش‌نمایش ویدئو نمایش داده می‌شود
-                        </p>
-
-                        <div wire:loading wire:target="video_poster" class="text-sm text-indigo-600 mt-2">در حال آپلود تصویر...</div>
-                        @error('video_poster') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-
-                        @if ($video_poster)
-                        <div class="mt-3">
-                            <p class="text-xs text-green-600 mb-2">پیش‌نمایش thumbnail:</p>
-                            <img src="{{ $video_poster->temporaryUrl() }}"
-                                 class="w-32 h-24 object-cover rounded-lg border-2 border-green-500 shadow-sm"
-                                 alt="Video Poster Preview">
-                        </div>
-                        @endif
-                    </div>
                 </div>
             </div>
         </div>

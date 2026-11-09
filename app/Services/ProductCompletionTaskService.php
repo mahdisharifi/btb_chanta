@@ -648,7 +648,7 @@ class ProductCompletionTaskService
         }
     }
 
-    private function commissionRuleSnapshot(CommissionRule $rule): array
+    public function commissionRuleSnapshot(CommissionRule $rule): array
     {
         $pricingSchemaVersion = (int) ($rule->pricing_schema_version ?? 1);
 
