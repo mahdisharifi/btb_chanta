@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f8fafc">
+    <title>پیش‌نمایش نویگیشن موبایل پنل تأمین‌کننده</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Vazir, Tahoma, Arial, sans-serif;
+            color: #1f2937;
+            background: #eef2f7;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; background: #eef2f7; }
+        button { font: inherit; }
+        .preview-stage { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+        .preview-wrap { width: 100%; max-width: 412px; }
+        .preview-label { margin: 0 0 10px; color: #64748b; font-size: 12px; text-align: center; }
+        .device {
+            position: relative;
+            width: 100%;
+            height: min(860px, calc(100vh - 64px));
+            min-height: 620px;
+            overflow: hidden;
+            border: 8px solid #111827;
+            border-radius: 34px;
+            background: #f8fafc;
+            box-shadow: 0 28px 80px rgba(15, 23, 42, .2);
+            isolation: isolate;
+        }
+        .app-header {
+            height: 62px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 14px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #fff;
+        }
+        .header-title { min-width: 0; font-size: 14px; font-weight: 800; color: #312e81; }
+        .header-title small { display: block; margin-top: 2px; color: #94a3b8; font-size: 10px; font-weight: 500; }
+        .icon-button { width: 38px; height: 38px; border: 0; border-radius: 12px; display: grid; place-items: center; color: #64748b; background: transparent; cursor: pointer; }
+        .icon-button:hover { background: #f1f5f9; }
+        svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .main { height: calc(100% - 62px); overflow: auto; padding: 16px 14px 108px; scrollbar-width: thin; }
+        .demo-banner { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 9px 11px; border: 1px solid #c7d2fe; border-radius: 12px; color: #4338ca; background: #eef2ff; font-size: 11px; line-height: 1.8; }
+        .demo-banner svg { width: 16px; height: 16px; flex: none; }
+        .welcome-card { padding: 16px; border: 1px solid #e5e7eb; border-radius: 16px; background: #fff; box-shadow: 0 2px 5px rgba(15, 23, 42, .03); }
+        .welcome-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .welcome-card h1 { margin: 0; font-size: 16px; line-height: 1.7; color: #111827; }
+        .welcome-card p { margin: 6px 0 0; color: #64748b; font-size: 12px; line-height: 1.9; }
+        .quick-pill { padding: 8px 10px; border: 1px solid #e0e7ff; border-radius: 10px; color: #4338ca; background: #f5f7ff; font-size: 10px; white-space: nowrap; }
+        .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+        .metric { min-height: 86px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid #e8edf3; border-radius: 14px; background: #fff; }
+        .metric-label { color: #64748b; font-size: 10px; }
+        .metric-value { margin-top: 5px; color: #111827; font-size: 19px; font-weight: 800; }
+        .metric-icon { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #dbeafe; border-radius: 11px; color: #2563eb; background: #eff6ff; }
+        .metric-icon svg { width: 19px; height: 19px; }
+        .section-card { margin-top: 12px; padding: 14px; border: 1px solid #e8edf3; border-radius: 14px; background: #fff; }
+        .section-card h2 { margin: 0; color: #334155; font-size: 13px; }
+        .product-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 0; color: #475569; font-size: 11px; }
+        .product-status { color: #059669; font-size: 10px; }
+
+        .mobile-nav {
+            position: absolute;
+            z-index: 12;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 3px;
+            padding: 7px 7px calc(8px + env(safe-area-inset-bottom));
+            border-top: 1px solid #e5e7eb;
+            background: rgba(255, 255, 255, .97);
+            box-shadow: 0 -8px 24px rgba(15, 23, 42, .06);
+            backdrop-filter: blur(14px);
+        }
+        .nav-item {
+            min-width: 0;
+            min-height: 54px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            padding: 3px 2px;
+            border: 0;
+            border-radius: 12px;
+            color: #64748b;
+            background: transparent;
+            cursor: pointer;
+            font-size: 9px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .nav-item svg { width: 20px; height: 20px; }
+        .nav-item.is-active { color: #4f46e5; background: #eef2ff; }
+        .nav-item.add-item { color: #4f46e5; }
+        .add-icon { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 11px; color: #fff; background: linear-gradient(135deg, #6366f1, #7c3aed); box-shadow: 0 4px 10px rgba(99, 102, 241, .24); }
+        .add-icon svg { width: 18px; height: 18px; }
+
+        .settings-panel {
+            position: absolute;
+            z-index: 11;
+            right: 10px;
+            bottom: calc(72px + env(safe-area-inset-bottom));
+            left: 10px;
+            padding: 14px;
+            border: 1px solid #e0e7ff;
+            border-radius: 18px;
+            background: #fff;
+            box-shadow: 0 18px 44px rgba(15, 23, 42, .18);
+            transform-origin: bottom center;
+            animation: rise .18s ease-out;
+        }
+        .settings-panel[hidden] { display: none !important; }
+        @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .settings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .settings-head h2 { margin: 0; color: #312e81; font-size: 14px; }
+        .settings-head p { margin: 3px 0 0; color: #94a3b8; font-size: 10px; }
+        .settings-list { display: grid; gap: 7px; }
+        .setting-link { width: 100%; min-height: 53px; display: flex; align-items: center; gap: 11px; padding: 8px 10px; border: 1px solid #edf0f5; border-radius: 12px; color: #334155; background: #fff; text-align: right; cursor: pointer; }
+        .setting-link:hover, .setting-link:focus-visible { border-color: #c7d2fe; background: #f8faff; outline: none; }
+        .setting-icon { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 10px; color: #4f46e5; background: #eef2ff; }
+        .setting-icon svg { width: 18px; height: 18px; }
+        .setting-copy { min-width: 0; }
+        .setting-copy strong { display: block; font-size: 11px; }
+        .setting-copy small { display: block; margin-top: 2px; color: #94a3b8; font-size: 9px; }
+        .setting-arrow { margin-right: auto; color: #94a3b8; }
+        .setting-arrow svg { width: 16px; height: 16px; }
+
+        .drawer-scrim { position: absolute; z-index: 20; inset: 0; border: 0; background: rgba(15, 23, 42, .38); }
+        .drawer-scrim[hidden], .mobile-drawer[hidden] { display: none !important; }
+        .mobile-drawer { position: absolute; z-index: 21; inset: 0 0 0 auto; width: min(300px, 84%); overflow: auto; padding: 17px 14px; background: #fff; box-shadow: -18px 0 38px rgba(15, 23, 42, .17); }
+        .drawer-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; color: #4f46e5; font-size: 14px; font-weight: 800; }
+        .drawer-link { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px; border: 0; border-radius: 10px; color: #475569; background: transparent; text-align: right; font-size: 11px; }
+        .drawer-link.selected { color: #4f46e5; background: #eef2ff; }
+        .drawer-subhead { margin: 12px 8px 5px; color: #94a3b8; font-size: 10px; }
+        .toast { position: absolute; z-index: 30; top: 72px; right: 14px; left: 14px; display: none; padding: 10px 12px; border: 1px solid #c7d2fe; border-radius: 12px; color: #3730a3; background: #eef2ff; box-shadow: 0 10px 24px rgba(15, 23, 42, .1); font-size: 11px; }
+        .toast.show { display: block; }
+        @media (max-width: 540px) {
+            .preview-stage { display: block; min-height: 100dvh; padding: 0; }
+            .preview-wrap { max-width: none; }
+            .preview-label { display: none; }
+            .device { width: 100%; height: 100dvh; min-height: 560px; border: 0; border-radius: 0; box-shadow: none; }
+            .main { height: calc(100% - 62px); }
+        }
+    </style>
+</head>
+<body>
+<div class="preview-stage">
+    <div class="preview-wrap">
+        <p class="preview-label">پیش‌نمایش موبایل — نوار پایین در نسخهٔ دسکتاپ نمایش داده نمی‌شود</p>
+        <div class="device" id="demoApp">
+            <header class="app-header">
+                <button class="icon-button" id="openDrawer" type="button" aria-label="بازکردن منوی کامل">
+                    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <div class="header-title"><span id="pageTitle">داشبورد</span><small>پنل تأمین‌کننده</small></div>
+                <button class="icon-button" type="button" aria-label="اعلان‌ها">
+                    <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                </button>
+            </header>
+
+            <main class="main">
+                <div class="demo-banner">
+                    <svg viewBox="0 0 24 24"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4m0-12.8L17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg>
+                    <span>نمونهٔ موبایل: گزینه‌های اصلی پایین صفحه‌اند؛ منوی کامل هم از دکمهٔ بالا باز می‌شود.</span>
+                </div>
+                <section class="welcome-card">
+                    <div class="welcome-top">
+                        <div><h1 id="contentTitle">داشبورد تأمین‌کننده</h1><p id="contentDescription">دسترسی سریع به بخش‌های پرکاربرد پنل.</p></div>
+                        <span class="quick-pill">خوش آمدید</span>
+                    </div>
+                </section>
+                <div class="metric-grid" id="dashboardMetrics">
+                    <article class="metric"><div><div class="metric-label">کل محصولات شما</div><div class="metric-value">۲۱۹</div></div><span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 19V9l4-3 4 3v10M12 19V5l4-2 4 2v14M2 19h20"/></svg></span></article>
+                    <article class="metric"><div><div class="metric-label">محصولات فعال</div><div class="metric-value">۸۸</div></div><span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg></span></article>
+                    <article class="metric"><div><div class="metric-label">در انتظار بررسی</div><div class="metric-value">۲۹</div></div><span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span></article>
+                    <article class="metric"><div><div class="metric-label">بازدید محصولات</div><div class="metric-value">۳٬۲۳۱</div></div><span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/></svg></span></article>
+                </div>
+                <section class="section-card" id="contentCard">
+                    <h2>آخرین محصولات</h2>
+                    <div class="product-row"><span>اسپیکر بلوتوثی</span><span class="product-status">فعال</span></div>
+                    <div class="product-row"><span>چراغ مطالعه رومیزی</span><span class="product-status">در انتظار بررسی</span></div>
+                </section>
+            </main>
+
+            <section class="settings-panel" id="settingsPanel" aria-label="زیرمنوی تنظیمات" hidden>
+                <div class="settings-head">
+                    <div><h2>تنظیمات تأمین‌کننده</h2><p>بخش موردنظرتان را انتخاب کنید</p></div>
+                    <button class="icon-button" id="closeSettings" type="button" aria-label="بستن زیرمنوی تنظیمات"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+                </div>
+                <div class="settings-list">
+                    <button class="setting-link" type="button" data-setting="درصد تیراژ نقدی" data-description="ارز پایه، نرخ ارز و درصدهای تیراژ را مدیریت کنید.">
+                        <span class="setting-icon"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+                        <span class="setting-copy"><strong>درصد تیراژ نقدی</strong><small>ارز پایه و نرخ محصولات</small></span><span class="setting-arrow"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+                    </button>
+                    <button class="setting-link" type="button" data-setting="دوره‌های چکی" data-description="دوره‌های پرداخت و درصد افزایش قیمت را تنظیم کنید.">
+                        <span class="setting-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/></svg></span>
+                        <span class="setting-copy"><strong>دوره‌های چکی</strong><small>دوره و درصد پرداخت چکی</small></span><span class="setting-arrow"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+                    </button>
+                    <button class="setting-link" type="button" data-setting="رُند کردن قیمت‌ها" data-description="روش و مبلغ رُندکردن را برای بازه‌های مختلف قیمت تعیین کنید.">
+                        <span class="setting-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="12" r="2"/><circle cx="15" cy="17" r="2"/></svg></span>
+                        <span class="setting-copy"><strong>رُند کردن قیمت‌ها</strong><small>بازه‌ها و روش گردکردن</small></span><span class="setting-arrow"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+                    </button>
+                </div>
+            </section>
+
+            <div class="toast" id="demoToast" role="status"></div>
+            <button class="drawer-scrim" id="drawerScrim" type="button" aria-label="بستن منو" hidden></button>
+            <aside class="mobile-drawer" id="mobileDrawer" aria-label="منوی کامل پنل" hidden>
+                <div class="drawer-title"><span>پنل تأمین‌کننده</span><button class="icon-button" id="closeDrawer" type="button" aria-label="بستن منو"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+                <button class="drawer-link selected" data-main="داشبورد" data-main-description="دسترسی سریع به بخش‌های پرکاربرد پنل." type="button">⌂　 داشبورد</button>
+                <button class="drawer-link" type="button">▦　 مدیریت شعبه‌ها</button>
+                <button class="drawer-link" type="button">▧　 بررسی محصولات شعبه</button>
+                <button class="drawer-link" type="button">▣　 اطلاعات فروشگاه</button>
+                <button class="drawer-link" type="button">◇　 قیمت‌گذاری محصول</button>
+                <button class="drawer-link" type="button">ϟ　 قیمت‌گذاری سریع</button>
+                <button class="drawer-link" type="button">♧　 محصولات پیشنهادی</button>
+                <button class="drawer-link" data-main="افزودن محصول" data-main-description="پیشنهاد کالای جدید را ثبت کنید." type="button">＋　 افزودن محصول</button>
+                <button class="drawer-link" data-main="محصولات من" data-main-description="فهرست محصولات ثبت‌شده را مدیریت کنید." type="button">▣　 محصولات من</button>
+                <button class="drawer-link" data-main="کاتالوگ PDF" data-main-description="فهرست محصولات را به‌صورت PDF ببینید." type="button">▤　 کاتالوگ PDF</button>
+                <div class="drawer-subhead">تنظیمات</div>
+                <button class="drawer-link" data-setting="درصد تیراژ نقدی" data-description="ارز پایه، نرخ ارز و درصدهای تیراژ را مدیریت کنید." type="button">◎　 درصد تیراژ نقدی</button>
+                <button class="drawer-link" data-setting="دوره‌های چکی" data-description="دوره‌های پرداخت و درصد افزایش قیمت را تنظیم کنید." type="button">▦　 دوره‌های چکی</button>
+                <button class="drawer-link" data-setting="رُند کردن قیمت‌ها" data-description="روش و مبلغ رُندکردن را برای بازه‌های مختلف قیمت تعیین کنید." type="button">▥　 رُند کردن قیمت‌ها</button>
+            </aside>
+
+            <nav class="mobile-nav" aria-label="ناوبری اصلی موبایل">
+                <button class="nav-item is-active" type="button" data-main="داشبورد" data-main-description="دسترسی سریع به بخش‌های پرکاربرد پنل.">
+                    <svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><span>داشبورد</span>
+                </button>
+                <button class="nav-item add-item" type="button" data-main="افزودن محصول" data-main-description="پیشنهاد کالای جدید را ثبت کنید.">
+                    <span class="add-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>افزودن محصول</span>
+                </button>
+                <button class="nav-item" type="button" data-main="محصولات من" data-main-description="فهرست محصولات ثبت‌شده را مدیریت کنید.">
+                    <svg viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2zM8 9h8M8 13h8M8 17h5"/></svg><span>محصولات من</span>
+                </button>
+                <button class="nav-item" type="button" data-main="کاتالوگ PDF" data-main-description="فهرست محصولات را به‌صورت PDF ببینید.">
+                    <svg viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM14 3v6h6M8 14h8M8 17h6"/></svg><span>کاتالوگ PDF</span>
+                </button>
+                <button class="nav-item" id="settingsNav" type="button" aria-expanded="false" aria-controls="settingsPanel">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.6-1.4-2.4L7.1 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.6 1.4 2.4-1.4 1.1a8 8 0 0 1-.1 2z"/></svg><span>تنظیمات</span>
+                </button>
+            </nav>
+        </div>
+    </div>
+</div>
+<script>
+    const panel = document.getElementById('settingsPanel');
+    const settingsNav = document.getElementById('settingsNav');
+    const toast = document.getElementById('demoToast');
+    const drawer = document.getElementById('mobileDrawer');
+    const scrim = document.getElementById('drawerScrim');
+    let toastTimer;
+
+    function showToast(text) {
+        toast.textContent = text;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 2300);
+    }
+    function setSettingsOpen(open) {
+        panel.hidden = !open;
+        settingsNav.setAttribute('aria-expanded', String(open));
+        settingsNav.classList.toggle('is-active', open);
+        if (open) document.getElementById('dashboardMetrics').scrollTop = 0;
+    }
+    function setDrawerOpen(open) {
+        drawer.hidden = !open;
+        scrim.hidden = !open;
+    }
+    function setMain(title, description, isSettings = false) {
+        document.getElementById('pageTitle').textContent = title;
+        document.getElementById('contentTitle').textContent = title;
+        document.getElementById('contentDescription').textContent = description;
+        const isDashboard = title === 'داشبورد';
+        document.getElementById('dashboardMetrics').hidden = !isDashboard;
+        document.getElementById('contentCard').hidden = !isDashboard;
+        setSettingsOpen(false);
+        document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('is-active'));
+        const activeItem = isSettings
+            ? settingsNav
+            : [...document.querySelectorAll('.nav-item[data-main]')].find((item) => item.dataset.main === title);
+        activeItem?.classList.add('is-active');
+        showToast(`پیش‌نمایش مقصد: ${title}`);
+    }
+
+    document.querySelectorAll('.nav-item[data-main]').forEach((button) => {
+        button.addEventListener('click', () => {
+            document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('is-active'));
+            button.classList.add('is-active');
+            setMain(button.dataset.main, button.dataset.mainDescription);
+        });
+    });
+    settingsNav.addEventListener('click', () => setSettingsOpen(panel.hidden));
+    document.getElementById('closeSettings').addEventListener('click', () => setSettingsOpen(false));
+    document.querySelectorAll('[data-setting]').forEach((button) => {
+        button.addEventListener('click', () => {
+            setMain(button.dataset.setting, button.dataset.description, true);
+        });
+    });
+    document.getElementById('openDrawer').addEventListener('click', () => setDrawerOpen(true));
+    document.getElementById('closeDrawer').addEventListener('click', () => setDrawerOpen(false));
+    scrim.addEventListener('click', () => setDrawerOpen(false));
+    document.querySelectorAll('.drawer-link[data-main]').forEach((button) => {
+        button.addEventListener('click', () => {
+            setDrawerOpen(false);
+            setMain(button.dataset.main, button.dataset.mainDescription);
+        });
+    });
+    document.querySelectorAll('.drawer-link[data-setting]').forEach((button) => {
+        button.addEventListener('click', () => {
+            setDrawerOpen(false);
+            setMain(button.dataset.setting, button.dataset.description, true);
+        });
+    });
+
+    setSettingsOpen(true);
+</script>
+</body>
+</html>

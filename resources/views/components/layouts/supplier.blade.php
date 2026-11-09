@@ -17,11 +17,11 @@
     @livewireStyles
 
 </head>
-<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200" x-data="{ sidebarOpen: false }">
+<body class="font-sans antialiased bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200" x-data="{ sidebarOpen: false, mobileSettingsOpen: false }" @keydown.escape.window="sidebarOpen = false; mobileSettingsOpen = false">
 
 <div class="min-h-screen flex">
     <!-- پس‌زمینه تیره برای منوی موبایل -->
-    <div x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden" @click="sidebarOpen = false" style="display: none;"></div>
+    <div x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-20 bg-gray-900/50 lg:hidden" @click="sidebarOpen = false; mobileSettingsOpen = false" style="display: none;"></div>
 
     <!-- Sidebar -->
     <aside :class="sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'" class="fixed inset-y-0 right-0 z-30 w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-sm transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:inset-y-auto lg:right-auto lg:z-auto lg:h-screen lg:flex lg:flex-shrink-0 flex flex-col">
@@ -29,7 +29,7 @@
         <!-- هدر سایدبار -->
         <div class="h-16 flex items-center justify-between lg:justify-center px-4 lg:px-0 border-b border-gray-200 dark:border-gray-700">
             <h1 class="text-xl font-black text-indigo-600 dark:text-indigo-400">پنل تامین‌کننده</h1>
-            <button @click="sidebarOpen = false" class="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none">
+            <button @click="sidebarOpen = false; mobileSettingsOpen = false" class="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none">
                 <x-heroicon-o-x-mark class="w-6 h-6" />
             </button>
         </div>
@@ -132,7 +132,7 @@
 
             <!-- سمت راست (دکمه موبایل و عنوان صفحه) -->
             <div class="flex items-center gap-4">
-                <button type="button" @click="sidebarOpen = true" aria-label="باز کردن منوی تأمین‌کننده" class="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800">
+                <button type="button" @click="sidebarOpen = true; mobileSettingsOpen = false" aria-label="باز کردن منوی تأمین‌کننده" class="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800">
                     <x-heroicon-o-bars-3-bottom-right class="w-6 h-6" />
                 </button>
                 <h2 class="max-w-[28vw] truncate text-base font-semibold text-gray-800 dark:text-white sm:max-w-none sm:text-xl">{{ $header ?? '' }}</h2>
@@ -180,7 +180,7 @@
         </header>
 
         <!-- Page Content -->
-        <div class="flex-1 p-4 sm:p-6 lg:p-8">
+        <div class="supplier-layout-content flex-1 p-4 sm:p-6 lg:p-8">
             @if (session()->has('info'))
             <div class="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg">
                 {{ session('info') }}
@@ -191,6 +191,65 @@
         </div>
 
     </main>
+
+    <!-- نویگیشن پایین فقط در موبایل -->
+    <section
+        x-cloak
+        x-show="mobileSettingsOpen && !sidebarOpen"
+        x-transition.origin.bottom
+        @click.outside="mobileSettingsOpen = false"
+        class="supplier-mobile-settings-panel md:hidden"
+        id="supplier-mobile-settings-menu"
+        aria-label="تنظیمات تأمین‌کننده"
+    >
+        <div class="supplier-mobile-settings-panel__header">
+            <div>
+                <h2>تنظیمات تأمین‌کننده</h2>
+                <p>بخش موردنظرتان را انتخاب کنید</p>
+            </div>
+            <button type="button" class="supplier-mobile-settings-panel__close" @click="mobileSettingsOpen = false" aria-label="بستن تنظیمات">
+                <x-heroicon-o-x-mark class="h-5 w-5" />
+            </button>
+        </div>
+
+        <div class="supplier-mobile-settings-panel__links">
+            <a href="{{ route('supplier.settings.tier-discounts') }}" @click="mobileSettingsOpen = false" @if(request()->routeIs('supplier.settings.tier-discounts', 'supplier.settings.category-tier-discounts')) aria-current="page" @endif>
+                <span class="supplier-mobile-settings-panel__icon"><x-heroicon-o-banknotes class="h-5 w-5" /></span>
+                <span><strong>درصد تیراژ نقدی</strong><small>ارز پایه و نرخ محصولات</small></span>
+            </a>
+            <a href="{{ route('supplier.settings.check-periods') }}" @click="mobileSettingsOpen = false" @if(request()->routeIs('supplier.settings.check-periods')) aria-current="page" @endif>
+                <span class="supplier-mobile-settings-panel__icon"><x-heroicon-o-calendar-days class="h-5 w-5" /></span>
+                <span><strong>دوره‌های چکی</strong><small>دوره و درصد پرداخت چکی</small></span>
+            </a>
+            <a href="{{ route('supplier.settings.price-rounding') }}" @click="mobileSettingsOpen = false" @if(request()->routeIs('supplier.settings.price-rounding')) aria-current="page" @endif>
+                <span class="supplier-mobile-settings-panel__icon"><x-heroicon-o-calculator class="h-5 w-5" /></span>
+                <span><strong>رُند کردن قیمت‌ها</strong><small>بازه‌ها و روش گردکردن</small></span>
+            </a>
+        </div>
+    </section>
+
+    <nav x-cloak x-show="!sidebarOpen" class="supplier-mobile-nav md:hidden" aria-label="ناوبری اصلی موبایل">
+        <a href="{{ route('supplier.dashboard') }}" class="supplier-mobile-nav__item {{ request()->routeIs('supplier.dashboard') ? 'is-active' : '' }}" @if(request()->routeIs('supplier.dashboard')) aria-current="page" @endif>
+            <x-heroicon-o-home class="h-5 w-5" />
+            <span>داشبورد</span>
+        </a>
+        <a href="{{ route('supplier.product-selection') }}" class="supplier-mobile-nav__item supplier-mobile-nav__item--primary {{ request()->routeIs('supplier.product-selection') ? 'is-active' : '' }}" @if(request()->routeIs('supplier.product-selection')) aria-current="page" @endif>
+            <span class="supplier-mobile-nav__primary-icon"><x-heroicon-o-plus class="h-5 w-5" /></span>
+            <span>افزودن محصول</span>
+        </a>
+        <a href="{{ route('supplier.products.index') }}" class="supplier-mobile-nav__item {{ request()->routeIs('supplier.products.*') && !request()->routeIs('supplier.products.create') ? 'is-active' : '' }}" @if(request()->routeIs('supplier.products.*') && !request()->routeIs('supplier.products.create')) aria-current="page" @endif>
+            <x-heroicon-o-shopping-bag class="h-5 w-5" />
+            <span>محصولات من</span>
+        </a>
+        <a href="{{ route('supplier.catalog.index') }}" class="supplier-mobile-nav__item {{ request()->routeIs('supplier.catalog.*') ? 'is-active' : '' }}" @if(request()->routeIs('supplier.catalog.*')) aria-current="page" @endif>
+            <x-heroicon-o-book-open class="h-5 w-5" />
+            <span>کاتالوگ PDF</span>
+        </a>
+        <button type="button" class="supplier-mobile-nav__item {{ request()->routeIs('supplier.settings.tier-discounts', 'supplier.settings.category-tier-discounts', 'supplier.settings.check-periods', 'supplier.settings.price-rounding') ? 'is-active' : '' }}" @click="mobileSettingsOpen = !mobileSettingsOpen" :aria-expanded="mobileSettingsOpen" aria-controls="supplier-mobile-settings-menu">
+            <x-heroicon-o-cog-6-tooth class="h-5 w-5" />
+            <span>تنظیمات</span>
+        </button>
+    </nav>
 </div>
 
 @livewireScripts

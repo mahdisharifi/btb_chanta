@@ -46,7 +46,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-900 antialiased min-h-screen flex flex-col">
+<body class="public-site-body bg-gray-50 text-gray-900 antialiased min-h-screen flex flex-col">
 
 {{-- Top Announcement Bar --}}
 @hasSection('announcement')
@@ -390,13 +390,54 @@
         x-show="show"
         x-transition
         @click="window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })"
-        class="fixed bottom-6 left-6 z-50 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-indigo-700 transition"
+        class="public-scroll-top fixed bottom-6 left-6 z-50 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-indigo-700 transition"
         style="display: none;"
         aria-label="بازگشت به بالای صفحه">
     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
     </svg>
 </button>
+
+{{-- Public site mobile navigation --}}
+<nav class="public-mobile-nav md:hidden" aria-label="ناوبری اصلی سایت">
+    <a href="{{ route('home') }}"
+       class="public-mobile-nav__item {{ request()->routeIs('home') ? 'is-active' : '' }}"
+       @if(request()->routeIs('home')) aria-current="page" @endif>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
+        </svg>
+        <span>صفحه اصلی</span>
+    </a>
+    <a href="{{ route('products.index') }}"
+       class="public-mobile-nav__item {{ request()->routeIs('products.*') ? 'is-active' : '' }}"
+       @if(request()->routeIs('products.*')) aria-current="page" @endif>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 8h14l1 13H4L5 8Z" />
+            <path d="M9 9V6a3 3 0 0 1 6 0v3" />
+        </svg>
+        <span>محصولات</span>
+    </a>
+    <a href="{{ route('categories.index') }}"
+       class="public-mobile-nav__item {{ request()->routeIs('categories.*') ? 'is-active' : '' }}"
+       @if(request()->routeIs('categories.*')) aria-current="page" @endif>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </svg>
+        <span>دسته‌بندی‌ها</span>
+    </a>
+    <a href="{{ auth()->check() ? route('dashboard') : route('login') }}"
+       class="public-mobile-nav__item {{ request()->routeIs('dashboard') ? 'is-active' : '' }}"
+       @if(request()->routeIs('dashboard')) aria-current="page" @endif>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21a8 8 0 0 1 16 0" />
+        </svg>
+        <span>پنل کاربری</span>
+    </a>
+</nav>
 
 </body>
 </html>
