@@ -53,6 +53,24 @@ class ProductCompletionCommissionPolicy
                     && $this->wasFinallyReviewedBy($user, $commission)));
     }
 
+    public function changeRule(User $user, ProductCompletionCommission $commission): bool
+    {
+        return $this->changeRules($user)
+            && $commission->settlement_id === null
+            && in_array($commission->status, [
+                ProductCompletionCommissionStatus::CALCULATED,
+                ProductCompletionCommissionStatus::UNDER_REVIEW,
+                ProductCompletionCommissionStatus::APPROVED,
+                ProductCompletionCommissionStatus::PAYABLE,
+            ], true);
+    }
+
+    public function changeRules(User $user): bool
+    {
+        return $user->can('outsourcing.view_all_commissions')
+            && ($user->can('outsourcing.manage_scope') || $user->can('outsourcing.manage_commission_rules'));
+    }
+
     public function markPayable(User $user, ProductCompletionCommission $commission): bool
     {
         return $commission->settlement_id === null && $user->can('outsourcing.approve_commission')

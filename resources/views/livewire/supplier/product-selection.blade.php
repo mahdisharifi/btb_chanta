@@ -2,8 +2,8 @@
     <!-- Header -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-            <h1 class="text-2xl font-bold text-gray-800">انتخاب کالا برای فروش</h1>
-            <p class="text-sm text-gray-500 mt-1">محصولات مورد نظر خود را از کاتالوگ انتخاب کرده و قیمت‌گذاری کنید.</p>
+            <h1 class="text-2xl font-bold text-gray-800">کالای خود را پیدا کنید؛ اگر نبود، آن را اضافه کنید</h1>
+            <p class="text-sm text-gray-500 mt-1">نام کالایی را که می‌خواهید بفروشید جست‌وجو کنید. اگر آن را پیدا کردید، انتخاب کنید و قیمت فروش خود را وارد کنید. اگر پیدا نشد، روی «افزودن محصول جدید» بزنید و مشخصات کالای خود را ثبت کنید.</p>
         </div>
     </div>
 
