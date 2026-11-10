@@ -26,11 +26,13 @@
     @elseif($submission->status === \App\Enums\ProductCompletionSubmissionStatus::UNDER_REVIEW && $task->last_submission_id === $submission->id && $task->status->canBeReviewed())
     <div class="grid gap-5 lg:grid-cols-3">
         <section class="space-y-3 lg:col-span-2">
+            @unless($showReviewEditor)
             <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950">
                 <p class="font-semibold">{{ $submission->version_no > 1 ? 'تغییرات این نسخه نسبت به ارسال قبلی' : 'مقایسه محتوای قبلی با نسخه ارسالی' }}</p>
                 <p class="mt-1">مقادیر پیشنهادی با نشان زرد مشخص شده‌اند. برای مشاهده تصویر در اندازه کامل، روی آن کلیک کنید.</p>
                 <p class="mt-1">برای درخواست اصلاح بخشی از محتوا، گزینه کنار عنوان همان بخش را انتخاب کنید.</p>
             </div>
+            @endunless
             <section class="min-w-0 rounded-xl border border-indigo-200 bg-white p-4">
                 <button type="button" wire:click="toggleReviewEditor" wire:loading.attr="disabled" aria-expanded="{{ $showReviewEditor ? 'true' : 'false' }}" aria-controls="review-editor-panel" class="min-h-11 w-full rounded-lg bg-indigo-600 px-4 py-2 text-white disabled:opacity-60 sm:w-auto">{{ $showReviewEditor ? 'ذخیره و بستن ویرایشگر' : 'تصمیم و ویرایش بازبین' }}</button>
                 <p class="mt-2 text-sm leading-7 text-slate-600">نسخه اصلی پیمانکار و سابقه اصلاحات حفظ می‌شود. افزودن محتوای بازبین به‌تنهایی دستمزد پیمانکار را افزایش نمی‌دهد.</p>
@@ -43,6 +45,7 @@
                     </div>
                 @endif
             </section>
+            @unless($showReviewEditor)
             @forelse($submission->diff_json ?? [] as $field => $change)
                 <article wire:key="review-field-{{ $field }}" class="rounded-xl border bg-white p-4">
                     <label class="mb-2 flex min-h-11 items-center gap-2 font-bold">
@@ -85,6 +88,7 @@
                     </div>
                 </details>
             @endif
+            @endunless
         </section>
 
         <aside class="space-y-4">

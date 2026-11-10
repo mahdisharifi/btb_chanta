@@ -51,29 +51,11 @@
                     @if($editorAttribute)
                         <fieldset wire:key="review-editor-attribute-{{ $editorAttribute->id }}" class="min-w-0 rounded-lg border border-slate-200 p-3">
                             <legend class="max-w-full break-words px-1 font-semibold">{{ $editorAttribute->name }}{{ $editorAttribute->unit ? ' ('.$editorAttribute->unit.')' : '' }}</legend>
-                            <p id="review-attribute-help-{{ $editorAttribute->id }}" class="mb-2 text-sm text-slate-600">{{ $editorAttribute->is_multiple ? 'انتخاب چند مقدار مجاز است.' : 'فقط یک مقدار انتخاب یا پیشنهاد کنید.' }} حداکثر ۵۰ مقدار پرکاربرد، به‌علاوهٔ مقدارهای انتخاب‌شده نمایش داده می‌شود.</p>
-                            <div class="grid max-h-64 gap-1 overflow-y-auto rounded-lg bg-slate-50 p-2 sm:grid-cols-2" role="group" aria-label="مقدارهای {{ $editorAttribute->name }}" aria-describedby="review-attribute-help-{{ $editorAttribute->id }}">
-                                @forelse($editorAttribute->values as $option)
-                                    <label wire:key="review-editor-value-{{ $editorAttribute->id }}-{{ $option->id }}" class="flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded px-2 focus-within:ring-2 focus-within:ring-indigo-500">
-                                        <input type="checkbox" wire:click="toggleReviewAttributeValue({{ $attributeIndex }}, {{ $option->id }})" wire:loading.attr="disabled" @checked(in_array((int) $option->id, array_map('intval', $selection['value_ids'] ?? []), true)) class="h-5 w-5 shrink-0 rounded border-slate-400 text-indigo-600">
-                                        <span class="min-w-0 break-words text-sm">{{ $option->value }}</span>
-                                    </label>
-                                @empty
-                                    <p class="p-2 text-sm text-slate-500">مقدار ثبت‌شده‌ای وجود ندارد؛ مقدار مناسب را پیشنهاد کنید.</p>
-                                @endforelse
-                            </div>
-                            <div class="mt-3 space-y-2">
-                                @foreach($selection['proposed_values'] ?? [] as $proposalIndex => $proposal)
-                                    <div wire:key="review-editor-proposal-{{ $editorAttribute->id }}-{{ $proposalIndex }}" class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-                                        <div class="min-w-0 flex-1">
-                                            <label for="review-proposal-{{ $editorAttribute->id }}-{{ $proposalIndex }}" class="mb-1 block text-sm">مقدار پیشنهادی {{ $loop->iteration }}</label>
-                                            <input id="review-proposal-{{ $editorAttribute->id }}-{{ $proposalIndex }}" type="text" wire:model="reviewPayload.attributes.{{ $attributeIndex }}.proposed_values.{{ $proposalIndex }}" maxlength="{{ config('product_completion.validation.attribute_proposed_value_max', 255) }}" class="min-h-11 w-full min-w-0 rounded-lg border-slate-300">
-                                        </div>
-                                        <button type="button" wire:click="removeReviewProposedValue({{ $attributeIndex }}, {{ $proposalIndex }})" wire:loading.attr="disabled" class="min-h-11 rounded-lg border border-red-300 px-3 text-sm text-red-700 disabled:opacity-50" aria-label="حذف مقدار پیشنهادی {{ $loop->iteration }} برای {{ $editorAttribute->name }}">حذف مقدار</button>
-                                    </div>
-                                @endforeach
-                                <button type="button" wire:click="addReviewProposedValue({{ $attributeIndex }})" wire:loading.attr="disabled" class="min-h-11 rounded-lg border border-indigo-300 px-3 text-sm text-indigo-700 disabled:opacity-50">پیشنهاد مقدار برای {{ $editorAttribute->name }}</button>
-                            </div>
+                            @include('components.attribute-value-selector', [
+                                'attribute' => $editorAttribute,
+                                'reviewer' => true,
+                                'selectedAttributeOptions' => [$editorAttribute->id => $editorAttribute->values->map(fn ($value) => ['id' => $value->id, 'value' => $value->value])->all()],
+                            ])
                             <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                                 <div class="min-w-0">
                                     <label for="review-attribute-decision-{{ $editorAttribute->id }}" class="mb-1 block text-sm">تصمیم دربارهٔ {{ $editorAttribute->name }}</label>

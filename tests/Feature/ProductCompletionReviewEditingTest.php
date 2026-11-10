@@ -636,6 +636,34 @@ class ProductCompletionReviewEditingTest extends TestCase
         }
     }
 
+    public function test_reviewer_selector_searches_and_replaces_single_values_without_publishing(): void
+    {
+        $attribute = Attribute::factory()->create(['is_multiple' => false]);
+        $value = AttributeValue::query()->create(['attribute_id' => $attribute->id, 'value' => 'Existing option']);
+        [$task, $submission, $reviewer] = $this->submission(['attributes' => true], [], function ($task) use ($attribute, $value): array {
+            $task->product->category->attributes()->attach($attribute->id);
+
+            return ['attributes' => [['attribute_id' => $attribute->id, 'value_ids' => [$value->id], 'proposed_values' => []]]];
+        });
+        $original = $submission->payload_json;
+        $component = \Livewire\Livewire::actingAs($reviewer)->test(\App\Livewire\Reviewer\Task\Review::class, ['task' => $task])
+            ->call('toggleReviewEditor')->assertHasNoErrors()
+            ->assertSee('searchReviewAttributeValues', false)
+            ->call('searchReviewAttributeValues', 0, 'Existing')
+            ->assertReturned([['id' => $value->id, 'value' => 'Existing option']])
+            ->call('proposeReviewAttributeValue', 0, 'Existing option')
+            ->assertSet('reviewPayload.attributes.0.value_ids', [$value->id])
+            ->call('proposeReviewAttributeValue', 0, 'Reviewer option')
+            ->assertReturned(['status' => 'added'])
+            ->assertSet('reviewPayload.attributes.0.value_ids', [])
+            ->assertSet('reviewPayload.attributes.0.proposed_values', ['Reviewer option'])
+            ->call('toggleReviewAttributeValue', 0, $value->id)
+            ->assertSet('reviewPayload.attributes.0.proposed_values', [])
+            ->assertSet('reviewPayload.attributes.0.value_ids', [$value->id]);
+        $this->assertSame($original, $submission->refresh()->payload_json);
+        $this->assertFalse(AttributeValue::query()->where('value', 'Reviewer option')->exists());
+    }
+
     private function submission(array $scope = ['short_description' => true], array $payload = ['short_description' => 'Contractor description.'], ?\Closure $prepare = null): array
     {
         $reviewer = User::factory()->create()->assignRole(UserRole::REVIEWER->value);

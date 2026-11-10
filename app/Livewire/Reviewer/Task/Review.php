@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Renderless;
 use Livewire\Component;
 
 #[Layout('components.layouts.outsourcing')]
@@ -259,6 +260,41 @@ class Review extends Component
         }
         $this->reviewPayload['attributes'][$index]['proposed_values'] = [...$proposals, ''];
         $this->reviewEditsSaved = false;
+    }
+
+    #[Renderless]
+    public function searchReviewAttributeValues(int $index, string $search = ''): array
+    {
+        $attribute = $this->reviewAttribute($index);
+        $search = \App\Support\AttributeValueIdentity::normalize($search);
+        if (mb_strlen($search) < 2) {
+            return [];
+        }
+
+        return $attribute->values()->where('value', 'like', '%'.addcslashes($search, '%_\\').'%')
+            ->orderBy('value')->limit(51)->get(['id', 'value'])->toArray();
+    }
+
+    public function proposeReviewAttributeValue(int $index, string $value): array
+    {
+        $attribute = $this->reviewAttribute($index);
+        $value = trim($value);
+        $identity = \App\Support\AttributeValueIdentity::normalize($value);
+        if ($identity === '' || mb_strlen($value) > (int) config('product_completion.validation.attribute_proposed_value_max', 255)
+            || preg_match('/[\x00-\x1F\x7F]/u', $value) === 1) {
+            return ['status' => 'error', 'message' => 'مقدار معتبر وارد کنید.'];
+        }
+        if (\App\Support\AttributeValueIdentity::exists($attribute->id, $value)
+            || collect($this->reviewPayload['attributes'][$index]['proposed_values'] ?? [])
+                ->contains(fn ($proposal): bool => \App\Support\AttributeValueIdentity::normalize($proposal) === $identity)) {
+            return ['status' => 'duplicate', 'message' => 'این مقدار وجود دارد؛ آن را از فهرست انتخاب کنید.'];
+        }
+
+        $this->addReviewProposedValue($index);
+        $proposalIndex = array_key_last($this->reviewPayload['attributes'][$index]['proposed_values']);
+        $this->reviewPayload['attributes'][$index]['proposed_values'][$proposalIndex] = $value;
+
+        return ['status' => 'added'];
     }
 
     public function removeReviewProposedValue(int $index, int $proposalIndex): void

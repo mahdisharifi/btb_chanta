@@ -1,12 +1,15 @@
 @php
     $workspace = $workspace ?? false;
+    $reviewer = $reviewer ?? false;
     $selectorOptions = $selectedAttributeOptions[$attribute->id] ?? [];
 @endphp
-<div wire:key="{{ $workspace ? 'task' : 'admin' }}-attribute-selector-{{ $attribute->id }}" wire:ignore
+<div wire:key="{{ $reviewer ? 'reviewer' : ($workspace ? 'task' : 'admin') }}-attribute-selector-{{ $attribute->id }}" wire:ignore
      class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
      x-data="{
          attributeId: {{ $attribute->id }},
          workspace: @js($workspace),
+         reviewer: @js($reviewer),
+         get reviewIndex() { return ($wire.reviewPayload.attributes || []).findIndex(item => Number(item.attribute_id) === this.attributeId); },
          multiple: @js((bool) $attribute->is_multiple),
          defaultOptions: @js($selectorOptions),
          options: @js($selectorOptions),
@@ -18,10 +21,10 @@
          busy: false,
          warning: false,
          normalize(text) { return String(text ?? '').toLowerCase().replace(/\u064a/g, '\u06cc').replace(/\u0643/g, '\u06a9').replace(/\u200c/g, ' ').replace(/\s+/g, ' ').trim(); },
-         get selection() { return this.workspace ? ($wire.draft.attributes || []).find(item => Number(item.attribute_id) === this.attributeId) : null; },
+         get selection() { return this.reviewer ? ($wire.reviewPayload.attributes || [])[this.reviewIndex] : this.workspace ? ($wire.draft.attributes || []).find(item => Number(item.attribute_id) === this.attributeId) : null; },
          get proposals() { return this.selection?.proposed_values || []; },
          get selectedIds() {
-             const selected = this.workspace ? (this.selection?.value_ids || []) : $wire.selectedAttributeValues[this.attributeId];
+             const selected = (this.workspace || this.reviewer) ? (this.selection?.value_ids || []) : $wire.selectedAttributeValues[this.attributeId];
              return (Array.isArray(selected) ? selected : [selected]).filter(value => value !== null && value !== undefined && value !== '').map(String);
          },
          get selectedOptions() { return this.options.filter(option => this.selectedIds.includes(String(option.id))); },
@@ -40,21 +43,23 @@
          queueSearch() {
              clearTimeout(this.searchTimer);
              const submittedSearch = this.search;
-             this.options = this.selectedOptions;
              this.searching = this.normalize(submittedSearch).length >= 2;
+             if (!this.searching) {
+                 this.options = [...this.defaultOptions, ...this.selectedOptions]
+                     .filter((option, index, options) => options.findIndex(item => String(item.id) === String(option.id)) === index);
+                 return;
+             }
              this.searchTimer = setTimeout(async () => {
-                 if (this.normalize(submittedSearch).length < 2) {
-                     this.options = [...this.defaultOptions, ...this.selectedOptions]
-                         .filter((option, index, options) => options.findIndex(item => String(item.id) === String(option.id)) === index);
-                     this.searching = false;
-                     return;
-                 }
                  try {
-                     const results = await $wire.searchAttributeValues(this.attributeId, submittedSearch);
+                     const results = (this.reviewer ? await $wire.searchReviewAttributeValues(this.reviewIndex, submittedSearch) : await $wire.searchAttributeValues(this.attributeId, submittedSearch));
                      if (this.search !== submittedSearch) return;
                      this.options = [...this.selectedOptions, ...results.filter(result => !this.selectedIds.includes(String(result.id)))];
                      this.searching = false;
-                 } catch (failure) { this.searching = false; this.error = 'جستجوی مقادیر با خطا روبه‌رو شد.'; }
+                 } catch (failure) {
+                     if (this.search !== submittedSearch) return;
+                     this.searching = false;
+                     this.error = 'جستجوی مقادیر با خطا روبه‌رو شد.';
+                 }
              }, 250);
          },
          async choose(option) {
@@ -62,7 +67,8 @@
              this.busy = true;
              const replacing = !this.multiple && (this.selectedIds.length > 0 || this.proposals.length > 0);
              try {
-                 if (this.workspace) await $wire.toggleAttribute(this.attributeId, option.id, this.multiple);
+                 if (this.reviewer) await $wire.toggleReviewAttributeValue(this.reviewIndex, option.id);
+                 else if (this.workspace) await $wire.toggleAttribute(this.attributeId, option.id, this.multiple);
                  else await $wire.toggleAttributeValue(this.attributeId, option.id);
                  this.error = '';
                  this.warning = replacing;
@@ -72,14 +78,16 @@
          async remove(option) {
              if (this.busy) return;
              this.busy = true;
-             try { await $wire.removeAttributeValue(this.attributeId, option.id); this.error = ''; this.warning = false; }
+             try { if (this.reviewer) await $wire.toggleReviewAttributeValue(this.reviewIndex, option.id);
+                   else await $wire.removeAttributeValue(this.attributeId, option.id); this.error = ''; this.warning = false; }
              catch (failure) { this.error = 'حذف انتخاب انجام نشد؛ دوباره تلاش کنید.'; }
              finally { this.busy = false; }
          },
          async removeProposal(value) {
              if (this.busy) return;
              this.busy = true;
-             try { await $wire.removeProposedAttributeValue(this.attributeId, value); this.error = ''; this.warning = false; }
+             try { if (this.reviewer) await $wire.removeReviewProposedValue(this.reviewIndex, this.proposals.indexOf(value));
+                   else await $wire.removeProposedAttributeValue(this.attributeId, value); this.error = ''; this.warning = false; }
              catch (failure) { this.error = 'حذف پیشنهاد انجام نشد؛ دوباره تلاش کنید.'; }
              finally { this.busy = false; }
          },
@@ -89,7 +97,9 @@
              this.busy = true;
              this.error = '';
              try {
-                 const result = this.workspace
+                 const result = this.reviewer
+                     ? await $wire.proposeReviewAttributeValue(this.reviewIndex, submittedSearch)
+                     : this.workspace
                      ? await $wire.proposeAttributeValue(this.attributeId, this.multiple, submittedSearch)
                      : await $wire.saveNewAttributeValue(this.attributeId, submittedSearch);
                  if (result?.status === 'added') {
@@ -108,7 +118,7 @@
      >
     <div class="bg-gray-50 px-4 py-3 dark:bg-gray-900">
         <div class="flex items-center justify-between">
-            <h4 data-product-tour-field-label class="font-semibold text-gray-800 dark:text-gray-200">{{ $attribute->name }}@if($workspace && $attribute->is_required)<span class="mr-1 text-xs text-red-600">(اجباری)</span>@endif</h4>
+            <h4 data-product-tour-field-label class="font-semibold text-gray-800 dark:text-gray-200">{{ $attribute->name }}@if(($workspace || $reviewer) && $attribute->is_required)<span class="mr-1 text-xs text-red-600">(اجباری)</span>@endif</h4>
             <div class="flex items-center gap-2">
                 <span class="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">{{ $attribute->is_multiple ? 'چند انتخابی' : 'تک انتخابی' }}</span>
                 <span x-cloak x-show="selectedIds.length + proposals.length" class="rounded bg-[#d4af37]/10 px-2 py-1 text-xs font-medium text-[#d4af37]" x-text="(selectedIds.length + proposals.length) + ' انتخاب شده'"></span>
@@ -137,8 +147,8 @@
         <div class="mb-3 flex gap-2">
             <div class="relative flex-1">
                 <x-heroicon-o-magnifying-glass class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                @if($workspace)<label class="mb-1 block text-xs text-gray-600">جستجو یا پیشنهاد مقدار جدید برای {{ $attribute->name }}</label>@endif
-                <input type="text" data-product-tour-field-control x-model="search" x-on:input="error = ''; rejectedSearch = null; queueSearch()" x-on:keydown.enter.prevent="if (canAdd) add()" maxlength="{{ $workspace ? config('product_completion.validation.attribute_proposed_value_max', 255) : 255 }}"
+                @if($workspace || $reviewer)<label class="mb-1 block text-xs text-gray-600">جستجو یا پیشنهاد مقدار جدید برای {{ $attribute->name }}</label>@endif
+                <input type="text" data-product-tour-field-control x-model="search" x-on:input="error = ''; rejectedSearch = null; queueSearch()" x-on:keydown.enter.prevent="if (canAdd) add()" maxlength="{{ ($workspace || $reviewer) ? config('product_completion.validation.attribute_proposed_value_max', 255) : 255 }}"
                        aria-label="جستجو یا مقدار جدید برای {{ $attribute->name }}" placeholder="جستجو یا مقدار جدید..."
                        class="w-full rounded-lg border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-[#d4af37] focus:ring-[#d4af37] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
             </div>
@@ -157,6 +167,7 @@
                 </label>
             </template>
         </div>
+        <p x-cloak x-show="searching" role="status" class="mt-2 text-xs text-gray-500">در حال جستجوی مقادیر…</p>
         <p x-cloak x-show="!normalizedSearch" class="mt-2 text-xs text-gray-500">حداکثر ۵۰ مقدار پرتکرار این ویژگی نمایش داده شده است؛ برای دیدن بقیه جستجو کنید.</p>
         <p x-cloak x-show="matchingOptionCount > matchingOptions.length" class="mt-2 text-xs text-amber-700" x-text="'بیش از ' + matchingOptions.length + ' نتیجه وجود دارد؛ جستجو را دقیق‌تر کنید.'"></p>
         <p x-cloak x-show="normalizedSearch && !searching && !matchingOptions.length && !existingOption" class="mt-2 text-xs text-gray-500">مقداری پیدا نشد؛ می‌توانید مقدار جدید اضافه کنید.</p>
