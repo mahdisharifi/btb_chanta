@@ -113,7 +113,7 @@
                                     </div>
 
                                     <div class="flex items-center justify-end mt-4 pt-4 border-t border-gray-100 gap-2">
-                                        @if(($template->settings['cover_theme'] ?? 'default') === 'custom')
+                                        @if(in_array($template->settings['cover_theme'] ?? 'default', ['custom', 'custom_default'], true))
                                         <a href="{{ route('supplier.catalog.custom-cover', $template->id) }}" class="inline-flex items-center justify-center px-4 py-2 bg-amber-50 text-sm font-bold text-amber-700 rounded-lg hover:bg-amber-600 hover:text-white transition-colors gap-2">
                                             <x-heroicon-m-paint-brush class="w-4 h-4" />
                                             تنظیمات کاور
@@ -647,15 +647,29 @@
                                         </div>
                                     </div>
                                     <div class="grid grid-cols-2 gap-3 mr-8">
-                                        @php $coverThemes = ['default' => ['name' => 'پیش‌فرض', 'desc' => 'طرح ساده و کلاسیک', 'preview' => 'bg-gray-100 border-2 border-gray-300'], 'modern' => ['name' => 'مدرن', 'desc' => 'گرادینت بنفش و آبی', 'preview' => 'bg-gradient-to-br from-purple-500 to-blue-600'], 'creative' => ['name' => 'خلاقانه', 'desc' => 'طرح تیره با اشکال', 'preview' => 'bg-slate-900'], 'corporate' => ['name' => 'رسمی', 'desc' => 'طرح سازمانی آبی', 'preview' => 'bg-white border-4 border-blue-900'], 'custom' => ['name' => 'سفارشی', 'desc' => 'طراحی کاملاً قابل تنظیم', 'preview' => 'bg-gradient-to-br from-amber-400 to-orange-500']]; @endphp
+                                        @php
+                                            $hasDefaultCustomCover = $this->hasDefaultCustomCover;
+                                            $coverThemes = [
+                                                'default' => ['name' => 'پیش‌فرض سایت', 'desc' => 'طرح ساده و کلاسیک سایت', 'preview' => 'bg-gray-100 border-2 border-gray-300'],
+                                                'modern' => ['name' => 'مدرن', 'desc' => 'گرادینت بنفش و آبی', 'preview' => 'bg-gradient-to-br from-purple-500 to-blue-600'],
+                                                'creative' => ['name' => 'خلاقانه', 'desc' => 'طرح تیره با اشکال', 'preview' => 'bg-slate-900'],
+                                                'corporate' => ['name' => 'رسمی', 'desc' => 'طرح سازمانی آبی', 'preview' => 'bg-white border-4 border-blue-900'],
+                                                'custom' => ['name' => 'سفارشی', 'desc' => 'طراحی مستقل برای این کاتالوگ', 'preview' => 'bg-gradient-to-br from-amber-400 to-orange-500'],
+                                                'custom_default' => ['name' => 'سفارشی پیش‌فرض', 'desc' => 'یک نسخه قابل ویرایش از طرح پیش‌فرض شما', 'preview' => 'bg-gradient-to-br from-indigo-500 to-purple-600'],
+                                            ];
+                                        @endphp
                                         @foreach($coverThemes as $value => $theme)
-                                        <label class="relative flex flex-col rounded-lg border-2 overflow-hidden cursor-pointer transition-all {{ $coverTheme === $value ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300' }}">
+                                        @php $unavailable = $value === 'custom_default' && !$hasDefaultCustomCover && $coverTheme !== 'custom_default'; @endphp
+                                        <label class="relative flex flex-col rounded-lg border-2 overflow-hidden transition-all {{ $unavailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer' }} {{ $coverTheme === $value ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300' }}">
                                             <div class="h-16 {{ $theme['preview'] }} flex items-center justify-center"><span class="text-white font-bold text-xs drop-shadow-md">{{ $theme['name'] }}</span></div>
-                                            <div class="p-2"><div class="flex items-center gap-2"><input type="radio" wire:model="coverTheme" value="{{ $value }}" class="text-blue-600 focus:ring-blue-500"><span class="text-xs font-medium text-gray-900">{{ $theme['name'] }}</span></div><p class="mt-0.5 text-[10px] text-gray-500">{{ $theme['desc'] }}</p></div>
+                                            <div class="p-2"><div class="flex items-center gap-2"><input type="radio" wire:model.live="coverTheme" value="{{ $value }}" @disabled($unavailable) class="text-blue-600 focus:ring-blue-500"><span class="text-xs font-medium text-gray-900">{{ $theme['name'] }}</span></div><p class="mt-0.5 text-[10px] text-gray-500">{{ $theme['desc'] }}</p></div>
                                             @if($coverTheme === $value)<div class="absolute top-1 right-1"><svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg></div>@endif
                                         </label>
                                         @endforeach
                                     </div>
+                                    @if(!$hasDefaultCustomCover)
+                                        <p class="mt-3 mr-8 text-xs text-gray-500">برای فعال شدن «سفارشی پیش‌فرض»، کاور یک کاتالوگ سفارشی را طراحی و با گزینه «تنظیم به عنوان سفارشی پیش‌فرض» ذخیره کنید.</p>
+                                    @endif
                                     <x-input-error :messages="$errors->get('coverTheme')" class="mt-2" />
                                 </div>
 

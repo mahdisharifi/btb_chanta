@@ -483,6 +483,7 @@
                     ])
                     @break
                 
+                @case('custom_default')
                 @case('custom')
                     {{-- بررسی کدام سیستم استفاده شده --}}
                     @if(isset($settings['custom_cover_table']))

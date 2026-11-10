@@ -22,14 +22,7 @@
     <meta charset="UTF-8">
     <title>{{ $template->name ?? 'کاتالوگ محصولات' }}</title>
     <style>
-        body {
-            font-family: '{{ $catalogFont }}', sans-serif;
-            background-color: #ffffff;
-            color: #1f2937;
-            margin: 0;
-            padding: 15px;
-            direction: rtl;
-        }
+        @include('pdf.partials.catalog-cover-styles')
         .grid-table {
             width: 100%;
             border-collapse: collapse;
@@ -140,135 +133,12 @@
             padding: 8px;
         }
         /* استایل‌های بخش کاور */
-        .cover-wrapper { text-align: center; margin-top: 80px; }
-        .logo-area { margin-bottom: 30px; }
-        .logo-area img { max-width: 180px; max-height: 180px; }
-        .company-name { font-size: 32px; font-weight: bold; color: #111827; margin-bottom: 10px; }
-        .brand-name { font-size: 20px; color: #4b5563; margin-bottom: 30px; }
-        .divider { border-top: 2px solid #e5e7eb; width: 60%; margin: 30px auto; }
-        .catalog-title-box { margin: 40px auto; padding: 25px; background: #eff6ff; border: 2px solid #bfdbfe; border-radius: 12px; font-size: 26px; font-weight: bold; color: #1e40af; width: 70%; }
-        .info-grid { width: 80%; margin: 40px auto 0; border: 1px solid #e5e7eb; border-radius: 12px; padding: 25px; background: #f9fafb; text-align: right; }
-        .info-item { margin-bottom: 12px; }
-        .info-label { font-weight: bold; color: #374151; display: inline-block; width: 100px; }
-        .info-value { color: #111827; }
 
     </style>
 </head>
 <body>
 {{-- فراخوانی کاور در صورت فعال بودن تنظیمات --}}
-@if($showCoverPage)
-@switch($coverTheme ?? 'default')
-    @case('modern')
-        @include('pdf.supplier-catalog-cover-modern', [
-            'supplierName'     => $supplierName,
-            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-            'supplierLogoPath' => $supplierLogoPath ?? null,
-            'forPdf'           => $forPdf ?? true,
-            'catalogTitle'     => $template->title ?? null,
-            'supplier'         => $supplier ?? null,
-            'contactPhones'    => $contactPhones ?? [],
-            'exchangeRateBasis' => $exchangeRateBasis ?? null,
-            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-        ])
-        @break
-    
-    @case('creative')
-        @include('pdf.supplier-catalog-cover-creative', [
-            'supplierName'     => $supplierName,
-            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-            'supplierLogoPath' => $supplierLogoPath ?? null,
-            'forPdf'           => $forPdf ?? true,
-            'catalogTitle'     => $template->title ?? null,
-            'supplier'         => $supplier ?? null,
-            'contactPhones'    => $contactPhones ?? [],
-            'exchangeRateBasis' => $exchangeRateBasis ?? null,
-            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-        ])
-        @break
-    
-    @case('corporate')
-        @include('pdf.supplier-catalog-cover-corporate', [
-            'supplierName'     => $supplierName,
-            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-            'supplierLogoPath' => $supplierLogoPath ?? null,
-            'forPdf'           => $forPdf ?? true,
-            'catalogTitle'     => $template->title ?? null,
-            'supplier'         => $supplier ?? null,
-            'contactPhones'    => $contactPhones ?? [],
-            'exchangeRateBasis' => $exchangeRateBasis ?? null,
-            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-        ])
-        @break
-    
-    @case('custom')
-        {{-- بررسی کدام سیستم استفاده شده --}}
-        @if(isset($settings['custom_cover_table']))
-            @include('pdf.supplier-catalog-cover-table', [
-                'supplierName'     => $supplierName,
-                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-                'supplierLogoPath' => $supplierLogoPath ?? null,
-                'forPdf'           => $forPdf ?? true,
-                'catalogTitle'     => $template->title ?? null,
-                'supplier'         => $supplier ?? null,
-                'contactPhones'    => $contactPhones ?? [],
-                'exchangeRateBasis' => $exchangeRateBasis ?? null,
-                'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-                'settings'         => $settings ?? [],
-            ])
-        @else
-            @include('pdf.supplier-catalog-cover-custom', [
-                'supplierName'     => $supplierName,
-                'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-                'supplierLogoPath' => $supplierLogoPath ?? null,
-                'forPdf'           => $forPdf ?? true,
-                'catalogTitle'     => $template->title ?? null,
-                'supplier'         => $supplier ?? null,
-                'contactPhones'    => $contactPhones ?? [],
-                'exchangeRateBasis' => $exchangeRateBasis ?? null,
-                'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-                'settings'         => $settings ?? [],
-            ])
-        @endif
-        @break
-    
-    @default
-        @include('pdf.supplier-catalog-cover', [
-            'supplierName'     => $supplierName,
-            'supplierLogoUrl'  => $supplierLogoUrl ?? null,
-            'supplierLogoPath' => $supplierLogoPath ?? null,
-            'forPdf'           => $forPdf ?? true,
-            'catalogTitle'     => $template->title ?? null,
-            'supplier'         => $supplier ?? null,
-            'contactPhones'    => $contactPhones ?? [],
-            'exchangeRateBasis' => $exchangeRateBasis ?? null,
-            'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-        ])
-@endswitch
-
-{{-- page break بین کاور و محصولات --}}
-@php
-    $coverPageBreak = true; // پیش‌فرض
-    
-    // بررسی در تنظیمات کاتالوگ (اولویت اول)
-    if(isset($settings['cover_page_break'])) {
-        $coverPageBreak = $settings['cover_page_break'];
-    }
-    // بررسی در تنظیمات کاور قدیمی
-    elseif(isset($settings['custom_cover']['page_break'])) {
-        $coverPageBreak = $settings['custom_cover']['page_break'];
-    }
-@endphp
-
-@if($coverPageBreak)
-<pagebreak />
-@endif
-
-@else
-    @include('pdf.partials.exchange-rate-basis-summary', [
-        'exchangeRateBasis' => $exchangeRateBasis ?? null,
-        'currencySnapshotWarning' => $currencySnapshotWarning ?? false,
-    ])
-@endif
+@include('pdf.partials.catalog-cover-page')
 
 @if(($supplier->type ?? null) === 'supplier')
 <div style="text-align: right; color: #4b5563; font-size: 10px; margin: 0 0 10px;">

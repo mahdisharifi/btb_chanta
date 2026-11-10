@@ -10,6 +10,7 @@ use Livewire\Attributes\Locked;
 use App\Models\Category;
 use App\Models\CatalogTemplate;
 use App\Models\Supplier;
+use App\Services\CatalogCustomCoverService;
 use App\Enums\PriceType;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -36,7 +37,7 @@ class Index extends Component
     
     public $imageQuality = 'sm'; // sm, md, lg, original
     
-    public $coverTheme = 'default'; // default, modern, creative, corporate, custom
+    public $coverTheme = 'default'; // default, modern, creative, corporate, custom, custom_default
 
     public $editingTemplateId = null;
     public $name = '';
@@ -738,28 +739,14 @@ class Index extends Component
     }
     
     /**
-     * پیدا کردن کاتالوگ پیش‌فرض
+     * آیا تأمین‌کننده کاور سفارشی پیش‌فرض دارد؟
      */
-    protected function findDefaultTemplateCatalog()
+    #[Computed]
+    public function hasDefaultCustomCover(): bool
     {
-        $supplierId = Auth::user()->currentSupplier()->id ?? null;
-        if (!$supplierId) {
-            return null;
-        }
-        
-        // پیدا کردن کاتالوگی که is_default_template = true دارد
-        $templates = CatalogTemplate::where('supplier_id', $supplierId)->get();
-        
-        foreach ($templates as $template) {
-            $settings = $template->settings ?? [];
-            $isDefault = $settings['custom_cover']['is_default_template'] ?? false;
-            
-            if ($isDefault) {
-                return $template;
-            }
-        }
-        
-        return null;
+        $supplierId = Auth::user()?->currentSupplier()?->id;
+
+        return $supplierId && app(CatalogCustomCoverService::class)->defaultForSupplier((int) $supplierId) !== null;
     }
     
     /**
@@ -1012,7 +999,7 @@ class Index extends Component
             'show_cover_page' => 'boolean',
             'cover_page_break' => 'boolean',
             'imageQuality' => 'required|string|in:sm,md,lg,original',
-            'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom',
+            'coverTheme' => 'required|string|in:default,modern,creative,corporate,custom,custom_default',
             'priceDisplayCurrency' => 'required|in:toman,supplier',
             'catalogBranchScope' => $this->authenticatedUserIsAdmin() ? 'nullable' : 'required|in:single,all,selected',
             'catalogBranchSupplierId' => $this->authenticatedUserIsAdmin()
@@ -1145,14 +1132,9 @@ class Index extends Component
                 ->where('supplier_id', $supplierId)
                 ->firstOrFail();
 
-            // حفظ تنظیمات کاور کاستم قبلی
-            $existingSettings = $template->settings ?? [];
-            if (isset($existingSettings['custom_cover_table'])) {
-                $settings['custom_cover_table'] = $existingSettings['custom_cover_table'];
-            }
-            if (isset($existingSettings['custom_cover'])) {
-                $settings['custom_cover'] = $existingSettings['custom_cover'];
-            }
+            $settings = app(CatalogCustomCoverService::class)->applyTheme(
+                $settings, $supplierId, $template->settings ?? []
+            );
 
             $template->update([
                 'name' => $this->name,
@@ -1162,23 +1144,7 @@ class Index extends Component
 
             $this->successMessage = 'کاتالوگ با موفقیت بروزرسانی شد.';
         } else {
-            // کاتالوگ جدید - بررسی کپی از پیش‌فرض
-            if ($this->coverTheme === 'custom') {
-                $defaultTemplate = $this->findDefaultTemplateCatalog();
-                
-                if ($defaultTemplate) {
-                    // کپی تنظیمات کاور از پیش‌فرض
-                    $defaultSettings = $defaultTemplate->settings ?? [];
-                    $defaultCustomCoverTable = $defaultSettings['custom_cover_table'] ?? null;
-                    
-                    if ($defaultCustomCoverTable) {
-                        $settings['custom_cover_table'] = $defaultCustomCoverTable;
-                        // تنظیم source_catalog_id برای وابستگی
-                        $settings['custom_cover_table']['source_catalog_id'] = $defaultTemplate->id;
-                        $settings['custom_cover_table']['is_default_template'] = false;
-                    }
-                }
-            }
+            $settings = app(CatalogCustomCoverService::class)->applyTheme($settings, $supplierId);
             
             CatalogTemplate::create([
                 'supplier_id' => $supplierId,

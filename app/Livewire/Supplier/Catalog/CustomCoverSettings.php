@@ -3,16 +3,15 @@
 namespace App\Livewire\Supplier\Catalog;
 
 use Livewire\Component;
-use Livewire\Attributes\Computed;
 use App\Models\CatalogTemplate;
+use App\Services\CatalogCustomCoverService;
 use Illuminate\Support\Facades\Auth;
 
 class CustomCoverSettings extends Component
 {
     public $catalogTemplate;
     
-    // تنظیمات وابستگی
-    public $sourceCatalogId = null;
+    // پیش‌فرض سفارشی تأمین‌کننده
     public $isDefaultTemplate = false;
     
     // تنظیمات کلی کاور
@@ -99,8 +98,7 @@ class CustomCoverSettings extends Component
         $settings = $this->catalogTemplate->settings ?? [];
         $coverData = $settings['custom_cover_table'] ?? [];
         
-        // تنظیمات وابستگی
-        $this->sourceCatalogId = $coverData['source_catalog_id'] ?? null;
+        // پیش‌فرض سفارشی تأمین‌کننده
         $this->isDefaultTemplate = $coverData['is_default_template'] ?? false;
         
         // تنظیمات کلی - فقط در صورت عدم وجود تنظیمات از پیش‌فرض استفاده کن
@@ -371,85 +369,18 @@ class CustomCoverSettings extends Component
     {
         $this->validate();
         
-        $coverData = [
-            'source_catalog_id' => $this->sourceCatalogId,
-            'is_default_template' => $this->isDefaultTemplate,
-            'settings' => $this->coverSettings,
-            'rows' => $this->rows,
-        ];
-        
-        $settings = $this->catalogTemplate->settings ?? [];
-        $settings['custom_cover_table'] = $coverData;
-        
-        $this->catalogTemplate->update(['settings' => $settings]);
-        
-        // Cascade update اگر پیش‌فرض است
-        if ($this->isDefaultTemplate) {
-            $this->updateDependentCatalogs($coverData);
-        }
+        app(CatalogCustomCoverService::class)->save(
+            $this->catalogTemplate,
+            $this->coverSettings,
+            $this->rows,
+            (bool) $this->isDefaultTemplate,
+        );
         
         // نمایش پیام موفقیت بدون ریدایرکت
         $this->dispatch('notify', [
             'type' => 'success',
             'message' => 'تنظیمات کاور با موفقیت ذخیره شد.'
         ]);
-    }
-    
-    protected function updateDependentCatalogs($coverData)
-    {
-        $user = Auth::user();
-        $supplierId = $user->currentSupplier()?->id;
-        
-        // فقط کاتالوگ‌هایی که وابسته هستند (source_catalog_id دارند)
-        $dependentCatalogs = CatalogTemplate::where('supplier_id', $supplierId)
-            ->where('id', '!=', $this->catalogTemplate->id)
-            ->get()
-            ->filter(function ($catalog) {
-                $settings = $catalog->settings ?? [];
-                // فقط اگر source_catalog_id دارد و برابر با کاتالوگ فعلی است
-                return ($settings['custom_cover_table']['source_catalog_id'] ?? null) == $this->catalogTemplate->id;
-            });
-        
-        foreach ($dependentCatalogs as $catalog) {
-            $settings = $catalog->settings ?? [];
-            
-            // فقط تنظیمات کاور را به‌روز کن، نه کل settings را
-            // از array_merge برای حفظ تنظیمات دیگر استفاده کن
-            $existingCoverTable = $settings['custom_cover_table'] ?? [];
-            
-            $settings['custom_cover_table'] = [
-                'source_catalog_id' => $this->catalogTemplate->id,
-                'is_default_template' => false,
-                'settings' => $coverData['settings'],
-                'rows' => $coverData['rows'],
-            ];
-            
-            $catalog->update(['settings' => $settings]);
-        }
-    }
-    
-    public function detachFromDefault()
-    {
-        $this->sourceCatalogId = null;
-        
-        $settings = $this->catalogTemplate->settings ?? [];
-        if (isset($settings['custom_cover_table'])) {
-            $settings['custom_cover_table']['source_catalog_id'] = null;
-            $this->catalogTemplate->update(['settings' => $settings]);
-        }
-        
-        session()->flash('success', 'این کاتالوگ اکنون مستقل است.');
-    }
-    
-    #[Computed]
-    public function sourceCatalogName()
-    {
-        if (!$this->sourceCatalogId) {
-            return null;
-        }
-        
-        $sourceCatalog = CatalogTemplate::find($this->sourceCatalogId);
-        return $sourceCatalog ? $sourceCatalog->name : "کاتالوگ #{$this->sourceCatalogId}";
     }
     
     public function render()
