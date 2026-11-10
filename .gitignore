@@ -83,6 +83,7 @@ public_html/hot
 # Documentation Directory
 /docs/*
 !/docs/INTERACTIVE_GUIDE_STANDARD.md
+!/docs/RESPONSIVE_MOBILE_NAVIGATION_STANDARD.md
 
 # Semantic Review Directory
 /semantic-review/
