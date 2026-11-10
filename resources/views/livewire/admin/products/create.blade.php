@@ -534,10 +534,10 @@
 
         <!-- بخش تیراژهای محصول -->
         <div id="field-quantity_tiers" data-product-tour-step="tiers-overview" data-product-tour-order="120" data-product-tour-target="h2" data-product-tour-title="تیراژهای ساخته‌شده و قواعد فروش" data-product-tour-description="با اعمال پیشنهاد، سه سطح خرید ساخته شده‌اند. نام و حداقل تعداد هر سطح به‌صورت خودکار تعیین می‌شود؛ سقف‌ها را طوری تنظیم کنید که بازه‌ها هم‌پوشانی نداشته باشند و سقف آخر خالی بماند تا بدون محدودیت باشد."
-             class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700
+             class="bg-white dark:bg-gray-800 p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700
                     @error('quantity_tiers') border-red-500 dark:border-red-600 @enderror
                     @error('quantity_tiers.*') border-red-500 dark:border-red-600 @enderror">
-            <div class="mb-4 border-b dark:border-gray-600 pb-2">
+            <div class="mb-3 border-b dark:border-gray-600 pb-2">
                 <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
                     <x-heroicon-o-cube class="w-5 h-5 text-indigo-600"/>
                     تیراژهای محصول
@@ -562,7 +562,9 @@
                 </div>
             @else
                 {{-- 📋 راهنمای تیراژها --}}
-                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                <details class="group mb-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                    <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-blue-800 dark:text-blue-200 sm:text-sm">راهنمای تیراژ و قوانین فروش</summary>
+                    <div class="p-3 pt-1 sm:p-4">
                     <div class="flex items-start gap-3">
                         <x-heroicon-o-information-circle class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"/>
                         <div class="text-sm text-blue-800 dark:text-blue-200 space-y-2">
@@ -586,8 +588,17 @@
                     </div>
                 </div>
 
+                    <p class="px-3 pb-3 text-xs text-blue-800 dark:text-blue-200">
+                                            @if(count($quantity_tiers) < 4)
+                                                برای تیراژ آخر خالی بگذارید (بدون سقف)؛ برای افزودن تیراژ بعدی ابتدا سقف را وارد کنید.
+                                            @else
+                                                این آخرین تیراژ است؛ خالی بگذارید (بدون سقف).
+                                            @endif
+                    </p>
+                </details>
+
                 {{-- نمایش تعداد تیراژ فعلی --}}
-                <div class="flex flex-wrap items-center justify-between gap-2 mb-3 px-2">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <span class="text-sm text-gray-600 dark:text-gray-400">
                         تعداد تیراژها:
                         <strong class="text-gray-900 dark:text-gray-100">{{ count($quantity_tiers) }}</strong>
@@ -608,7 +619,7 @@
                     @endif
                 </div>
 
-                <div class="space-y-3">
+                <div class="space-y-2 sm:space-y-3">
                     @forelse($quantity_tiers as $index => $tier)
                         @php
                             // بررسی وجود قیمت برای این تیراژ (فقط در حالت ویرایش و فقط قیمت‌های سیستم جدید)
@@ -621,60 +632,53 @@
                                     ->exists();
                             }
                         @endphp
-                        <div wire:key="tier-{{ $index }}" data-product-tour-step="tier-{{ $index }}" data-product-tour-order="{{ 130 + $index }}" data-product-tour-target="#quantity-tier-max-{{ $index }}" data-product-tour-title="تنظیم تیراژ {{ $index + 1 }}" data-product-tour-description="نام و حداقل تعداد این سطح خودکار محاسبه می‌شود. سقف تعداد را تنظیم کنید تا بازه‌ها پیوسته و بدون تداخل باشند؛ برای آخرین تیراژ، سقف را خالی بگذارید." class="flex items-center gap-3 p-4 rounded-lg border {{ $hasPrices ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700' }}">
+                        <div wire:key="tier-{{ $index }}" data-product-tour-step="tier-{{ $index }}" data-product-tour-order="{{ 130 + $index }}" data-product-tour-target="#quantity-tier-max-{{ $index }}" data-product-tour-title="تنظیم تیراژ {{ $index + 1 }}" data-product-tour-description="نام و حداقل تعداد این سطح خودکار محاسبه می‌شود. سقف تعداد را تنظیم کنید تا بازه‌ها پیوسته و بدون تداخل باشند؛ برای آخرین تیراژ، سقف را خالی بگذارید." class="flex items-center gap-1.5 p-2 sm:gap-3 sm:p-4 rounded-lg border {{ $hasPrices ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700' : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700' }}">
                             @if($hasPrices)
                                 <div class="flex-shrink-0">
                                     <x-heroicon-s-lock-closed class="w-5 h-5 text-amber-600 dark:text-amber-400"/>
                                 </div>
                             @endif
-                            <div class="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div class="min-w-0 flex-1 grid grid-cols-3 gap-2 sm:gap-3">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    <label class="block text-[11px] sm:text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                                         نام تیراژ
-                                        <span class="text-xs text-gray-500">(ثابت)</span>
+                                        <span class="hidden sm:inline text-xs text-gray-500">(ثابت)</span>
                                     </label>
                                     <input type="text"
+                                           aria-label="نام تیراژ {{ $index + 1 }}"
                                            wire:model="quantity_tiers.{{ $index }}.name"
                                            placeholder="مثال: تیراژ کم"
                                            readonly
-                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-100 dark:text-gray-400 rounded-md shadow-sm text-sm bg-gray-100 cursor-not-allowed">
+                                           class="min-w-0 w-full px-2 py-2 sm:px-3 sm:py-2 text-xs sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-100 dark:text-gray-400 rounded-md shadow-sm bg-gray-100 cursor-not-allowed">
                                     @error("quantity_tiers.{$index}.name")
                                         <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
                                     @enderror
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                    <label class="block text-[11px] sm:text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                                         حداقل تعداد
-                                        <span class="text-xs text-gray-500">(خودکار)</span>
+                                        <span class="hidden sm:inline text-xs text-gray-500">(خودکار)</span>
                                     </label>
-                                    <input id="quantity-tier-max-{{ $index }}" type="number"
+                                    <input id="quantity-tier-min-{{ $index }}" type="number"
+                                           aria-label="حداقل تعداد {{ $tier['name'] }}"
                                            wire:model="quantity_tiers.{{ $index }}.min_quantity"
                                            min="0"
                                            placeholder="100"
                                            readonly
-                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-100 dark:text-gray-400 rounded-md shadow-sm text-sm bg-gray-100 cursor-not-allowed">
+                                           class="min-w-0 w-full px-2 py-2 sm:px-3 sm:py-2 text-xs sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-100 dark:text-gray-400 rounded-md shadow-sm bg-gray-100 cursor-not-allowed">
                                     @error("quantity_tiers.{$index}.min_quantity")
                                         <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
                                     @enderror
                                 </div>
                                 <div>
-                                    <label for="quantity-tier-max-{{ $index }}" class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداکثر تعداد</label>
-                                    <input type="number"
+                                    <label for="quantity-tier-max-{{ $index }}" class="block text-[11px] sm:text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">حداکثر تعداد</label>
+                                    <input id="quantity-tier-max-{{ $index }}" type="number"
                                            wire:model.blur="quantity_tiers.{{ $index }}.max_quantity"
                                            min="0"
                                            placeholder="{{ $loop->last ? 'بدون سقف' : '500' }}"
                                            onwheel="this.blur()"
                                            {{ $hasPrices ? 'readonly' : '' }}
-                                           class="w-full border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm text-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
-                                    @if($loop->last)
-                                        <span class="text-xs text-gray-500 dark:text-gray-400 mt-1 block">
-                                            @if(count($quantity_tiers) < 4)
-                                                برای تیراژ آخر خالی بگذارید (بدون سقف)؛ برای افزودن تیراژ بعدی ابتدا سقف را وارد کنید.
-                                            @else
-                                                این آخرین تیراژ است؛ خالی بگذارید (بدون سقف).
-                                            @endif
-                                        </span>
-                                    @endif
+                                           class="min-w-0 w-full px-2 py-2 sm:px-3 sm:py-2 text-xs sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm {{ $hasPrices ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed' : '' }}">
                                     @error('quantity_tiers')
                                         <span class="text-red-600 dark:text-red-400 text-xs mt-1 block">{{ $message }}</span>
                                     @enderror
@@ -694,7 +698,7 @@
                                 <button type="button"
                                         wire:click="removeQuantityTier({{ $index }})"
                                         aria-label="حذف {{ $tier['name'] }}"
-                                        class="p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-red-500">
+                                        class="shrink-0 p-2 sm:p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-red-500">
                                     <x-heroicon-o-trash class="w-5 h-5"/>
                                 </button>
                             @endif
@@ -710,7 +714,7 @@
                         <button type="button" data-product-tour-step="add-tier" data-product-tour-order="150" data-product-tour-title="افزودن تیراژ" data-product-tour-description="تا چهار تیراژ می‌توانید داشته باشید. برای افزودن سطح بعدی ابتدا سقف تیراژ آخر را وارد کنید؛ حداقل تعداد سطح جدید خودکار تنظیم می‌شود."
                                 wire:click="addQuantityTier"
                                 @disabled(! $this->canAddQuantityTier())
-                                class="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-300">
+                                class="w-full py-2 sm:py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-300">
                             <x-heroicon-o-plus-circle class="w-5 h-5"/>
                             <span class="text-sm font-medium">
                                 @if(! $this->canAddQuantityTier())
