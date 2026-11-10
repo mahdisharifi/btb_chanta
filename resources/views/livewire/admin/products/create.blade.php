@@ -204,11 +204,39 @@
 
 
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div class="md:col-span-2" data-product-tour-step="gallery-images" data-product-tour-order="2" data-product-tour-target="input[type=file]" data-product-tour-title="تصاویر محصول" data-product-tour-description="تصاویر را یکجا اضافه کنید. اولین تصویر اصلی است و می‌توانید تصویر اصلی را از همین بخش تغییر دهید.">
-                    <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">اولین تصویر انتخاب‌شده، تصویر اصلی محصول است. برای تغییر آن، روی «انتخاب به‌عنوان تصویر اصلی» بزنید. حداکثر حجم هر تصویر ۲ مگابایت است.</p>
-                    <p class="text-xs text-gray-500 mb-3">برای تغییر ترتیب، عکس‌ها را بکشید و رها کنید. تصویر اول، تصویر اصلی محصول و پیش‌فرض سئو است. @if($supplierDraftMode) افزودن حداقل یک تصویر الزامی است؛ تصاویر بیشتر اختیاری‌اند. @endif</p>
-                    <div data-product-gallery-sortable x-data="{ dragged: null }" class="flex flex-wrap gap-3 scroll-mt-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-8">
+                <div class="md:col-span-2">
+                    <p class="text-xs sm:text-sm text-gray-600 dark:text-gray-300 mb-3">تصویر اول، تصویر اصلی محصول است. افزودن ویدئو و تصویر پیش‌نمایش آن اختیاری است. @if($supplierDraftMode) افزودن حداقل یک تصویر الزامی است. @endif</p>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+                        <div data-product-tour-step="gallery-images" data-product-tour-order="2" data-product-tour-target="label[for=product_images]" data-product-tour-title="تصاویر محصول" data-product-tour-description="تصاویر را یکجا اضافه کنید. اولین تصویر اصلی است و می‌توانید تصویر اصلی را از همین بخش تغییر دهید.">
+                            <label for="product_images" class="flex min-h-28 sm:min-h-32 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-2 sm:p-3 text-indigo-600 hover:bg-indigo-50 dark:border-gray-600 dark:hover:bg-gray-700/50 focus-within:ring-2 focus-within:ring-indigo-500">
+                                <svg aria-hidden="true" class="h-7 w-7 sm:h-9 sm:w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></svg>
+                                <span class="text-xs sm:text-sm text-center">افزودن تصاویر</span>
+                                <input id="product_images" type="file" wire:model="incomingImages" multiple accept="image/*" class="sr-only">
+                            </label>
+                        </div>
+
+                        <div data-product-tour-step="product-video" data-product-tour-order="5" data-product-tour-target="label[for=product_video]" data-product-tour-title="ویدئوی محصول" data-product-tour-description="افزودن ویدئو اختیاری است. فرمت‌های MP4، WebM، OGG و MOV پذیرفته می‌شوند و حجم فایل نباید از ۵۰ مگابایت بیشتر باشد.">
+                            <label for="product_video" class="flex min-h-28 sm:min-h-32 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-2 sm:p-3 text-indigo-600 hover:bg-indigo-50 dark:border-gray-600 dark:hover:bg-gray-700/50 focus-within:ring-2 focus-within:ring-indigo-500">
+                                <svg aria-hidden="true" class="h-7 w-7 sm:h-9 sm:w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="6" width="14" height="12" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="m16 10 6-4v12l-6-4z"/></svg>
+                                <span class="text-xs sm:text-sm text-center">{{ $product_video ? 'تغییر ویدئو' : 'افزودن ویدئو' }}</span>
+                                <input id="product_video" type="file" wire:model="product_video" accept="video/mp4,video/webm,video/ogg,video/quicktime" class="sr-only">
+                            </label>
+                        </div>
+
+                        <div data-product-tour-step="video-poster" data-product-tour-order="6" data-product-tour-target="label[for=video_poster]" data-product-tour-title="تصویر بندانگشتی ویدئو" data-product-tour-description="این تصویر به‌عنوان پیش‌نمایش ویدئو در گالری استفاده می‌شود. فقط وقتی ویدئو دارید لازم است آن را انتخاب کنید؛ تصویر JPG، PNG یا WebP تا ۲ مگابایت باشد.">
+                            <label for="video_poster" class="flex min-h-28 sm:min-h-32 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-2 sm:p-3 text-indigo-600 hover:bg-indigo-50 dark:border-gray-600 dark:hover:bg-gray-700/50 focus-within:ring-2 focus-within:ring-indigo-500">
+                                <svg aria-hidden="true" class="h-7 w-7 sm:h-9 sm:w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m3 17 5-5 4 4 3-3 6 6"/></svg>
+                                <span class="text-xs sm:text-sm text-center">{{ $video_poster ? 'تغییر تصویر پیش‌نمایش' : 'تصویر پیش‌نمایش ویدئو' }}</span>
+                                <input id="video_poster" type="file" wire:model="video_poster" accept="image/jpeg,image/jpg,image/png,image/webp" class="sr-only">
+                            </label>
+                        </div>
+                    </div>
+
+                    <p class="mt-2 text-[11px] leading-5 text-gray-500 dark:text-gray-400">هر تصویر حداکثر ۲ مگابایت باشد. فرمت ویدئو: MP4، WebM، OGG یا MOV تا ۵۰ مگابایت. تصویر پیش‌نمایش ویدئو در گالری محصول نمایش داده می‌شود.</p>
+
+                    <div data-product-gallery-sortable x-data="{ dragged: null }" class="mt-4 flex flex-wrap gap-3 scroll-mt-6">
                         @if($primary_image)
                         <div wire:key="uploaded-primary-{{ $primary_image->getFilename() }}" draggable="true" @dragstart.stop="dragged = 0; $event.dataTransfer.setData('text/plain', '0'); $event.dataTransfer.effectAllowed = 'move'" @dragend.stop="dragged = null" @dragover.prevent="$event.dataTransfer.dropEffect = 'move'" @drop.prevent.stop="if (dragged !== null) { $wire.reorderUploadedImages(dragged, 0); dragged = null }" :class="dragged === 0 ? 'opacity-40' : ''" class="relative w-32 cursor-grab active:cursor-grabbing rounded-xl border-2 border-indigo-500 overflow-hidden">
                             <img src="{{ $primary_image->temporaryUrl() }}" alt="تصویر اصلی محصول" class="h-32 w-full object-cover">
@@ -229,11 +257,6 @@
                             <button type="button" wire:click="removeUploadedImage({{ $index }})" aria-label="حذف تصویر" class="absolute top-1 left-1 rounded bg-red-600 text-white px-2 py-1">×</button>
                         </div>
                         @endforeach
-                        <label for="product_images" class="flex w-32 min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-3 text-indigo-600 hover:bg-indigo-50 focus-within:ring-2 focus-within:ring-indigo-500">
-                            <svg aria-hidden="true" class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></svg>
-                            <span class="text-sm">افزودن تصاویر</span>
-                            <input id="product_images" type="file" wire:model="incomingImages" multiple accept="image/*" class="sr-only">
-                        </label>
                     </div>
                     <div wire:loading wire:target="incomingImages" role="status" class="text-sm text-indigo-600 mt-2">در حال بارگذاری تصاویر...</div>
                     @error('incomingImages.*') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
@@ -242,62 +265,29 @@
                     @error('gallery_images.*') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <!-- ویدئوی محصول -->
-                <div data-product-tour-step="product-video" data-product-tour-order="5" data-product-tour-target="input[type=file]" data-product-tour-title="ویدئوی محصول" data-product-tour-description="افزودن ویدئو اختیاری است. فرمت‌های MP4، WebM، OGG و MOV پذیرفته می‌شوند و حجم فایل نباید از ۵۰ مگابایت بیشتر باشد." class="md:col-span-2">
-
-                    <div class="flex flex-wrap items-start gap-4">
-                    <label for="product_video" class="flex w-32 min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-3 text-indigo-600 hover:bg-indigo-50 focus-within:ring-2 focus-within:ring-indigo-500">
-                        <svg aria-hidden="true" class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="6" width="14" height="12" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="m16 10 6-4v12l-6-4z"/></svg>
-                        <span class="text-sm">{{ $product_video ? 'تغییر ویدئو' : 'افزودن ویدئو' }}</span>
-                    <input id="product_video" type="file"
-                           wire:model="product_video"
-                           accept="video/mp4,video/webm,video/ogg,video/quicktime"
-                           class="sr-only">
-                    </label>
-                    <div data-product-tour-step="video-poster" data-product-tour-order="6" data-product-tour-target="input[type=file]" data-product-tour-title="تصویر بندانگشتی ویدئو" data-product-tour-description="این تصویر به‌عنوان پیش‌نمایش ویدئو در گالری استفاده می‌شود. فقط وقتی ویدئو دارید لازم است آن را انتخاب کنید؛ تصویر JPG، PNG یا WebP تا ۲ مگابایت باشد." class="max-w-xs">
-                        <label for="video_poster" class="flex w-32 min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-3 text-indigo-600 hover:bg-indigo-50 focus-within:ring-2 focus-within:ring-indigo-500">
-                            <svg aria-hidden="true" class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m3 17 5-5 4 4 3-3 6 6"/></svg>
-                            <span class="text-sm text-center">{{ $video_poster ? 'تغییر تصویر ویدئو' : 'تصویر پیش‌نمایش ویدئو' }}</span>
-                            <input id="video_poster" type="file" wire:model="video_poster" accept="image/jpeg,image/jpg,image/png,image/webp" class="sr-only">
-                        </label>
-
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            این تصویر در گالری محصول به عنوان پیش‌نمایش ویدئو نمایش داده می‌شود
-                        </p>
-
-                        <div wire:loading wire:target="video_poster" class="text-sm text-indigo-600 mt-2">در حال آپلود تصویر...</div>
-                        @error('video_poster') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-
-                        @if ($video_poster)
-                        <div class="mt-3">
-                            <p class="text-xs text-green-600 mb-2">پیش‌نمایش thumbnail:</p>
-                            <img src="{{ $video_poster->temporaryUrl() }}"
-                                 class="w-32 h-24 object-cover rounded-lg border-2 border-green-500 shadow-sm"
-                                 alt="Video Poster Preview">
-                        </div>
-                        @endif
+                <!-- وضعیت و پیش‌نمایش رسانه‌های بارگذاری‌شده -->
+                <div class="md:col-span-2">
+                    <div wire:loading wire:target="video_poster" class="text-sm text-indigo-600 mt-2">در حال آپلود تصویر پیش‌نمایش...</div>
+                    @error('video_poster') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
+                    @if ($video_poster)
+                    <div class="mt-3 flex items-center gap-3">
+                        <img src="{{ $video_poster->temporaryUrl() }}" class="h-16 w-24 object-cover rounded-lg border-2 border-green-500 shadow-sm" alt="پیش‌نمایش تصویر ویدئو">
+                        <span class="text-xs text-green-600">تصویر پیش‌نمایش ویدئو آماده است.</span>
                     </div>
-                    </div>
-
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                        فرمت‌های مجاز: mp4، webm، ogg، mov - حداکثر حجم: ۵۰ مگابایت
-                    </p>
+                    @endif
 
                     <div wire:loading wire:target="product_video" class="text-sm text-purple-600 mt-2">در حال آپلود ویدئو...</div>
                     @error('product_video') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
 
                     @if ($product_video)
-                    <div class="mt-4">
+                    <div class="mt-3">
                         <p class="text-xs text-green-600 mb-2">پیش‌نمایش ویدئوی جدید:</p>
-                        <video controls class="w-full max-w-md rounded-lg border-2 border-green-500 bg-black shadow-sm">
+                        <video controls class="aspect-video w-full max-w-md rounded-lg border-2 border-green-500 bg-black shadow-sm">
                             <source src="{{ $product_video->temporaryUrl() }}">
                             مرورگر شما از پخش ویدئو پشتیبانی نمی‌کند.
                         </video>
                     </div>
                     @endif
-
-                    {{-- ✅ فیلد آپلود تصویر پیش‌نمایش (Poster) --}}
-
                 </div>
             </div>
         </div>
@@ -307,8 +297,8 @@
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-600 pb-2">اطلاعات اصلی</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div id="field-title" data-product-tour-step="title" data-product-tour-order="10" data-product-tour-target="#title" data-product-tour-title="عنوان محصول" data-product-tour-description="نامی را بنویس که مشتری‌ها برای پیدا کردن محصول می‌شناسند. این فیلد برای ثبت محصول الزامی است.">
-                    <label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">عنوان محصول *</label>
+                <div id="field-title" data-product-tour-step="title" data-product-tour-order="10" data-product-tour-target="#title" data-product-tour-title="نام محصول" data-product-tour-description="نامی را بنویس که مشتری‌ها برای پیدا کردن محصول می‌شناسند. این فیلد برای ثبت محصول الزامی است.">
+                    <label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">نام محصول (الزامی)</label>
                     <input id="title" type="text"
                            wire:model.live.debounce.500ms="title"
                            class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm @error('title') border-red-500 dark:border-red-600 @enderror"
@@ -316,27 +306,32 @@
                     @error('title') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <div id="field-slug" data-product-tour-step="slug" data-product-tour-order="20" data-product-tour-target="#slug" data-product-tour-title="نامک صفحه (Slug)" data-product-tour-description="نامک از عنوان محصول ساخته می‌شود و در نشانی صفحه قرار می‌گیرد. با دکمهٔ کنار عنوان می‌توانید آن را دوباره از روی عنوان بسازید؛ نامک باید یکتا بماند.">
-                    <div class="mb-1 flex items-center gap-2">
-                        <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        نامک (Slug) *
-                        </label>
-                        <button type="button" wire:click="resetSlugToAuto"
-                                class="text-gray-400 hover:text-gray-600" title="بازتولید خودکار از عنوان" aria-label="بازتولید خودکار نامک از عنوان">
-                            <x-heroicon-o-arrow-path class="w-4 h-4" />
-                        </button>
+                @if($supplierDraftMode)
+                    {{-- نامک تأمین‌کننده از عنوان ساخته و هنگام ثبت ذخیره می‌شود؛ برای ساده‌ماندن فرم نمایش داده نمی‌شود. --}}
+                    <input id="slug" type="hidden" wire:model="slug">
+                @else
+                    <div id="field-slug" data-product-tour-step="slug" data-product-tour-order="20" data-product-tour-target="#slug" data-product-tour-title="نامک صفحه (Slug)" data-product-tour-description="نامک از عنوان محصول ساخته می‌شود و در نشانی صفحه قرار می‌گیرد. با دکمهٔ کنار عنوان می‌توانید آن را دوباره از روی عنوان بسازید؛ نامک باید یکتا بماند.">
+                        <div class="mb-1 flex items-center gap-2">
+                            <label for="slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            نامک (Slug) (الزامی)
+                            </label>
+                            <button type="button" wire:click="resetSlugToAuto"
+                                    class="text-gray-400 hover:text-gray-600" title="بازتولید خودکار از عنوان" aria-label="بازتولید خودکار نامک از عنوان">
+                                <x-heroicon-o-arrow-path class="w-4 h-4" />
+                            </button>
+                        </div>
+                        <input id="slug" type="text"
+                               wire:model="slug"
+                               dir="ltr"
+                               class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left @error('slug') border-red-500 dark:border-red-600 @enderror"
+                               required>
+                        @error('slug') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
-                    <input id="slug" type="text"
-                           wire:model="slug"
-                           dir="ltr"
-                           class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm text-left @error('slug') border-red-500 dark:border-red-600 @enderror"
-                           required>
-                    @error('slug') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
-                </div>
+                @endif
 
                 <!-- انتخابگر هوشمند دسته‌بندی -->
                 <div x-data="{ open: false }" class="relative" id="field-category_id" data-product-tour-step="category" data-product-tour-order="30" data-product-tour-target="#category-select" data-product-tour-title="انتخاب دسته‌بندی" data-product-tour-description="یک دستهٔ نهایی را جست‌وجو و انتخاب کنید. با انتخاب دسته، ویژگی‌های مخصوص همان دسته به فرم اضافه می‌شوند. اگر دسته را عوض کنید، انتخاب ویژگی‌های قبلی پاک می‌شود." data-product-tour-category-selected="{{ $category_id ? 'true' : 'false' }}">
-                    <label id="category-label" for="category-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی (فقط دسته‌های نهایی مجاز هستند) *</label>
+                    <label id="category-label" for="category-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">دسته‌بندی (فقط دسته‌های نهایی مجاز هستند) (الزامی)</label>
 
                     <button type="button"
                             id="category-select"
@@ -379,7 +374,7 @@
                 @unless($supplierDraftMode)
                     <!-- انتخاب تامین کننده -->
                     <div data-product-tour-step="supplier" data-product-tour-order="40" data-product-tour-target="select" data-product-tour-title="تأمین‌کننده" data-product-tour-description="این فیلد فقط در فرم مدیریت نمایش داده می‌شود؛ در پنل تأمین‌کننده، محصول به‌طور خودکار به حساب و شعبهٔ فعال شما وصل می‌شود.">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تامین کننده *</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">تامین کننده (الزامی)</label>
                         <select wire:model="supplier_id" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
                             <option value="">یک تامین کننده انتخاب کنید...</option>
                             @foreach($suppliers as $supplier)
@@ -398,7 +393,7 @@
 
                 @unless($supplierDraftMode)
                     <div data-product-tour-step="status" data-product-tour-order="60" data-product-tour-target="select" data-product-tour-title="وضعیت محصول" data-product-tour-description="این انتخاب برای فرم مدیریت است. پیشنهاد تأمین‌کننده در این مسیر مستقل از انتشار عمومی، به‌صورت پیش‌نویس ذخیره می‌شود.">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">وضعیت محصول *</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">وضعیت محصول (الزامی)</label>
                         <select wire:model="status" class="w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg shadow-sm text-sm" required>
                             <option value="">انتخاب وضعیت...</option>
                             @foreach(\App\Enums\ProductStatus::options() as $value => $label)
@@ -430,7 +425,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 {{-- نوع واحد بسته‌بندی --}}
                 <div data-product-tour-step="packaging-unit" data-product-tour-order="90" data-product-tour-target="#packaging_unit_type" data-product-tour-title="واحد فروش" data-product-tour-description="واحد متناسب با محصول را انتخاب کنید: کارتن، جین، جفت، بسته، شیرینگ، طاقه یا عدد. برای طاقه تعداد بر حسب متر و برای جوراب بر حسب جفت تفسیر می‌شود.">
-                    <x-input-label for="packaging_unit_type" value="واحد فروش" />
+                    <x-input-label for="packaging_unit_type" value="واحد فروش (الزامی)" />
                     <select wire:model="packaging_unit_type"
                             id="packaging_unit_type"
                             class="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm">
@@ -537,7 +532,7 @@
              class="bg-white dark:bg-gray-800 p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700
                     @error('quantity_tiers') border-red-500 dark:border-red-600 @enderror
                     @error('quantity_tiers.*') border-red-500 dark:border-red-600 @enderror">
-            <div class="mb-3 border-b dark:border-gray-600 pb-2">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3 border-b dark:border-gray-600 pb-2">
                 <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
                     <x-heroicon-o-cube class="w-5 h-5 text-indigo-600"/>
                     تیراژهای محصول
@@ -547,6 +542,16 @@
                         </span>
                     @endif
                 </h2>
+                @if($tiersApplied)
+                    <button type="button"
+                            wire:click="clearAutoTiers"
+                            wire:confirm="با غیرفعال‌کردن، تیراژهای فعلی حذف می‌شوند و برای ثبت محصول باید دوباره پیشنهاد تیراژ را اعمال کنید. ادامه می‌دهید؟"
+                            wire:loading.attr="disabled"
+                            wire:target="clearAutoTiers"
+                            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-gray-700">
+                        غیرفعال‌کردن تیراژبندی
+                    </button>
+                @endif
             </div>
 
             @if(!$tiersApplied)
