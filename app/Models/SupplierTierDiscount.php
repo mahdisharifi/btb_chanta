@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class SupplierTierDiscount extends Model
 {
+    public const DEFAULT_ENABLED = [0 => false, 1 => true, 2 => false, 3 => false];
+
     use HasFactory;
 
     protected $table = 'supplier_tier_discount';
@@ -49,7 +51,7 @@ class SupplierTierDiscount extends Model
         0 => 'زیر کارتن',
         1 => 'کارتن (مرجع)',
         2 => 'عمده',
-        3 => 'بار',
+        3 => 'کل موجودی',
     ];
 
     public const DEFAULT_PERCENTAGES = [
@@ -111,7 +113,6 @@ class SupplierTierDiscount extends Model
         // Priority 2: Supplier default percentage
         $supplierPercentage = static::where('supplier_id', $supplierId)
             ->where('tier_index', $tierIndex)
-            ->where('is_active', true)
             ->value('percentage_change');
         
         return $supplierPercentage !== null ? (float)$supplierPercentage : null;
@@ -151,7 +152,6 @@ class SupplierTierDiscount extends Model
     public static function getAllForSupplier(int $supplierId): \Illuminate\Support\Collection
     {
         return static::where('supplier_id', $supplierId)
-            ->where('is_active', true)
             ->orderBy('tier_index')
             ->get();
     }
