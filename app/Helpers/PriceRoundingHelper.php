@@ -249,10 +249,12 @@ class PriceRoundingHelper
                     // محاسبه مجدد با rounding جدید
                     if ($price->check_period_id) {
                         // قیمت چک
+                        // price_type_id قیمت چکی با قیمت نقدی متفاوت است؛
+                        // قیمت پایه را بر اساس کد نوع قیمت پیدا می‌کنیم.
                         $cashPrice = $ps->prices()
                             ->whereNull('check_period_id')
-                            ->where('price_type_id', $price->price_type_id)
                             ->where('tier_index', $price->tier_index)
+                            ->whereHas('priceType', fn ($query) => $query->where('code', 'cash'))
                             ->value('price');
 
                         if ($cashPrice) {

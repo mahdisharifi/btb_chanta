@@ -99,7 +99,14 @@ class ProductPrice extends Model
 
     public function scopeActiveAndValid(Builder $query): Builder
     {
-        return $query->active()->valid();
+        return $query->active()->valid()->supplierTiersEnabled();
+    }
+
+    public function scopeSupplierTiersEnabled(Builder $query): Builder
+    {
+        \App\Services\SupplierTierAvailabilityService::constrainPrices($query, $this->getTable());
+
+        return $query;
     }
 
     public function scopeByPriceType(Builder $query, int $priceTypeId): Builder

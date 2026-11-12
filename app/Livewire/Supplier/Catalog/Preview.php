@@ -534,7 +534,7 @@ class Preview extends Component
                 $q->whereIn('supplier_id', $selectedSupplierIds)
                     ->where('is_active', true)
                     ->whereHas('prices', function ($priceQuery) {
-                        $priceQuery->where('is_active', true);
+                        $priceQuery->supplierTiersEnabled()->where('is_active', true);
                     });
             });
         } elseif ($supplierId) {
@@ -542,7 +542,7 @@ class Preview extends Component
                 $q->where('supplier_id', $supplierId)
                     ->where('is_active', true)
                     ->whereHas('prices', function ($priceQuery) {
-                        $priceQuery->where('is_active', true);
+                        $priceQuery->supplierTiersEnabled()->where('is_active', true);
                     });
             });
         }
@@ -574,11 +574,13 @@ class Preview extends Component
 
                     $q->where('is_active', true)
                     ->with(['supplier:id,company_name,branch_name,parent_supplier_id,city,pricing_currency', 'prices' => function ($priceQuery) {
-                        $priceQuery->where('is_active', true)
+                        $priceQuery->supplierTiersEnabled()->where('is_active', true)
                             ->with('branchSourcePrice.productSupplier');
                     }]);
             }
         ])->get();
+
+        app(\App\Services\SupplierTierAvailabilityService::class)->prime($products->flatMap(fn ($product) => $product->productSuppliers->pluck('supplier_id')));
 
         $this->updateProgress(18, 'در حال پردازش محصولات...');
 
@@ -738,7 +740,7 @@ class Preview extends Component
                 }
 
                 // دریافت قیمت‌های این product_supplier از relation
-                $productPrices = $ps->prices; // Collection از ProductPrice
+                $productPrices = $ps->prices->filter(fn ($price) => $ps->isTierEnabled((int) $price->tier_index)); // Collection از ProductPrice
                 
                 if ($productPrices->isEmpty()) {
                     continue;

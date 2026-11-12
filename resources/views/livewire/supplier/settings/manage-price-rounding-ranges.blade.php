@@ -236,7 +236,7 @@
 
                 {{-- دکمه افزودن رنج --}}
                 <div class="mt-4">
-                    <button 
+                    <button
                         type="button"
                         data-product-tour-step="price-rounding-add-range"
                         data-product-tour-order="{{ 20 + (count($ranges) * 10) }}"
@@ -281,20 +281,22 @@
                         @endif
                     </div>
 
-                    @if(!$hasChanges && $affectedPricesCount > 0)
-                        <button 
+                    {{-- این عملیات بعد از ذخیرهٔ رنج‌ها در دسترس است؛ حتی وقتی فعلاً
+                         قیمت چکی برای بروزرسانی وجود ندارد، دکمه باید دیده شود تا
+                         کاربر علت صفر بودن تعداد را به‌صورت واضح ببیند. --}}
+                    <button 
                             type="button"
                             data-product-tour-step="price-rounding-apply-existing"
                             data-product-tour-order="{{ 23 + (count($ranges) * 10) }}"
                             data-product-tour-title="اعمال روی قیمت‌های موجود"
                             data-product-tour-description="این دکمه فقط پنجرهٔ تأیید را باز می‌کند؛ هنوز قیمتی تغییر نمی‌کند. با تأیید جداگانه، قیمت‌های چکیِ دارای مبنای نقدی و درصد محاسبه دوباره محاسبه می‌شوند. این کار از ذخیرهٔ تنظیمات جداست و برگشت خودکار ندارد."
                             wire:click="confirmUpdateAll"
+                            wire:loading.attr="disabled"
                             data-price-rounding-update-open
                             class="inline-flex items-center px-4 py-3 bg-green-600 border border-transparent rounded-md font-semibold text-sm text-white uppercase tracking-widest hover:bg-green-700 transition">
                             <x-heroicon-o-arrow-path class="w-5 h-5 ml-2" />
                             اعمال رُند به {{ number_format($affectedPricesCount) }} قیمت
-                        </button>
-                    @endif
+                    </button>
                 </div>
 
                 {{-- تذکر مهم --}}

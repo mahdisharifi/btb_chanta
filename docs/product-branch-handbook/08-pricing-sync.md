@@ -153,3 +153,5 @@ revision قیمت و کش عمومی پس از تغییر به‌روز می‌�
 ## منابع
 
 `app/Services/{SupplierBranchCatalogService,SupplierBranchPriceSyncService}.php`، `app/Livewire/Supplier/Branches/ProductTransfers.php`، `app/Livewire/Supplier/Products/EditPrice.php`، `app/Models/{ProductPrice,ProductSupplier}.php`، `tests/Smoke/BranchCatalogCheck.php`.
+
+> تکمیل ۲۰۲۶/۱۱/۱۲: وضعیت تیراژ تأمین‌کننده سقف اجازه نمایش است؛ خاموش‌کردن، قیمت یا درصد محفوظ را حذف نمی‌کند. ذخیره فرم قیمت تازه، قیمت و انتخاب و درصد اختصاصی تیراژهای پنهان را حفظ می‌کند. تغییر تنظیمات، فرم قیمت قدیمی را با revision نامعتبر می‌کند. برای قرارداد دقیق و تفاوت نمایش با بازمحاسبه قیمت، [فصل ۱۶](16-supplier-tier-availability.md) را بخوانید.

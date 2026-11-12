@@ -448,6 +448,7 @@
 
                             <div class="grid grid-cols-1 gap-3">
                                 @foreach($quantityTiers as $tierIndex => $tier)
+                                    @continue(!($supplierTierEnabled[$tierIndex] ?? true))
                                     <div class="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                                         {{-- Toggle --}}
                                         <div class="flex-shrink-0">
@@ -573,6 +574,7 @@
                                     
                                     {{-- ✅ سپس سایر تیراژها با Radio Buttons --}}
                                     @foreach($quantityTiers as $tierIndex => $tier)
+                                        @continue(!($supplierTierEnabled[$tierIndex] ?? true))
                                         @if($tierIndex != 1)
                                         @php
                                             $mode = $tierPriceMode[$tierIndex] ?? 'default';
@@ -697,6 +699,7 @@
                                             </p>
                                             <div class="space-y-1 text-amber-800 dark:text-amber-200 text-xs">
                                                 @foreach($quantityTiers as $tierIndex => $tier)
+                                                    @continue(!($supplierTierEnabled[$tierIndex] ?? true))
                                                     @php
                                                         $isEnabled = $tierEnabled[$tierIndex] ?? true;
                                                         $mode = $tierPriceMode[$tierIndex] ?? 'default';
@@ -891,6 +894,7 @@
                         @endphp
                         
                         @foreach($orderedTiers as $tierIndex => $tier)
+                            @continue(!($supplierTierEnabled[$tierIndex] ?? true))
                             {{-- تیراژ مرجع حتی در حالت غیرفعال برای حفظ مبلغ پایه قابل مشاهده می‌ماند. --}}
                             @if(($tierEnabled[$tierIndex] ?? true) || (int) $tierIndex === (int) $referenceTierIndex)
                             @if((int) $tierIndex === (int) $referenceTierIndex && !($tierEnabled[$tierIndex] ?? true))
@@ -985,7 +989,7 @@
                                                     $calculatedPrice = $this->calculateCheckPrice($tierIndex, $period->id);
                                                 @endphp
                                                 
-                                                <tr class="hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors {{ !$isEnabled ? 'opacity-50 bg-gray-50 dark:bg-gray-800/50' : '' }}">
+                                                <tr class="hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors {{ !$isEnabled ? 'bg-gray-50 dark:bg-gray-800/50' : '' }}">
                                                     <td class="sticky right-0 z-10 px-4 py-4 border border-gray-200 dark:border-gray-700 {{ $isEnabled ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-gray-100 dark:bg-gray-800' }}">
                                                         <div class="flex items-center gap-3">
                                                             {{-- ✅ Toggle فعال/غیرفعال --}}
@@ -993,12 +997,12 @@
                                                                 <input type="checkbox" 
                                                                        wire:model.live="checkPeriodEnabled.{{ $tierIndex }}.{{ $period->id }}"
                                                                        class="sr-only peer">
-                                                                <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                                                <div class="w-9 h-5 bg-gray-400 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                                                             </label>
                                                             
                                                             <div class="flex items-center gap-2">
-                                                                <x-heroicon-s-document-text class="w-5 h-5 {{ $isEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400' }}"/>
-                                                                <span class="text-sm font-semibold {{ $isEnabled ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500' }}">چک {{ $period->days }} روزه</span>
+                                                                <x-heroicon-s-document-text class="w-5 h-5 {{ $isEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300' }}"/>
+                                                                <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">چک {{ $period->days }} روزه</span>
                                                             </div>
                                                             
                                                             {{-- Tooltip درصد پیش‌فرض --}}
@@ -1045,36 +1049,36 @@
                                                     <td class="px-6 py-4 border border-gray-200 dark:border-gray-700">
                                                         <div class="space-y-3">
                                                             {{-- انتخاب Mode --}}
-                                                                <div class="flex items-center gap-4">
+                                                                <div class="flex items-center gap-4 {{ !$isEnabled ? 'opacity-50' : '' }}">
                                                                     <label class="flex items-center cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 p-2 rounded transition-colors">
                                                                         <input type="radio" 
                                                                                wire:model.live="checkPriceMode.{{ $tierIndex }}.{{ $period->id }}" 
                                                                                value="default"
                                                                                {{ !$isEnabled ? 'disabled' : '' }}
-                                                                               class="w-4 h-4 text-blue-600 {{ !$isEnabled ? 'opacity-50 cursor-not-allowed' : '' }}">
-                                                                        <span class="mr-2 text-xs {{ $isEnabled ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400' }}">پیش‌فرض</span>
+                                                                               class="w-4 h-4 text-blue-600 {{ !$isEnabled ? 'cursor-not-allowed' : '' }}">
+                                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">پیش‌فرض</span>
                                                                     </label>
                                                                     <label class="flex items-center cursor-pointer hover:bg-orange-50 dark:hover:bg-orange-900/20 p-2 rounded transition-colors">
                                                                         <input type="radio" 
                                                                                wire:model.live="checkPriceMode.{{ $tierIndex }}.{{ $period->id }}" 
                                                                                value="percentage"
                                                                                {{ !$isEnabled ? 'disabled' : '' }}
-                                                                               class="w-4 h-4 text-orange-600 {{ !$isEnabled ? 'opacity-50 cursor-not-allowed' : '' }}">
-                                                                        <span class="mr-2 text-xs {{ $isEnabled ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400' }}">درصد اختصاصی</span>
+                                                                               class="w-4 h-4 text-orange-600 {{ !$isEnabled ? 'cursor-not-allowed' : '' }}">
+                                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">درصد اختصاصی</span>
                                                                     </label>
                                                                     <label class="flex items-center cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20 p-2 rounded transition-colors">
                                                                         <input type="radio" 
                                                                                wire:model.live="checkPriceMode.{{ $tierIndex }}.{{ $period->id }}" 
                                                                                value="manual"
                                                                                {{ !$isEnabled ? 'disabled' : '' }}
-                                                                               class="w-4 h-4 text-purple-600 {{ !$isEnabled ? 'opacity-50 cursor-not-allowed' : '' }}">
-                                                                        <span class="mr-2 text-xs {{ $isEnabled ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400' }}">دستی</span>
+                                                                               class="w-4 h-4 text-purple-600 {{ !$isEnabled ? 'cursor-not-allowed' : '' }}">
+                                                                        <span class="mr-2 text-xs text-gray-700 dark:text-gray-300">دستی</span>
                                                                     </label>
                                                                 </div>
                                                                 
                                                                 {{-- Input بر اساس mode --}}
                                                                 @if(!$isEnabled)
-                                                                    <div class="text-sm text-gray-400 italic">
+                                                                    <div class="text-sm text-gray-600 dark:text-gray-400 italic">
                                                                         برای تنظیم قیمت، ابتدا این دوره را فعال کنید
                                                                     </div>
                                                                 @elseif($mode === 'default')
@@ -1237,10 +1241,10 @@
                                                 $effectivePercentage = $effectivePercentages[$period->id] ?? null;
                                                 $calculatedPrice = $this->calculateCheckPrice($tierIndex, $period->id);
                                             @endphp
-                                            <div class="p-4 rounded-lg border {{ $isEnabled ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60' }}">
+                                            <div class="p-4 rounded-lg border {{ $isEnabled ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700' }}">
                                                 <div class="flex items-center justify-between gap-3 mb-3">
-                                                    <span class="text-base font-medium {{ $isEnabled ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500' }} flex items-center gap-2">
-                                                        <x-heroicon-s-document-text class="w-5 h-5 {{ $isEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400' }}"/>
+                                                    <span class="text-base font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                                        <x-heroicon-s-document-text class="w-5 h-5 {{ $isEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300' }}"/>
                                                         چک {{ $period->days }} روزه
                                                     </span>
                                                     
@@ -1249,7 +1253,7 @@
                                                         <input type="checkbox" 
                                                                wire:model.live="checkPeriodEnabled.{{ $tierIndex }}.{{ $period->id }}"
                                                                class="sr-only peer">
-                                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                                        <div class="w-11 h-6 bg-gray-400 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-500 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                                                     </label>
                                                 </div>
                                                 

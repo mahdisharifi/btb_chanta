@@ -324,6 +324,7 @@ class ProductController extends Controller
             ->get();
 
         // قیمت‌نداشتن موقت یک شعبه نباید نام، شهر و درصد آن را از صفحه جزئیات حذف کند.
+        app(\App\Services\SupplierTierAvailabilityService::class)->prime($productSuppliers->pluck('supplier_id'));
         $productSuppliers = $productSuppliers->filter(function($ps) {
             return $ps->supplier?->is_active
                 && ($ps->prices->isNotEmpty() || $ps->supplier->isBranch());
@@ -979,7 +980,7 @@ class ProductController extends Controller
 
         if ($userRole === 'retailer_premium') {
             $query->addSelect([
-                'sort_price' => DB::table('product_prices')
+                'sort_price' => \App\Models\ProductPrice::query()->supplierTiersEnabled()
                     ->selectRaw('MIN(price)')
                     ->join('product_supplier as priced_ps', 'product_prices.product_supplier_id', '=', 'priced_ps.id')
                     ->join('products as priced_product', 'priced_product.id', '=', 'priced_ps.product_id')
@@ -1024,7 +1025,7 @@ class ProductController extends Controller
         // محاسبه تعداد قیمت‌های فعال برای هر supplier
         $supplierScores = $productSuppliers->map(function($ps) use ($product) {
             // ✅ tier_enabled از model به صورت array برمی‌گردد (cast شده)
-            $tierEnabled = $ps->tier_enabled ?? [];
+            $tierEnabled = $ps->effective_tier_enabled ?? [];
             $activePrices = 0;
             
             // شمارش قیمت‌های فعال
@@ -1353,6 +1354,7 @@ class ProductController extends Controller
             ->where('priced_supplier.is_active', true)
             ->whereNull('priced_supplier.deleted_at')
             ->whereExists(function ($prices) use ($today) {
+                \App\Services\SupplierTierAvailabilityService::constrainPrices($prices);
                 $prices->selectRaw('1')->from('product_prices')
                     ->whereColumn('product_prices.product_supplier_id', 'priced_supplier.id')
                     ->where('product_prices.is_active', true)
@@ -1386,8 +1388,8 @@ class ProductController extends Controller
         $priceVersion = Cache::get('products.prices.version', 'initial');
         $priceRange = Cache::remember("products.price_range:{$priceVersion}", now()->addHours(1), function () {
             return [
-                'min' => \App\Models\ProductPrice::query()->where('is_active', true)->min('price') ?? 0,
-                'max' => \App\Models\ProductPrice::query()->where('is_active', true)->max('price') ?? 0,
+                'min' => \App\Models\ProductPrice::query()->supplierTiersEnabled()->where('is_active', true)->min('price') ?? 0,
+                'max' => \App\Models\ProductPrice::query()->supplierTiersEnabled()->where('is_active', true)->max('price') ?? 0,
             ];
         });
 

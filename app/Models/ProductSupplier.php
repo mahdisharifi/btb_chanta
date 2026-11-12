@@ -229,7 +229,7 @@ class ProductSupplier extends Model
     public function activePrices(): HasMany
     {
         return $this->hasMany(ProductPrice::class, 'product_supplier_id')
-                    ->where('is_active', true);
+                    ->supplierTiersEnabled()->where('is_active', true);
     }
 
     /**
@@ -238,7 +238,7 @@ class ProductSupplier extends Model
     public function validPrices(): HasMany
     {
         return $this->hasMany(ProductPrice::class, 'product_supplier_id')
-                    ->where('is_active', true)
+                    ->supplierTiersEnabled()->where('is_active', true)
                     ->where(function (Builder $query) {
                         $query->whereNull('valid_from')
                               ->orWhere('valid_from', '<=', now());
@@ -427,15 +427,26 @@ class ProductSupplier extends Model
     /**
      * کمترین قیمت این تأمین‌کننده برای این محصول (ریال)
      */
+    public function getEffectiveTierEnabledAttribute(): array
+    {
+        return app(\App\Services\SupplierTierAvailabilityService::class)
+            ->effective((int) $this->supplier_id, (array) ($this->tier_enabled ?? []));
+    }
+
+    public function isTierEnabled(int $tierIndex): bool
+    {
+        return (bool) ($this->effective_tier_enabled[$tierIndex] ?? true);
+    }
+
     public function getLowestPriceAttribute(): ?int
     {
         // اگر eager load شده باشد، از collection استفاده کن (بدون query اضافی)
         if ($this->relationLoaded('activePrices')) {
-            $prices = $this->activePrices->pluck('price')->filter();
+            $prices = $this->activePrices->filter(fn (ProductPrice $price) => $this->isTierEnabled((int) $price->tier_index))->pluck('price')->filter();
             return $prices->isNotEmpty() ? (int) $prices->min() : null;
         }
 
-        return $this->activePrices()->min('price');
+        return $this->activePrices()->whereNotIn('tier_index', array_keys(array_filter($this->effective_tier_enabled, static fn ($enabled) => !$enabled)))->min('price');
     }
 
     /**
@@ -444,11 +455,11 @@ class ProductSupplier extends Model
     public function getHighestPriceAttribute(): ?int
     {
         if ($this->relationLoaded('activePrices')) {
-            $prices = $this->activePrices->pluck('price')->filter();
+            $prices = $this->activePrices->filter(fn (ProductPrice $price) => $this->isTierEnabled((int) $price->tier_index))->pluck('price')->filter();
             return $prices->isNotEmpty() ? (int) $prices->max() : null;
         }
 
-        return $this->activePrices()->max('price');
+        return $this->activePrices()->whereNotIn('tier_index', array_keys(array_filter($this->effective_tier_enabled, static fn ($enabled) => !$enabled)))->max('price');
     }
 
     /**

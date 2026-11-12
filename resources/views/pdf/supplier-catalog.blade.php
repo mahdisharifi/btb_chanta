@@ -61,7 +61,7 @@
 @php
     // ✅ تعیین ستون‌های قیمت برای نمایش (با پشتیبانی از قیمت‌های چک)
     $priceColumns = [];
-    $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
+    $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'کل موجودی'];
     $selectedTypesByTier = is_array($selectedPriceTypes) ? $selectedPriceTypes : [];
     if ($selectedPriceTypes === 'all') {
         $selectablePriceTypeIds = array_keys(array_filter(

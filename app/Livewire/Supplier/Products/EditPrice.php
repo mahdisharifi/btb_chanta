@@ -94,6 +94,9 @@ class EditPrice extends Component
     public array $tierPercentages = []; // [tier_index] => percentage (+/- درصد نسبت به مرجع)
     public array $tierPriceMode = []; // [tier_index] => 'default' | 'percentage' (مشابه checkPriceMode)
     public bool $autoCalculateTiers = false; // فعال/غیرفعال محاسبه خودکار
+    #[Locked]
+    public array $supplierTierEnabled = [];
+
     public array $tierEnabled = []; // [tier_index] => فعال/غیرفعال بودن فروش؛ مستقل از مرجع محاسباتی
 
     /**
@@ -195,6 +198,7 @@ class EditPrice extends Component
         $this->priceCurrency = $supplierPricing->pricing_currency ?? 'TOM';
         $this->pricingCurrencyRevision = (int) $supplierPricing->pricing_currency_revision;
         $this->tierPricingRevision = (int) $supplierPricing->tier_pricing_revision;
+        $this->supplierTierEnabled = app(\App\Services\SupplierTierAvailabilityService::class)->forSupplier($supplierId);
         $this->foreignPriceAmount = $this->productSupplier->price_currency !== $this->priceCurrency
             || $this->productSupplier->foreign_price_amount === null
                 ? null
@@ -231,9 +235,9 @@ class EditPrice extends Component
         // تیراژهای محصول
         $this->quantityTiers = $this->product->quantity_tiers ?? [];
         
-        // ✅ مقداردهی اولیه tierEnabled (همه تیراژها فعال)
+        // Unconfigured products offer only the carton reference by default.
         foreach ($this->quantityTiers as $tierIndex => $tier) {
-            $this->tierEnabled[$tierIndex] = true;
+            $this->tierEnabled[$tierIndex] = (int) $tierIndex === $this->referenceTierIndex;
         }
         
         // ✅ بارگذاری تنظیمات تیراژ از جدول (اگر وجود داشته باشد)
@@ -242,7 +246,7 @@ class EditPrice extends Component
         // ✅ بارگذاری تنظیمات tierEnabled از دیتابیس
         $this->autoCalculateTiers = $this->productSupplier->auto_calculate_tiers ?? false;
         if (!empty($this->productSupplier->tier_enabled)) {
-            $this->tierEnabled = $this->productSupplier->tier_enabled;
+            $this->tierEnabled = array_replace($this->tierEnabled, $this->productSupplier->tier_enabled);
         }
         
         // ✅ فقط در صورتی که product_supplier دارای tier_percentages باشد، آن را overwrite کن
@@ -636,6 +640,16 @@ class EditPrice extends Component
             $amounts[$tierIndex] = number_format((float) $amount, 4, '.', '');
         }
 
+        foreach ($this->supplierTierEnabled as $tierIndex => $enabled) {
+            if (!$enabled) {
+                unset($amounts[$tierIndex]);
+                $stored = $this->productSupplier->foreign_tier_amounts ?? [];
+                if (array_key_exists($tierIndex, $stored)) {
+                    $amounts[$tierIndex] = $stored[$tierIndex];
+                }
+            }
+        }
+
         return $amounts === [] ? null : $amounts;
     }
 
@@ -945,6 +959,10 @@ class EditPrice extends Component
                 return false;
             }
 
+            // Resolve the ceiling again under the supplier lock before writing.
+            app(\App\Services\SupplierTierAvailabilityService::class)->forget($supplierId);
+            $this->supplierTierEnabled = app(\App\Services\SupplierTierAvailabilityService::class)->forSupplier($supplierId);
+
             $lockedProductSupplier = ProductSupplier::query()
                 ->with('product')
                 ->where('supplier_id', $supplierId)
@@ -959,6 +977,11 @@ class EditPrice extends Component
             }
 
             $this->productSupplier = $lockedProductSupplier;
+            foreach ($this->supplierTierEnabled as $tierIndex => $enabled) {
+                if (!$enabled) {
+                    $this->tierEnabled[$tierIndex] = (bool) ($lockedProductSupplier->tier_enabled[$tierIndex] ?? ((int) $tierIndex === $this->referenceTierIndex));
+                }
+            }
 
             $lockedExchangeRateSetting = null;
             if ($this->priceCurrency !== 'TOM') {
@@ -992,6 +1015,17 @@ class EditPrice extends Component
                 }
             }
             
+            // Hidden controls must retain their saved overrides, even if forged.
+            foreach ($this->supplierTierEnabled as $tierIndex => $enabled) {
+                if (!$enabled) {
+                    unset($tierPercentagesToSave[$tierIndex]);
+                    $stored = $lockedProductSupplier->tier_percentages ?? [];
+                    if (array_key_exists($tierIndex, $stored)) {
+                        $tierPercentagesToSave[$tierIndex] = $stored[$tierIndex];
+                    }
+                }
+            }
+
             $this->productSupplier->update([
                 'sku' => $this->sanitizeInput($this->sku),
                 'is_active' => (bool)$this->is_active,
@@ -1043,10 +1077,14 @@ class EditPrice extends Component
             // 2. حذف قیمت‌های قبلی سیستم جدید
             $this->productSupplier->prices()
                 ->whereNotNull('price_type_id')
+                ->whereNotIn('tier_index', array_keys(array_filter($this->supplierTierEnabled, static fn ($enabled) => !$enabled)))
                 ->delete();
 
             // 3. ذخیره قیمت‌های جدید
             foreach ($this->priceMatrix as $tierIndex => $priceTypes) {
+                if (!($this->supplierTierEnabled[$tierIndex] ?? true)) {
+                    continue;
+                }
                 // امنیت: بررسی tier_index معتبر
                 if (!is_numeric($tierIndex) || $tierIndex < 0 || $tierIndex >= count($this->quantityTiers)) {
                     continue;
@@ -1678,11 +1716,15 @@ class EditPrice extends Component
             // حذف تنظیمات قبلی این محصول
             \App\Models\SupplierTierPercentage::where('supplier_id', $supplierId)
                 ->where('product_id', $this->product->id)
+                ->whereNotIn('tier_index', array_keys(array_filter($this->supplierTierEnabled, static fn ($enabled) => !$enabled)))
                 ->delete();
             
             // اگر محاسبه خودکار فعال است، ذخیره کن
             if ($this->autoCalculateTiers) {
                 foreach ($this->quantityTiers as $index => $tier) {
+                    if (!($this->supplierTierEnabled[$index] ?? true)) {
+                        continue;
+                    }
                     // ✅ تشخیص درصد بر اساس mode
                     $mode = $this->tierPriceMode[$index] ?? 'default';
                     

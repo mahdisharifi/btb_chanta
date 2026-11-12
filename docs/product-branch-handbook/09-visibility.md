@@ -117,3 +117,5 @@ snapshot قیمت نیازمند auth و محدودیت ۶۰ درخواست در
 ## منابع
 
 `app/Models/Product.php`، `app/Http/Controllers/Web/{HomeController,SearchController,ProductController,ProductPriceSnapshotController}.php`، `app/Livewire/Web/SupplierProducts.php`، `app/Services/PriceVisibilityService.php`، `app/Livewire/Supplier/Catalog/Preview.php`، `app/Services/SupplierBranchPublicCacheInvalidator.php`، `routes/web.php`.
+
+> تکمیل ۲۰۲۶/۱۱/۱۲: نمایش قیمت علاوه بر شروط قبلی به اجازه تیراژ تأمین‌کننده و انتخاب تیراژ همان عرضه وابسته است. تنظیم خاموش تأمین‌کننده حتی با انتخاب روشن محصول اجازه نمایش نمی‌دهد. مسیرهای کارت، جزئیات، snapshot، اعلان قیمت و کاتالوگ تازه و سناریوهای آزمون در [فصل ۱۶](16-supplier-tier-availability.md) فهرست شده‌اند.

@@ -60,7 +60,7 @@ class ManageTierDiscounts extends Component
         0 => 'زیر کارتن',
         1 => 'کارتن (مرجع)',
         2 => 'عمده',
-        3 => 'بار',
+        3 => 'کل موجودی',
     ];
     
     public function mount()
@@ -689,11 +689,10 @@ class ManageTierDiscounts extends Component
     
     public function loadTierSettings()
     {
-        $supplierId = Auth::user()->currentSupplier()->id;
+        $supplierId = $this->authorizedSupplierId();
         [$revision, $existing] = DB::transaction(function () use ($supplierId): array {
             $supplier = Supplier::query()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
             $discounts = SupplierTierDiscount::where('supplier_id', $supplierId)
-                ->where('is_active', true)
                 ->get()
                 ->keyBy('tier_index');
 
@@ -710,6 +709,7 @@ class ManageTierDiscounts extends Component
                     'name' => self::DEFAULT_TIER_NAMES[$i],
                     'percentage_change' => (float)$existing[$i]->percentage_change,
                     'label' => $existing[$i]->label,
+                    'is_active' => $i === 1 || (bool) $existing[$i]->is_active,
                     'exists' => true,
                 ];
             } else {
@@ -718,6 +718,7 @@ class ManageTierDiscounts extends Component
                     'name' => self::DEFAULT_TIER_NAMES[$i],
                     'percentage_change' => $this->getDefaultPercentage($i),
                     'label' => null,
+                    'is_active' => SupplierTierDiscount::DEFAULT_ENABLED[$i],
                     'exists' => false,
                 ];
             }
@@ -744,9 +745,11 @@ class ManageTierDiscounts extends Component
     
     public function rules()
     {
-        $rules = [];
+        $rules = ['tierSettings' => ['required', 'array:0,1,2,3', 'size:4']];
         
         foreach ($this->tierSettings as $index => $tier) {
+            $rules["tierSettings.{$index}.tier_index"] = ['required', 'integer', 'in:'.$index];
+            $rules["tierSettings.{$index}.is_active"] = ['required', 'boolean'];
             $rules["tierSettings.{$index}.percentage_change"] = [
                 'required',
                 'numeric',
@@ -787,9 +790,11 @@ class ManageTierDiscounts extends Component
     
     public function save()
     {
+        $supplierId = $this->authorizedSupplierId();
+        // The reference is structural and cannot be disabled by a forged input.
+        $this->tierSettings[1]['is_active'] = true;
+        $this->tierSettings[1]['percentage_change'] = 0;
         $this->validate();
-        
-        $supplierId = Auth::user()->currentSupplier()->id;
         
         $staleSettings = false;
         DB::transaction(function () use ($supplierId, &$staleSettings) {
@@ -812,7 +817,7 @@ class ManageTierDiscounts extends Component
                     [
                         'percentage_change' => $percentage,
                         'label' => $label,
-                        'is_active' => true,
+                        'is_active' => $tierIndex === 1 || (bool) $tier['is_active'],
                     ]
                 );
             }
@@ -844,6 +849,7 @@ class ManageTierDiscounts extends Component
         foreach ($this->tierSettings as $index => $tier) {
             $this->tierSettings[$index]['percentage_change'] = $this->getDefaultPercentage($index);
             $this->tierSettings[$index]['label'] = null;
+            $this->tierSettings[$index]['is_active'] = SupplierTierDiscount::DEFAULT_ENABLED[$index];
         }
         
         $this->hasChanges = true;

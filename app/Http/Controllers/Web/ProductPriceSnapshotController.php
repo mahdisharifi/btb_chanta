@@ -74,8 +74,9 @@ class ProductPriceSnapshotController extends Controller
             ->verifiedSupplier()
             ->get();
 
+        app(\App\Services\SupplierTierAvailabilityService::class)->prime($suppliers->pluck('supplier_id'));
         $visiblePricesBySupplier = $suppliers->mapWithKeys(function (ProductSupplier $productSupplier) use ($allowedTypes): array {
-            $tierEnabled = (array) ($productSupplier->tier_enabled ?? []);
+            $tierEnabled = (array) ($productSupplier->effective_tier_enabled ?? []);
             $prices = $productSupplier->prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
                 $type = $price->priceType?->code ?? 'cash';
 
@@ -334,7 +335,7 @@ class ProductPriceSnapshotController extends Controller
             }
 
             $prices = $offer?->prices ?? collect();
-            $tierEnabled = (array) ($offer?->tier_enabled ?? []);
+            $tierEnabled = (array) ($offer?->effective_tier_enabled ?? []);
             $visiblePrices = $prices->filter(function (ProductPrice $price) use ($allowedTypes): bool {
                 $type = $price->priceType?->code ?? 'cash';
 

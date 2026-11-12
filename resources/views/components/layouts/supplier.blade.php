@@ -180,6 +180,7 @@
 
         <!-- Page Content -->
         <div class="supplier-layout-content flex-1 p-4 sm:p-6 lg:p-8">
+            <livewire:supplier.job-status />
             @if (session()->has('info'))
             <div class="p-4 mb-4 text-sm text-blue-700 bg-blue-100 rounded-lg">
                 {{ session('info') }}

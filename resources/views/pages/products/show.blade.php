@@ -428,7 +428,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                             $enabledTiersForSummary = [];
                             foreach ($productSuppliers as $ps) {
                                 // ✅ tier_enabled از model به صورت array برمی‌گردد (cast شده)
-                                $tierEnabled = $ps->tier_enabled ?? [];
+                                $tierEnabled = $ps->effective_tier_enabled ?? [];
                                 if (empty($tierEnabled)) {
                                     // اگر هیچ تنظیماتی نباشد، همه تیراژها فعال هستند
                                     foreach ($tierNames as $index => $tier) {
@@ -484,7 +484,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                                     
                                     // مرحله 1: جمع‌آوری تیراژهای فعال از همه suppliers
                                     foreach ($productSuppliers as $ps) {
-                                        $tierEnabled = $ps->tier_enabled ?? [];
+                                        $tierEnabled = $ps->effective_tier_enabled ?? [];
                                         
                                         if (empty($tierEnabled)) {
                                             // اگر تنظیمات نباشد، همه تیراژها فعال
@@ -504,7 +504,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                                     // مرحله 2: فیلتر نهایی - فقط تیراژهایی که قیمت فعال دارند
                                     $allTiers = $productSuppliers->flatMap(function($ps) use ($enabledTiers) {
                                         // فیلتر اول: تیراژهای فعال
-                                        $tierEnabled = $ps->tier_enabled ?? [];
+                                        $tierEnabled = $ps->effective_tier_enabled ?? [];
                                         
                                         return $ps->prices->filter(function($price) use ($tierEnabled, $enabledTiers) {
                                             $tier = $price->tier_index;
@@ -638,7 +638,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                                             // پیدا کردن تمام قیمت‌ها برای این سلول (بدون گارانتی)
                                             $cellPrices = $productSuppliers->flatMap(function($ps) use ($priceType, $tier, $canSeeWarrantyPrices) {
                                                 // ✅ فیلتر تیراژهای فعال برای این supplier
-                                                $tierEnabled = $ps->tier_enabled ?? [];
+                                                $tierEnabled = $ps->effective_tier_enabled ?? [];
                                                 if (!empty($tierEnabled) && !($tierEnabled[$tier] ?? true)) {
                                                     return collect(); // تیراژ غیرفعال برای این supplier → skip
                                                 }
@@ -1222,7 +1222,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                 
                 // مرحله 1: جمع‌آوری تیراژهای فعال از همه suppliers
                 foreach ($productSuppliers as $ps) {
-                    $tierEnabled = $ps->tier_enabled ?? [];
+                    $tierEnabled = $ps->effective_tier_enabled ?? [];
                     
                     if (empty($tierEnabled)) {
                         // اگر تنظیمات نباشد، همه تیراژها فعال
@@ -1242,7 +1242,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                 // مرحله 2: فیلتر نهایی - فقط تیراژهایی که قیمت فعال دارند
                 $allTiersForComparison = $productSuppliers
                     ->flatMap(function($ps) use ($enabledTiersForComparison) {
-                        $tierEnabled = $ps->tier_enabled ?? [];
+                        $tierEnabled = $ps->effective_tier_enabled ?? [];
                         
                         return $ps->prices->filter(function($price) use ($tierEnabled, $enabledTiersForComparison) {
                             $tier = $price->tier_index;
@@ -1289,7 +1289,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                             $priceTypesForTier = $productSuppliers
                                 ->flatMap(function($ps) use ($tierIndex) {
                                     // بررسی اینکه آیا این تیراژ برای این supplier فعال است
-                                    $tierEnabled = $ps->tier_enabled ?? [];
+                                    $tierEnabled = $ps->effective_tier_enabled ?? [];
                                     if (!empty($tierEnabled) && !($tierEnabled[$tierIndex] ?? true)) {
                                         return collect(); // تیراژ غیرفعال → skip
                                     }
@@ -1335,7 +1335,7 @@ $formatBranchPercentage = static function (float $percentage): string {
                             @php
                                 // ✅ فیلتر کردن suppliers که برای این تیراژ قیمت فعال دارند
                                 $activeSuppliersForTier = $productSuppliers->filter(function($ps) use ($tierIndex) {
-                                    $tierEnabled = $ps->tier_enabled ?? [];
+                                    $tierEnabled = $ps->effective_tier_enabled ?? [];
                                     
                                     // بررسی 1: آیا تیراژ برای این supplier فعال است؟
                                     if (!empty($tierEnabled) && !($tierEnabled[$tierIndex] ?? true)) {

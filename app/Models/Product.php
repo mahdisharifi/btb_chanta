@@ -186,7 +186,7 @@ class Product extends Model
     public function activePrices(): HasMany
     {
         return $this->hasMany(ProductPrice::class)
-                    ->where('is_active', true)
+                    ->supplierTiersEnabled()->where('is_active', true)
                     ->where(function ($q) {
                         $q->whereNull('valid_until')
                           ->orWhere('valid_until', '>=', now());
@@ -294,6 +294,12 @@ class Product extends Model
             WHERE priced_product.family_product_id = products.family_product_id
                 AND priced_ps.is_active = 1
                 AND priced_ps.deleted_at IS NULL
+                 AND (priced_price.tier_index = 1 OR EXISTS (
+                     SELECT 1 FROM supplier_tier_discount AS enabled_tier
+                     WHERE enabled_tier.supplier_id = priced_ps.supplier_id
+                       AND enabled_tier.tier_index = priced_price.tier_index
+                       AND enabled_tier.is_active = 1
+                 ))
                 AND (priced_price.valid_from IS NULL OR priced_price.valid_from <= CURRENT_DATE)
                 AND (priced_price.valid_until IS NULL OR priced_price.valid_until >= CURRENT_DATE)
         ) THEN 0 ELSE 1 END ASC");

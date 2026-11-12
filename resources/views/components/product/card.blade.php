@@ -86,7 +86,7 @@ if ($canSeeWholesalePrice && $product->relationLoaded('productSuppliers')) {
         if ($ps->is_active
             && $ps->relationLoaded('prices')
             && (!$ps->relationLoaded('supplier') || ($offerSupplier?->is_active && $offerSupplier?->is_verified))) {
-            $tierEnabled = (array) ($ps->tier_enabled ?? []);
+            $tierEnabled = (array) ($ps->effective_tier_enabled ?? []);
             $activePrices = $ps->prices->filter(function ($price) use ($allowedCardPriceTypes, $tierEnabled): bool {
                 $type = $price->priceType?->code ?? 'cash';
                 $tierIndex = (int) $price->tier_index;

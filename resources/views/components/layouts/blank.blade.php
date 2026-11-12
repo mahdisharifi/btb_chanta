@@ -14,6 +14,9 @@
     @livewireStyles
 </head>
 <body class="font-sans antialiased bg-gray-100">
+@if (request()->routeIs('supplier.*') && auth()->check())
+    <livewire:supplier.job-status />
+@endif
 {{ $slot }}
 
 @livewireScripts

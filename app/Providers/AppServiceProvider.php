@@ -42,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(CatalogSnapshotRevisionService::class);
+        $this->app->scoped(\App\Services\SupplierTierAvailabilityService::class);
     }
 
     public function boot(): void
@@ -100,6 +101,7 @@ class AppServiceProvider extends ServiceProvider
         \App\Models\ProductPrice::observe(\App\Observers\SupplierBranchPublicCacheObserver::class);
         \App\Models\CheckPeriod::observe(\App\Observers\CheckPeriodCatalogObserver::class);
         \App\Models\SupplierExchangeRateSetting::observe(\App\Observers\SupplierExchangeRateSettingCatalogObserver::class);
+        \App\Models\SupplierTierDiscount::observe(\App\Observers\SupplierTierDiscountObserver::class);
 
         $catalogSnapshotObserver = \App\Observers\CatalogSnapshotObserver::class;
         \App\Models\Attribute::observe($catalogSnapshotObserver);

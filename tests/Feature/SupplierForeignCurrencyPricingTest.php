@@ -1179,6 +1179,97 @@ class SupplierForeignCurrencyPricingTest extends TestCase
             ->value('manual_rate_toman'));
     }
 
+    public function test_globally_hidden_tier_retains_its_price_and_overrides_when_product_prices_are_saved(): void
+    {
+        Queue::fake();
+        $this->setManualRate(270000);
+        $product = $this->product('USD', 5.0, active: true);
+        SupplierTierDiscount::create([
+            'supplier_id' => $this->supplier->id, 'tier_index' => 2,
+            'percentage_change' => -5, 'is_active' => false,
+        ]);
+        $offer = ProductSupplier::where('product_id', $product->id)->sole();
+        $offer->update([
+            'tier_enabled' => [true, true, true],
+            'tier_percentages' => [2 => -7],
+            'foreign_tier_amounts' => [2 => '4.6500'],
+        ]);
+        $override = SupplierTierPercentage::create([
+            'supplier_id' => $this->supplier->id, 'product_id' => $product->id,
+            'tier_index' => 2, 'tier_label' => 'Hidden tier', 'percentage' => -7,
+            'is_reference' => false, 'is_active' => true, 'sort_order' => 2,
+        ]);
+        $hiddenPrice = ProductPrice::create([
+            'product_id' => $product->id, 'product_supplier_id' => $offer->id,
+            'price_type_id' => $this->cashType->id, 'tier_index' => 2,
+            'price' => 1255500, 'is_active' => true,
+        ]);
+
+        Livewire::actingAs($this->user)->test(EditPrice::class, ['product' => $product])
+            ->assertSet('supplierTierEnabled.2', false)
+            ->set('autoCalculateTiers', true)
+            ->set('tierEnabled.2', false)
+            ->set('tierPriceMode.2', 'percentage')
+            ->set('tierPercentages.2', -80)
+            ->set('foreignTierAmounts.2', '1')
+            ->set('priceMatrix.2.'.$this->cashType->id.'.price', 1)
+            ->call('save')->assertHasNoErrors();
+
+        $offer->refresh();
+        $this->assertTrue($offer->tier_enabled[2]);
+        $this->assertEquals(-7, $offer->tier_percentages[2]);
+        $this->assertSame('4.6500', $offer->foreign_tier_amounts[2]);
+        $this->assertEquals(-7, $override->fresh()->percentage);
+        $this->assertSame(1255500, (int) $hiddenPrice->fresh()->price);
+        $this->assertFalse(ProductPrice::activeAndValid()->whereKey($hiddenPrice->id)->exists());
+    }
+
+    public function test_supplier_visibility_change_rejects_a_stale_product_price_form(): void
+    {
+        Queue::fake();
+        $this->setManualRate(270000);
+        $product = $this->product('USD', 5.0, active: true);
+        $form = Livewire::actingAs($this->user)->test(EditPrice::class, ['product' => $product]);
+
+        Livewire::actingAs($this->user)->test(ManageTierDiscounts::class)
+            ->set('tierSettings.2.is_active', false)->call('save')->assertHasNoErrors();
+        $form->call('save')->assertHasErrors('priceMatrix');
+
+        $this->assertSame(0, ProductPrice::where('product_id', $product->id)->count());
+        $this->assertFalse(app(\App\Services\SupplierTierAvailabilityService::class)
+            ->forSupplier((int) $this->supplier->id)[2]);
+    }
+
+    public function test_enabling_a_supplier_tier_requires_separate_product_opt_in(): void
+    {
+        Queue::fake();
+        $this->setManualRate(270000);
+        $product = $this->product('USD', 5.0, active: true);
+        Livewire::actingAs($this->user)->test(ManageTierDiscounts::class)
+            ->assertSet('tierSettings.0.is_active', false)
+            ->assertSet('tierSettings.1.is_active', true)
+            ->assertSet('tierSettings.2.is_active', false)
+            ->assertSet('tierSettings.3.is_active', false)
+            ->set('tierSettings.0.is_active', true)->call('save')->assertHasNoErrors();
+
+        Livewire::actingAs($this->user)->test(EditPrice::class, ['product' => $product])
+            ->assertSet('supplierTierEnabled.0', true)
+            ->assertSet('tierEnabled.0', false)
+            ->assertSet('tierEnabled.1', true)
+            ->assertSet('tierEnabled.2', false)
+            ->set('tierEnabled.0', true)->call('save')->assertHasNoErrors();
+        $offer = ProductSupplier::where('product_id', $product->id)->sole();
+        $this->assertTrue($offer->tier_enabled[0]);
+        $this->assertTrue($offer->effective_tier_enabled[0]);
+
+        Livewire::actingAs($this->user)->test(EditPrice::class, ['product' => $product])
+            ->assertSet('tierEnabled.0', true)
+            ->set('tierEnabled.0', false)->call('save')->assertHasNoErrors();
+        $this->assertFalse($offer->fresh()->tier_enabled[0]);
+        $this->assertTrue(app(\App\Services\SupplierTierAvailabilityService::class)
+            ->forSupplier((int) $this->supplier->id)[0]);
+    }
+
     private function product(string $currency, ?float $amount, bool $active = false): Product
     {
         $this->supplier->forceFill([

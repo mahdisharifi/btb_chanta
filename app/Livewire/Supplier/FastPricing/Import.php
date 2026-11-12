@@ -271,7 +271,7 @@ class Import extends Component
                 // ═══════════════════════════════════════════════════════════
                 
                 // ✅ دریافت تیراژهای فعال برای این ProductSupplier
-                $tierEnabled = $productSupplier->tier_enabled ?? [];
+                $tierEnabled = $productSupplier->effective_tier_enabled ?? [];
                 $product = $productSupplier->product;
                 $quantityTiers = $product->quantity_tiers ?? [];
                 
@@ -282,7 +282,7 @@ class Import extends Component
                     $activeTiers = array_keys($quantityTiers);
                 } else {
                     foreach ($tierEnabled as $tier => $enabled) {
-                        if ($enabled) {
+                        if ($enabled && array_key_exists((int) $tier, $quantityTiers)) {
                             $activeTiers[] = (int)$tier;
                         }
                     }
@@ -536,7 +536,7 @@ class Import extends Component
             $product = $ps->product;
             if (!$product) continue;
             
-            $tierEnabled = $ps->tier_enabled ?? [];
+            $tierEnabled = $ps->effective_tier_enabled ?? [];
             $quantityTiers = $product->quantity_tiers ?? [];
             
             // فیلتر تیراژهای فعال برای این محصول
@@ -545,7 +545,7 @@ class Import extends Component
                 $activeTiers = array_keys($quantityTiers);
             } else {
                 foreach ($tierEnabled as $tier => $enabled) {
-                    if ($enabled) {
+                    if ($enabled && array_key_exists((int) $tier, $quantityTiers)) {
                         $activeTiers[] = (int)$tier;
                     }
                 }
@@ -757,7 +757,7 @@ class Import extends Component
             if (!$product) continue;
 
             // ✅ دریافت تیراژهای فعال برای این supplier
-            $tierEnabled = $ps->tier_enabled ?? [];
+            $tierEnabled = $ps->effective_tier_enabled ?? [];
             $quantityTiers = $product->quantity_tiers ?? [];
             
             // فیلتر تیراژهای فعال
@@ -767,7 +767,7 @@ class Import extends Component
                 $activeTiers = array_keys($quantityTiers);
             } else {
                 foreach ($tierEnabled as $tier => $enabled) {
-                    if ($enabled) {
+                    if ($enabled && array_key_exists((int) $tier, $quantityTiers)) {
                         $activeTiers[] = $tier;
                     }
                 }

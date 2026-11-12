@@ -42,7 +42,7 @@ $hasWarrantyWithCost = $canSeeWarrantyPrices && $hasWarranty
 $tiers = $basePrices->pluck('tier_index')->unique()->sort()->values();
 
 // ✅ فیلتر تیراژهای فعال
-$tierEnabled = $ps->tier_enabled ?? [];
+$tierEnabled = $ps->effective_tier_enabled ?? [];
 if (!empty($tierEnabled)) {
     $tiers = $tiers->filter(function($tier) use ($tierEnabled) {
         return $tierEnabled[$tier] ?? true;

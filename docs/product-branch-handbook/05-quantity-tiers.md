@@ -69,3 +69,5 @@
 ## منابع
 
 `app/Livewire/Concerns/ManagesProductQuantityTiers.php`، `app/Helpers/QuantityTierValidator.php`، `app/Console/Commands/GenerateQuantityTiersForProducts.php`، مهاجرت نام تیراژ، `resources/views/livewire/products/partials/packaging-tiers.blade.php`، `tests/Feature/AdminProductQuantityTiersTest.php`.
+
+> تکمیل ۲۰۲۶/۱۱/۱۲: تعریف تیراژ محصول با فعال‌سازی فروش تأمین‌کننده دو موجودیت مستقل هستند. تنظیم غیرفعال تأمین‌کننده بر انتخاب فعال محصول اولویت دارد. مرجع اندیس یک در تنظیمات تأمین‌کننده همیشه فعال است. قرارداد کامل، حفظ اندیس‌ها و تست‌های TAV در [فصل ۱۶](16-supplier-tier-availability.md) آمده است.

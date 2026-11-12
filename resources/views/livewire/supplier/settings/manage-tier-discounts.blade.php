@@ -105,6 +105,7 @@
             </span>
         </div>
 
+        <p class="mb-4 text-sm leading-6 text-gray-500 dark:text-gray-400">در شروع فقط کارتن فعال است. فعال‌کردن تیراژ در این بخش، امکان انتخاب آن را در قیمت‌گذاری باز می‌کند؛ فروش آن برای هر کالای بدون تنظیم قبلی، خاموش است و باید جداگانه فعال شود. تیراژ غیرفعال این بخش در قیمت‌گذاری و نمایش قیمت‌ها پنهان می‌شود. قیمت و انتخاب قبلی هر کالا حفظ می‌شود. برای ثبت تغییر وضعیت، «ذخیره» را بزنید.</p>
         @if(count($tierSettings) > 0)
         <form wire:submit.prevent="save">
             <div class="space-y-4">
@@ -115,8 +116,8 @@
                      data-product-tour-description="{{ $tier['tier_index'] === 1 ? 'کارتن تیراژ مرجع است و همیشه با درصد صفر می‌ماند؛ امکان ویرایش این فیلد وجود ندارد.' : 'درصد این تیراژ نسبت به قیمت کارتن محاسبه می‌شود. عدد مثبت قیمت را بیشتر و عدد منفی آن را کمتر می‌کند؛ مثال قیمت کنار فیلد اثر مقدار را نشان می‌دهد. مقدار مجاز از منفی ۱۰۰ تا مثبت ۱۰۰ درصد است.' }}"
                      data-product-tour-target="input"
                      data-product-tour-label=".tier-guide-label"
-                     class="border-b border-gray-200 dark:border-gray-700 pb-4 last:border-b-0 last:pb-0">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                     class="rounded-xl border-2 p-4 transition-all {{ ($tier['is_active'] ?? true) ? 'border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950/20' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/30' }}">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1fr)_auto] items-center">
                         {{-- نام تیراژ --}}
                         <div>
                             <label class="tier-guide-label block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -125,12 +126,22 @@
                                     <span class="text-xs text-gray-500">(مرجع)</span>
                                 @endif
                             </label>
+                            @if((int) $tier['tier_index'] !== 1)
+                                <div class="mt-2 flex flex-wrap items-center gap-3">
+                                    <span class="rounded-full px-2 py-0.5 text-xs font-bold {{ ($tier['is_active'] ?? true) ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600' }}">{{ ($tier['is_active'] ?? true) ? 'فعال' : 'غیرفعال' }}</span>
+                                </div>
+                                @error("tierSettings.{$index}.is_active")
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            @else
+                                <span class="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-800">همیشه فعال</span>
+                            @endif
                         </div>
 
                         {{-- درصد تغییر --}}
                         <div>
                             <div class="relative">
-                                <input class="tier-guide-input w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 @if($tier['tier_index'] === 1) bg-gray-100 cursor-not-allowed @endif" type="number"
+                                <input aria-label="درصد {{ $tier['name'] }} نسبت به مرجع" class="tier-guide-input min-h-11 w-full border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 @if($tier['tier_index'] === 1) bg-gray-100 cursor-not-allowed @endif" type="number"
                                        step="0.01"
                                        wire:model="tierSettings.{{ $index }}.percentage_change"
                                        @if($tier['tier_index'] === 1) readonly @endif
@@ -151,12 +162,18 @@
                             @endphp
                             مثال: <span class="font-semibold @if($percentage > 0) text-red-600 @elseif($percentage < 0) text-green-600 @endif">{{ number_format($calculatedPrice, 0) }} تومان</span>
                         </div>
+                        @if((int) $tier['tier_index'] !== 1)
+                            <button type="button" wire:click="$toggle('tierSettings.{{ $index }}.is_active')"
+                                wire:loading.attr="disabled" aria-pressed="{{ ($tier['is_active'] ?? true) ? 'true' : 'false' }}"
+                                aria-label="{{ ($tier['is_active'] ?? true) ? 'غیرفعال کردن' : 'فعال کردن' }} {{ $tier['name'] }}"
+                                class="min-h-11 shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-all disabled:opacity-60 {{ ($tier['is_active'] ?? true) ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }}">{{ ($tier['is_active'] ?? true) ? 'غیرفعال کردن' : 'فعال کردن' }}</button>
+                        @endif
                     </div>
                 </div>
                 @endforeach
             </div>
 
-            <div class="mt-6 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
                 <div class="text-sm text-gray-600 dark:text-gray-400">
                     @if($affectedPricesCount > 0)
                         <span class="font-semibold text-blue-600 dark:text-blue-400">{{ number_format($affectedPricesCount) }}</span> قیمت نقدی فعال
@@ -164,7 +181,7 @@
                         هیچ قیمت فعالی وجود ندارد
                     @endif
                 </div>
-                <div class="flex items-center gap-3">
+                <div class="flex flex-wrap items-center gap-3">
                     @if($hasChanges)
                         <span class="text-xs text-amber-600 dark:text-amber-400">تغییرات ذخیره نشده</span>
                     @endif
@@ -173,7 +190,7 @@
                             data-product-tour-step="reset-default-tiers"
                             data-product-tour-order="28"
                             data-product-tour-title="بازنشانی درصدها"
-                            data-product-tour-description="این دکمه مقدارهای فرم را به پیش‌فرض سامانه برمی‌گرداند: زیرکارتن ۵٪، کارتن صفر، عمده منفی ۵٪ و بار منفی ۱۰٪. برای ثبت آن‌ها باید جداگانه «ذخیره» را بزنید."
+                            data-product-tour-description="درصدها و نام‌ها به پیش‌فرض برمی‌گردند و فقط کارتن فعال می‌ماند. برای ثبت بازنشانی، «ذخیره» را بزنید."
                             wire:click="resetToDefaults"
                             class="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm">
                         پیشفرض

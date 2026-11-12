@@ -52,7 +52,7 @@
 
             if ($selectedTypesByTier !== []) {
                 // ساختار جدید: ['tier_index' => [price_type_ids]]
-                $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
+                $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'کل موجودی'];
                 
                 foreach ($selectedTypesByTier as $tierIndex => $priceTypeIds) {
                     $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
@@ -173,7 +173,7 @@
             }
             
             // تولید label
-            $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
+            $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'کل موجودی'];
             $tierName = $tierNames[$tierIndex] ?? "تیراژ {$tierIndex}";
             
             $priceTypeName = $priceTypesById[$priceTypeId]['name'] ?? "قیمت {$priceTypeId}";
