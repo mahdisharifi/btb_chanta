@@ -25,6 +25,22 @@ class SupplierBranchPriceSyncService
         'valid_until',
     ];
 
+    public function usesPrimaryPricing(Product $product, Supplier $branch): bool
+    {
+        if (!$branch->usesPrimaryPricing()) {
+            return false;
+        }
+
+        $primary = $branch->parentSupplier;
+
+        if (!$primary || (int) $primary->user_id !== (int) $branch->user_id) {
+            return false;
+        }
+        $reference = $this->findPrimaryReferenceProduct((int) ($product->family_product_id ?: $product->id), $primary);
+
+        return $reference && $this->primaryPrices($reference, $primary)->isNotEmpty();
+    }
+
     /** Apply the primary branch price matrix to one accepted branch product. */
     public function syncBranchProduct(
         Product $branchProduct,
@@ -37,16 +53,19 @@ class SupplierBranchPriceSyncService
         abort_unless(
             $branch->parent_supplier_id !== null
                 && $branch->is_active
-                && (int) $branchProduct->supplier_id === (int) $branch->id
-                && (int) $branch->family_product_id !== (int) $branchProduct->id,
+                && (int) $branch->user_id === (int) $branch->parentSupplier?->user_id,
             403,
-            'قیمت‌گذاری درصدی فقط برای نسخهٔ مستقل محصول در شعبه مجاز است.'
+            'قیمت‌گذاری درصدی فقط برای پیشنهاد فروش شعبهٔ مجاز در دسترس است.'
         );
 
         $offer = ProductSupplier::query()
             ->where('product_id', $branchProduct->id)
             ->where('supplier_id', $branch->id)
             ->firstOrFail();
+
+        if (!$branch->usesPrimaryPricing()) {
+            return;
+        }
 
         $percentage ??= (float) ($offer->branch_price_percentage ?? 0);
         $root = $branch->parentSupplier;
@@ -77,7 +96,7 @@ class SupplierBranchPriceSyncService
                 $percentage,
                 array_key_exists('is_active', $preservedState) ? (bool) $preservedState['is_active'] : null,
                 array_key_exists('price', $preservedState) ? (int) $preservedState['price'] : null,
-                $preservedPriceStatesBySourceId !== [],
+                true,
                 $syncedBranchPriceIds
             );
         }
@@ -208,37 +227,15 @@ class SupplierBranchPriceSyncService
                     return;
                 }
 
-                $copies = Product::query()
-                    ->where('family_product_id', $referenceProduct->family_product_id ?: $referenceProduct->id)
-                    ->whereIn('supplier_id', $branches->modelKeys())
-                    ->lockForUpdate()
-                    ->orderBy('id')
-                    ->get();
+                $branchOffers = $this->branchOffers(
+                    (int) ($referenceProduct->family_product_id ?: $referenceProduct->id), $branches,
+                );
 
-                $branchOffersByProduct = ProductSupplier::query()
-                    ->whereIn('product_id', $copies->modelKeys())
-                    ->whereIn('supplier_id', $branches->modelKeys())
-                    ->orderBy('id')
-                    ->lockForUpdate()
-                    ->get()
-                    ->keyBy('product_id');
-
-                $offersByCopy = [];
-                foreach ($copies as $copy) {
-                    $offer = $branchOffersByProduct->get($copy->id);
-                    if ($offer && (int) $offer->supplier_id !== (int) $copy->supplier_id) {
-                        $offer = null;
-                    }
-                    if ($offer) {
-                        $offersByCopy[(int) $copy->id] = $offer;
-                    }
-                }
-
-                if ($offersByCopy === []) {
+                if ($branchOffers->isEmpty()) {
                     return;
                 }
 
-                $offerIds = array_map(fn (ProductSupplier $offer): int => (int) $offer->id, $offersByCopy);
+                $offerIds = $branchOffers->modelKeys();
                 $existingPrices = ProductPrice::query()
                     ->whereIn('product_supplier_id', $offerIds)
                     ->lockForUpdate()
@@ -262,9 +259,9 @@ class SupplierBranchPriceSyncService
 
                 $rowsToUpsert = [];
                 $timestamp = now();
-                foreach ($copies as $copy) {
-                    $branch = $branches->firstWhere('id', $copy->supplier_id);
-                    $offer = $offersByCopy[(int) $copy->id] ?? null;
+                foreach ($branchOffers as $offer) {
+                    $copy = $offer->product;
+                    $branch = $branches->firstWhere('id', $offer->supplier_id);
                     if (!$branch || !$offer) {
                         continue;
                     }
@@ -382,8 +379,12 @@ class SupplierBranchPriceSyncService
 
         $affectedOffers = [];
         DB::transaction(function () use ($primaryProduct, $primary, $sourcePrices, &$affectedOffers): void {
+            $primary = Supplier::query()->whereKey($primary->id)->lockForUpdate()->firstOrFail();
+            if ($primary->parent_supplier_id !== null) {
+                return;
+            }
             $familyId = (int) ($primaryProduct->family_product_id ?: $primaryProduct->id);
-            $branches = $this->activeBranches($primary);
+            $branches = $this->activeBranches($primary, lockForUpdate: true);
             if ($branches->isEmpty()) {
                 return;
             }
@@ -393,22 +394,8 @@ class SupplierBranchPriceSyncService
                     && (int) $price->product_id === (int) $primaryProduct->id)
                 ->values();
             $sourceIds = $sourcePrices->map(fn (ProductPrice $price): int => (int) $price->id)->all();
-            $copies = Product::query()
-                ->where('family_product_id', $familyId)
-                ->whereIn('supplier_id', $branches->modelKeys())
-                ->with('productSuppliers')
-                ->orderBy('id')
-                ->get();
-
-            $offersByCopy = [];
-            foreach ($copies as $copy) {
-                $offer = $copy->productSuppliers->firstWhere('supplier_id', $copy->supplier_id);
-                if ($offer) {
-                    $offersByCopy[(int) $copy->id] = $offer;
-                }
-            }
-
-            $offerIds = array_map(fn (ProductSupplier $offer): int => (int) $offer->id, $offersByCopy);
+            $branchOffers = $this->branchOffers($familyId, $branches);
+            $offerIds = $branchOffers->modelKeys();
             $existingPrices = $offerIds === []
                 ? collect()
                 : ProductPrice::query()->whereIn('product_supplier_id', $offerIds)->lockForUpdate()->get();
@@ -427,9 +414,9 @@ class SupplierBranchPriceSyncService
             $usedBranchPriceIds = [];
             $rowsToUpsert = [];
             $timestamp = now();
-            foreach ($copies as $copy) {
-                $branch = $branches->firstWhere('id', $copy->supplier_id);
-                $offer = $offersByCopy[(int) $copy->id] ?? null;
+            foreach ($branchOffers as $offer) {
+                $copy = $offer->product;
+                $branch = $branches->firstWhere('id', $offer->supplier_id);
                 if (!$branch || !$offer) {
                     continue;
                 }
@@ -445,8 +432,7 @@ class SupplierBranchPriceSyncService
 
                     if (!$existingPrice) {
                         foreach ($existingPricesByCell[$this->matrixCellKey($sourcePrice, $offerId)] ?? [] as $candidate) {
-                            if ($candidate->branch_source_price_id !== null
-                                && !isset($usedBranchPriceIds[$offerId][(int) $candidate->id])) {
+                            if (!isset($usedBranchPriceIds[$offerId][(int) $candidate->id])) {
                                 $existingPrice = $candidate;
                                 break;
                             }
@@ -534,17 +520,9 @@ class SupplierBranchPriceSyncService
             return;
         }
 
-        $copyIds = Product::query()
-            ->where('family_product_id', $referenceProduct->family_product_id ?: $referenceProduct->id)
-            ->whereIn('supplier_id', $branchIds)
-            ->pluck('id');
-
-        if ($copyIds->isEmpty()) {
-            return;
-        }
-
         $offerIds = ProductSupplier::query()
-            ->whereIn('product_id', $copyIds)
+            ->whereHas('product', fn ($query) => $query
+                ->where('family_product_id', $referenceProduct->family_product_id ?: $referenceProduct->id))
             ->whereIn('supplier_id', $branchIds)
             ->pluck('id');
 
@@ -602,7 +580,6 @@ class SupplierBranchPriceSyncService
                 ->where('price_type_id', $sourcePrice->price_type_id)
                 ->where('tier_index', $sourcePrice->tier_index)
                 ->where('normalized_check_period_id', $sourcePrice->normalized_check_period_id ?? 0)
-                ->whereNotNull('branch_source_price_id')
                 ->when(
                     $syncedBranchPriceIds !== [],
                     fn ($query) => $query->whereNotIn('id', array_keys($syncedBranchPriceIds))
@@ -810,9 +787,8 @@ class SupplierBranchPriceSyncService
             ->where('supplier_id', $primary->id)
             ->first();
 
-        $belongsToPrimaryMatrix = $sourceOffer
-            ? ((int) $price->product_supplier_id === (int) $sourceOffer->id || $price->product_supplier_id === null)
-            : $price->product_supplier_id === null;
+        $belongsToPrimaryMatrix = ($sourceOffer && (int) $price->product_supplier_id === (int) $sourceOffer->id)
+            || ($price->product_supplier_id === null && (int) $referenceProduct->supplier_id === (int) $primary->id);
 
         return $belongsToPrimaryMatrix ? [$product, $primary, $referenceProduct] : null;
     }
@@ -829,7 +805,14 @@ class SupplierBranchPriceSyncService
             $query->lockForUpdate();
         }
 
-        return $query->get();
+        return $query->get()->filter(fn (Supplier $branch): bool => $branch->usesPrimaryPricing())->values();
+    }
+
+    private function branchOffers(int $familyId, Collection $branches): Collection
+    {
+        return ProductSupplier::query()->whereIn('supplier_id', $branches->modelKeys())
+            ->whereHas('product', fn ($query) => $query->where('family_product_id', $familyId))
+            ->with('product')->orderBy('id')->lockForUpdate()->get();
     }
 
     private function findPrimaryReferenceProduct(int $familyId, Supplier $primary): ?Product
@@ -854,12 +837,10 @@ class SupplierBranchPriceSyncService
 
         return ProductPrice::query()
             ->where('product_id', $referenceProduct->id)
-            ->where(function ($query) use ($sourceOffer): void {
-                if ($sourceOffer) {
-                    $query->where('product_supplier_id', $sourceOffer->id)
-                        ->orWhereNull('product_supplier_id');
-                } else {
-                    $query->whereNull('product_supplier_id');
+            ->where(function ($query) use ($sourceOffer, $referenceProduct, $primary): void {
+                $query->where('product_supplier_id', $sourceOffer?->id ?? 0);
+                if ((int) $referenceProduct->supplier_id === (int) $primary->id) {
+                    $query->orWhereNull('product_supplier_id');
                 }
             })
             ->orderBy('id')

@@ -7,6 +7,10 @@
     </div>
 
     <form wire:submit="save" class="space-y-5">
+        <label class="flex min-h-11 items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
+            <input type="checkbox" wire:model="is_active" class="h-5 w-5 rounded border-gray-300 text-indigo-600">
+            فروش این محصول در شعبه فعال باشد
+        </label>
         <section class="rounded-xl border border-indigo-200 bg-indigo-50 p-5 dark:border-indigo-900 dark:bg-indigo-950/30">
             <div class="grid gap-5 md:grid-cols-2">
                 <div class="rounded-lg bg-white p-4 dark:bg-gray-800">
