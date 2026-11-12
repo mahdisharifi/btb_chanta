@@ -232,17 +232,6 @@
                                 <input type="hidden" name="return_to" value="{{ route('supplier.branches.transfers', absolute: false) }}">
                                 <button type="submit" class="min-h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700">رفتن به شعبه</button>
                             </form>
-                            <div>
-                                <button type="button" wire:click="makePrimary({{ $branch->id }})"
-                                    wire:confirm="ریشهٔ فروشگاه به این شعبه منتقل می‌شود و شعبهٔ اصلی فعلی به شعبهٔ عادی تبدیل می‌شود. قیمت‌های فعلی محصولات مشترک حفظ و درصد هر شعبه نسبت به مبنای جدید بازتنظیم می‌شود. تنظیمات هر شعبه مستقل می‌ماند. ادامه می‌دهید؟"
-                                    wire:loading.attr="disabled" wire:target="makePrimary({{ $branch->id }})"
-                                    @disabled(!$branch->has_shared_active_product)
-                                    @unless($branch->has_shared_active_product) aria-describedby="primary-branch-requirement-{{ $branch->id }}" @endunless
-                                    class="min-h-11 w-full rounded-lg border border-indigo-300 px-4 text-sm font-medium text-indigo-800 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-500 dark:border-indigo-800 dark:text-indigo-200 dark:hover:bg-indigo-950/30 dark:disabled:border-gray-700 dark:disabled:text-gray-500">تعیین به‌عنوان شعبهٔ اصلی</button>
-                                @unless($branch->has_shared_active_product)
-                                    <p id="primary-branch-requirement-{{ $branch->id }}" class="mt-1.5 text-xs leading-5 text-gray-500 dark:text-gray-400">برای جابه‌جایی، این شعبه باید حداقل یک محصول مشترک فعال داشته باشد.</p>
-                                @endunless
-                            </div>
                             <button type="button" wire:click="reviewBranchDeletion({{ $branch->id }})"
                                 wire:loading.attr="disabled" wire:target="reviewBranchDeletion({{ $branch->id }})"
                                 class="min-h-11 w-full rounded-lg border border-red-300 px-4 text-sm font-medium text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30">حذف شعبه</button>

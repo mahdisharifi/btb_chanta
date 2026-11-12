@@ -34,8 +34,8 @@ class SupplierBranchCatalogService
             ->orderBy('id')->first();
         $primaryOfferId = $reference?->productSuppliers()->where('supplier_id', $primary->id)->value('id');
         $source = $reference ? ProductPrice::query()->where('product_id', $reference->id)
-            ->where(fn ($query) => $query->whereNull('product_supplier_id')
-                ->when($primaryOfferId, fn ($query) => $query->orWhere('product_supplier_id', $primaryOfferId)))
+            ->where(fn ($query) => $query->where('product_supplier_id', $primaryOfferId ?? 0)
+                ->when((int) $reference->supplier_id === (int) $primary->id, fn ($query) => $query->orWhereNull('product_supplier_id')))
             ->with(['priceType', 'checkPeriod'])->orderBy('id')->when($lock, fn ($query) => $query->lockForUpdate())->get() : collect();
         $destination = $offer->prices()->with(['priceType', 'checkPeriod'])->orderBy('id')->when($lock, fn ($query) => $query->lockForUpdate())->get();
         $sourceByCell = $source->keyBy(fn ($price) => $this->cell($price));
@@ -65,9 +65,11 @@ class SupplierBranchCatalogService
 
         return [
             'rows' => $rows->all(), 'percentage' => $percentage,
-            'state' => $source->isEmpty() ? 'no_base' : ($rows->every(fn ($row) => $row['synced']) ? 'synced' : 'drift'),
+            'state' => !$offer->supplier?->usesPrimaryPricing() ? 'independent'
+                : ($source->isEmpty() ? 'no_base' : ($rows->every(fn ($row) => $row['synced']) ? 'synced' : 'drift')),
             'fingerprint' => hash('sha256', json_encode([
                 $offer->id, $offer->updated_at?->format('Y-m-d H:i:s.u'), $percentage,
+                $offer->supplier?->branch_pricing_mode,
                 $source->map->getAttributes()->all(), $destination->map->getAttributes()->all(),
             ], JSON_THROW_ON_ERROR)),
         ];
@@ -79,6 +81,7 @@ class SupplierBranchCatalogService
         DB::transaction(function () use ($primary, $branchId, $snapshots, $percentage): void {
             Supplier::query()->whereKey($primary->id)->lockForUpdate()->firstOrFail();
             $branch = $this->branch($primary, $branchId, true);
+            abort_unless($branch->usesPrimaryPricing(), 422, 'شعبه در حالت قیمت‌گذاری مستقل است.');
             foreach ($snapshots as $offerId => $fingerprint) {
                 $offer = ProductSupplier::query()->where('supplier_id', $branch->id)
                     ->whereKey($offerId)->lockForUpdate()->firstOrFail();

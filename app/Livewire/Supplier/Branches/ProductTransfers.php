@@ -8,6 +8,7 @@ use App\Models\ProductSupplier;
 use App\Models\Category;
 use App\Services\SupplierBranchCatalogService;
 use App\Services\SupplierBranchTransferService;
+use App\Services\SupplierBranchPricingService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -27,6 +28,8 @@ class ProductTransfers extends Component
     public string $status = '';
     public array $selected = [];
     public string $percentage = '';
+    public string $pricingMode = 'independent';
+    public string $branchPercentage = '0';
     #[Locked]
     public array $preview = [];
     #[Locked]
@@ -57,6 +60,7 @@ class ProductTransfers extends Component
                 $this->categoryId = '';
                 app(SupplierBranchTransferService::class)->seedPendingTransfers($this->primary, $this->currentSupplier);
                 unset($this->categories);
+                $this->loadPricingSettings();
             }
         }
     }
@@ -90,7 +94,8 @@ class ProductTransfers extends Component
 
     public function previewSync(?int $offerId = null): void
     {
-        $this->validate(['percentage' => ['nullable', 'numeric', 'min:-100', 'max:10000']]);
+        abort_unless($this->currentSupplier->usesPrimaryPricing(), 422);
+        $this->validate(['percentage' => ['nullable', 'numeric', 'decimal:0,12', 'between:-99.999999,999.999999']]);
         $this->closePreview();
         $ids = $offerId !== null ? [$offerId] : array_values(array_unique($this->selected));
         if (!$ids || count($ids) > 20) {
@@ -153,11 +158,46 @@ class ProductTransfers extends Component
         $this->branchId = $branch->isBranch() ? (int) $branch->id : (int) ($this->branches->first()?->id ?? 0);
 
         if ($this->branchId) {
+            $this->loadPricingSettings();
             app(SupplierBranchTransferService::class)->seedPendingTransfers(
                 $user->supplier()->firstOrFail(),
                 $this->currentSupplier,
             );
         }
+    }
+
+    private function loadPricingSettings(): void
+    {
+        $branch = $this->currentSupplier;
+        $this->pricingMode = $branch->usesPrimaryPricing() ? 'percentage' : 'independent';
+        $this->branchPercentage = (string) ($branch->branch_price_percentage ?? '0');
+    }
+
+    public function savePricingSettings(SupplierBranchPricingService $service): void
+    {
+        $service->configure($this->primary, $this->branchId, $this->pricingMode,
+            $this->pricingMode === 'percentage' ? $this->branchPercentage : null);
+        $this->closePreview();
+        $this->selected = [];
+        unset($this->currentSupplier, $this->offers);
+        $this->loadPricingSettings();
+        $this->dispatch('notify', ['type' => 'success', 'message' => 'روش قیمت‌گذاری شعبه ذخیره شد.']);
+    }
+
+    public function openPricing(int $offerId)
+    {
+        $offer = ProductSupplier::query()->where('supplier_id', $this->currentSupplier->id)
+            ->whereKey($offerId)->whereHas('product')->firstOrFail();
+        session()->put('supplier.active_branch_id', $this->currentSupplier->id);
+
+        return redirect()->route('supplier.products.edit-price', ['product' => $offer->product_id]);
+    }
+
+    public function openSelection()
+    {
+        session()->put('supplier.active_branch_id', $this->currentSupplier->id);
+
+        return redirect()->route('supplier.product-selection');
     }
 
     #[Computed]
@@ -195,10 +235,10 @@ class ProductTransfers extends Component
 
             $this->dispatch('notify', [
                 'type' => 'success',
-                'message' => 'محصول به این شعبه اضافه شد. مشخصات، قیمت و تنظیمات شعبه را تکمیل کنید.',
+                'message' => 'محصول به لیست فروش این شعبه اضافه شد. قیمت و تنظیمات فروش شعبه را تکمیل کنید.',
             ]);
             $this->resetPage();
-            unset($this->transfers);
+            unset($this->transfers, $this->offers);
         } catch (Throwable $exception) {
             report($exception);
             $this->dispatch('notify', ['type' => 'error', 'message' => 'پذیرش محصول انجام نشد. صفحه را تازه‌سازی و دوباره بررسی کنید.']);

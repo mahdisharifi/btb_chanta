@@ -7,7 +7,6 @@ use App\Models\Product;
 use App\Models\ProductSupplier;
 use App\Models\Category;
 use App\Services\SupplierBranchPriceSyncService;
-use App\Services\SupplierBranchPrimaryService;
 use App\Services\SupplierBranchTransferService;
 use App\Services\SupplierBranchDeletionService;
 use Illuminate\Support\Facades\DB;
@@ -168,8 +167,6 @@ class ManageBranches extends Component
         return $this->primarySupplier->branches()
             ->where('is_active', true)
             ->withCount(['branchProductTransfers as pending_transfers_count' => fn ($query) => $query->where('status', 'pending')])
-            ->withExists(['ownedProducts as has_shared_active_product' => fn ($products) => $products
-                ->eligiblePrimarySwitchCopy($this->primarySupplier)])
             ->get();
     }
 
@@ -215,6 +212,8 @@ class ManageBranches extends Component
 
                 $branch = $primary->replicate();
                 $branch->parent_supplier_id = $primary->id;
+                $branch->branch_pricing_mode = 'independent';
+                $branch->branch_price_percentage = null;
                 $branch->branch_name = trim($this->branchName);
                 $branch->slug = $this->branchSlug($primary, $this->branchName);
                 $branch->user_id = $primary->user_id;
@@ -271,8 +270,7 @@ class ManageBranches extends Component
             return collect();
         }
 
-        return Product::query()->where('supplier_id', $branch->id)
-            ->whereHas('productSuppliers', fn ($query) => $query->where('supplier_id', $branch->id))
+        return Product::query()->whereHas('productSuppliers', fn ($query) => $query->where('supplier_id', $branch->id))
             ->when($this->pricingCategoryId !== '', fn ($query) => $query->where('category_id', (int) $this->pricingCategoryId))
             ->orderBy('title')->get(['id', 'title']);
     }
@@ -291,8 +289,8 @@ class ManageBranches extends Component
                 ->where('user_id', auth()->id())->whereNull('parent_supplier_id')->lockForUpdate()->firstOrFail();
             $branch = $primary->branches()->whereKey((int) $this->pricingBranchId)
                 ->where('is_active', true)->lockForUpdate()->firstOrFail();
-            $products = Product::query()->where('supplier_id', $branch->id)
-                ->whereNotNull('family_product_id')->whereColumn('family_product_id', '!=', 'id')
+            abort_unless($branch->usesPrimaryPricing(), 422, 'ابتدا روش قیمت‌گذاری درصدی را در مدیریت محصولات شعبه انتخاب کنید.');
+            $products = Product::query()
                 ->whereHas('productSuppliers', fn ($query) => $query->where('supplier_id', $branch->id))
                 ->when($this->pricingCategoryId !== '', fn ($query) => $query->where('category_id', (int) $this->pricingCategoryId))
                 ->when($this->pricingProductId !== '', fn ($query) => $query->whereKey((int) $this->pricingProductId))
@@ -495,17 +493,10 @@ class ManageBranches extends Component
         $this->dispatch('notify', ['type' => 'success', 'message' => 'شعبه به‌طور کامل حذف شد؛ خود محصولات حفظ شدند.']);
     }
 
-    public function makePrimary(int $supplierId)
+    /** Reject stale Livewire requests for the retired primary-branch action. */
+    public function makePrimary(int $supplierId): void
     {
-        $newPrimary = app(SupplierBranchPrimaryService::class)->promote($this->primarySupplier, $supplierId);
-        session()->forget('supplier.active_branch_id');
-        unset($this->primarySupplier, $this->branches);
-        $this->dispatch('notify', [
-            'type' => 'success',
-            'message' => 'شعبهٔ انتخاب‌شده به ریشهٔ فروشگاه تبدیل شد؛ نسبت قیمت محصولات مشترک حفظ شد.',
-        ]);
-
-        return $this->redirectRoute('supplier.branches.index');
+        abort(403, 'تغییر شعبهٔ اصلی در دسترس نیست.');
     }
 
     private function branchSlug(Supplier $primary, string $name): string

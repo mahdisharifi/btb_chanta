@@ -32,22 +32,44 @@
                 </div>
             </details>
         </div>
+        <form wire:submit="savePricingSettings" class="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <div class="grid items-end gap-3 sm:grid-cols-3">
+                <label class="text-sm" for="branch-pricing-mode">روش قیمت‌گذاری شعبه
+                    <select id="branch-pricing-mode" wire:model.live="pricingMode" class="mt-1 min-h-11 w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-900">
+                        <option value="independent">مستقل</option>
+                        <option value="percentage">درصدی نسبت به شعبهٔ اصلی</option>
+                    </select>
+                </label>
+                @if($pricingMode === 'percentage')
+                    <label class="text-sm" for="branch-global-percentage">درصد کلی محصولات
+                        <input id="branch-global-percentage" type="number" dir="ltr" step="0.000000000001" min="-99.999999" max="999.999999" wire:model="branchPercentage" class="mt-1 min-h-11 w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-900">
+                    </label>
+                @endif
+                <button type="submit" wire:confirm="روش قیمت‌گذاری ذخیره شود؟ در حالت درصدی قیمت محصولات دارای مبنا با شعبهٔ اصلی همگام می‌شود. در حالت مستقل قیمت‌های فعلی حفظ می‌شوند." wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-50">ذخیرهٔ روش قیمت‌گذاری</button>
+            </div>
+            @error('pricingMode')<p role="alert" class="text-sm text-red-600">{{ $message }}</p>@enderror
+            @error('branchPercentage')<p role="alert" class="text-sm text-red-600">{{ $message }}</p>@enderror
+            <p class="text-xs leading-6 text-gray-500 dark:text-gray-400">در حالت مستقل، قیمت هر محصول را مانند شعبهٔ اصلی تعیین می‌کنید. در حالت درصدی، درصد کلی برای محصولات فعلی و جدید دارای مبنا اعمال می‌شود؛ محصولات بدون مبنا مستقل قیمت‌گذاری می‌شوند.</p>
+            <button type="button" wire:click="openSelection" class="min-h-11 text-sm font-semibold text-indigo-600 dark:text-indigo-300">افزودن محصول از فهرست محصولات</button>
+        </form>
         <div class="flex flex-wrap gap-2" role="group" aria-label="نمایش لیست">
             @foreach(['products' => 'محصولات شعبه', 'pending' => 'در انتظار افزودن'] as $value => $label)
                 <button type="button" wire:click="$set('tab', '{{ $value }}')" aria-pressed="{{ $tab === $value ? 'true' : 'false' }}" class="min-h-11 rounded-lg border px-4 text-sm {{ $tab === $value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 dark:border-gray-600' }}">{{ $label }}</button>
             @endforeach
         </div>
         @if($tab === 'products')
+            @if($this->currentSupplier->usesPrimaryPricing())
             <div class="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                 <button type="button" wire:click="selectPage" class="min-h-11 rounded-lg border border-gray-300 px-3 text-sm dark:border-gray-600">انتخاب همین صفحه</button>
                 <span class="py-3 text-sm">{{ count($selected) }} انتخاب</span>
                 <label class="text-sm">درصد اختلاف با شعبه اصلی
-                    <input type="number" step="any" min="-100" max="10000" wire:model="percentage" placeholder="حفظ درصد فعلی" class="mt-1 min-h-11 w-full rounded-lg border-gray-300 sm:w-48 dark:border-gray-600 dark:bg-gray-900">
+                    <input type="number" step="0.000000000001" min="-99.999999" max="999.999999" wire:model="percentage" placeholder="حفظ درصد فعلی" class="mt-1 min-h-11 w-full rounded-lg border-gray-300 sm:w-48 dark:border-gray-600 dark:bg-gray-900">
                 </label>
                 <button type="button" wire:click="previewSync" wire:loading.attr="disabled" class="min-h-11 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-50">پیش‌نمایش همگام‌سازی</button>
             </div>
             @error('percentage')<p role="alert" class="text-sm text-red-600">{{ $message }}</p>@enderror
             <p class="text-xs leading-6 text-gray-500 dark:text-gray-400">مبالغ به تومان است. درصد خالی، درصد اختصاصی هر محصول را حفظ می‌کند. همگام‌سازی از شعبه اصلی انجام می‌شود؛ وضعیت فروش تغییر نمی‌کند.</p>
+            @endif
             <div class="space-y-3">
                 @forelse($this->offers as $offer)
                     @php($comparison = app(\App\Services\SupplierBranchCatalogService::class)->comparison($offer, $this->primary))
@@ -57,7 +79,7 @@
                                 <input type="checkbox" wire:model.live="selected" value="{{ $offer->id }}" class="mt-1 h-5 w-5 rounded border-gray-300 text-indigo-600" aria-label="انتخاب {{ $offer->product->title }}">
                                 <span class="min-w-0"><span class="block break-words font-semibold">{{ $offer->product->title }}</span><span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ $offer->product->sku }} · {{ $offer->product->category?->name }} · {{ $offer->is_active ? 'فروش فعال' : 'فروش غیرفعال' }}</span></span>
                             </label>
-                            <span class="shrink-0 text-xs {{ $comparison['state'] === 'synced' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300' }}">{{ ['synced' => 'همگام', 'drift' => 'نیازمند بررسی', 'no_base' => 'بدون قیمت مبنا'][$comparison['state']] }} · {{ $comparison['percentage'] }}٪</span>
+                            <span class="shrink-0 text-xs {{ $comparison['state'] === 'synced' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-300' }}">{{ ['independent' => 'قیمت‌گذاری مستقل', 'synced' => 'همگام', 'drift' => 'نیازمند بررسی', 'no_base' => 'بدون قیمت مبنا'][$comparison['state']] }}{{ $comparison['state'] === 'independent' ? '' : ' · '.$comparison['percentage'].'٪' }}</span>
                         </div>
                         <details class="mt-3">
                             <summary class="min-h-11 cursor-pointer text-sm leading-10">مقایسه با شعبه اصلی</summary>
@@ -73,7 +95,10 @@
                             </div>
                         </details>
                         <div class="mt-2 flex flex-wrap gap-2">
-                            <button type="button" wire:click="previewSync({{ $offer->id }})" wire:loading.attr="disabled" class="min-h-11 rounded-lg border border-indigo-300 px-3 text-sm text-indigo-700 dark:text-indigo-300">بررسی و همگام‌سازی</button>
+                            <button type="button" wire:click="openPricing({{ $offer->id }})" class="min-h-11 rounded-lg bg-indigo-600 px-3 text-sm text-white">قیمت‌گذاری و تنظیمات فروش</button>
+                            @if($this->currentSupplier->usesPrimaryPricing())
+                                <button type="button" wire:click="previewSync({{ $offer->id }})" wire:loading.attr="disabled" class="min-h-11 rounded-lg border border-indigo-300 px-3 text-sm text-indigo-700 dark:text-indigo-300">بررسی و همگام‌سازی</button>
+                            @endif
                             @if($offer->is_active)
                                 <button type="button" wire:click="archiveOffer({{ $offer->id }})" wire:confirm="فروش این محصول در همین شعبه متوقف شود؟" wire:loading.attr="disabled" class="min-h-11 rounded-lg px-3 text-sm text-amber-700 dark:text-amber-300">توقف فروش</button>
                             @endif

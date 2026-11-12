@@ -8,7 +8,7 @@ use App\Models\ProductSupplier;
 use App\Models\ProductPrice;
 use App\Enums\ProductStatus;
 use App\Enums\PriceType;
-use App\Services\SupplierBranchProductCopyService;
+use App\Services\SupplierSalesListService;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\Auth;
@@ -181,7 +181,7 @@ class ProductSelection extends Component
         $this->showQuickPriceModal = true;
     }
 
-    public function saveQuickPrice(SupplierBranchProductCopyService $copyService)
+    public function saveQuickPrice(SupplierSalesListService $salesList)
     {
         $supplier = Auth::user()->currentSupplier();
         $usesPriceMatrix = $supplier->isBranch() || $supplier->pricing_currency !== 'TOM';
@@ -200,19 +200,10 @@ class ProductSelection extends Component
             ->firstOrFail();
 
         if ($supplier->isBranch()) {
-            $branchProduct = $copyService->copyForBranch($product, $supplier, function (Product $branchProduct) use ($supplier): void {
-                ProductSupplier::query()
-                    ->where('product_id', $branchProduct->id)
-                    ->where('supplier_id', $supplier->id)
-                    ->update([
-                        'stock_quantity' => $this->quickStock,
-                        'status' => 'active',
-                        'is_active' => true,
-                    ]);
-            });
-            session()->flash('success', 'محصول به شعبه اضافه شد؛ قیمت از ماتریس تومانی و درصد اختلاف شعبه مدیریت می‌شود.');
+            $offer = $salesList->add($product, $supplier);
+            $offer->update(['stock_quantity' => $this->quickStock]);
 
-            return redirect()->route('supplier.products.edit-price', ['product' => $branchProduct->id]);
+            return redirect()->route('supplier.products.edit-price', ['product' => $product->id]);
         }
 
         if ($supplier->pricing_currency !== 'TOM') {

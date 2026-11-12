@@ -21,11 +21,14 @@ class SupplierBranchTransferService
             $this->assertBranch($primary, $branch);
 
             Product::query()
+                ->active()
                 ->where(function ($query) use ($primary): void {
                     $query->where('products.supplier_id', $primary->id)
                         ->orWhereHas('productSuppliers', fn ($offers) => $offers
                             ->where('product_supplier.supplier_id', $primary->id));
                 })
+                ->whereDoesntHave('familyProducts.productSuppliers', fn ($offers) => $offers
+                    ->where('supplier_id', $branch->id))
                 ->whereNotExists(function ($query) use ($branch): void {
                     $query->selectRaw('1')
                         ->from('products as existing_branch_product')
@@ -66,60 +69,44 @@ class SupplierBranchTransferService
 
     public function accept(Supplier $primary, Supplier $branch, int $transferId): Product
     {
-        $this->assertBranch($primary, $branch);
+        return DB::transaction(function () use ($primary, $branch, $transferId): Product {
+            $primary = Supplier::query()->whereKey($primary->id)->lockForUpdate()->firstOrFail();
+            $branch = Supplier::query()->whereKey($branch->id)->lockForUpdate()->firstOrFail();
+            $this->assertBranch($primary, $branch);
 
-        $transfer = SupplierBranchProductTransfer::query()
-            ->whereKey($transferId)
-            ->where('source_supplier_id', $primary->id)
-            ->where('target_supplier_id', $branch->id)
-            ->lockForUpdate()
-            ->firstOrFail();
+            $transfer = SupplierBranchProductTransfer::query()
+                ->whereKey($transferId)
+                ->where('source_supplier_id', $primary->id)
+                ->where('target_supplier_id', $branch->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        if ($transfer->status === SupplierBranchProductTransfer::ACCEPTED) {
-            return $transfer->destinationProduct()->firstOrFail();
-        }
+            if ($transfer->status === SupplierBranchProductTransfer::ACCEPTED) {
+                return $transfer->destinationProduct()->firstOrFail();
+            }
 
-        if ($transfer->status !== SupplierBranchProductTransfer::PENDING) {
-            throw new RuntimeException('این محصول قبلاً رد شده است و دیگر قابل پذیرش نیست.');
-        }
+            if ($transfer->status !== SupplierBranchProductTransfer::PENDING) {
+                throw new RuntimeException('این محصول قبلاً رد شده است و دیگر قابل پذیرش نیست.');
+            }
 
-        $source = Product::query()
-            ->whereKey($transfer->source_product_id)
-            ->where(function ($query) use ($primary): void {
-                $query->where('supplier_id', $primary->id)
-                    ->orWhereHas('productSuppliers', fn ($offers) => $offers
-                        ->where('supplier_id', $primary->id));
-            })
-            ->firstOrFail();
+            $source = Product::query()
+                ->whereKey($transfer->source_product_id)
+                ->where(function ($query) use ($primary): void {
+                    $query->where('supplier_id', $primary->id)
+                        ->orWhereHas('productSuppliers', fn ($offers) => $offers
+                            ->where('supplier_id', $primary->id));
+                })
+                ->firstOrFail();
 
-        return app(SupplierBranchProductCopyService::class)->copyForBranch(
-            $source,
-            $branch,
-            function (Product $destination) use ($transfer): void {
-                $lockedTransfer = SupplierBranchProductTransfer::query()
-                    ->whereKey($transfer->id)
-                    ->lockForUpdate()
-                    ->firstOrFail();
+            app(SupplierSalesListService::class)->add($source, $branch);
+            $transfer->forceFill([
+                'destination_product_id' => $source->id,
+                'status' => SupplierBranchProductTransfer::ACCEPTED,
+                'decided_at' => now(),
+            ])->save();
 
-                if ($lockedTransfer->status === SupplierBranchProductTransfer::ACCEPTED
-                    && (int) $lockedTransfer->destination_product_id === (int) $destination->id) {
-                    return;
-                }
-
-                if ($lockedTransfer->status !== SupplierBranchProductTransfer::PENDING) {
-                    throw new RuntimeException('این درخواست هم‌زمان در شعبه تعیین تکلیف شده است.');
-                }
-
-                $lockedTransfer->forceFill([
-                    'destination_product_id' => $destination->id,
-                    'status' => SupplierBranchProductTransfer::ACCEPTED,
-                    'decided_at' => now(),
-                ])->save();
-            },
-            // Adding to the sales list creates a draft offer, just like EditPrice.
-            // Each branch chooses when to publish its own offer.
-            false,
-        );
+            return $source;
+        }, 3);
     }
 
     public function reject(Supplier $primary, Supplier $branch, int $transferId): bool
