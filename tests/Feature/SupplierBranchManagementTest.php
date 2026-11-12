@@ -27,6 +27,7 @@ use App\Models\SupplierBranchProductTransfer;
 use App\Models\SupplierTierDiscount;
 use App\Models\User;
 use App\Services\SupplierBranchTransferService;
+use App\Services\SupplierBranchProductCopyService;
 use App\Services\SupplierBranchPriceSyncService;
 use App\Services\SupplierBranchPrimaryService;
 use App\Services\SupplierBranchPublicCacheInvalidator;
@@ -113,6 +114,7 @@ class SupplierBranchManagementTest extends TestCase
         $precisionMigration = require database_path('migrations/2026_10_30_120000_expand_supplier_branch_price_percentage_precision.php');
         $precisionMigration->up();
         (require database_path('migrations/2026_11_11_130000_limit_branch_name_uniqueness_to_active_suppliers.php'))->up();
+        (require database_path('migrations/2026_11_11_160000_add_branch_pricing_mode_to_suppliers.php'))->up();
         $this->primaryProduct = Product::findOrFail($legacyProductId);
 
         $this->createSupportingTables();
@@ -224,7 +226,7 @@ class SupplierBranchManagementTest extends TestCase
         $this->assertSame($this->primaryProduct->id, (int) $transfers->sole()->source_product_id);
     }
 
-    public function test_livewire_branch_creation_seeds_a_compact_review_queue_and_acceptance_creates_an_independent_copy(): void
+    public function test_livewire_branch_creation_adds_the_same_product_to_its_sales_pivot(): void
     {
         $this->addSourceProductDetails();
         $this->authorizeSupplierUserForTest();
@@ -286,71 +288,22 @@ class SupplierBranchManagementTest extends TestCase
             ->assertDispatched('notify');
 
 
-        $destination = Product::query()->where('supplier_id', $branch->id)->firstOrFail();
-        $this->assertSame($this->primaryProduct->id, $destination->family_product_id);
-        $this->assertSame($this->primaryProduct->category_id, $destination->category_id);
-        $this->assertSame($this->primaryProduct->title, $destination->title);
-        $this->assertSame($this->primaryProduct->specifications, $destination->specifications);
-        $this->assertSame($this->primaryProduct->attributeValues()->count(), $destination->attributeValues()->count());
-        $this->assertDatabaseHas('product_supplier', [
-            'product_id' => $destination->id,
-            'supplier_id' => $branch->id,
-            'is_active' => 0,
-        ]);
-        $this->assertSame(1, DB::table('product_prices')->where('product_id', $destination->id)->count());
-        $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $destination->id)->value('price'));
-
-        $sourceGallery = $this->primaryProduct->galleries()->firstOrFail();
-        $destinationGallery = $destination->galleries()->firstOrFail();
-        $this->assertNotSame($sourceGallery->file_path, $destinationGallery->file_path);
-        $this->assertTrue(Storage::disk('public')->exists($sourceGallery->file_path));
-        $this->assertTrue(
-            Storage::disk('public')->exists($destinationGallery->file_path),
-            'Expected copied gallery file at ' . $destinationGallery->file_path . ' (disk root: ' . Storage::disk('public')->path('') . ')'
-        );
-        $this->assertNull($destination->legacy_id);
-
-        $transfer->refresh();
-        $this->assertSame(SupplierBranchProductTransfer::ACCEPTED, $transfer->status);
-        $this->assertSame($destination->id, $transfer->destination_product_id);
-
-        $sameDestination = app(SupplierBranchTransferService::class)
-            ->accept($this->primary, $branch, $transfer->id);
-        $this->assertSame($destination->id, $sameDestination->id, 'Repeated acceptance must be idempotent.');
-
-        $this->actingAs($this->user);
+        $destination = Product::findOrFail($transfer->fresh()->destination_product_id);
+        $this->assertSame($this->primaryProduct->id, $destination->id);
+        $this->assertSame($this->primary->id, $destination->supplier_id);
+        $this->assertSame('independent', $branch->branch_pricing_mode);
+        $this->assertSame(0, Product::where('supplier_id', $branch->id)->count());
+        $offer = $this->offer($destination, $branch);
+        $this->assertFalse((bool) $offer->is_active);
+        $this->assertSame(0, $offer->prices()->count());
+        $this->assertSame(SupplierBranchProductTransfer::ACCEPTED, $transfer->fresh()->status);
+        $sameDestination = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $this->assertSame($destination->id, $sameDestination->id);
+        $this->assertSame(1, $branch->products()->count());
         Livewire::test(Edit::class, ['product' => $destination])->assertForbidden();
-        $this->assertSame($this->primaryProduct->title, $destination->fresh()->title);
-        $this->assertSame($this->primaryProduct->specifications, $destination->fresh()->specifications);
-
-
         Livewire::test(EditPrice::class, ['product' => $destination])
-            ->assertSet('isBranchCopy', true)
-            ->assertSee('1,200')
-            ->set('branchPricePercentage', '10')
-            ->assertSee('1,320')
-            ->call('save')
-            ->assertDispatched('notify');
-
-        $this->assertSame(1320, (int) DB::table('product_prices')->where('product_id', $destination->id)->value('price'));
-        $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $this->primaryProduct->id)->value('price'));
-
-        Livewire::test(EditPrice::class, ['product' => $destination])
-            ->set('branchPricePercentage', '10.123456789012')
-            ->call('save')
-            ->assertHasNoErrors();
-
-        $this->assertSame('10.123456789012', (string) $this->offer($destination, $branch)->fresh()->branch_price_percentage);
-        $this->assertSame(1321, (int) DB::table('product_prices')->where('product_id', $destination->id)->value('price'));
-        $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $this->primaryProduct->id)->value('price'));
-
-        Livewire::test(EditPrice::class, ['product' => $destination])
-            ->set('branchPricePercentage', '10.1234567890123')
-            ->call('save')
-            ->assertHasErrors(['branchPricePercentage' => 'decimal']);
-
-        $this->assertSame('10.123456789012', (string) $this->offer($destination, $branch)->fresh()->branch_price_percentage);
-        $this->assertSame(1321, (int) DB::table('product_prices')->where('product_id', $destination->id)->value('price'));
+            ->assertSet('isBranchCopy', false)
+            ->assertSee('مدیریت ماتریس قیمت');
     }
 
     public function test_branch_name_validation_error_is_associated_with_its_input(): void
@@ -375,7 +328,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $branchProduct = $this->acceptLegacyCopy($this->primary, $branch, $transfer->id);
         $branchOffer = $this->offer($branchProduct, $branch);
 
         $this->actingAs($this->user);
@@ -490,7 +443,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $branchProduct = $this->acceptLegacyCopy($this->primary, $branch, $transfer->id);
         $branchOffer = $this->offer($branchProduct, $branch);
 
         $this->actingAs($this->user);
@@ -532,7 +485,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $branchProduct = $this->acceptLegacyCopy($this->primary, $branch, $transfer->id);
         $beforeRevision = (int) $this->primaryProduct->fresh()->price_revision;
         $cashPriceTypeId = (int) PriceType::query()->where('code', 'cash')->value('id');
 
@@ -576,8 +529,8 @@ class SupplierBranchManagementTest extends TestCase
         $secondTransfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $secondBranch->id)
             ->firstOrFail();
-        $firstCopy = app(SupplierBranchTransferService::class)->accept($this->primary, $firstBranch, $firstTransfer->id);
-        $secondCopy = app(SupplierBranchTransferService::class)->accept($this->primary, $secondBranch, $secondTransfer->id);
+        $firstCopy = $this->acceptLegacyCopy($this->primary, $firstBranch, $firstTransfer->id);
+        $secondCopy = $this->acceptLegacyCopy($this->primary, $secondBranch, $secondTransfer->id);
         $firstOffer = $this->offer($firstCopy, $firstBranch);
         $secondOffer = $this->offer($secondCopy, $secondBranch);
         $firstOffer->update(['branch_price_percentage' => -10]);
@@ -632,7 +585,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $branchProduct = $this->acceptLegacyCopy($this->primary, $branch, $transfer->id);
         $branchOffer = $this->offer($branchProduct, $branch);
 
         $staleSourcePrices = ProductPrice::query()->where('product_supplier_id', $primaryOffer->id)->get();
@@ -655,7 +608,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $branchProduct = $this->acceptLegacyCopy($this->primary, $branch, $transfer->id);
         $branchOffer = $this->offer($branchProduct, $branch);
         $branchOffer->update(['branch_price_percentage' => -10]);
 
@@ -727,7 +680,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $copy = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
+        $copy = $this->acceptLegacyCopy($this->primary, $branch, $transfer->id);
         $branchOffer = $this->offer($copy, $branch);
         $branchOffer->update(['branch_price_percentage' => 10]);
         app(SupplierBranchPriceSyncService::class)->syncBranchProduct($copy, $branch, 10);
@@ -987,8 +940,8 @@ class SupplierBranchManagementTest extends TestCase
         $this->seedTransfers($anotherBranch);
         $firstTransfer = SupplierBranchProductTransfer::where('target_supplier_id', $branch->id)->firstOrFail();
         $secondTransfer = SupplierBranchProductTransfer::where('target_supplier_id', $anotherBranch->id)->firstOrFail();
-        $firstCopy = $service->accept($this->primary, $branch, $firstTransfer->id);
-        $secondCopy = $service->accept($this->primary, $anotherBranch, $secondTransfer->id);
+        $firstCopy = $this->acceptLegacyCopy($this->primary, $branch, $firstTransfer->id);
+        $secondCopy = $this->acceptLegacyCopy($this->primary, $anotherBranch, $secondTransfer->id);
 
         $firstOffer = $this->offer($firstCopy, $branch);
         $secondOffer = $this->offer($secondCopy, $anotherBranch);
@@ -1060,8 +1013,7 @@ class SupplierBranchManagementTest extends TestCase
         $transfer = SupplierBranchProductTransfer::query()
             ->where('target_supplier_id', $branch->id)
             ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)
-            ->accept($this->primary, $branch, (int) $transfer->id);
+        $branchProduct = $this->acceptLegacyCopy($this->primary, $branch, (int) $transfer->id);
         $branchOffer = $this->offer($branchProduct, $branch);
         $branchOffer->update(['branch_price_percentage' => 10]);
         app(SupplierBranchPriceSyncService::class)->syncBranchProduct($branchProduct, $branch, 10);
@@ -1205,293 +1157,45 @@ class SupplierBranchManagementTest extends TestCase
         $this->assertNull(session('supplier.active_branch_id'));
     }
 
-    public function test_owner_can_promote_an_accepted_branch_and_preserve_shared_product_prices(): void
+    public function test_primary_promotion_action_is_hidden_and_rejects_stale_requests(): void
     {
-        $this->addSourceProductDetails();
-        $primaryOffer = $this->offer($this->primaryProduct, $this->primary);
-        $branch = $this->makeBranch('شعبه شیراز');
-        $branch->update(['city' => 'شیراز']);
-        $sibling = $this->makeBranch('شعبه اصفهان');
-
-        $transferService = app(SupplierBranchTransferService::class);
-        $this->seedTransfers($branch);
-        $this->seedTransfers($sibling);
-        $branchTransfer = SupplierBranchProductTransfer::query()->where('target_supplier_id', $branch->id)->firstOrFail();
-        $siblingTransfer = SupplierBranchProductTransfer::query()->where('target_supplier_id', $sibling->id)->firstOrFail();
-        $branchProduct = $transferService->accept($this->primary, $branch, $branchTransfer->id);
-        $siblingProduct = $transferService->accept($this->primary, $sibling, $siblingTransfer->id);
-
-        $branchOffer = $this->offer($branchProduct, $branch);
-        $siblingOffer = $this->offer($siblingProduct, $sibling);
-        $branchOffer->update(['branch_price_percentage' => -10]);
-        $siblingOffer->update(['branch_price_percentage' => 10]);
-        $priceSync = app(SupplierBranchPriceSyncService::class);
-        $priceSync->syncBranchProduct($branchProduct, $branch, -10);
-        $priceSync->syncBranchProduct($siblingProduct, $sibling, 10);
-
-        $this->assertSame(1080, (int) DB::table('product_prices')->where('product_id', $branchProduct->id)->value('price'));
-        $this->assertSame(1320, (int) DB::table('product_prices')->where('product_id', $siblingProduct->id)->value('price'));
-        DB::table('product_prices')->where('product_id', $siblingProduct->id)->update(['is_active' => false]);
-        $originalSupplierSlug = $this->primary->slug;
-        $originalProductSlug = $this->primaryProduct->slug;
-
+        $branch = $this->makeBranch('Fixed hierarchy');
         $this->actingAs($this->user);
+        session(['supplier.active_branch_id' => $branch->id]);
+
         Livewire::test(ManageBranches::class)
+            ->assertDontSeeHtml('wire:click="makePrimary(')
             ->call('makePrimary', $branch->id)
-            ->assertHasNoErrors()
-            ->assertDispatched('notify')
-            ->assertRedirect(route('supplier.branches.index'));
+            ->assertForbidden();
 
-        $this->assertNull($branch->fresh()->parent_supplier_id);
-        $this->assertSame($branch->id, (int) $this->primary->fresh()->parent_supplier_id);
-        $this->assertSame($branch->id, (int) $sibling->fresh()->parent_supplier_id);
-        $this->assertSame($originalSupplierSlug, $branch->fresh()->slug);
-        $this->assertSame($branch->slug, $this->primary->fresh()->slug);
-        $this->assertSame($branchProduct->id, (int) $branchProduct->fresh()->family_product_id);
-        $this->assertSame($originalProductSlug, $branchProduct->fresh()->slug);
-        $this->assertSame($branch->id, Product::query()->canonical()->where('family_product_id', $branchProduct->id)->value('id'));
-
-        $rootPercentage = (float) $this->offer($branchProduct, $branch->fresh())->fresh()->branch_price_percentage;
-        $formerPrimaryPercentage = (float) $this->offer($this->primaryProduct, $this->primary->fresh())->fresh()->branch_price_percentage;
-        $siblingPercentage = (float) $this->offer($siblingProduct, $sibling->fresh())->fresh()->branch_price_percentage;
-        $this->assertSame(0.0, $rootPercentage);
-        $this->assertSame(11.111111111111, $formerPrimaryPercentage);
-        $this->assertSame(22.222222222222, $siblingPercentage);
-        $this->assertSame(1080, (int) DB::table('product_prices')->where('product_id', $branchProduct->id)->whereNull('branch_source_price_id')->value('price'));
-        $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $this->primaryProduct->id)->value('price'));
-        $this->assertSame(1320, (int) DB::table('product_prices')->where('product_id', $siblingProduct->id)->value('price'));
-        $this->assertSame(
-            0,
-            (int) DB::table('product_prices')->where('product_id', $siblingProduct->id)->value('is_active'),
-            'Rebasing must retain the branch-level active state while preserving its price.'
-        );
-        $this->assertSame($branch->id, $this->user->fresh()->supplier()->value('id'));
-        $this->assertNull(session('supplier.active_branch_id'));
+        $this->assertNull($this->primary->fresh()->parent_supplier_id);
+        $this->assertSame($this->primary->id, (int) $branch->fresh()->parent_supplier_id);
+        $this->assertSame($branch->id, session('supplier.active_branch_id'));
     }
 
-    public function test_promotion_preserves_price_snapshots_when_rebased_percentage_rounding_would_shift_them(): void
+    public function test_primary_promotion_service_rejects_even_an_accepted_branch_without_mutation(): void
     {
-        $this->addSourceProductDetails();
-        $primaryOffer = $this->offer($this->primaryProduct, $this->primary);
-        DB::table('product_prices')
-            ->where('product_supplier_id', $primaryOffer->id)
-            ->update(['price' => 10000]);
-
-        $branch = $this->makeBranch('شعبه با درصد اعشاری');
+        $branch = $this->makeBranch('Accepted fixed branch');
         $this->seedTransfers($branch);
         $transfer = SupplierBranchProductTransfer::query()
-            ->where('target_supplier_id', $branch->id)
-            ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
-        $branchOffer = $this->offer($branchProduct, $branch);
-        $branchOffer->update(['branch_price_percentage' => 2.192106]);
-        app(SupplierBranchPriceSyncService::class)->syncBranchProduct($branchProduct, $branch, 2.192106);
-
-        $this->assertSame(10000, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->value('price'));
-        $this->assertSame(10219, (int) DB::table('product_prices')
-            ->where('product_id', $branchProduct->id)
-            ->value('price'));
-
-        app(SupplierBranchPrimaryService::class)->promote($this->primary, $branch->id);
-
-        $this->assertSame(10219, (int) DB::table('product_prices')
-            ->where('product_id', $branchProduct->id)
-            ->whereNull('branch_source_price_id')
-            ->value('price'));
-        $this->assertSame(10000, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->whereNotNull('branch_source_price_id')
-            ->value('price'), 'Promotion must preserve the existing amount when percentage rounding crosses a price unit.');
-        $this->assertSame(-2.14508349598, (float) $this->offer($this->primaryProduct, $this->primary->fresh())->fresh()->branch_price_percentage);
-
+            ->where('target_supplier_id', $branch->id)->firstOrFail();
         $this->actingAs($this->user);
-        $branchesForSwitch = Livewire::test(ManageBranches::class)->get('branches');
-        $formerPrimaryBranch = $branchesForSwitch->firstWhere('id', $this->primary->id);
-        $this->assertTrue((bool) $formerPrimaryBranch->has_shared_active_product);
-
-        Livewire::test(ManageBranches::class)
-            ->call('makePrimary', $this->primary->id)
-            ->assertHasNoErrors()
-            ->assertRedirect(route('supplier.branches.index'));
-
-        $this->assertNull($this->primary->fresh()->parent_supplier_id);
-        $this->assertSame($this->primary->id, (int) $branch->fresh()->parent_supplier_id);
-        $this->assertSame(2.192106, (float) $branchOffer->fresh()->branch_price_percentage);
-        $this->assertSame(10000, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->whereNull('branch_source_price_id')
-            ->value('price'));
-        $this->assertSame(10219, (int) DB::table('product_prices')
-            ->where('product_id', $branchProduct->id)
-            ->whereNotNull('branch_source_price_id')
-            ->value('price'));
-    }
-
-    public function test_promotion_stops_when_duplicate_matrix_rows_cannot_be_matched_safely(): void
-    {
-        $this->addSourceProductDetails();
-        $primaryOffer = $this->offer($this->primaryProduct, $this->primary);
-        DB::table('product_prices')
-            ->where('product_supplier_id', $primaryOffer->id)
-            ->update(['price' => 10000, 'price_type_id' => null]);
-        DB::table('product_prices')->insert(array_merge(
-            $this->priceRow($this->primaryProduct->id, $primaryOffer->id, 12000),
-            ['price_type_id' => null]
-        ));
-
-        $branch = $this->makeBranch('شعبه با ردیف‌های تکراری');
-        $this->seedTransfers($branch);
-        $transfer = SupplierBranchProductTransfer::query()
-            ->where('target_supplier_id', $branch->id)
-            ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
-        DB::table('product_prices')
-            ->where('product_id', $branchProduct->id)
-            ->update(['branch_source_price_id' => null]);
-
-        try {
-            app(SupplierBranchPrimaryService::class)->promote($this->primary, $branch->id);
-            $this->fail('Promotion guessed a mapping for duplicate matrix rows.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('primaryBranch', $exception->errors());
-        }
-
-        $this->assertSame($this->primary->id, (int) $branch->fresh()->parent_supplier_id);
-        $this->assertNull($this->primary->fresh()->parent_supplier_id);
-        $this->assertEqualsCanonicalizing(
-            [10000, 12000],
-            DB::table('product_prices')->where('product_id', $this->primaryProduct->id)->pluck('price')->map(fn ($price) => (int) $price)->all()
-        );
-        $this->assertEqualsCanonicalizing(
-            [10000, 12000],
-            DB::table('product_prices')->where('product_id', $branchProduct->id)->pluck('price')->map(fn ($price) => (int) $price)->all()
-        );
-    }
-
-    public function test_promotion_matches_standalone_price_rows_by_all_matrix_identity_fields(): void
-    {
-        $this->addSourceProductDetails();
-        $primaryOffer = $this->offer($this->primaryProduct, $this->primary);
-        $firstPriceId = (int) DB::table('product_prices')
-            ->where('product_supplier_id', $primaryOffer->id)
-            ->value('id');
-        DB::table('product_prices')->where('id', $firstPriceId)->update([
-            'price' => 10000,
-            'price_type_id' => null,
-            'percentage_override' => 1.25,
-            'valid_from' => '2026-10-01',
-        ]);
-        $secondPrice = $this->priceRow($this->primaryProduct->id, $primaryOffer->id, 12000);
-        $secondPrice['price_type_id'] = null;
-        $secondPrice['percentage_override'] = 2.50;
-        $secondPrice['valid_from'] = '2026-11-01';
-        DB::table('product_prices')->insert($secondPrice);
-
-        $branch = $this->makeBranch('شعبه با ماتریس مستقل');
-        $this->seedTransfers($branch);
-        $transfer = SupplierBranchProductTransfer::query()
-            ->where('target_supplier_id', $branch->id)
-            ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
-        DB::table('product_prices')
-            ->where('product_id', $branchProduct->id)
-            ->update(['branch_source_price_id' => null]);
-        DB::table('product_prices')
-            ->where('product_supplier_id', $primaryOffer->id)
-            ->whereDate('valid_from', '2026-10-01')
-            ->update(['is_active' => false]);
-
-        app(SupplierBranchPrimaryService::class)->promote($this->primary, $branch->id);
-        $this->assertSame(10000, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->whereDate('valid_from', '2026-10-01')
-            ->value('price'));
-        $this->assertSame(12000, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->whereDate('valid_from', '2026-11-01')
-            ->value('price'));
-        $this->assertSame(0, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->whereDate('valid_from', '2026-10-01')
-            ->value('is_active'));
-        $this->assertSame(1, (int) DB::table('product_prices')
-            ->where('product_id', $this->primaryProduct->id)
-            ->whereDate('valid_from', '2026-11-01')
-            ->value('is_active'));
-    }
-
-    public function test_promotion_stops_when_a_direct_match_leaves_an_unlinked_branch_price_row(): void
-    {
-        $this->addSourceProductDetails();
-        $primaryOffer = $this->offer($this->primaryProduct, $this->primary);
-        DB::table('product_prices')
-            ->where('product_supplier_id', $primaryOffer->id)
-            ->update(['price_type_id' => null]);
-
-        $branch = $this->makeBranch('شعبه با ردیف قیمت اضافی');
-        $this->seedTransfers($branch);
-        $transfer = SupplierBranchProductTransfer::query()
-            ->where('target_supplier_id', $branch->id)
-            ->firstOrFail();
         app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
-
-        DB::table('product_prices')->insert(array_merge(
-            $this->priceRow($this->primaryProduct->id, $primaryOffer->id, 1300),
-            ['price_type_id' => null]
-        ));
+        $before = [];
+        foreach (['suppliers', 'products', 'product_supplier', 'product_prices', 'supplier_branch_product_transfers'] as $table) {
+            $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
 
         try {
             app(SupplierBranchPrimaryService::class)->promote($this->primary, $branch->id);
-            $this->fail('Promotion ignored an unmatched primary matrix row.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('primaryBranch', $exception->errors());
+            $this->fail('Retired promotion must always be forbidden.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
         }
 
-        $this->assertSame($this->primary->id, (int) $branch->fresh()->parent_supplier_id);
-        $this->assertNull($this->primary->fresh()->parent_supplier_id);
-        $this->assertSame(2, DB::table('product_prices')
-            ->where('product_supplier_id', $primaryOffer->id)
-            ->count());
-    }
-
-    public function test_owner_cannot_promote_a_branch_before_accepting_a_product(): void
-    {
-        $branch = $this->makeBranch('شعبه بدون محصول');
-        $this->actingAs($this->user);
-
-        Livewire::test(ManageBranches::class)
-            ->call('makePrimary', $branch->id)
-            ->assertHasErrors(['primaryBranch']);
-
-        $this->assertNull($this->primary->fresh()->parent_supplier_id);
-        $this->assertSame($this->primary->id, $this->user->fresh()->supplier()->value('id'));
-    }
-
-    public function test_promotion_reroots_an_accepted_unpriced_family_without_using_a_stale_branch_percentage(): void
-    {
-        $branch = $this->makeBranch('شعبه بدون ماتریس');
-        $this->seedTransfers($branch);
-        $transfer = SupplierBranchProductTransfer::query()
-            ->where('target_supplier_id', $branch->id)
-            ->firstOrFail();
-        $branchProduct = app(SupplierBranchTransferService::class)->accept($this->primary, $branch, $transfer->id);
-        $branchOffer = $this->offer($branchProduct, $branch);
-        $branchOffer->update(['branch_price_percentage' => -10]);
-
-        $this->actingAs($this->user);
-        Livewire::test(ManageBranches::class)
-            ->call('makePrimary', $branch->id)
-            ->assertHasNoErrors()
-            ->assertDispatched('notify')
-            ->assertRedirect(route('supplier.branches.index'));
-
-        $this->assertSame($branch->id, (int) $branchProduct->fresh()->family_product_id);
-        $this->assertSame($branch->id, (int) Product::query()->canonical()->where('family_product_id', $branch->id)->value('id'));
-        $this->assertSame(0.0, (float) $branchOffer->fresh()->branch_price_percentage);
-        $this->assertSame($branch->id, (int) $this->primary->fresh()->parent_supplier_id);
-        $this->assertSame(0, DB::table('product_prices')->where('product_id', $this->primaryProduct->id)->count());
+        foreach ($before as $table => $snapshot) {
+            $this->assertSame($snapshot, DB::table($table)->orderBy('id')->get()->toJson(), $table);
+        }
     }
 
     public function test_branch_creation_requires_a_valid_location_before_saving(): void
@@ -1507,12 +1211,15 @@ class SupplierBranchManagementTest extends TestCase
 
     public function test_unpriced_product_acceptance_creates_a_branch_sales_list_entry_and_is_idempotent(): void
     {
+        $this->actingAs($this->user);
         $branch = $this->makeBranch('Unpriced branch');
         $this->seedTransfers($branch);
         $transfer = SupplierBranchProductTransfer::where('target_supplier_id', $branch->id)->firstOrFail();
         $service = app(SupplierBranchTransferService::class);
         $product = $service->accept($this->primary, $branch, $transfer->id);
 
+        $this->assertSame($this->primaryProduct->id, $product->id);
+        $this->assertSame(0, Product::where('supplier_id', $branch->id)->count());
         $this->assertSame(1, $branch->products()->where('products.id', $product->id)->count());
         $this->assertSame(0, DB::table('product_prices')->where('product_id', $product->id)->count());
         $this->assertFalse((bool) $product->productSuppliers()->where('supplier_id', $branch->id)->firstOrFail()->is_active);
@@ -1529,8 +1236,8 @@ class SupplierBranchManagementTest extends TestCase
         $this->seedTransfers($branch);
         $this->seedTransfers($sibling);
         $service = app(SupplierBranchTransferService::class);
-        $product = $service->accept($this->primary, $branch, SupplierBranchProductTransfer::where('target_supplier_id', $branch->id)->value('id'));
-        $siblingProduct = $service->accept($this->primary, $sibling, SupplierBranchProductTransfer::where('target_supplier_id', $sibling->id)->value('id'));
+        $product = $this->acceptLegacyCopy($this->primary, $branch, SupplierBranchProductTransfer::where('target_supplier_id', $branch->id)->value('id'));
+        $siblingProduct = $this->acceptLegacyCopy($this->primary, $sibling, SupplierBranchProductTransfer::where('target_supplier_id', $sibling->id)->value('id'));
 
         $component = Livewire::actingAs($this->user)->test(ManageBranches::class)
             ->set('pricingBranchId', (string) $branch->id)
@@ -1547,6 +1254,51 @@ class SupplierBranchManagementTest extends TestCase
         $this->assertSame(1080, (int) DB::table('product_prices')->where('product_id', $product->id)->value('price'));
         $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $siblingProduct->id)->value('price'));
         $this->assertFalse((bool) $product->productSuppliers()->where('supplier_id', $branch->id)->firstOrFail()->is_active);
+    }
+
+    public function test_shared_product_has_full_independent_price_editing_and_rejects_a_stale_mode(): void
+    {
+        $this->addSourceProductDetails();
+        $this->authorizeSupplierUserForTest();
+        $this->actingAs($this->user);
+        $branch = $this->makeBranch('Independent sales branch');
+        $branch->update(['branch_pricing_mode' => 'independent']);
+        session()->put('supplier.active_branch_id', $branch->id);
+        $offer = app(\App\Services\SupplierSalesListService::class)->add($this->primaryProduct, $branch);
+
+        Livewire::test(EditPrice::class, ['product' => $this->primaryProduct])
+            ->assertSet('isBranchCopy', false)
+            ->set('priceMatrix.0.1.price', 2500)
+            ->set('is_active', true)
+            ->call('save')->assertHasNoErrors();
+
+        $this->assertSame(2500, (int) $offer->prices()->value('price'));
+        $this->assertTrue((bool) $offer->fresh()->is_active);
+        $this->assertSame(ProductSupplier::STATUS_ACTIVE, $offer->fresh()->status);
+        $this->assertSame(1200, (int) $this->offer($this->primaryProduct, $this->primary)->prices()->value('price'));
+        $this->assertSame(0, Product::where('supplier_id', $branch->id)->count());
+
+        $editor = Livewire::test(EditPrice::class, ['product' => $this->primaryProduct]);
+        app(\App\Services\SupplierBranchPricingService::class)->configure($this->primary, $branch->id, 'percentage', '10');
+        $editor->set('priceMatrix.0.1.price', 9999)->call('save')->assertStatus(422);
+        $this->assertSame(1320, (int) $offer->prices()->value('price'));
+    }
+
+    public function test_hub_price_and_selection_links_set_the_target_branch_context(): void
+    {
+        $this->authorizeSupplierUserForTest();
+        $branch = $this->makeBranch('Hub target branch');
+        $offer = $this->offer($this->primaryProduct, $branch);
+        Livewire::actingAs($this->user)->test(ProductTransfers::class)
+            ->set('branchId', $branch->id)
+            ->call('openPricing', $offer->id)
+            ->assertRedirect(route('supplier.products.edit-price', ['product' => $this->primaryProduct->id]));
+        $this->assertSame($branch->id, (int) session('supplier.active_branch_id'));
+
+        session()->forget('supplier.active_branch_id');
+        Livewire::test(ProductTransfers::class)->set('branchId', $branch->id)
+            ->call('openSelection')->assertRedirect(route('supplier.product-selection'));
+        $this->assertSame($branch->id, (int) session('supplier.active_branch_id'));
     }
 
     private function addSourceProductDetails(): void
@@ -1606,10 +1358,31 @@ class SupplierBranchManagementTest extends TestCase
         $branch = $this->primary->replicate();
         $branch->parent_supplier_id = $this->primary->id;
         $branch->branch_name = $name;
+        $branch->branch_pricing_mode = 'percentage';
         $branch->slug = 'primary-' . strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $name)) . '-' . uniqid();
         $branch->save();
 
         return $branch;
+    }
+
+    private function acceptLegacyCopy(Supplier $primary, Supplier $branch, int $transferId): Product
+    {
+        $transfer = SupplierBranchProductTransfer::query()
+            ->where('source_supplier_id', $primary->id)
+            ->where('target_supplier_id', $branch->id)->findOrFail($transferId);
+
+        return app(SupplierBranchProductCopyService::class)->copyForBranch(
+            Product::findOrFail($transfer->source_product_id),
+            $branch,
+            function (Product $product) use ($transfer): void {
+                $transfer->forceFill([
+                    'destination_product_id' => $product->id,
+                    'status' => SupplierBranchProductTransfer::ACCEPTED,
+                    'decided_at' => now(),
+                ])->save();
+            },
+            false,
+        );
     }
 
     private function seedTransfers(Supplier $branch): void

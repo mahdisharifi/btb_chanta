@@ -26,6 +26,8 @@ class Supplier extends Model
         'user_id',
         'parent_supplier_id',
         'branch_name',
+        'branch_pricing_mode',
+        'branch_price_percentage',
 
         // Unified business profile (new schema)
         'type',
@@ -78,6 +80,7 @@ class Supplier extends Model
 
         'is_verified' => 'boolean',
         'is_active' => 'boolean',
+        'branch_price_percentage' => 'decimal:12',
         'pricing_currency_revision' => 'integer',
         'tier_pricing_revision' => 'integer',
         'supplier_tier_discount_revision' => 'integer',
@@ -149,6 +152,11 @@ class Supplier extends Model
     public function branchProductTransfers(): HasMany
     {
         return $this->hasMany(SupplierBranchProductTransfer::class, 'target_supplier_id');
+    }
+
+    public function usesPrimaryPricing(): bool
+    {
+        return $this->isBranch() && ($this->branch_pricing_mode ?? 'percentage') === 'percentage';
     }
 
     public function isBranch(): bool

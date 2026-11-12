@@ -272,25 +272,6 @@ class Product extends Model
                      ->where('status', ProductStatus::ACTIVE);
     }
 
-    /** A live branch copy whose current family root belongs to the given supplier. */
-    public function scopeEligiblePrimarySwitchCopy(Builder $query, Supplier $primary): Builder
-    {
-        return $query
-            ->where('is_active', true)
-            ->where('status', ProductStatus::ACTIVE->value)
-            ->whereNotNull('family_product_id')
-            ->whereColumn('family_product_id', '!=', 'products.id')
-            ->whereExists(function ($familyRoot) use ($primary): void {
-                $familyRoot->selectRaw('1')
-                    ->from('products as current_family_root')
-                    ->whereColumn('current_family_root.id', 'products.family_product_id')
-                    ->where('current_family_root.supplier_id', $primary->id)
-                    ->where('current_family_root.is_active', true)
-                    ->where('current_family_root.status', ProductStatus::ACTIVE->value)
-                    ->whereNull('current_family_root.deleted_at');
-            });
-    }
-
     /** Put products with a current price from an active supplier first in catalog results. */
     public function scopePricedFirst(Builder $query): Builder
     {
