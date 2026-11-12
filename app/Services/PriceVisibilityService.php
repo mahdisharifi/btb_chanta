@@ -197,13 +197,14 @@ class PriceVisibilityService
         $prices = collect();
         $supplierIds = [];
         if ($this->canSeeWholesalePrice($user, $product) && $product->relationLoaded('productSuppliers')) {
+            app(SupplierTierAvailabilityService::class)->prime($product->getRelation('productSuppliers')->pluck('supplier_id'));
             $today = now()->toDateString();
             foreach ($product->getRelation('productSuppliers') as $pivot) {
                 $pivotSupplier = $pivot->relationLoaded('supplier') ? $pivot->getRelation('supplier') : null;
                 if (!$pivot->is_active || !$pivotSupplier?->is_active || !$pivot->relationLoaded('prices')
                     || ($supplier && (int) $pivot->supplier_id !== (int) $supplier->id)) continue;
-                $valid = $pivot->getRelation('prices')->filter(function ($price) use ($today) {
-                    return $price->is_active
+                $valid = $pivot->getRelation('prices')->filter(function ($price) use ($today, $pivot) {
+                    return $price->is_active && $pivot->isTierEnabled((int) $price->tier_index)
                         && (!$price->valid_from || \Carbon\Carbon::parse($price->valid_from)->toDateString() <= $today)
                         && (!$price->valid_until || \Carbon\Carbon::parse($price->valid_until)->toDateString() >= $today);
                 });

@@ -154,6 +154,7 @@ class ProductPriceBroadcastService
             ->where('is_active', true)
             ->verifiedSupplier()
             ->get();
+        app(SupplierTierAvailabilityService::class)->prime($productSuppliers->pluck('supplier_id'));
         $productSuppliers->each(function (ProductSupplier $productSupplier): void {
             $enabledPrices = $productSupplier->prices->filter(
                 fn (ProductPrice $price): bool => $this->isTierEnabled($productSupplier, (int) $price->tier_index)
@@ -235,6 +236,7 @@ class ProductPriceBroadcastService
                     productAverage: $visibleCount > 0 ? (int) round($roleRanges->sum('total') / $visibleCount) : null,
                     updatedAt: now()->toIso8601String(),
                     requiresPageRefresh: $requiresPageRefresh,
+                    supplierIds: $changedProductSuppliers->pluck('supplier_id')->map(fn ($id): int => (int) $id)->unique()->values()->all(),
                 ));
             } catch (Throwable $exception) {
                 Log::warning('Broadcasting updated product prices failed for audience role.', [
@@ -359,7 +361,7 @@ class ProductPriceBroadcastService
     private function productPriceRanges(array $productIds, \Carbon\CarbonInterface $today): Collection
     {
         $prices = ProductPrice::query()
-            ->with(['priceType:id,code', 'productSupplier:id,tier_enabled'])
+            ->with(['priceType:id,code', 'productSupplier:id,supplier_id,tier_enabled'])
             ->whereIn('product_id', $productIds)
             ->where('is_active', true)
             ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
@@ -390,7 +392,7 @@ class ProductPriceBroadcastService
 
     private function isTierEnabled(ProductSupplier $productSupplier, int $tierIndex): bool
     {
-        $tierEnabled = (array) ($productSupplier->tier_enabled ?? []);
+        $tierEnabled = (array) ($productSupplier->effective_tier_enabled ?? []);
 
         return empty($tierEnabled) || (bool) ($tierEnabled[$tierIndex] ?? true);
     }

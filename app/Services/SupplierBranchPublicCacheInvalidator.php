@@ -24,6 +24,8 @@ class SupplierBranchPublicCacheInvalidator
         )));
 
         Cache::forever(self::GENERATION_KEY, (string) Str::uuid());
+        Cache::add('products.prices.version', 0, now()->addYears(10));
+        Cache::increment('products.prices.version');
 
         foreach ([
             'home:products:featured:priced-first-v2',

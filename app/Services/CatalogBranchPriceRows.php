@@ -20,7 +20,7 @@ final class CatalogBranchPriceRows
 
         $selectedTypesByTier = $this->selectedTypesByTier($selectedPriceTypes, $priceTypesById);
         $rows = [];
-        $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'بار'];
+        $tierNames = [0 => 'زیرکارتن', 1 => 'کارتن', 2 => 'عمده', 3 => 'کل موجودی'];
 
         foreach ($selectedTypesByTier as $tierIndex => $priceTypeIds) {
             $tierName = $tierNames[(int) $tierIndex] ?? "تیراژ {$tierIndex}";

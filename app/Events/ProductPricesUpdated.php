@@ -25,6 +25,8 @@ class ProductPricesUpdated implements ShouldBroadcast, ShouldDispatchAfterCommit
         public readonly ?int $productAverage,
         public readonly string $updatedAt,
         public readonly bool $requiresPageRefresh = false,
+        // Queue attribution only; deliberately excluded from broadcastWith().
+        public readonly array $supplierIds = [],
     ) {
     }
 
