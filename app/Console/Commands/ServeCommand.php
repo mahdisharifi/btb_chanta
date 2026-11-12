@@ -85,8 +85,8 @@ class ServeCommand extends LaravelServeCommand
 
         $commands = [
             'server' => $server,
-            // Run ready jobs immediately; yield briefly when the queue is empty.
-            'queue' => ['queue:listen', $connection, '--queue='.$queues, '--sleep=0.25', '--rest=0', '--timeout=60', '--no-interaction'],
+            // Development jobs may exceed a minute; a listener timeout would stop the server too.
+            'queue' => ['queue:listen', $connection, '--queue='.$queues, '--sleep=0.25', '--rest=0', '--timeout=0', '--no-interaction'],
             'scheduler' => ['schedule:work', '--no-interaction'],
         ];
 

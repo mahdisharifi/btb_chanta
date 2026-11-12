@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Console\Commands\ServeCommand;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Queue\Listener;
+use Illuminate\Queue\ListenerOptions;
 use Mockery;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputOption;
@@ -38,6 +40,12 @@ class ServeCommandTest extends TestCase
         $this->assertContains('--queue=processing,default', $commands['queue']);
         $this->assertContains('--sleep=0.25', $commands['queue']);
         $this->assertContains('--rest=0', $commands['queue']);
+        $timeoutArgument = array_values(array_filter($commands['queue'], fn ($argument) => str_starts_with($argument, '--timeout=')))[0];
+        $listener = new Listener(base_path());
+        $worker = $listener->makeProcess('database', 'processing,default', new ListenerOptions(
+            timeout: (int) substr($timeoutArgument, strlen('--timeout=')),
+        ));
+        $this->assertNull($worker->getTimeout(), 'Development queue jobs must not time out and stop the server.');
         foreach ($commands as $arguments) {
             $this->assertContains('--env=testing', $arguments);
         }

@@ -10,8 +10,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('suppliers', function (Blueprint $table): void {
-            $table->string('active_branch_name', 120)->nullable()
-                ->virtualAs('CASE WHEN is_active = 1 AND deleted_at IS NULL THEN branch_name ELSE NULL END');
+            $column = $table->string('active_branch_name', 120)->nullable();
+            $expression = 'CASE WHEN is_active = 1 AND deleted_at IS NULL THEN branch_name ELSE NULL END';
+            if (in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+                // Indexed VIRTUAL columns can crash MariaDB 10.4 locked reads.
+                $column->storedAs($expression);
+            } else {
+                $column->virtualAs($expression);
+            }
             $table->unique(['parent_supplier_id', 'active_branch_name'], 'suppliers_active_branch_name_unique');
         });
         Schema::table('suppliers', fn (Blueprint $table) => $table->dropUnique('supplier_parent_branch_name_unique'));
