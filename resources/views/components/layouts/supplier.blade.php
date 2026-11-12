@@ -52,7 +52,7 @@
             <a href="{{ route('supplier.branches.transfers') }}"
                class="{{ request()->routeIs('supplier.branches.transfers') ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200' }} group flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200">
                 <x-heroicon-o-clipboard-document-check class="ml-3 h-6 w-6 flex-shrink-0 text-gray-400" />
-                بررسی محصولات شعبه
+                مدیریت محصولات شعبه
             </a>
 
             <!-- اطلاعات فروشگاه -->
@@ -145,14 +145,13 @@
                     <form method="POST" action="{{ route('supplier.branches.switch') }}" class="flex min-w-0 items-center gap-1.5">
                         @csrf
                         <label for="active-supplier-branch" class="sr-only">انتخاب شعبه</label>
-                        <select id="active-supplier-branch" name="branch_id" class="min-h-11 max-w-[42vw] rounded-lg border-gray-300 bg-white py-2 pl-7 pr-2 text-xs font-medium text-gray-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white sm:max-w-56 sm:text-sm">
+                        <select id="active-supplier-branch" name="branch_id" onchange="this.form.requestSubmit()" class="min-h-11 max-w-[42vw] rounded-lg border-gray-300 bg-white py-2 pl-7 pr-2 text-xs font-medium text-gray-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white sm:max-w-56 sm:text-sm">
                             <option value="{{ $branchPrimarySupplier->id }}" @selected((int) $branchCurrentSupplier->id === (int) $branchPrimarySupplier->id)>{{ $branchPrimarySupplier->branchLabel() }}</option>
                             @foreach($branchOptions as $branchOption)
                                 <option value="{{ $branchOption->id }}" @selected((int) $branchCurrentSupplier->id === (int) $branchOption->id)>{{ $branchOption->branchLabel() }}</option>
                             @endforeach
                         </select>
                         <input type="hidden" name="return_to" value="{{ url()->current() }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}">
-                        <button type="submit" class="min-h-11 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 sm:text-sm">جابجایی</button>
                     </form>
                 @endif
 

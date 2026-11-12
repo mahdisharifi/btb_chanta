@@ -321,6 +321,20 @@ class Product extends Model
     /**
      * محصولات ویژه
      */
+    /** Drafts are available only inside their owner's authorized catalog scope. */
+    public function scopeForSupplierCatalog(Builder $query, array $ownerSupplierIds = []): Builder
+    {
+        return $query->where(function (Builder $products) use ($ownerSupplierIds): void {
+            $products->where('products.status', ProductStatus::ACTIVE->value);
+            if ($ownerSupplierIds !== []) {
+                $products->orWhere(function (Builder $drafts) use ($ownerSupplierIds): void {
+                    $drafts->where('products.status', ProductStatus::DRAFT->value)
+                        ->whereIn('products.supplier_id', $ownerSupplierIds);
+                });
+            }
+        });
+    }
+
     public function scopeFeatured(Builder $query): Builder
     {
         return $query->where('is_featured', true);

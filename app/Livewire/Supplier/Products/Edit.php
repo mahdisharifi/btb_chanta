@@ -18,6 +18,23 @@ use Illuminate\Validation\ValidationException;
 class Edit extends Component
 {
     use WithFileUploads;
+    use \App\Livewire\Concerns\ManagesProductQuantityTiers;
+    use \App\Livewire\Concerns\HasProductFormSteps;
+
+    #[\Livewire\Attributes\Locked]
+    public bool $isEdit = true;
+    #[\Livewire\Attributes\Locked]
+    public $productId;
+    #[\Livewire\Attributes\Locked]
+    public $supplier_id;
+    public bool $supplierDraftMode = false;
+    public array $quantity_tiers = [];
+    public int $quantity_per_packaging = 1;
+    public string $packaging_unit_type = 'carton';
+    public bool $tiersApplied = false;
+    public bool $showQuantityTiers = false;
+    public $product_video;
+    public $video_poster;
 
     public Product $product;
     public bool $isBranchCopy = false;
@@ -25,6 +42,7 @@ class Edit extends Component
     public $title;
     public $slug;
     public $category_id;
+    #[\Livewire\Attributes\Locked]
     public $sku;
     public $is_active = true;
     public $short_description;
@@ -55,6 +73,14 @@ class Edit extends Component
 
         // بررسی‌های امنیتی
         $this->product = $this->editableOwnedProduct($product, $supplier);
+        $this->productId = $this->product->id;
+        $this->firstFormStepSaved = true;
+        $this->supplier_id = $supplier->id;
+        $this->quantity_per_packaging = $product->quantity_per_packaging ?? 1;
+        $this->packaging_unit_type = $product->packaging_unit_type ?? 'carton';
+        $this->quantity_tiers = $product->quantity_tiers ?: $this->generateAutoTiers();
+        $this->tiersApplied = true;
+        $this->showQuantityTiers = true;
         $this->isBranchCopy = $supplier->isBranch()
             && $this->product->family_product_id !== null
             && (int) $this->product->family_product_id !== (int) $this->product->id;
@@ -80,7 +106,10 @@ class Edit extends Component
 
         // بارگذاری تصاویر فعلی
         $this->existing_primary_image = $product->galleries()->where('is_primary', true)->first();
-        $this->existing_gallery_images = $product->galleries()->where('is_primary', false)->orderBy('sort_order')->get();
+        $this->existing_gallery_images = $product->galleries()->where('is_primary', false)->where('file_type', 'image')->orderBy('sort_order')->get();
+        if ((int) request()->query('step') === 3) {
+            $this->goToPricingStep();
+        }
     }
 
     public function updatedTitle($value)
@@ -191,11 +220,23 @@ class Edit extends Component
             Storage::disk('public')->delete($gallery->file_path);
             $gallery->delete();
             $this->product->markContentUpdated();
-            $this->existing_gallery_images = $this->product->galleries()->where('is_primary', false)->orderBy('sort_order')->get();
+            $this->existing_gallery_images = $this->product->galleries()->where('is_primary', false)->where('file_type', 'image')->orderBy('sort_order')->get();
         }
     }
 
+    protected function authorizeProductFormStep(): void
+    {
+        $supplier = auth()->user()?->currentSupplier();
+        $this->product = $this->editableOwnedProduct($this->product, $supplier);
+        $this->supplier_id = $supplier->id;
+    }
+
     public function save()
+    {
+        return $this->persistProductForm(false);
+    }
+
+    protected function persistProductForm(bool $firstStepOnly)
     {
         $user = auth()->user();
         $supplierId = $user->currentSupplier()->id;
@@ -207,7 +248,9 @@ class Edit extends Component
         // بررسی‌های امنیتی در زمان ذخیره (استفاده از مقایسه صحیح Enum)
         $this->product = $this->editableOwnedProduct($this->product, $user->currentSupplier());
 
-        $this->validate([
+        $this->validateFirstFormStep();
+
+        $rules = [
             'title' => 'required|string|max:255',
             'slug' => 'required|string|max:255|unique:products,slug,' . $this->product->id,
             'category_id' => 'required|exists:categories,id',
@@ -218,9 +261,13 @@ class Edit extends Component
             'attributeValues.*' => 'nullable|exists:attribute_values,id',
             'primary_image' => 'nullable|image|max:2048',
             'gallery_images.*' => 'nullable|image|max:2048',
-        ]);
+        ];
+        if ($firstStepOnly) {
+            unset($rules['short_description'], $rules['full_description'], $rules['attributeValues.*']);
+        }
+        $this->validate($rules);
 
-        $selectedAttributeValueIds = collect($this->attributeValues)
+        $selectedAttributeValueIds = collect($firstStepOnly ? [] : $this->attributeValues)
             ->filter()
             ->map(fn ($id) => (int) $id)
             ->values();
@@ -240,10 +287,10 @@ class Edit extends Component
         }
 
         if (empty($this->sku)) {
-            $this->sku = 'PRD-' . strtoupper(Str::random(8));
+            $this->sku = Product::generateUniqueSku();
         }
 
-        $this->product->update([
+        $payload = [
             'title' => $this->title,
             'slug' => $this->slug,
             'category_id' => $this->category_id,
@@ -251,11 +298,20 @@ class Edit extends Component
             'is_active' => $this->is_active,
             'short_description' => $this->short_description,
             'full_description' => $this->full_description,
-        ]);
+            'quantity_per_packaging' => $this->quantity_per_packaging,
+            'packaging_unit_type' => $this->packaging_unit_type,
+            'quantity_tiers' => $this->quantity_tiers,
+        ];
+        if ($firstStepOnly) {
+            unset($payload['short_description'], $payload['full_description']);
+        }
+        $this->product->update($payload);
 
         // اتصال ویژگی‌ها
         $validAttributeValues = array_filter($this->attributeValues);
-        $this->product->attributeValues()->sync($validAttributeValues);
+        if (!$firstStepOnly) {
+            $this->product->attributeValues()->sync($validAttributeValues);
+        }
         app(\App\Services\CatalogSnapshotRevisionService::class)->invalidateGlobal();
 
         // ذخیره تصویر اصلی در صورت تغییر
@@ -268,6 +324,7 @@ class Edit extends Component
             $path = $this->primary_image->store('products', 'public');
             $this->product->galleries()->create([
                 'file_path' => $path,
+                'file_type' => 'image',
                 'is_primary' => true,
             ]);
         }
@@ -279,17 +336,38 @@ class Edit extends Component
                 $path = $galImage->store('products/gallery', 'public');
                 $this->product->galleries()->create([
                     'file_path' => $path,
+                    'file_type' => 'image',
                     'is_primary' => false,
                     'sort_order' => $maxSortOrder + $index + 1,
                 ]);
             }
         }
 
+        if ($this->product_video) {
+            $videoPath = $this->product_video->store('products/videos', 'public');
+            $posterPath = $this->video_poster?->store('products/videos/posters', 'public');
+            $this->product->galleries()->create([
+                'file_path' => $videoPath,
+                'file_type' => 'video',
+                'mime_type' => $this->product_video->getMimeType(),
+                'poster_path' => $posterPath,
+                'is_primary' => false,
+                'sort_order' => ($this->product->galleries()->max('sort_order') ?? 0) + 1,
+            ]);
+        }
+
         $this->product->markContentUpdated();
 
         session()->flash('success', 'اطلاعات محصول با موفقیت بروزرسانی شد.');
 
-        return redirect()->route('supplier.products.index');
+        $this->primary_image = null;
+        $this->gallery_images = [];
+        $this->product_video = null;
+        $this->video_poster = null;
+        $this->existing_primary_image = $this->product->galleries()->where('is_primary', true)->first();
+        $this->existing_gallery_images = $this->product->galleries()->where('is_primary', false)->where('file_type', 'image')->orderBy('sort_order')->get();
+
+        return ($firstStepOnly || $this->continueToPricing) ? null : redirect()->route('supplier.products.index');
     }
 
     public function render()
@@ -307,11 +385,7 @@ class Edit extends Component
             ->whereDoesntHave('productSuppliers', fn ($offers) => $offers->where('supplier_id', '!=', $supplier->id))
             ->firstOrFail();
 
-        $isBranchCopy = $supplier->isBranch()
-            && $ownedProduct->family_product_id !== null
-            && (int) $ownedProduct->family_product_id !== (int) $ownedProduct->id;
-
-        if (!$isBranchCopy && $ownedProduct->status !== ProductStatus::DRAFT && $ownedProduct->status !== 'draft') {
+        if ($ownedProduct->status !== ProductStatus::DRAFT && $ownedProduct->status !== 'draft') {
             abort(403, 'فقط محصولات پیش‌نویس و نسخه‌های مستقل شعبه قابل ویرایش هستند.');
         }
 

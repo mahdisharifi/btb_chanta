@@ -112,6 +112,7 @@ class SupplierBranchManagementTest extends TestCase
         $branchMigration->up();
         $precisionMigration = require database_path('migrations/2026_10_30_120000_expand_supplier_branch_price_percentage_precision.php');
         $precisionMigration->up();
+        (require database_path('migrations/2026_11_11_130000_limit_branch_name_uniqueness_to_active_suppliers.php'))->up();
         $this->primaryProduct = Product::findOrFail($legacyProductId);
 
         $this->createSupportingTables();
@@ -228,9 +229,14 @@ class SupplierBranchManagementTest extends TestCase
         $this->addSourceProductDetails();
         $this->authorizeSupplierUserForTest();
         $this->actingAs($this->user);
+        $location = DB::table('cities')->first();
 
         Livewire::test(ManageBranches::class)
             ->set('branchName', 'شعبه غرب')
+            ->set('branchProvinceIds.new', $location->province_id)
+            ->set('branchCityIds.new', $location->id)
+            ->set('newBranchAddress', 'New branch address')
+            ->set('newBranchPostalCode', '1234567890')
             ->call('createBranch')
             ->assertHasNoErrors()
             ->assertRedirect(route('supplier.branches.transfers'));
@@ -238,6 +244,9 @@ class SupplierBranchManagementTest extends TestCase
         $branch = Supplier::query()->where('parent_supplier_id', $this->primary->id)->firstOrFail();
         $this->assertSame($this->primary->user_id, $branch->user_id);
         $this->assertSame($branch->id, (int) session('supplier.active_branch_id'));
+        $this->assertSame((int) $location->id, (int) $branch->city_id);
+        $this->assertSame('New branch address', $branch->address);
+        $this->assertSame('1234567890', $branch->postal_code);
 
         $tehran = $this->locationIds('تهران');
         $shiraz = $this->locationIds('شیراز');
@@ -270,6 +279,7 @@ class SupplierBranchManagementTest extends TestCase
         $this->withSession(['supplier.active_branch_id' => $branch->id]);
         request()->setLaravelSession(app('session')->driver());
         Livewire::test(ProductTransfers::class)
+            ->set('tab', 'pending')
             ->assertSee($this->primaryProduct->title)
             ->assertDontSee('products/source.webp')
             ->call('accept', $transfer->id)
@@ -280,12 +290,12 @@ class SupplierBranchManagementTest extends TestCase
         $this->assertSame($this->primaryProduct->id, $destination->family_product_id);
         $this->assertSame($this->primaryProduct->category_id, $destination->category_id);
         $this->assertSame($this->primaryProduct->title, $destination->title);
-        $this->assertNull($destination->specifications, 'Branch-specific specifications must be entered after acceptance.');
-        $this->assertSame(0, $destination->attributeValues()->count());
+        $this->assertSame($this->primaryProduct->specifications, $destination->specifications);
+        $this->assertSame($this->primaryProduct->attributeValues()->count(), $destination->attributeValues()->count());
         $this->assertDatabaseHas('product_supplier', [
             'product_id' => $destination->id,
             'supplier_id' => $branch->id,
-            'is_active' => 1,
+            'is_active' => 0,
         ]);
         $this->assertSame(1, DB::table('product_prices')->where('product_id', $destination->id)->count());
         $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $destination->id)->value('price'));
@@ -308,21 +318,11 @@ class SupplierBranchManagementTest extends TestCase
             ->accept($this->primary, $branch, $transfer->id);
         $this->assertSame($destination->id, $sameDestination->id, 'Repeated acceptance must be idempotent.');
 
-        $attribute = Attribute::where('name', 'جنس')->firstOrFail();
-        $branchValue = AttributeValue::create(['attribute_id' => $attribute->id, 'value' => 'پلاستیک']);
         $this->actingAs($this->user);
-        Livewire::test(Edit::class, ['product' => $destination])
-            ->assertSet('isBranchCopy', true)
-            ->assertSee('این محصول نسخهٔ مستقل همین شعبه است')
-            ->set('title', 'نسخهٔ شعبه غرب')
-            ->set('attributeValues', [$attribute->id => $branchValue->id])
-            ->call('save')
-            ->assertRedirect(route('supplier.products.index'));
+        Livewire::test(Edit::class, ['product' => $destination])->assertForbidden();
+        $this->assertSame($this->primaryProduct->title, $destination->fresh()->title);
+        $this->assertSame($this->primaryProduct->specifications, $destination->fresh()->specifications);
 
-        $this->assertSame('نسخهٔ شعبه غرب', $destination->fresh()->title);
-        $this->assertSame('محصول قدیمی', $this->primaryProduct->fresh()->title);
-        $this->assertSame([$branchValue->id], $destination->fresh()->attributeValues()->pluck('attribute_values.id')->all());
-        $this->assertSame(1, $this->primaryProduct->fresh()->attributeValues()->count());
 
         Livewire::test(EditPrice::class, ['product' => $destination])
             ->assertSet('isBranchCopy', true)
@@ -1187,7 +1187,7 @@ class SupplierBranchManagementTest extends TestCase
         $this->assertSame($branch->id, (int) $request->session()->get('supplier.active_branch_id'));
     }
 
-    public function test_owner_can_soft_delete_a_branch_without_deleting_sibling_branches(): void
+    public function test_owner_can_permanently_delete_an_unpriced_branch_without_deleting_sibling_branches(): void
     {
         $branchToDelete = $this->makeBranch('شعبه قابل حذف');
         $sibling = $this->makeBranch('شعبه باقی');
@@ -1199,11 +1199,8 @@ class SupplierBranchManagementTest extends TestCase
             ->call('deleteBranch', $branchToDelete->id)
             ->assertHasNoErrors();
 
-        $this->assertSoftDeleted('suppliers', ['id' => $branchToDelete->id]);
-        $this->assertDatabaseHas('supplier_branch_product_transfers', [
-            'target_supplier_id' => $branchToDelete->id,
-            'status' => SupplierBranchProductTransfer::CANCELLED,
-        ]);
+        $this->assertDatabaseMissing('suppliers', ['id' => $branchToDelete->id]);
+        $this->assertDatabaseMissing('supplier_branch_product_transfers', ['target_supplier_id' => $branchToDelete->id]);
         $this->assertSame($sibling->id, (int) $this->primary->branches()->whereKey($sibling->id)->value('id'));
         $this->assertNull(session('supplier.active_branch_id'));
     }
@@ -1495,6 +1492,61 @@ class SupplierBranchManagementTest extends TestCase
         $this->assertSame(0.0, (float) $branchOffer->fresh()->branch_price_percentage);
         $this->assertSame($branch->id, (int) $this->primary->fresh()->parent_supplier_id);
         $this->assertSame(0, DB::table('product_prices')->where('product_id', $this->primaryProduct->id)->count());
+    }
+
+    public function test_branch_creation_requires_a_valid_location_before_saving(): void
+    {
+        $this->authorizeSupplierUserForTest();
+        Livewire::actingAs($this->user)->test(ManageBranches::class)
+            ->set('branchName', 'Incomplete branch')
+            ->call('createBranch')
+            ->assertHasErrors(['branchProvinceIds.new', 'branchCityIds.new']);
+
+        $this->assertSame(0, $this->primary->branches()->count());
+    }
+
+    public function test_unpriced_product_acceptance_creates_a_branch_sales_list_entry_and_is_idempotent(): void
+    {
+        $branch = $this->makeBranch('Unpriced branch');
+        $this->seedTransfers($branch);
+        $transfer = SupplierBranchProductTransfer::where('target_supplier_id', $branch->id)->firstOrFail();
+        $service = app(SupplierBranchTransferService::class);
+        $product = $service->accept($this->primary, $branch, $transfer->id);
+
+        $this->assertSame(1, $branch->products()->where('products.id', $product->id)->count());
+        $this->assertSame(0, DB::table('product_prices')->where('product_id', $product->id)->count());
+        $this->assertFalse((bool) $product->productSuppliers()->where('supplier_id', $branch->id)->firstOrFail()->is_active);
+        $this->assertSame($product->id, $service->accept($this->primary, $branch, $transfer->id)->id);
+        $this->assertSame(1, $branch->products()->count());
+    }
+
+    public function test_primary_can_set_branch_percentages_without_changing_a_sibling_or_publishing_offers(): void
+    {
+        $this->addSourceProductDetails();
+        $this->authorizeSupplierUserForTest();
+        $branch = $this->makeBranch('Pricing branch');
+        $sibling = $this->makeBranch('Sibling pricing branch');
+        $this->seedTransfers($branch);
+        $this->seedTransfers($sibling);
+        $service = app(SupplierBranchTransferService::class);
+        $product = $service->accept($this->primary, $branch, SupplierBranchProductTransfer::where('target_supplier_id', $branch->id)->value('id'));
+        $siblingProduct = $service->accept($this->primary, $sibling, SupplierBranchProductTransfer::where('target_supplier_id', $sibling->id)->value('id'));
+
+        $component = Livewire::actingAs($this->user)->test(ManageBranches::class)
+            ->set('pricingBranchId', (string) $branch->id)
+            ->set('pricingPercentage', '10')
+            ->call('applyBranchPercentage')->assertHasNoErrors();
+        $this->assertSame(1320, (int) DB::table('product_prices')->where('product_id', $product->id)->value('price'));
+
+        $component->set('pricingCategoryId', (string) $product->category_id)
+            ->set('pricingPercentage', '20')->call('applyBranchPercentage')->assertHasNoErrors();
+        $this->assertSame(1440, (int) DB::table('product_prices')->where('product_id', $product->id)->value('price'));
+
+        $component->set('pricingProductId', (string) $product->id)
+            ->set('pricingPercentage', '-10')->call('applyBranchPercentage')->assertHasNoErrors();
+        $this->assertSame(1080, (int) DB::table('product_prices')->where('product_id', $product->id)->value('price'));
+        $this->assertSame(1200, (int) DB::table('product_prices')->where('product_id', $siblingProduct->id)->value('price'));
+        $this->assertFalse((bool) $product->productSuppliers()->where('supplier_id', $branch->id)->firstOrFail()->is_active);
     }
 
     private function addSourceProductDetails(): void
@@ -1886,7 +1938,7 @@ class SupplierBranchManagementTest extends TestCase
     {
         Schema::create('products', function (Blueprint $table): void {
             $table->id();
-            $table->unsignedBigInteger('supplier_id');
+            $table->unsignedBigInteger('supplier_id')->nullable();
             $table->unsignedBigInteger('category_id');
             $table->string('title');
             $table->string('slug')->unique();
@@ -1926,6 +1978,8 @@ class SupplierBranchManagementTest extends TestCase
             $table->string('sku')->nullable();
             $table->boolean('is_primary')->default(false);
             $table->boolean('is_active')->default(true);
+            $table->timestamp('activated_at')->nullable();
+            $table->timestamp('deactivated_at')->nullable();
             $table->char('price_currency', 3)->default('TOM');
             $table->decimal('foreign_price_amount', 20, 4)->nullable();
             $table->boolean('foreign_price_auto_update')->default(false);

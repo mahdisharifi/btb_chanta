@@ -3,14 +3,19 @@
 namespace App\Livewire\Supplier\Branches;
 
 use App\Models\Supplier;
-use App\Models\SupplierBranchProductTransfer;
+use App\Models\Product;
+use App\Models\ProductSupplier;
+use App\Models\Category;
+use App\Services\SupplierBranchPriceSyncService;
 use App\Services\SupplierBranchPrimaryService;
 use App\Services\SupplierBranchTransferService;
+use App\Services\SupplierBranchDeletionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Throwable;
 
@@ -19,10 +24,21 @@ class ManageBranches extends Component
 {
     public string $branchName = '';
     public array $branchProvinceIds = [];
+    public string $newBranchAddress = '';
+    public string $newBranchPostalCode = '';
+    public string $pricingBranchId = '';
+    public string $pricingCategoryId = '';
+    public string $pricingProductId = '';
+    public string $pricingPercentage = '0';
     public array $branchCityIds = [];
     public array $branchCityNames = [];
     public array $branchAddresses = [];
     public array $branchPostalCodes = [];
+    #[Locked]
+    public ?int $deletingBranchId = null;
+    #[Locked]
+    public array $branchDeletionSummary = [];
+    public bool $removeBranchPrices = false;
 
     public function mount(): void
     {
@@ -150,6 +166,7 @@ class ManageBranches extends Component
     public function branches()
     {
         return $this->primarySupplier->branches()
+            ->where('is_active', true)
             ->withCount(['branchProductTransfers as pending_transfers_count' => fn ($query) => $query->where('status', 'pending')])
             ->withExists(['ownedProducts as has_shared_active_product' => fn ($products) => $products
                 ->eligiblePrimarySwitchCopy($this->primarySupplier)])
@@ -159,17 +176,30 @@ class ManageBranches extends Component
     public function createBranch(SupplierBranchTransferService $transferService)
     {
         $primary = auth()->user()->supplier()->firstOrFail();
+        $this->branchName = trim($this->branchName);
         $this->validate([
             'branchName' => [
                 'required',
                 'string',
                 'max:120',
                 Rule::unique('suppliers', 'branch_name')
-                    ->where(fn ($query) => $query->where('parent_supplier_id', $primary->id)),
+                    ->where(fn ($query) => $query->where('parent_supplier_id', $primary->id)
+                        ->where('is_active', true)->whereNull('deleted_at')),
             ],
+            'branchProvinceIds.new' => ['required', 'integer', Rule::exists('provinces', 'id')->where(fn ($query) => $query
+                ->where('country_id', $this->iranCountryId())->where('is_active', true)->whereNull('deleted_at'))],
+            'branchCityIds.new' => ['required', 'integer', Rule::exists('cities', 'id')->where(fn ($query) => $query
+                ->where('country_id', $this->iranCountryId())->where('province_id', (int) ($this->branchProvinceIds['new'] ?? 0))
+                ->where('is_active', true)->whereNull('deleted_at'))],
+            'newBranchAddress' => 'nullable|string|max:255',
+            'newBranchPostalCode' => 'nullable|string|max:20',
         ], [
+            'branchProvinceIds.new.required' => 'استان شعبه را انتخاب کنید.',
+            'branchProvinceIds.new.exists' => 'استان انتخاب‌شده معتبر نیست.',
+            'branchCityIds.new.required' => 'شهر شعبه را انتخاب کنید.',
+            'branchCityIds.new.exists' => 'شهر انتخاب‌شده متعلق به استان انتخابی نیست یا فعال نیست.',
             'branchName.required' => 'نام شعبه را وارد کنید.',
-            'branchName.unique' => 'این نام قبلاً برای یکی از شعبه‌های فروشگاه استفاده شده است.',
+            'branchName.unique' => 'این نام قبلاً برای یکی از شعبه‌های فعال فروشگاه استفاده شده است.',
         ]);
 
         try {
@@ -188,6 +218,14 @@ class ManageBranches extends Component
                 $branch->branch_name = trim($this->branchName);
                 $branch->slug = $this->branchSlug($primary, $this->branchName);
                 $branch->user_id = $primary->user_id;
+                $province = DB::table('provinces')->where('id', $this->branchProvinceIds['new'])->first();
+                $city = DB::table('cities')->where('id', $this->branchCityIds['new'])->first();
+                $branch->province_id = $province->id;
+                $branch->city_id = $city->id;
+                $branch->province = $province->native_name ?: $province->name;
+                $branch->city = $city->native_name ?: $city->name;
+                $branch->address = trim($this->newBranchAddress) ?: null;
+                $branch->postal_code = trim($this->newBranchPostalCode) ?: null;
                 $branch->save();
 
                 $transferService->seedPendingTransfers($primary, $branch);
@@ -204,6 +242,73 @@ class ManageBranches extends Component
         $this->branchName = '';
 
         return redirect()->route('supplier.branches.transfers');
+    }
+
+    public function updatedPricingBranchId(): void
+    {
+        $this->pricingCategoryId = '';
+        $this->pricingProductId = '';
+        unset($this->pricingProducts);
+    }
+
+    public function updatedPricingCategoryId(): void
+    {
+        $this->pricingProductId = '';
+        unset($this->pricingProducts);
+    }
+
+    #[Computed]
+    public function pricingCategories()
+    {
+        return Category::query()->orderBy('name')->get(['id', 'name']);
+    }
+
+    #[Computed]
+    public function pricingProducts()
+    {
+        $branch = $this->primarySupplier->branches()->whereKey((int) $this->pricingBranchId)->where('is_active', true)->first();
+        if (!$branch) {
+            return collect();
+        }
+
+        return Product::query()->where('supplier_id', $branch->id)
+            ->whereHas('productSuppliers', fn ($query) => $query->where('supplier_id', $branch->id))
+            ->when($this->pricingCategoryId !== '', fn ($query) => $query->where('category_id', (int) $this->pricingCategoryId))
+            ->orderBy('title')->get(['id', 'title']);
+    }
+
+    public function applyBranchPercentage(SupplierBranchPriceSyncService $syncService): void
+    {
+        $this->validate([
+            'pricingBranchId' => 'required|integer',
+            'pricingCategoryId' => 'nullable|integer|exists:categories,id',
+            'pricingProductId' => 'nullable|integer',
+            'pricingPercentage' => 'required|numeric|decimal:0,12|between:-99.999999,999.999999',
+        ]);
+
+        $count = DB::transaction(function () use ($syncService): int {
+            $primary = Supplier::query()->whereKey($this->primarySupplier->id)
+                ->where('user_id', auth()->id())->whereNull('parent_supplier_id')->lockForUpdate()->firstOrFail();
+            $branch = $primary->branches()->whereKey((int) $this->pricingBranchId)
+                ->where('is_active', true)->lockForUpdate()->firstOrFail();
+            $products = Product::query()->where('supplier_id', $branch->id)
+                ->whereNotNull('family_product_id')->whereColumn('family_product_id', '!=', 'id')
+                ->whereHas('productSuppliers', fn ($query) => $query->where('supplier_id', $branch->id))
+                ->when($this->pricingCategoryId !== '', fn ($query) => $query->where('category_id', (int) $this->pricingCategoryId))
+                ->when($this->pricingProductId !== '', fn ($query) => $query->whereKey((int) $this->pricingProductId))
+                ->lockForUpdate()->get();
+            foreach ($products as $product) {
+                $offer = ProductSupplier::query()->where('supplier_id', $branch->id)
+                    ->where('product_id', $product->id)->lockForUpdate()->firstOrFail();
+                $offer->update(['branch_price_percentage' => $this->pricingPercentage]);
+                $syncService->syncBranchProduct($product, $branch, (float) $this->pricingPercentage);
+            }
+
+            return $products->count();
+        }, 3);
+
+        $this->dispatch('notify', ['type' => $count ? 'success' : 'info',
+            'message' => $count ? "درصد قیمت برای {$count} محصول شعبه ذخیره شد." : 'محصولی در لیست فروش شعبه با این انتخاب وجود ندارد.']);
     }
 
     public function saveLocation(int $supplierId): void
@@ -323,23 +428,50 @@ class ManageBranches extends Component
         $this->dispatch('notify', ['type' => 'success', 'message' => 'نشانی شعبه ذخیره شد.']);
     }
 
+    #[Computed]
+    public function archivedBranches()
+    {
+        return $this->primarySupplier->branches()->withTrashed()
+            ->where(fn ($query) => $query->where('is_active', false)->orWhereNotNull('deleted_at'))->get();
+    }
+
+    public function reviewBranchDeletion(int $supplierId): void
+    {
+        $this->branchDeletionSummary = app(SupplierBranchDeletionService::class)->summary($this->primarySupplier, $supplierId);
+        $this->deletingBranchId = $supplierId;
+        $this->removeBranchPrices = false;
+        $this->resetErrorBag('branchDeletion');
+    }
+
+    public function cancelBranchDeletion(): void
+    {
+        $this->deletingBranchId = null;
+        $this->branchDeletionSummary = [];
+        $this->removeBranchPrices = false;
+        $this->resetErrorBag('branchDeletion');
+    }
+
+    public function confirmBranchDeletion(): void
+    {
+        if ($this->deletingBranchId === null) {
+            return;
+        }
+
+        $supplierId = $this->deletingBranchId;
+        app(SupplierBranchDeletionService::class)->delete($this->primarySupplier, $supplierId, $this->removeBranchPrices);
+        $this->finishBranchDeletion($supplierId);
+        $this->cancelBranchDeletion();
+    }
+
     public function deleteBranch(int $supplierId): void
     {
-        DB::transaction(function () use ($supplierId): void {
-            $branch = $this->primarySupplier->branches()->whereKey($supplierId)->lockForUpdate()->firstOrFail();
-            $now = now();
+        app(SupplierBranchDeletionService::class)->delete($this->primarySupplier, $supplierId);
 
-            SupplierBranchProductTransfer::query()
-                ->where('target_supplier_id', $branch->id)
-                ->where('status', SupplierBranchProductTransfer::PENDING)
-                ->update([
-                    'status' => SupplierBranchProductTransfer::CANCELLED,
-                    'decided_at' => $now,
-                    'updated_at' => $now,
-                ]);
+        $this->finishBranchDeletion($supplierId);
+    }
 
-            $branch->delete();
-        }, 3);
+    private function finishBranchDeletion(int $supplierId): void
+    {
 
         if ((int) session('supplier.active_branch_id') === $supplierId) {
             session()->forget('supplier.active_branch_id');
@@ -353,9 +485,14 @@ class ManageBranches extends Component
             $this->branchPostalCodes[$supplierId],
             $this->availableCitiesByProvince
         );
-        unset($this->branches);
+        unset($this->branches, $this->archivedBranches, $this->pricingProducts);
+        if ((int) $this->pricingBranchId === $supplierId) {
+            $this->pricingBranchId = '';
+            $this->pricingCategoryId = '';
+            $this->pricingProductId = '';
+        }
 
-        $this->dispatch('notify', ['type' => 'success', 'message' => 'شعبه از فهرست شعب فعال حذف شد.']);
+        $this->dispatch('notify', ['type' => 'success', 'message' => 'شعبه به‌طور کامل حذف شد؛ خود محصولات حفظ شدند.']);
     }
 
     public function makePrimary(int $supplierId)

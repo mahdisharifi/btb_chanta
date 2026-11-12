@@ -1,0 +1,1 @@
+<button type="button" wire:click="previousFormStep" wire:loading.attr="disabled" class="w-full rounded-lg border border-gray-300 px-5 py-2.5 text-gray-700 dark:border-gray-600 dark:text-gray-200 sm:w-auto">مرحله قبل</button>

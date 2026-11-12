@@ -100,17 +100,15 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-right">
                         <div class="flex items-center justify-end gap-3">
 
-                            {{-- محصول کپی‌شدهٔ شعبه ویرایش درصد خودش را از صفحهٔ قیمت‌گذاری شعبه می‌گیرد. --}}
-                            @if($this->supplier->isBranch()
-                                && $product->family_product_id !== null
-                                && (int) $product->family_product_id !== (int) $product->id)
+                            {{-- قیمت‌گذاری محصولات ذخیره‌شده، شامل پیش‌نویس‌های مرحلهٔ اول. --}}
+                            @if((int) $product->supplier_id === (int) $this->supplier->id)
                             <a href="{{ route('supplier.products.edit-price', ['product' => $product->id]) }}"
                                wire:navigate
-                               aria-label="ویرایش درصد اختلاف قیمت شعبه برای {{ $product->title }}"
-                               title="ویرایش درصد اختلاف قیمت شعبه"
+                               aria-label="قیمت‌گذاری {{ $product->title }}"
+                               title="قیمت‌گذاری"
                                class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-indigo-200 px-3 text-indigo-700 transition-colors hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/30">
                                 <span aria-hidden="true" class="text-base font-bold">٪</span>
-                                <span>اختلاف قیمت</span>
+                                <span>قیمت‌گذاری</span>
                             </a>
                             @endif
 

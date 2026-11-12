@@ -16,6 +16,11 @@ class Supplier extends Model
 {
     use \Illuminate\Database\Eloquent\Factories\HasFactory, SoftDeletes, HasLockableFields;
 
+    public function replicate(?array $except = null)
+    {
+        return parent::replicate(array_merge($except ?? [], ['active_branch_name']));
+    }
+
     protected $fillable = [
         // User relation
         'user_id',

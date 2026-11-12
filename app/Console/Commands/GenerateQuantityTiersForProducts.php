@@ -220,7 +220,7 @@ class GenerateQuantityTiersForProducts extends Command
                     'is_active' => true,
                 ],
                 [
-                    'name' => 'بار',
+                    'name' => 'کل موجودی',
                     'min_quantity' => 16,
                     'max_quantity' => null,
                     'description' => "16 {$unitLabel} به بالا",
@@ -254,7 +254,7 @@ class GenerateQuantityTiersForProducts extends Command
                     'is_active' => true,
                 ],
                 [
-                    'name' => 'بار',
+                    'name' => 'کل موجودی',
                     'min_quantity' => ($qtyPerPack * 15) + 1,
                     'max_quantity' => null,
                     'description' => "16 {$unitLabel} به بالا (" . (($qtyPerPack * 15) + 1) . " عدد به بالا)",
@@ -287,7 +287,7 @@ class GenerateQuantityTiersForProducts extends Command
                 'is_active' => true,
             ],
             [
-                'name' => 'بار',
+                'name' => 'کل موجودی',
                 'min_quantity' => ($qtyPerPack * 15) + 1,
                 'max_quantity' => null,
                 'description' => "16 {$unitLabel} به بالا (" . (($qtyPerPack * 15) + 1) . " عدد به بالا)",

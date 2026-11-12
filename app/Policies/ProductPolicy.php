@@ -5,6 +5,7 @@ namespace App\Policies;
 use App\Models\Product;
 use App\Models\User;
 use App\Enums\UserRole;
+use App\Enums\ProductStatus;
 
 
 class ProductPolicy
@@ -69,7 +70,8 @@ class ProductPolicy
         }
 
         if ($user->hasRole(UserRole::SUPPLIER->value)) {
-            return $product->supplier?->user_id === $user->id;
+            return $product->supplier?->user_id === $user->id
+                && $product->status === ProductStatus::DRAFT;
         }
 
         return false;
@@ -86,7 +88,8 @@ class ProductPolicy
         }
 
         if ($user->hasRole(UserRole::SUPPLIER->value)) {
-            return $product->supplier?->user_id === $user->id;
+            return $product->supplier?->user_id === $user->id
+                && $product->status === ProductStatus::DRAFT;
         }
 
         return false;
@@ -159,7 +162,8 @@ class ProductPolicy
         }
 
         if ($user->hasRole(UserRole::SUPPLIER->value)) {
-            return $product->supplier?->user_id === $user->id;
+            return $product->supplier?->user_id === $user->id
+                && $product->status === ProductStatus::DRAFT;
         }
 
         return false;

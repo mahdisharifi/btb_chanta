@@ -1,0 +1,1 @@
+<button type="submit" wire:loading.attr="disabled" class="w-full rounded-lg bg-indigo-600 px-6 py-2.5 font-medium text-white hover:bg-indigo-700 disabled:opacity-50 sm:w-auto">ذخیره محصول و ادامهٔ اختیاری</button>

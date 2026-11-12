@@ -125,8 +125,7 @@ class MyProducts extends Component
     private function offerHasPrices(ProductSupplier $offer): bool
     {
         return $offer->prices()->exists()
-            || (float) $offer->foreign_price_amount > 0
-            || (int) $offer->cost_price > 0;
+            || (float) $offer->foreign_price_amount > 0;
     }
 
     public function render()
@@ -135,11 +134,14 @@ class MyProducts extends Component
 
         $products = $supplier->products()
             ->when($this->search, function ($query) {
-                $query->where('title_fa', 'like', '%' . $this->search . '%')
-                    ->orWhere('title_en', 'like', '%' . $this->search . '%');
+                $query->where(function ($titles) {
+                    $titles->where('title', 'like', '%' . $this->search . '%')
+                        ->orWhere('title_fa', 'like', '%' . $this->search . '%')
+                        ->orWhere('title_en', 'like', '%' . $this->search . '%');
+                });
             })
             // فیلدهای price و stock_quantity از اینجا حذف شدند
-            ->withPivot(['id', 'status', 'is_active', 'foreign_price_amount', 'cost_price'])
+            ->withPivot(['id', 'status', 'is_active', 'foreign_price_amount'])
             ->paginate(10);
 
         $offerIds = $products->getCollection()

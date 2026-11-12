@@ -26,6 +26,46 @@ class ProductSelection extends Component
     public $marketOpportunity = ''; // '', 'no_supplier'
     public $viewMode = 'grid'; // grid, list
 
+    public $draftBranchId = '';
+
+    protected function draftSuppliers()
+    {
+        $user = Auth::user();
+        $primary = $user->supplier()->firstOrFail();
+
+        return \App\Models\Supplier::query()
+            ->where('user_id', $user->id)
+            ->where(fn ($query) => $query->whereKey($primary->id)->orWhere('parent_supplier_id', $primary->id));
+    }
+
+    protected function draftProductsQuery()
+    {
+        return Product::query()
+            ->with(['supplier', 'category'])
+            ->where('status', ProductStatus::DRAFT->value)
+            ->whereIn('supplier_id', $this->draftSuppliers()->select('id'))
+            ->when($this->draftBranchId !== '', fn ($query) => $query->where('supplier_id', $this->draftBranchId))
+            ->when($this->search !== '', fn ($query) => $query->where('title', 'like', '%'.$this->search.'%'))
+            ->when($this->categoryId !== '', fn ($query) => $query->where('category_id', $this->categoryId))
+            ->latest();
+    }
+
+    public function updatedDraftBranchId(): void
+    {
+        $this->resetPage('draftsPage');
+    }
+
+    public function openDraftProduct(int $productId, int $step = 1)
+    {
+        abort_unless(in_array($step, [1, 3], true), 422);
+        $product = $this->draftProductsQuery()->whereKey($productId)->firstOrFail();
+        $owner = $this->draftSuppliers()->whereKey($product->supplier_id)->firstOrFail();
+        abort_unless($owner->is_active, 403);
+        session()->put('supplier.active_branch_id', $owner->id);
+
+        return redirect()->route('supplier.products.edit', ['product' => $product->id, 'step' => $step]);
+    }
+
     // متغیرهای انتخاب گروهی
     public $selectedProducts = [];
     public $selectAll = false;
@@ -56,6 +96,7 @@ class ProductSelection extends Component
         // در صورت تغییر فیلترها، به صفحه اول برگردیم
         if (in_array($property, ['search', 'categoryId', 'pricingStatus', 'sort', 'marketOpportunity'])) {
             $this->resetPage();
+            $this->resetPage('draftsPage');
         }
 
         // مدیریت انتخاب همه محصولات در حالت لیست
@@ -235,6 +276,8 @@ class ProductSelection extends Component
         $viewingProduct = $this->viewingProductId ? Product::canonical()->with(['category', 'galleries'])->find($this->viewingProductId) : null;
 
         return view('livewire.supplier.product-selection', [
+            'draftProducts' => $this->draftProductsQuery()->paginate(8, ['*'], 'draftsPage'),
+            'draftBranches' => $this->draftSuppliers()->get(),
             'products' => $products,
             'categories' => $categories,
             'pricedProductIds' => $pricedProductIds,

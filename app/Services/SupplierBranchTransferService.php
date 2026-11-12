@@ -92,13 +92,6 @@ class SupplierBranchTransferService
             })
             ->firstOrFail();
 
-        $sourceOffer = $source->productSuppliers()
-            ->where('supplier_id', $primary->id)
-            ->first();
-        $sourceOfferIsActive = $sourceOffer
-            ? (bool) $sourceOffer->is_active
-            : ((int) $source->supplier_id === (int) $primary->id && (bool) $source->is_active);
-
         return app(SupplierBranchProductCopyService::class)->copyForBranch(
             $source,
             $branch,
@@ -123,7 +116,9 @@ class SupplierBranchTransferService
                     'decided_at' => now(),
                 ])->save();
             },
-            $sourceOfferIsActive,
+            // Adding to the sales list creates a draft offer, just like EditPrice.
+            // Each branch chooses when to publish its own offer.
+            false,
         );
     }
 

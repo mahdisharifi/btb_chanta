@@ -1,4 +1,5 @@
 <div>
+    @include('livewire.products.partials.branch-drafts')
     <!-- Header -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>

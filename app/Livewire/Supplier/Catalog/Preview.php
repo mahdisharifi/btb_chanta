@@ -20,7 +20,7 @@ use PDF;
 
 class Preview extends Component
 {
-    private const CATALOG_DATA_CACHE_VERSION = 3;
+    private const CATALOG_DATA_CACHE_VERSION = 4;
 
     #[Locked]
     public bool $isAdmin = false;
@@ -526,7 +526,7 @@ class Preview extends Component
 
         // ساخت کوئری اصلی برای دریافت محصولات یونیک
         $query = Product::query()
-            ->where('status', ProductStatus::ACTIVE->value);
+            ->forSupplierCatalog($isAdmin ? [] : $selectedSupplierIds);
 
         // فیلتر بر اساس تامین‌کنندگان
         if (!empty($selectedSupplierIds) && is_array($selectedSupplierIds)) {
@@ -1138,7 +1138,8 @@ class Preview extends Component
             ->all();
         $catalogVersion = Cache::get('catalog_version_' . $this->template->id, 0);
         $cacheKey = 'catalog_' . $this->template->id . '_' . md5(json_encode([
-            'snapshot_schema' => 5,
+            'snapshot_schema' => 6,
+            'include_owned_drafts' => !$this->authenticatedUserIsAdmin(),
             'supplier_ids' => $selectedSupplierIds,
             'active_price_type_ids' => $activePriceTypeIds,
             'settings' => $this->settings,

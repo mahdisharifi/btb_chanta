@@ -80,13 +80,14 @@ class SupplierBranchProductCopyService
                 $product->family_product_id = $familyId;
                 $product->legacy_id = null;
                 $product->seo_canonical_url = null;
-                // Product specifications are branch-specific and must be entered
-                // again after acceptance, while identity/description/images copy.
-                $product->specifications = null;
                 $product->slug = $this->uniqueSlug($source->slug ?: $source->title, $target->id);
                 $product->sku = $this->uniqueSku($source->sku, $target->id);
                 $product->view_count = 0;
                 $product->save();
+
+                $product->attributeValues()->sync($source->attributeValues()->get()->mapWithKeys(
+                    fn ($value) => [$value->id => ['value' => $value->pivot->value]],
+                )->all());
 
                 $galleryAttributes = [];
                 $hasPrimaryGallery = false;

@@ -34,13 +34,12 @@
                     <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">
                         <span class="text-xs text-gray-500">بدون عکس</span>
                     </div>
-                    {{ $product->title_fa }}
+                    {{ $product->title_fa ?: $product->title }}
                 </td>
                 <td class="px-6 py-4 text-gray-600 dark:text-gray-300">
                     @php
                         $hasPrice = $pricedOfferIds->has((int) $product->pivot->id)
-                            || (float) $product->pivot->foreign_price_amount > 0
-                            || (int) $product->pivot->cost_price > 0;
+                            || (float) $product->pivot->foreign_price_amount > 0;
                     @endphp
                     {{ $hasPrice ? 'قیمت ثبت شده' : 'قیمت ثبت نشده' }}
                 </td>
