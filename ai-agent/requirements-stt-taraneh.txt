@@ -1,0 +1,8 @@
+# Optional Persian-finetuned ASR backend (CPU inference).
+# faster-whisper and CTranslate2 are installed by requirements.txt / the main setup.
+torch>=2.2
+transformers>=4.46,<5
+accelerate>=0.34
+pandas>=2.2
+soundfile>=0.12
+huggingface-hub<1.0

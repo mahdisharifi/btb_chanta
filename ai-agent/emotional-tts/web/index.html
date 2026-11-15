@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>آزمایشگاه صدای احساسی فارسی</title>
+  <style>
+    :root { color-scheme: dark; font-family: Vazirmatn, Tahoma, sans-serif; background: #101522; color: #eef2ff; }
+    * { box-sizing: border-box; }
+    body { max-width: 920px; margin: 0 auto; padding: 32px 18px 60px; }
+    h1 { margin-bottom: 8px; font-size: 1.65rem; }
+    p { color: #aab5ce; line-height: 1.9; }
+    .card { background: #1a2335; border: 1px solid #2b3850; border-radius: 16px; padding: 20px; margin-top: 18px; }
+    label { display: block; margin: 14px 0 8px; color: #c5cee0; }
+    textarea, select { width: 100%; color: #eef2ff; background: #111a2a; border: 1px solid #35445f; border-radius: 10px; padding: 12px; font: inherit; }
+    textarea { min-height: 210px; resize: vertical; line-height: 1.9; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    button { border: 0; border-radius: 10px; padding: 12px 22px; background: #8b79ff; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    audio { width: 100%; margin-top: 14px; }
+    #status, #message { font-size: .9rem; }
+    .notice { padding: 12px 14px; border-right: 3px solid #f2b84b; background: #302a1e; border-radius: 8px; color: #ffdfa0; }
+    .ok { color: #83e4b1; } .bad { color: #ff9b9b; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } body { padding-top: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>آزمایشگاه صدای احساسی فارسی</h1>
+  <p>یک متن ثابت را با حس‌های مختلف بساز و صداها را کنار هم گوش کن. موتور TTS از پروژه‌ی VoxCPM است و سرویس آزمایشی از برنامه‌ی اصلی جداست.</p>
+  <div class="card">
+    <p id="status">در حال بررسی سرویس…</p>
+    <label for="text">متن پاسخ</label>
+    <textarea id="text">سلام، خیلی خوشحالم که امروز اینجایی. بگو چطور می‌تونم کمکت کنم؟</textarea>
+    <div class="row">
+      <div>
+        <label for="emotion">حس</label>
+        <select id="emotion">
+          <option value="neutral">خنثی</option>
+          <option value="warm">گرم و صمیمی</option>
+          <option value="happy">شاد</option>
+          <option value="excited">هیجان‌زده</option>
+          <option value="sad">غمگین</option>
+          <option value="fear">نگران / ترسیده</option>
+          <option value="anger">عصبانی</option>
+        </select>
+      </div>
+      <div>
+        <label for="tag">آوای اختیاری</label>
+        <select id="tag">
+          <option value="none">بدون آوا</option>
+          <option value="breath">نفس</option>
+          <option value="sighs">آه</option>
+          <option value="uhm">مکث گفتاری</option>
+          <option value="chuckles">خنده‌ی کوتاه</option>
+          <option value="yawns">خمیازه</option>
+        </select>
+      </div>
+    </div>
+    <p class="notice">این وزن فارسی برای ارزیابی و استفاده‌ی شخصی/پژوهشی منتشر شده؛ برای محصول یا سرویس تجاری، مجوز و حقوق داده‌های آموزشی باید جداگانه روشن شود.</p>
+    <button id="synthesize">ساخت صدا</button>
+    <p id="message" aria-live="polite"></p>
+    <audio id="audio" controls hidden></audio>
+  </div>
+  <script>
+    const statusText = document.querySelector('#status');
+    const message = document.querySelector('#message');
+    const button = document.querySelector('#synthesize');
+    const player = document.querySelector('#audio');
+    let previousUrl;
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const info = await response.json();
+        if (info.model_files_present) {
+          statusText.textContent = info.loaded ? `مدل آماده است (${info.device})` : 'فایل‌های مدل حاضرند؛ مدل با اولین درخواست بارگذاری می‌شود.';
+          statusText.className = 'ok';
+        } else {
+          statusText.textContent = `فایل‌های مدل هنوز دانلود نشده‌اند (${info.missing_model_files.join('، ')})`;
+          statusText.className = 'bad';
+        }
+      } catch {
+        statusText.textContent = 'سرویس در دسترس نیست.';
+        statusText.className = 'bad';
+      }
+    }
+
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      message.textContent = 'در حال ساخت صدا؛ روی CPU ممکن است چند دقیقه طول بکشد…';
+      message.className = '';
+      try {
+        const response = await fetch('/api/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: document.querySelector('#text').value,
+            emotion: document.querySelector('#emotion').value,
+            tag: document.querySelector('#tag').value,
+          }),
+        });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || 'درخواست ناموفق بود.');
+        }
+        const blob = await response.blob();
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        previousUrl = URL.createObjectURL(blob);
+        player.src = previousUrl;
+        player.hidden = false;
+        message.textContent = 'صدا آماده شد.';
+        message.className = 'ok';
+      } catch (error) {
+        message.textContent = error.message;
+        message.className = 'bad';
+      } finally {
+        button.disabled = false;
+        refreshStatus();
+      }
+    });
+    refreshStatus();
+  </script>
+</body>
+</html>
