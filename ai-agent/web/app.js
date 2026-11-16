@@ -859,8 +859,8 @@ async function connectLiveTranscription() {
     let payload;
     try { payload = JSON.parse(event.data); } catch { return; }
     if (payload.type === 'partial' && payload.text) {
-      messageInput.value = payload.text;
-      setVoiceStatus('متن موقت حین صحبت به‌روز شد؛ بعد از توقف، تشخیص نهایی و دقیق‌تر جایگزین می‌شود.');
+      updateLiveTranscriptPreview(payload.text);
+      setVoiceStatus('در حال تشخیص گفتار؛ پیش‌نویس موقت است و متن نهایی بعد از توقف می‌آید.');
     } else if (payload.type === 'error') {
       setVoiceStatus(`پیش‌نمایش زنده قطع شد؛ متن نهایی بعد از توقف تشخیص داده می‌شود: ${payload.message}`);
     }
@@ -1109,6 +1109,7 @@ async function toggleRecording() {
   }
 
   try {
+    clearLiveTranscriptPreview();
     recordingStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         ...(microphoneSelect.value ? { deviceId: { exact: microphoneSelect.value } } : {}),
@@ -1137,6 +1138,7 @@ async function toggleRecording() {
     });
     recorder.addEventListener('stop', async () => {
       await stopLiveAudioCapture();
+      clearLiveTranscriptPreview();
       recordingStream?.getTracks().forEach(track => track.stop());
       recordingStream = null;
       recordButton.classList.remove('recording');
@@ -1163,6 +1165,7 @@ async function toggleRecording() {
         setVoiceStatus(`با ${recognition.model} تشخیص داده شد؛ ورودی: ${recordingMicrophoneLabel}. ${quality}. متن را بررسی/اصلاح کن و بعد «ارسال» را بزن.`);
         messageInput.focus();
       } catch (error) {
+        clearLiveTranscriptPreview();
         appendMessage('assistant', `تبدیل گفتار ناموفق بود: ${error.message}`, true);
         setVoiceStatus('صدای ضبط‌شده را در بالا گوش کن؛ گفتار به مدل ارسال نشد.');
         busy = false;
@@ -1187,6 +1190,7 @@ async function toggleRecording() {
       setVoiceStatus('در حال ضبط؛ برای پایان دوباره دکمه را بزن.');
     }
   } catch (error) {
+    clearLiveTranscriptPreview();
     await stopLiveAudioCapture();
     recordingStream?.getTracks().forEach(track => track.stop());
     recordingStream = null;
