@@ -5,6 +5,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import logging
 import math
 import mimetypes
 import os
@@ -12,6 +13,7 @@ import secrets
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -23,6 +25,8 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+
+from realtime_runtime.telemetry import TurnTelemetry
 
 
 ROOT = Path(__file__).resolve().parent
@@ -68,6 +72,7 @@ _piper_voice = None
 _stt_inference_lock = threading.Lock()
 _reference_wav_cache: OrderedDict[str, bytes] = OrderedDict()
 _reference_wav_cache_lock = threading.Lock()
+_realtime_logger = logging.getLogger("ai_agent.realtime")
 
 
 def _taraneh_files_present() -> bool:
@@ -632,7 +637,8 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
     import numpy as np
 
     await websocket.accept()
-    await websocket.send_json({"type": "ready", "sample_rate": 16000, "channels": 1})
+    session_id = secrets.token_hex(8)
+    await websocket.send_json({"type": "ready", "session_id": session_id, "sample_rate": 16000, "channels": 1})
     sample_rate = 16000
     pre_roll: deque[np.ndarray] = deque(maxlen=20)  # 400 ms, independent of WebSocket packet size.
     utterance_frames: list[np.ndarray] = []
@@ -650,12 +656,62 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
     noise_floor = 0.002
     in_speech = False
     utterance_id = 0
+    turn_trace: TurnTelemetry | None = None
 
     def final_utterance_audio() -> np.ndarray:
         audio = np.concatenate(utterance_frames).astype(np.float32, copy=False)
         removable_silence = max(0, consecutive_silence_samples - trailing_context_samples)
         end = max(1, audio.size - removable_silence)
         return audio[:end]
+
+    async def finalize_utterance() -> None:
+        if voiced_samples < minimum_voiced_samples:
+            await websocket.send_json({
+                "type": "discarded",
+                "utterance_id": utterance_id,
+                "reason": "short_or_noisy_audio",
+            })
+            return
+
+        final_samples = final_utterance_audio()
+        endpoint_wait_ms = round(consecutive_silence_samples * 1000.0 / sample_rate, 1)
+        base_measurements = {
+            "utterance_audio_ms": round(final_samples.size * 1000.0 / sample_rate, 1),
+            "endpoint_wait_ms": endpoint_wait_ms,
+        }
+        await websocket.send_json({
+            "type": "finalizing",
+            "session_id": session_id,
+            "utterance_id": utterance_id,
+            "timing": turn_trace.snapshot(**base_measurements) if turn_trace else base_measurements,
+        })
+        if turn_trace:
+            turn_trace.start("stt_final")
+        stt_started_at = time.perf_counter()
+        try:
+            result = await run_in_threadpool(_transcribe_live_samples, final_samples)
+        except Exception as exc:
+            if turn_trace:
+                turn_trace.finish("stt_final")
+            await websocket.send_json({"type": "error", "message": str(exc)})
+            return
+
+        stt_final_ms = round((time.perf_counter() - stt_started_at) * 1000.0, 1)
+        if turn_trace:
+            stt_final_ms = turn_trace.finish("stt_final")
+        timing = (
+            turn_trace.snapshot(**base_measurements, stt_final_ms=stt_final_ms)
+            if turn_trace
+            else {**base_measurements, "stt_final_ms": stt_final_ms}
+        )
+        result["timing"] = timing
+        _realtime_logger.info("voice_turn_metrics %s", json.dumps(timing, ensure_ascii=False))
+        await websocket.send_json({
+            "type": "final",
+            "session_id": session_id,
+            "utterance_id": utterance_id,
+            **result,
+        })
 
     try:
         while True:
@@ -685,12 +741,17 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                     if consecutive_voice_samples >= onset_required_samples:
                         in_speech = True
                         utterance_id += 1
+                        turn_trace = TurnTelemetry(session_id, utterance_id)
                         utterance_frames = list(pre_roll)
                         utterance_samples = sum(int(frame.size) for frame in utterance_frames)
                         partial_at_samples = utterance_samples
                         consecutive_silence_samples = 0
                         voiced_samples = consecutive_voice_samples
-                        await websocket.send_json({"type": "speech_start", "utterance_id": utterance_id})
+                        await websocket.send_json({
+                            "type": "speech_start",
+                            "session_id": session_id,
+                            "utterance_id": utterance_id,
+                        })
                     continue
 
                 utterance_frames.append(samples)
@@ -703,27 +764,30 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
 
                 if utterance_samples - partial_at_samples >= 2 * 16000 and utterance_samples >= 32000:
                     partial_samples = np.concatenate(utterance_frames).astype(np.float32, copy=False)
+                    if turn_trace:
+                        turn_trace.start("stt_partial")
+                    partial_started_at = time.perf_counter()
                     try:
                         partial_text = await run_in_threadpool(_transcribe_partial_samples, partial_samples)
+                        partial_stt_ms = round((time.perf_counter() - partial_started_at) * 1000.0, 1)
+                        if turn_trace:
+                            turn_trace.finish("stt_partial")
                         await websocket.send_json({
                             "type": "partial",
+                            "session_id": session_id,
                             "utterance_id": utterance_id,
                             "text": partial_text,
+                            "timing": turn_trace.snapshot(
+                                partial_audio_ms=round(utterance_samples * 1000.0 / sample_rate, 1),
+                                partial_stt_ms=partial_stt_ms,
+                            ) if turn_trace else {"partial_stt_ms": partial_stt_ms},
                         })
                     except Exception as exc:
                         await websocket.send_json({"type": "error", "message": str(exc)})
                     partial_at_samples = utterance_samples
 
                 if consecutive_silence_samples >= end_silence_samples or utterance_samples >= 30 * sample_rate:
-                    if voiced_samples >= minimum_voiced_samples:
-                        final_samples = final_utterance_audio()
-                        try:
-                            result = await run_in_threadpool(_transcribe_live_samples, final_samples)
-                            await websocket.send_json({"type": "final", "utterance_id": utterance_id, **result})
-                        except Exception as exc:
-                            await websocket.send_json({"type": "error", "message": str(exc)})
-                    else:
-                        await websocket.send_json({"type": "discarded", "utterance_id": utterance_id, "reason": "short_or_noisy_audio"})
+                    await finalize_utterance()
                     pre_roll.clear()
                     utterance_frames = []
                     utterance_samples = 0
@@ -731,6 +795,7 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                     consecutive_voice_samples = 0
                     consecutive_silence_samples = 0
                     voiced_samples = 0
+                    turn_trace = None
                     in_speech = False
                 continue
 
@@ -742,15 +807,7 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                     control = {}
                 if control.get("type") == "stop":
                     if in_speech and utterance_frames:
-                        if voiced_samples >= minimum_voiced_samples:
-                            final_samples = final_utterance_audio()
-                            try:
-                                result = await run_in_threadpool(_transcribe_live_samples, final_samples)
-                                await websocket.send_json({"type": "final", "utterance_id": utterance_id, **result})
-                            except Exception as exc:
-                                await websocket.send_json({"type": "error", "message": str(exc)})
-                        else:
-                            await websocket.send_json({"type": "discarded", "utterance_id": utterance_id, "reason": "short_or_noisy_audio"})
+                        await finalize_utterance()
                     break
     except WebSocketDisconnect:
         pass

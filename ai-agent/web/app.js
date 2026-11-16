@@ -32,6 +32,8 @@ let liveConversationSocket = null;
 let liveConversationStream = null;
 let liveConversationActive = false;
 let liveSpeechActive = false;
+let liveSpeechStartedAt = 0;
+let liveFinalizingStartedAt = 0;
 let liveTurnDispatching = false;
 let activeTurnController = null;
 let activeStreamPlayer = null;
@@ -62,6 +64,12 @@ function setConnectionStatus(text, kind = '') {
 
 function setVoiceStatus(text) {
   voiceStatus.textContent = text;
+}
+
+function formatLatency(milliseconds) {
+  if (milliseconds === null || milliseconds === undefined || milliseconds === '') return '—';
+  const value = Number(milliseconds);
+  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)}s` : '—';
 }
 
 function clearLiveTranscriptPreview() {
@@ -324,7 +332,7 @@ class StreamingPcmPlayer {
     this.stopped = false;
   }
 
-  async consume(response) {
+  async consume(response, onFirstAudio = null) {
     if (!response.body) throw new Error('مرورگر جریان صوت را دریافت نکرد.');
     const sampleRate = Number(response.headers.get('X-Audio-Sample-Rate'));
     const channels = Number(response.headers.get('X-Audio-Channels'));
@@ -340,6 +348,12 @@ class StreamingPcmPlayer {
     const frameBytes = channels * 2;
     let carry = new Uint8Array(0);
     let scheduledFrames = 0;
+    let firstAudioNotified = false;
+    const notifyFirstAudio = () => {
+      if (firstAudioNotified) return;
+      firstAudioNotified = true;
+      onFirstAudio?.();
+    };
     const playbackBlockBytes = Math.max(frameBytes, Math.floor(sampleRate * channels * 2 * 0.12 / frameBytes) * frameBytes);
 
     while (true) {
@@ -361,12 +375,16 @@ class StreamingPcmPlayer {
       while (this.playbackPending.length >= playbackBlockBytes) {
         const playbackBlock = this.playbackPending.slice(0, playbackBlockBytes);
         this.playbackPending = this.playbackPending.slice(playbackBlockBytes);
-        scheduledFrames += this.#schedulePcm(playbackBlock, sampleRate, channels);
+        const scheduled = this.#schedulePcm(playbackBlock, sampleRate, channels);
+        scheduledFrames += scheduled;
+        if (scheduled) notifyFirstAudio();
       }
     }
     if (carry.length) throw new Error('جریان صوت در میانه‌ی نمونه قطع شد.');
     if (this.playbackPending.length) {
-      scheduledFrames += this.#schedulePcm(this.playbackPending, sampleRate, channels);
+      const scheduled = this.#schedulePcm(this.playbackPending, sampleRate, channels);
+      scheduledFrames += scheduled;
+      if (scheduled) notifyFirstAudio();
       this.playbackPending = new Uint8Array(0);
     }
     if (!scheduledFrames) throw new Error('موتور صدا هیچ داده‌ای تولید نکرد.');
@@ -559,7 +577,7 @@ function enqueueSpeechSegment(player, text, state) {
     }
     const response = await fetch('/api/synthesize/stream', { method: 'POST', body: form, signal: state.signal });
     if (!response.ok) throw new Error(await readError(response));
-    await player.consume(response);
+    await player.consume(response, () => state.onFirstAudio?.());
     // MOSS already shapes pauses from punctuation; keep only a tiny join
     // cushion so sentence boundaries do not sound artificially separated.
     player.addNaturalGap(state.engine === 'moss' ? 0.03 : 0.09);
@@ -635,7 +653,7 @@ function appendStreamingReplay(player) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-async function sendMessage(rawText, { live = false } = {}) {
+async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
   const text = rawText.trim();
   if (!text || busy) return;
   if (!selectedModel() || !activeToken) {
@@ -657,12 +675,25 @@ async function sendMessage(rawText, { live = false } = {}) {
   let rawAnswer = '';
   let modelTextStreamed = false;
   let speechCursor = 0;
+  const llmStartedAt = performance.now();
+  let llmFirstTokenMs = null;
+  let firstAudioMs = null;
   const speechState = {
     chain: Promise.resolve(),
     error: null,
     engine: ttsEngineSelect?.value || 'piper',
     referenceFile: mossReferenceInput?.files?.[0] || null,
-    signal: turnController.signal
+    signal: turnController.signal,
+    onFirstAudio: () => {
+      if (firstAudioMs !== null) return;
+      firstAudioMs = Math.round(performance.now() - llmStartedAt);
+      const fromFinalizeMs = inputTiming?.finalizing_client_at
+        ? Math.round(performance.now() - inputTiming.finalizing_client_at)
+        : null;
+      if (live && fromFinalizeMs !== null) {
+        setVoiceStatus(`اولین صدای پاسخ آماده شد · ${formatLatency(fromFinalizeMs)} از شروع نهایی‌سازی ورودی`);
+      }
+    }
   };
 
   try {
@@ -711,6 +742,7 @@ async function sendMessage(rawText, { live = false } = {}) {
         throw new Error('درگاه API پاسخ را با قالب جریانی یا JSON برنگرداند.');
       }
       rawAnswer = extractFinalAnswer(payload);
+      llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
       updateAnswer(true);
     } else {
       modelTextStreamed = true;
@@ -719,6 +751,7 @@ async function sendMessage(rawText, { live = false } = {}) {
         const delta = choice?.delta || (typeof choice?.text === 'string' ? { content: choice.text } : null);
         const deltaText = streamDeltaText(delta);
         if (!deltaText) continue;
+        if (llmFirstTokenMs === null) llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
         rawAnswer += deltaText;
         updateAnswer(false);
       }
@@ -732,16 +765,19 @@ async function sendMessage(rawText, { live = false } = {}) {
     await speechState.chain;
     if (turnController.signal.aborted) throw new DOMException('گفتار کاربر پاسخ را قطع کرد.', 'AbortError');
     appendStreamingReplay(player);
+    const liveTimingSummary = live && inputTiming
+      ? ` · STT ${formatLatency(inputTiming.stt_final_ms)} · اولین متن مدل ${formatLatency(llmFirstTokenMs)} · اولین صدا ${formatLatency(firstAudioMs)}`
+      : '';
     if (speechState.error) {
-      setVoiceStatus(`پاسخ متنی آماده است؛ جریان TTS اجرا نشد: ${speechState.error.message}`);
+      setVoiceStatus(`پاسخ متنی آماده است؛ جریان TTS اجرا نشد: ${speechState.error.message}${liveTimingSummary}`);
       player.waitForPlayback().catch(() => {}).finally(() => {
         player.close();
         if (activeStreamPlayer === player) activeStreamPlayer = null;
       });
     } else {
       setVoiceStatus(modelTextStreamed
-        ? `متن و صدای پاسخ با ${speechState.engine === 'moss' ? 'MOSS' : 'Piper'} جریانی دریافت شد.`
-        : `درگاه متن را یکجا فرستاد؛ صدای پاسخ با ${speechState.engine === 'moss' ? 'MOSS' : 'Piper'} جریانی پخش شد.`);
+        ? `متن و صدای پاسخ با ${speechState.engine === 'moss' ? 'MOSS' : 'Piper'} جریانی دریافت شد.${liveTimingSummary}`
+        : `درگاه متن را یکجا فرستاد؛ صدای پاسخ با ${speechState.engine === 'moss' ? 'MOSS' : 'Piper'} جریانی پخش شد.${liveTimingSummary}`);
       player.waitForPlayback().catch(() => {}).finally(() => {
         player.close();
         if (activeStreamPlayer === player) activeStreamPlayer = null;
@@ -955,19 +991,19 @@ function interruptLiveTurn() {
   return Promise.resolve();
 }
 
-function queueLiveTurn(text) {
+function queueLiveTurn(text, timing = {}) {
   const utterance = String(text || '').trim();
   if (!utterance || !liveConversationActive) return;
-  liveTurnQueue.push(utterance);
+  liveTurnQueue.push({ text: utterance, timing });
   dispatchLiveTurn();
 }
 
 async function dispatchLiveTurn() {
   if (!liveConversationActive || busy || liveTurnDispatching || !liveTurnQueue.length) return;
   liveTurnDispatching = true;
-  const text = liveTurnQueue.shift();
+  const turn = liveTurnQueue.shift();
   try {
-    await sendMessage(text, { live: true });
+    await sendMessage(turn.text, { live: true, inputTiming: turn.timing });
   } finally {
     liveTurnDispatching = false;
     if (liveTurnQueue.length) dispatchLiveTurn();
@@ -986,19 +1022,32 @@ async function connectLiveConversation() {
       setVoiceStatus('مکالمه‌ی زنده وصل شد؛ صحبت کن. بعد از مکث کوتاه، پاسخ شروع می‌شود.');
     } else if (payload.type === 'speech_start') {
       liveSpeechActive = true;
+      liveSpeechStartedAt = performance.now();
+      liveFinalizingStartedAt = 0;
       clearLiveTranscriptPreview();
       interruptLiveTurn();
       setVoiceStatus('صدای شما دریافت شد؛ پاسخ قبلی قطع شد و دارم گوش می‌دهم…');
     } else if (payload.type === 'partial') {
       updateLiveTranscriptPreview(payload.text);
-      setVoiceStatus('در حال شنیدن؛ پیش‌نویس موقت است و پس از مکث، متن نهایی به مدل می‌رود…');
+      const previewDelay = liveSpeechStartedAt ? Math.round(performance.now() - liveSpeechStartedAt) : null;
+      const partialStt = Number(payload.timing?.partial_stt_ms || 0);
+      setVoiceStatus(`پیش‌نویس موقت · ${formatLatency(previewDelay)} از شروع گفتار · پردازش Whisper ${formatLatency(partialStt)}؛ هنوز به مدل ارسال نشده`);
+    } else if (payload.type === 'finalizing') {
+      liveFinalizingStartedAt = performance.now();
+      setVoiceStatus('پایان گفتار تشخیص داده شد؛ در حال نهایی‌کردن متن…');
     } else if (payload.type === 'final') {
       liveSpeechActive = false;
       clearLiveTranscriptPreview();
       const transcript = String(payload.text || '').trim();
       if (transcript) {
-        setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'}). در حال پاسخ…`);
-        queueLiveTurn(transcript);
+        const timing = {
+          ...(payload.timing || {}),
+          finalization_client_ms: liveFinalizingStartedAt ? Math.round(performance.now() - liveFinalizingStartedAt) : null,
+          finalizing_client_at: liveFinalizingStartedAt || null,
+          utterance_client_ms: liveSpeechStartedAt ? Math.round(performance.now() - liveSpeechStartedAt) : null,
+        };
+        setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'})؛ نهایی‌سازی ${formatLatency(timing.finalization_client_ms)}. در حال پاسخ…`);
+        queueLiveTurn(transcript, timing);
       } else {
         setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
       }
