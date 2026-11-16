@@ -1000,6 +1000,10 @@ async function connectLiveConversation() {
       } else {
         setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
       }
+    } else if (payload.type === 'discarded') {
+      liveSpeechActive = false;
+      clearLiveTranscriptPreview();
+      setVoiceStatus('صدای کوتاه یا نویز به‌عنوان گفتار نادیده گرفته شد؛ ادامه بده.');
     } else if (payload.type === 'error') {
       setVoiceStatus(`تشخیص زنده گفتار خطا داد: ${payload.message}`);
     }

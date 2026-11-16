@@ -633,15 +633,27 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
 
     await websocket.accept()
     await websocket.send_json({"type": "ready", "sample_rate": 16000, "channels": 1})
-    pre_roll: deque[np.ndarray] = deque(maxlen=5)
+    sample_rate = 16000
+    pre_roll: deque[np.ndarray] = deque(maxlen=20)  # 400 ms, independent of WebSocket packet size.
     utterance_frames: list[np.ndarray] = []
     utterance_samples = 0
     partial_at_samples = 0
-    consecutive_voice_frames = 0
-    consecutive_silence_frames = 0
+    consecutive_voice_samples = 0
+    consecutive_silence_samples = 0
+    voiced_samples = 0
+    onset_required_samples = int(0.12 * sample_rate)
+    minimum_voiced_samples = int(0.22 * sample_rate)
+    end_silence_samples = int(0.60 * sample_rate)
+    trailing_context_samples = int(0.12 * sample_rate)
     noise_floor = 0.002
     in_speech = False
     utterance_id = 0
+
+    def final_utterance_audio() -> np.ndarray:
+        audio = np.concatenate(utterance_frames).astype(np.float32, copy=False)
+        removable_silence = max(0, consecutive_silence_samples - trailing_context_samples)
+        end = max(1, audio.size - removable_silence)
+        return audio[:end]
 
     try:
         while True:
@@ -662,27 +674,30 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                 if not in_speech:
                     pre_roll.append(samples)
                     if rms >= onset_threshold:
-                        consecutive_voice_frames += 1
+                        consecutive_voice_samples += int(samples.size)
                     else:
-                        consecutive_voice_frames = 0
+                        consecutive_voice_samples = 0
                         if rms < 0.03:
-                            noise_floor = min(0.018, noise_floor * 0.95 + rms * 0.05)
-                    if consecutive_voice_frames >= 2:
+                            alpha = 1.0 - math.exp(-samples.size / (sample_rate * 1.5))
+                            noise_floor = min(0.018, noise_floor * (1.0 - alpha) + rms * alpha)
+                    if consecutive_voice_samples >= onset_required_samples:
                         in_speech = True
                         utterance_id += 1
                         utterance_frames = list(pre_roll)
                         utterance_samples = sum(int(frame.size) for frame in utterance_frames)
                         partial_at_samples = utterance_samples
-                        consecutive_silence_frames = 0
+                        consecutive_silence_samples = 0
+                        voiced_samples = consecutive_voice_samples
                         await websocket.send_json({"type": "speech_start", "utterance_id": utterance_id})
                     continue
 
                 utterance_frames.append(samples)
                 utterance_samples += int(samples.size)
                 if rms < silence_threshold:
-                    consecutive_silence_frames += 1
+                    consecutive_silence_samples += int(samples.size)
                 else:
-                    consecutive_silence_frames = 0
+                    consecutive_silence_samples = 0
+                    voiced_samples += int(samples.size)
 
                 if utterance_samples - partial_at_samples >= 2 * 16000 and utterance_samples >= 32000:
                     partial_samples = np.concatenate(utterance_frames).astype(np.float32, copy=False)
@@ -697,19 +712,23 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                         await websocket.send_json({"type": "error", "message": str(exc)})
                     partial_at_samples = utterance_samples
 
-                if consecutive_silence_frames >= 8 or utterance_samples >= 30 * 16000:
-                    final_samples = np.concatenate(utterance_frames).astype(np.float32, copy=False)
-                    try:
-                        result = await run_in_threadpool(_transcribe_live_samples, final_samples)
-                        await websocket.send_json({"type": "final", "utterance_id": utterance_id, **result})
-                    except Exception as exc:
-                        await websocket.send_json({"type": "error", "message": str(exc)})
+                if consecutive_silence_samples >= end_silence_samples or utterance_samples >= 30 * sample_rate:
+                    if voiced_samples >= minimum_voiced_samples:
+                        final_samples = final_utterance_audio()
+                        try:
+                            result = await run_in_threadpool(_transcribe_live_samples, final_samples)
+                            await websocket.send_json({"type": "final", "utterance_id": utterance_id, **result})
+                        except Exception as exc:
+                            await websocket.send_json({"type": "error", "message": str(exc)})
+                    else:
+                        await websocket.send_json({"type": "discarded", "utterance_id": utterance_id, "reason": "short_or_noisy_audio"})
                     pre_roll.clear()
                     utterance_frames = []
                     utterance_samples = 0
                     partial_at_samples = 0
-                    consecutive_voice_frames = 0
-                    consecutive_silence_frames = 0
+                    consecutive_voice_samples = 0
+                    consecutive_silence_samples = 0
+                    voiced_samples = 0
                     in_speech = False
                 continue
 
@@ -721,12 +740,15 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                     control = {}
                 if control.get("type") == "stop":
                     if in_speech and utterance_frames:
-                        final_samples = np.concatenate(utterance_frames).astype(np.float32, copy=False)
-                        try:
-                            result = await run_in_threadpool(_transcribe_live_samples, final_samples)
-                            await websocket.send_json({"type": "final", "utterance_id": utterance_id, **result})
-                        except Exception as exc:
-                            await websocket.send_json({"type": "error", "message": str(exc)})
+                        if voiced_samples >= minimum_voiced_samples:
+                            final_samples = final_utterance_audio()
+                            try:
+                                result = await run_in_threadpool(_transcribe_live_samples, final_samples)
+                                await websocket.send_json({"type": "final", "utterance_id": utterance_id, **result})
+                            except Exception as exc:
+                                await websocket.send_json({"type": "error", "message": str(exc)})
+                        else:
+                            await websocket.send_json({"type": "discarded", "utterance_id": utterance_id, "reason": "short_or_noisy_audio"})
                     break
     except WebSocketDisconnect:
         pass
