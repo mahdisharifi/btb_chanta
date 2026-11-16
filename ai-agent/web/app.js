@@ -32,8 +32,9 @@ let liveConversationSocket = null;
 let liveConversationStream = null;
 let liveConversationActive = false;
 let liveSpeechActive = false;
-let liveSpeechStartedAt = 0;
-let liveFinalizingStartedAt = 0;
+let liveActiveUtteranceId = null;
+let liveLatestUtteranceId = null;
+const liveUtteranceTimings = new Map();
 let liveTurnDispatching = false;
 let activeTurnController = null;
 let activeStreamPlayer = null;
@@ -765,8 +766,9 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
     await speechState.chain;
     if (turnController.signal.aborted) throw new DOMException('گفتار کاربر پاسخ را قطع کرد.', 'AbortError');
     appendStreamingReplay(player);
+    const sttQueueMs = Number(inputTiming?.stt_final_queue_ms || 0);
     const liveTimingSummary = live && inputTiming
-      ? ` · STT ${formatLatency(inputTiming.stt_final_ms)} · اولین متن مدل ${formatLatency(llmFirstTokenMs)} · اولین صدا ${formatLatency(firstAudioMs)}`
+      ? ` · STT ${formatLatency(inputTiming.stt_final_ms)}${sttQueueMs ? ` (صف ${formatLatency(sttQueueMs)})` : ''} · اولین متن مدل ${formatLatency(llmFirstTokenMs)} · اولین صدا ${formatLatency(firstAudioMs)}`
       : '';
     if (speechState.error) {
       setVoiceStatus(`پاسخ متنی آماده است؛ جریان TTS اجرا نشد: ${speechState.error.message}${liveTimingSummary}`);
@@ -999,7 +1001,7 @@ function queueLiveTurn(text, timing = {}) {
 }
 
 async function dispatchLiveTurn() {
-  if (!liveConversationActive || busy || liveTurnDispatching || !liveTurnQueue.length) return;
+  if (!liveConversationActive || liveSpeechActive || busy || liveTurnDispatching || !liveTurnQueue.length) return;
   liveTurnDispatching = true;
   const turn = liveTurnQueue.shift();
   try {
@@ -1022,40 +1024,79 @@ async function connectLiveConversation() {
       setVoiceStatus('مکالمه‌ی زنده وصل شد؛ صحبت کن. بعد از مکث کوتاه، پاسخ شروع می‌شود.');
     } else if (payload.type === 'speech_start') {
       liveSpeechActive = true;
-      liveSpeechStartedAt = performance.now();
-      liveFinalizingStartedAt = 0;
+      liveActiveUtteranceId = payload.utterance_id;
+      liveLatestUtteranceId = payload.utterance_id;
+      liveUtteranceTimings.set(payload.utterance_id, { speech_started_at: performance.now() });
       clearLiveTranscriptPreview();
       interruptLiveTurn();
       setVoiceStatus('صدای شما دریافت شد؛ پاسخ قبلی قطع شد و دارم گوش می‌دهم…');
     } else if (payload.type === 'partial') {
       updateLiveTranscriptPreview(payload.text);
-      const previewDelay = liveSpeechStartedAt ? Math.round(performance.now() - liveSpeechStartedAt) : null;
+      const previewStartedAt = liveUtteranceTimings.get(payload.utterance_id)?.speech_started_at;
+      const previewDelay = previewStartedAt ? Math.round(performance.now() - previewStartedAt) : null;
       const partialStt = Number(payload.timing?.partial_stt_ms || 0);
       setVoiceStatus(`پیش‌نویس موقت · ${formatLatency(previewDelay)} از شروع گفتار · پردازش Whisper ${formatLatency(partialStt)}؛ هنوز به مدل ارسال نشده`);
     } else if (payload.type === 'finalizing') {
-      liveFinalizingStartedAt = performance.now();
+      const finalizedAt = performance.now();
+      const turnTiming = liveUtteranceTimings.get(payload.utterance_id) || {};
+      turnTiming.finalizing_client_at = finalizedAt;
+      liveUtteranceTimings.set(payload.utterance_id, turnTiming);
+      if (liveActiveUtteranceId === payload.utterance_id) {
+        liveSpeechActive = false;
+        liveActiveUtteranceId = null;
+      }
       setVoiceStatus('پایان گفتار تشخیص داده شد؛ در حال نهایی‌کردن متن…');
     } else if (payload.type === 'final') {
-      liveSpeechActive = false;
-      clearLiveTranscriptPreview();
+      const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
+      if (liveActiveUtteranceId === payload.utterance_id) {
+        liveSpeechActive = false;
+        liveActiveUtteranceId = null;
+      }
+      if (isCurrentInput) clearLiveTranscriptPreview();
       const transcript = String(payload.text || '').trim();
       if (transcript) {
+        const turnTiming = liveUtteranceTimings.get(payload.utterance_id) || {};
+        liveUtteranceTimings.delete(payload.utterance_id);
         const timing = {
           ...(payload.timing || {}),
-          finalization_client_ms: liveFinalizingStartedAt ? Math.round(performance.now() - liveFinalizingStartedAt) : null,
-          finalizing_client_at: liveFinalizingStartedAt || null,
-          utterance_client_ms: liveSpeechStartedAt ? Math.round(performance.now() - liveSpeechStartedAt) : null,
+          finalization_client_ms: turnTiming.finalizing_client_at
+            ? Math.round(performance.now() - turnTiming.finalizing_client_at) : null,
+          finalizing_client_at: turnTiming.finalizing_client_at || null,
+          utterance_client_ms: turnTiming.speech_started_at && turnTiming.finalizing_client_at
+            ? Math.round(turnTiming.finalizing_client_at - turnTiming.speech_started_at) : null,
         };
-        setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'})؛ نهایی‌سازی ${formatLatency(timing.finalization_client_ms)}. در حال پاسخ…`);
+        if (isCurrentInput) {
+          setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'})؛ نهایی‌سازی ${formatLatency(timing.finalization_client_ms)}. در حال پاسخ…`);
+        }
         queueLiveTurn(transcript, timing);
       } else {
-        setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
+        liveUtteranceTimings.delete(payload.utterance_id);
+        if (isCurrentInput) setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
+        dispatchLiveTurn();
       }
     } else if (payload.type === 'discarded') {
-      liveSpeechActive = false;
-      clearLiveTranscriptPreview();
-      setVoiceStatus('صدای کوتاه یا نویز به‌عنوان گفتار نادیده گرفته شد؛ ادامه بده.');
+      const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
+      liveUtteranceTimings.delete(payload.utterance_id);
+      if (liveActiveUtteranceId === payload.utterance_id) {
+        liveSpeechActive = false;
+        liveActiveUtteranceId = null;
+      }
+      if (isCurrentInput) {
+        clearLiveTranscriptPreview();
+        setVoiceStatus('صدای کوتاه یا نویز به‌عنوان گفتار نادیده گرفته شد؛ ادامه بده.');
+      }
+      dispatchLiveTurn();
     } else if (payload.type === 'error') {
+      if (String(payload.stage || '').startsWith('stt_')) {
+        const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
+        liveUtteranceTimings.delete(payload.utterance_id);
+        if (liveActiveUtteranceId === payload.utterance_id) {
+          liveSpeechActive = false;
+          liveActiveUtteranceId = null;
+        }
+        dispatchLiveTurn();
+        if (!isCurrentInput) return;
+      }
       setVoiceStatus(`تشخیص زنده گفتار خطا داد: ${payload.message}`);
     }
   });
@@ -1065,6 +1106,9 @@ async function connectLiveConversation() {
     if (liveConversationActive) {
       liveConversationActive = false;
       liveSpeechActive = false;
+      liveActiveUtteranceId = null;
+      liveLatestUtteranceId = null;
+      liveUtteranceTimings.clear();
       clearLiveTranscriptPreview();
       interruptLiveTurn();
       liveTurnQueue.length = 0;
@@ -1120,6 +1164,9 @@ async function startLiveMode() {
     const socket = await connectLiveConversation();
     liveConversationActive = true;
     liveSpeechActive = false;
+    liveActiveUtteranceId = null;
+    liveLatestUtteranceId = null;
+    liveUtteranceTimings.clear();
     await outputReady;
     await startLiveAudioCapture(liveConversationStream, socket);
     refreshControls();
@@ -1140,6 +1187,9 @@ async function startLiveMode() {
 async function stopLiveMode() {
   liveConversationActive = false;
   liveSpeechActive = false;
+  liveActiveUtteranceId = null;
+  liveLatestUtteranceId = null;
+  liveUtteranceTimings.clear();
   clearLiveTranscriptPreview();
   liveTurnQueue.length = 0;
   await interruptLiveTurn();
