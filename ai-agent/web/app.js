@@ -9,6 +9,8 @@ const messageInput = document.querySelector('#message-input');
 const sendButton = document.querySelector('#send-button');
 const recordButton = document.querySelector('#record-button');
 const liveModeButton = document.querySelector('#live-mode-button');
+const liveTranscriptPreview = document.querySelector('#live-transcript-preview');
+const liveTranscriptText = document.querySelector('#live-transcript-text');
 const voiceStatus = document.querySelector('#voice-status');
 const micEnhancement = document.querySelector('#mic-enhancement');
 const microphoneSelect = document.querySelector('#microphone-select');
@@ -35,6 +37,7 @@ let activeTurnController = null;
 let activeStreamPlayer = null;
 let liveOutputAudioContext = null;
 const liveTurnQueue = [];
+let previousLivePartialWords = [];
 let recordingAudioContext = null;
 let recordingAudioProcessor = null;
 let recordingAudioSilenceGain = null;
@@ -59,6 +62,33 @@ function setConnectionStatus(text, kind = '') {
 
 function setVoiceStatus(text) {
   voiceStatus.textContent = text;
+}
+
+function clearLiveTranscriptPreview() {
+  previousLivePartialWords = [];
+  if (liveTranscriptText) liveTranscriptText.textContent = '';
+  if (liveTranscriptPreview) liveTranscriptPreview.hidden = true;
+}
+
+function updateLiveTranscriptPreview(rawText) {
+  const words = String(rawText || '').trim().split(/\s+/).filter(Boolean);
+  const stableWords = [];
+  const length = Math.min(previousLivePartialWords.length, words.length);
+  for (let index = 0; index < length; index += 1) {
+    const previous = previousLivePartialWords[index].replace(/[.,!?؟،؛:…]+$/g, '');
+    const current = words[index].replace(/[.,!?؟،؛:…]+$/g, '');
+    if (previous !== current) break;
+    stableWords.push(words[index]);
+  }
+  previousLivePartialWords = words;
+  const stableText = stableWords.join(' ');
+  if (!stableText || !liveTranscriptPreview || !liveTranscriptText) {
+    clearLiveTranscriptPreview();
+    previousLivePartialWords = words;
+    return;
+  }
+  liveTranscriptText.textContent = stableText;
+  liveTranscriptPreview.hidden = false;
 }
 
 function selectedModel() {
@@ -617,7 +647,7 @@ async function sendMessage(rawText, { live = false } = {}) {
   refreshControls();
   appendMessage('user', text);
   conversation.push({ role: 'user', content: text });
-  messageInput.value = '';
+  if (!live) messageInput.value = '';
   setVoiceStatus('در حال دریافت پاسخ جریانی؛ صدا با رسیدن جمله‌ها شروع می‌شود…');
 
   let assistantContent = null;
@@ -907,7 +937,6 @@ async function dispatchLiveTurn() {
   if (!liveConversationActive || busy || liveTurnDispatching || !liveTurnQueue.length) return;
   liveTurnDispatching = true;
   const text = liveTurnQueue.shift();
-  messageInput.value = text;
   try {
     await sendMessage(text, { live: true });
   } finally {
@@ -928,20 +957,20 @@ async function connectLiveConversation() {
       setVoiceStatus('مکالمه‌ی زنده وصل شد؛ صحبت کن. بعد از مکث کوتاه، پاسخ شروع می‌شود.');
     } else if (payload.type === 'speech_start') {
       liveSpeechActive = true;
+      clearLiveTranscriptPreview();
       interruptLiveTurn();
       setVoiceStatus('صدای شما دریافت شد؛ پاسخ قبلی قطع شد و دارم گوش می‌دهم…');
     } else if (payload.type === 'partial') {
-      if (payload.text) messageInput.value = payload.text;
-      setVoiceStatus(payload.text ? 'در حال شنیدن؛ متن موقت است و بعد از مکث نهایی می‌شود…' : 'در حال شنیدن…');
+      updateLiveTranscriptPreview(payload.text);
+      setVoiceStatus('در حال شنیدن؛ پیش‌نویس موقت است و پس از مکث، متن نهایی به مدل می‌رود…');
     } else if (payload.type === 'final') {
       liveSpeechActive = false;
+      clearLiveTranscriptPreview();
       const transcript = String(payload.text || '').trim();
       if (transcript) {
-        messageInput.value = transcript;
         setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'}). در حال پاسخ…`);
         queueLiveTurn(transcript);
       } else {
-        messageInput.value = '';
         setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
       }
     } else if (payload.type === 'error') {
@@ -954,6 +983,7 @@ async function connectLiveConversation() {
     if (liveConversationActive) {
       liveConversationActive = false;
       liveSpeechActive = false;
+      clearLiveTranscriptPreview();
       interruptLiveTurn();
       liveTurnQueue.length = 0;
       liveConversationStream?.getTracks().forEach(track => track.stop());
@@ -989,6 +1019,7 @@ async function connectLiveConversation() {
 
 async function startLiveMode() {
   try {
+    clearLiveTranscriptPreview();
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) throw new Error('مرورگر پخش صوت زنده را پشتیبانی نمی‌کند.');
     liveOutputAudioContext = new AudioContextClass();
@@ -1027,6 +1058,7 @@ async function startLiveMode() {
 async function stopLiveMode() {
   liveConversationActive = false;
   liveSpeechActive = false;
+  clearLiveTranscriptPreview();
   liveTurnQueue.length = 0;
   await interruptLiveTurn();
   const socket = liveConversationSocket;

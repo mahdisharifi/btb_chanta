@@ -80,6 +80,9 @@ h2 { margin: 0; font-size: 1.08rem; }
 .composer { border-top: 1px solid var(--line); padding: 14px 18px 16px; background: rgba(15, 23, 35, .44); }
 .composer textarea { min-height: 58px; max-height: 160px; resize: vertical; padding: 12px 14px; line-height: 1.7; }
 .composer textarea:disabled { opacity: .55; }
+.live-transcript-preview { display: flex; flex-direction: column; gap: 3px; margin-top: 7px; padding: 7px 10px; border: 1px solid rgba(139,124,255,.2); border-radius: 9px; background: rgba(139,124,255,.055); color: #c6c0ff; font-size: .72rem; line-height: 1.65; }
+.live-transcript-preview[hidden] { display: none; }
+.live-transcript-label { color: var(--muted); font-size: .64rem; }
 .mic-settings { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; margin-top: 9px; }
 .mic-select-field { display: inline-flex; min-width: min(100%, 230px); flex-direction: column; gap: 5px; color: var(--muted); font-size: .7rem; }
 .mic-select-field select { height: 34px; border: 1px solid rgba(193, 211, 239, .15); border-radius: 9px; padding: 0 9px; background: #121c2a; color: var(--text); font-size: .74rem; }

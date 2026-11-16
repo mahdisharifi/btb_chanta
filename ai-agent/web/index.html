@@ -83,6 +83,10 @@
       <div class="composer">
         <label class="sr-only" for="message-input">پیام</label>
         <textarea id="message-input" rows="2" placeholder="پیامت را بنویس یا متن تشخیص‌داده‌شده را اصلاح کن…" disabled></textarea>
+        <div id="live-transcript-preview" class="live-transcript-preview" hidden aria-live="polite">
+          <span class="live-transcript-label">پیش‌نویس موقت گفتار؛ ممکن است اصلاح شود</span>
+          <span id="live-transcript-text" dir="auto"></span>
+        </div>
         <div class="mic-settings">
           <label class="mic-select-field" for="microphone-select">ورودی میکروفن
             <select id="microphone-select"><option value="">میکروفون پیش‌فرض</option></select>
@@ -90,7 +94,7 @@
           <label class="mic-enhancement"><input id="mic-enhancement" type="checkbox" checked> کاهش نویز و تنظیم خودکار میکروفون</label>
         </div>
         <div class="composer-actions">
-          <span id="voice-status" class="voice-status" role="status" aria-live="polite">در حالت زنده، با مکث کوتاه گفتارت ارسال می‌شود؛ با شروع صحبت دوباره، صدای پاسخ قطع می‌شود.</span>
+          <span id="voice-status" class="voice-status" role="status" aria-live="polite">متن موقت جدا از کادر پیام نشان داده می‌شود؛ فقط متن نهایی گفتار به مدل ارسال می‌شود.</span>
           <div class="action-buttons">
             <button id="live-mode-button" class="live-button" type="button" disabled>شروع مکالمه‌ی زنده</button>
             <button id="record-button" class="mic-button" type="button" title="ضبط پیام صوتی" aria-label="ضبط پیام صوتی" disabled>
