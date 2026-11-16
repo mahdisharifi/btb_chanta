@@ -880,17 +880,44 @@ async function startLiveAudioCapture(stream, socket) {
   if (socket.readyState !== WebSocket.OPEN) throw new Error('اتصال مکالمه‌ی زنده پیش از فعال‌شدن میکروفون قطع شد.');
   recordingAudioContext = new AudioContextClass();
   const audioContext = recordingAudioContext;
-  const resampler = new StreamingPcm16Resampler(audioContext.sampleRate);
   await audioContext.resume();
   const source = audioContext.createMediaStreamSource(stream);
-  recordingAudioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+  let workletReady = false;
+  if (audioContext.audioWorklet && window.AudioWorkletNode) {
+    try {
+      const processorUrl = new URL('audio-capture-worklet.js', document.baseURI);
+      await audioContext.audioWorklet.addModule(processorUrl.href);
+      recordingAudioProcessor = new AudioWorkletNode(audioContext, 'live-pcm-capture', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1]
+      });
+      recordingAudioProcessor.port.onmessage = event => {
+        if (socket.readyState === WebSocket.OPEN && event.data instanceof ArrayBuffer) {
+          socket.send(event.data);
+        }
+      };
+      recordingAudioProcessor.onprocessorerror = () => {
+        setVoiceStatus('پردازشگر صوت مرورگر متوقف شد؛ اتصال میکروفون را دوباره شروع کن.');
+      };
+      workletReady = true;
+    } catch (error) {
+      setVoiceStatus(`AudioWorklet آماده نشد؛ ضبط با مسیر سازگار ادامه می‌یابد: ${error.message}`);
+    }
+  }
+
+  if (!workletReady) {
+    const resampler = new StreamingPcm16Resampler(audioContext.sampleRate);
+    recordingAudioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    recordingAudioProcessor.onaudioprocess = event => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      const pcm = resampler.process(event.inputBuffer.getChannelData(0));
+      if (pcm.length) socket.send(pcm.buffer);
+    };
+  }
+
   recordingAudioSilenceGain = audioContext.createGain();
   recordingAudioSilenceGain.gain.value = 0;
-  recordingAudioProcessor.onaudioprocess = event => {
-    if (socket.readyState !== WebSocket.OPEN) return;
-    const pcm = resampler.process(event.inputBuffer.getChannelData(0));
-    if (pcm.length) socket.send(pcm.buffer);
-  };
   source.connect(recordingAudioProcessor);
   recordingAudioProcessor.connect(recordingAudioSilenceGain);
   recordingAudioSilenceGain.connect(recordingAudioContext.destination);
