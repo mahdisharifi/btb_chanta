@@ -643,7 +643,9 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
     voiced_samples = 0
     onset_required_samples = int(0.12 * sample_rate)
     minimum_voiced_samples = int(0.22 * sample_rate)
-    end_silence_samples = int(0.60 * sample_rate)
+    # 420 ms is a latency/turn-boundary compromise: shorter can split natural
+    # Persian pauses, while longer makes the text-model pipeline feel sluggish.
+    end_silence_samples = int(0.42 * sample_rate)
     trailing_context_samples = int(0.12 * sample_rate)
     noise_floor = 0.002
     in_speech = False

@@ -560,7 +560,9 @@ function enqueueSpeechSegment(player, text, state) {
     const response = await fetch('/api/synthesize/stream', { method: 'POST', body: form, signal: state.signal });
     if (!response.ok) throw new Error(await readError(response));
     await player.consume(response);
-    player.addNaturalGap();
+    // MOSS already shapes pauses from punctuation; keep only a tiny join
+    // cushion so sentence boundaries do not sound artificially separated.
+    player.addNaturalGap(state.engine === 'moss' ? 0.03 : 0.09);
   }).catch(error => {
     if (error.name === 'AbortError' || state.signal?.aborted) return;
     state.error ||= error;
