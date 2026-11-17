@@ -29,6 +29,8 @@ class ManageBranches extends Component
     public string $pricingCategoryId = '';
     public string $pricingProductId = '';
     public string $pricingPercentage = '0';
+    #[Locked]
+    public int $activeSupplierId = 0;
     public array $branchCityIds = [];
     public array $branchCityNames = [];
     public array $branchAddresses = [];
@@ -41,6 +43,7 @@ class ManageBranches extends Component
 
     public function mount(): void
     {
+        $this->activeSupplierId = (int) auth()->user()->currentSupplier()->id;
         $primary = Supplier::query()
             ->where('user_id', auth()->id())
             ->whereNull('parent_supplier_id')
@@ -166,6 +169,7 @@ class ManageBranches extends Component
     {
         return $this->primarySupplier->branches()
             ->where('is_active', true)
+            ->withCount('productSuppliers')
             ->withCount(['branchProductTransfers as pending_transfers_count' => fn ($query) => $query->where('status', 'pending')])
             ->get();
     }
@@ -298,7 +302,10 @@ class ManageBranches extends Component
             foreach ($products as $product) {
                 $offer = ProductSupplier::query()->where('supplier_id', $branch->id)
                     ->where('product_id', $product->id)->lockForUpdate()->firstOrFail();
-                $offer->update(['branch_price_percentage' => $this->pricingPercentage]);
+                $offer->update([
+                    'branch_price_percentage' => $this->pricingPercentage,
+                    'is_branch_pricing_independent' => false,
+                ]);
                 $syncService->syncBranchProduct($product, $branch, (float) $this->pricingPercentage);
             }
 

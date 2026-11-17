@@ -25,9 +25,18 @@ class SupplierBranchPriceSyncService
         'valid_until',
     ];
 
-    public function usesPrimaryPricing(Product $product, Supplier $branch): bool
+    public function usesPrimaryPricing(Product $product, Supplier $branch, ?ProductSupplier $offer = null): bool
     {
         if (!$branch->usesPrimaryPricing()) {
+            return false;
+        }
+
+        $offer ??= ProductSupplier::query()
+            ->where('product_id', $product->id)
+            ->where('supplier_id', $branch->id)
+            ->first();
+
+        if ($offer?->is_branch_pricing_independent) {
             return false;
         }
 
@@ -63,7 +72,7 @@ class SupplierBranchPriceSyncService
             ->where('supplier_id', $branch->id)
             ->firstOrFail();
 
-        if (!$branch->usesPrimaryPricing()) {
+        if (!$this->usesPrimaryPricing($branchProduct, $branch, $offer)) {
             return;
         }
 
@@ -524,6 +533,7 @@ class SupplierBranchPriceSyncService
             ->whereHas('product', fn ($query) => $query
                 ->where('family_product_id', $referenceProduct->family_product_id ?: $referenceProduct->id))
             ->whereIn('supplier_id', $branchIds)
+            ->where('is_branch_pricing_independent', false)
             ->pluck('id');
 
         if ($offerIds->isNotEmpty()) {
@@ -811,6 +821,7 @@ class SupplierBranchPriceSyncService
     private function branchOffers(int $familyId, Collection $branches): Collection
     {
         return ProductSupplier::query()->whereIn('supplier_id', $branches->modelKeys())
+            ->where('is_branch_pricing_independent', false)
             ->whereHas('product', fn ($query) => $query->where('family_product_id', $familyId))
             ->with('product')->orderBy('id')->lockForUpdate()->get();
     }

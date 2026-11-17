@@ -2,9 +2,20 @@
     <div>
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">قیمت‌گذاری شعبه: {{ $product->title }}</h1>
         <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-            قیمت پایه از شعبهٔ اصلی می‌آید. برای این شعبه فقط درصد اختلاف را تعیین کنید؛ مبلغ هر نوع قیمت و تیراژ به‌طور خودکار محاسبه می‌شود.
+            قیمت این محصول از شعبهٔ اصلی محاسبه می‌شود. درصد را برای همین محصول تغییر دهید، یا آن را از قیمت اصلی جدا کنید تا قیمت‌هایش مستقل بمانند.
         </p>
     </div>
+
+    <section class="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30">
+        <div>
+            <h2 class="font-semibold text-amber-900 dark:text-amber-100">قیمت‌گذاری فعلی: درصدی نسبت به شعبهٔ اصلی</h2>
+            <p class="mt-1 text-sm leading-6 text-amber-800 dark:text-amber-200">برای مستقل‌کردن فقط این محصول، قیمت‌های فعلی حفظ می‌شوند و تغییرهای بعدی شعبهٔ اصلی روی آن اعمال نمی‌شوند.</p>
+        </div>
+        <button type="button" wire:click="changeBranchProductPricingMode('independent')" wire:loading.attr="disabled" wire:target="changeBranchProductPricingMode"
+            class="min-h-11 shrink-0 rounded-lg border border-amber-400 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60 dark:border-amber-700 dark:bg-gray-800 dark:text-amber-100 dark:hover:bg-amber-900/40">
+            مستقل‌کردن قیمت همین محصول
+        </button>
+    </section>
 
     <form wire:submit="save" class="space-y-5">
         <label class="flex min-h-11 items-center gap-3 text-sm text-gray-700 dark:text-gray-200">

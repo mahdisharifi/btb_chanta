@@ -65,10 +65,11 @@ class SupplierBranchCatalogService
 
         return [
             'rows' => $rows->all(), 'percentage' => $percentage,
-            'state' => !$offer->supplier?->usesPrimaryPricing() ? 'independent'
+            'state' => (!$offer->supplier?->usesPrimaryPricing() || $offer->is_branch_pricing_independent) ? 'independent'
                 : ($source->isEmpty() ? 'no_base' : ($rows->every(fn ($row) => $row['synced']) ? 'synced' : 'drift')),
             'fingerprint' => hash('sha256', json_encode([
                 $offer->id, $offer->updated_at?->format('Y-m-d H:i:s.u'), $percentage,
+                (bool) $offer->is_branch_pricing_independent,
                 $offer->supplier?->branch_pricing_mode,
                 $source->map->getAttributes()->all(), $destination->map->getAttributes()->all(),
             ], JSON_THROW_ON_ERROR)),
@@ -95,6 +96,7 @@ class SupplierBranchCatalogService
                 if ($percentage !== null) {
                     $offer->forceFill(['branch_price_percentage' => $percentage])->save();
                 }
+                $offer->forceFill(['is_branch_pricing_independent' => false])->save();
                 app(SupplierBranchPriceSyncService::class)->syncBranchProduct($offer->product, $branch);
             }
         }, 3);

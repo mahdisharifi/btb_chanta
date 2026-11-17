@@ -32,7 +32,7 @@
                 </div>
             </details>
         </div>
-        <form wire:submit="savePricingSettings" class="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <form id="branch-pricing-settings" wire:submit="savePricingSettings" class="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <div class="grid items-end gap-3 sm:grid-cols-3">
                 <label class="text-sm" for="branch-pricing-mode">روش قیمت‌گذاری شعبه
                     <select id="branch-pricing-mode" wire:model.live="pricingMode" class="mt-1 min-h-11 w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-900">
@@ -49,10 +49,10 @@
             </div>
             @error('pricingMode')<p role="alert" class="text-sm text-red-600">{{ $message }}</p>@enderror
             @error('branchPercentage')<p role="alert" class="text-sm text-red-600">{{ $message }}</p>@enderror
-            <p class="text-xs leading-6 text-gray-500 dark:text-gray-400">در حالت مستقل، قیمت هر محصول را مانند شعبهٔ اصلی تعیین می‌کنید. در حالت درصدی، درصد کلی برای محصولات فعلی و جدید دارای مبنا اعمال می‌شود؛ محصولات بدون مبنا مستقل قیمت‌گذاری می‌شوند.</p>
+            <p class="text-xs leading-6 text-gray-500 dark:text-gray-400">در حالت مستقل، قیمت هر محصول را جداگانه ثبت می‌کنید. در حالت درصدی، محصولات متصل به قیمت اصلی همگام می‌شوند؛ محصولاتی که مستقل کرده‌اید با تغییر درصد کلی دست‌نخورده می‌مانند.</p>
             <button type="button" wire:click="openSelection" class="min-h-11 text-sm font-semibold text-indigo-600 dark:text-indigo-300">افزودن محصول از فهرست محصولات</button>
         </form>
-        <div class="flex flex-wrap gap-2" role="group" aria-label="نمایش لیست">
+        <div id="branch-products" class="flex flex-wrap gap-2" role="group" aria-label="نمایش لیست">
             @foreach(['products' => 'محصولات شعبه', 'pending' => 'در انتظار افزودن'] as $value => $label)
                 <button type="button" wire:click="$set('tab', '{{ $value }}')" aria-pressed="{{ $tab === $value ? 'true' : 'false' }}" class="min-h-11 rounded-lg border px-4 text-sm {{ $tab === $value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-300 dark:border-gray-600' }}">{{ $label }}</button>
             @endforeach

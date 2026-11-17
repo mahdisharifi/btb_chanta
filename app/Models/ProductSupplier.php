@@ -100,6 +100,7 @@ class ProductSupplier extends Model
         'tier_percentages',       // ✅ درصدهای تیراژها
         'tier_enabled',           // ✅ وضعیت فعال/غیرفعال تیراژها
         'branch_price_percentage',
+        'is_branch_pricing_independent',
         'notes',
         'activated_at',
         'deactivated_at',
@@ -135,6 +136,7 @@ class ProductSupplier extends Model
             'tier_percentages'        => 'array',       // ✅
             'tier_enabled'            => 'array',       // ✅
             'branch_price_percentage' => 'decimal:12',
+            'is_branch_pricing_independent' => 'boolean',
             'activated_at'            => 'datetime',
             'deactivated_at'          => 'datetime',
         ];

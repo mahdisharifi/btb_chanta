@@ -216,7 +216,8 @@ class EditPrice extends Component
         $this->warrantyTypeCoverage = $this->productSupplier->warranty_type_coverage ?? 'limited'; // ✅
         $this->warrantyDurationDays = $this->productSupplier->warranty_duration_days;
 
-        $this->isBranchCopy = app(SupplierBranchPriceSyncService::class)->usesPrimaryPricing($this->product, $supplier);
+        $this->isBranchCopy = app(SupplierBranchPriceSyncService::class)
+            ->usesPrimaryPricing($this->product, $supplier, $this->productSupplier);
         $this->primaryPricingAtLoad = $this->isBranchCopy;
 
         if ($this->isBranchCopy) {
@@ -1030,6 +1031,7 @@ class EditPrice extends Component
                 'sku' => $this->sanitizeInput($this->sku),
                 'is_active' => (bool)$this->is_active,
                 'status' => $this->is_active ? ProductSupplier::STATUS_ACTIVE : ProductSupplier::STATUS_INACTIVE,
+                'is_branch_pricing_independent' => $lockedSupplier->usesPrimaryPricing(),
                 'price_currency' => $this->priceCurrency,
                 'foreign_price_amount' => $this->foreignPriceAmountForStorage(),
                 'foreign_tier_amounts' => $this->foreignTierAmountsForStorage(),
@@ -1261,6 +1263,26 @@ class EditPrice extends Component
         session()->flash('message', 'ماتریس قیمت با موفقیت ذخیره شد.');
     }
 
+    public function changeBranchProductPricingMode(
+        string $mode,
+        \App\Services\SupplierBranchPricingService $pricingService,
+    )
+    {
+        $supplier = Auth::user()->currentSupplier();
+        $supplierId = $this->authorizePriceWrite();
+        abort_unless($supplierId === (int) $supplier->id && $supplier->isBranch(), 403, 'این عملیات فقط برای محصول یک شعبه در دسترس است.');
+        $this->resolveOwnedProductAndOffer($supplier);
+
+        $pricingService->configureProduct(
+            $supplier->rootSupplier(),
+            (int) $supplier->id,
+            (int) $this->productSupplier->id,
+            $mode,
+        );
+
+        return redirect()->route('supplier.products.edit-price', ['product' => $this->product->id]);
+    }
+
     private function saveBranchPricing(\App\Models\Supplier $supplier): void
     {
         $this->validate([
@@ -1292,18 +1314,18 @@ class EditPrice extends Component
             $this->assertPriceWriteContext(Auth::user(), $lockedBranch, $lockedPrimary, true);
 
             $lockedProduct = Product::query()->lockForUpdate()->findOrFail($this->product->id);
-            abort_unless(
-                app(SupplierBranchPriceSyncService::class)->usesPrimaryPricing($lockedProduct, $lockedBranch),
-                403,
-                'این محصول دیگر نسخهٔ قابل‌ویرایش شعبه نیست.'
-            );
-
             $lockedOffer = ProductSupplier::query()
                 ->whereKey($this->productSupplier->getKey())
                 ->where('product_id', $lockedProduct->id)
                 ->where('supplier_id', $lockedBranch->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            abort_unless(
+                app(SupplierBranchPriceSyncService::class)->usesPrimaryPricing($lockedProduct, $lockedBranch, $lockedOffer),
+                403,
+                'این محصول دیگر نسخهٔ قابل‌ویرایش شعبه نیست.'
+            );
 
             $preservedPriceStates = [];
             if ($this->is_active && !$lockedOffer->is_active) {
