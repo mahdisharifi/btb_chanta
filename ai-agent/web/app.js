@@ -16,9 +16,21 @@ const micEnhancement = document.querySelector('#mic-enhancement');
 const microphoneSelect = document.querySelector('#microphone-select');
 const localEngineLabel = document.querySelector('#local-engine-label');
 const ttsEngineSelect = document.querySelector('#tts-engine');
+const ttsEngineHelp = document.querySelector('#tts-engine-help');
+const piperPresetSelect = document.querySelector('#piper-preset');
+const piperPresetField = document.querySelector('#piper-preset-field');
 const mossReferenceInput = document.querySelector('#moss-reference-audio');
 const mossReferenceField = document.querySelector('#moss-reference-field');
 const mossStatus = document.querySelector('#moss-status');
+const {
+  cleanForSpeech,
+  hasSpeakableContent,
+  inferDeliveryProfile,
+  nextSpeechSegments
+} = window.PersianSpeechText;
+const speculativeLlm = window.SpeculativeLlm?.SpeculativeLlmCoordinator
+  ? new window.SpeculativeLlm.SpeculativeLlmCoordinator({ request: requestSpeculativeCompletion })
+  : null;
 
 let conversation = [];
 let activeToken = '';
@@ -29,14 +41,18 @@ let recordingMicrophoneLabel = '';
 let audioChunks = [];
 let liveTranscriptionSocket = null;
 let liveConversationSocket = null;
+let liveServerSessionId = null;
 let liveConversationStream = null;
 let liveConversationActive = false;
 let liveSpeechActive = false;
 let liveActiveUtteranceId = null;
 let liveLatestUtteranceId = null;
 const liveUtteranceTimings = new Map();
+const liveTranscriptRevisions = new Map();
 let liveTurnDispatching = false;
-let activeTurnController = null;
+let activeLlmController = null;
+let activeTtsController = null;
+let activeVoiceTurn = null;
 let activeStreamPlayer = null;
 let liveOutputAudioContext = null;
 const liveTurnQueue = [];
@@ -45,17 +61,91 @@ let recordingAudioContext = null;
 let recordingAudioProcessor = null;
 let recordingAudioSilenceGain = null;
 const audioUrls = new Set();
+const clientSessionId = `client-${crypto.randomUUID()}`;
+let nextAudioGenerationId = 0;
 
 const SYSTEM_MESSAGE = [
-  'به فارسی روان و محاوره‌ای پاسخ بده؛ طوری بنویس که شنیدنش طبیعی باشد.',
-  'پاسخ را به شکل گفتار پیوسته و کوتاه بنویس؛ از تیتر، فهرست شماره‌دار، بولت و نشانه‌گذاری نمایشی پرهیز کن.',
-  'لحن را گرم و انسانی نگه دار، اما احساسات را اغراق‌آمیز یا تصنعی نکن.',
+  'همیشه پاسخ را به فارسی روان، محاوره‌ای و گوش‌نواز بنویس؛ متن باید از ابتدا برای بلندخوانی با صدای طبیعی آماده باشد.',
+  'اعراب‌گذاریِ گفتار فارسی الزامی است: پیش از پاسخ، متن را برای تلفظ بلندخوانی آماده کن و روی واکه‌های کوتاهِ مبهم، اضافه‌ها و فعل‌های محاوره‌ای اعرابِ راهنما بگذار؛ متن فارسیِ گفتاری را کاملاً بی‌اعراب نفرست. اعراب را هدفمند نگه دار و روی همه‌ی حروف علامت نگذار.',
+  'برای انتقال لحن و مکث، نشانه‌گذاری طبیعی و دقیق مثل ویرگول، سه‌نقطه یا علامت تعجب را فقط در جای مناسب به کار ببر؛ نشانه‌ها را تکرار نکن، بین هر عبارت مکث نساز و احساسات را تصنعی یا اغراق‌آمیز نشان نده.',
+  'لحن را صمیمی، زنده و محاوره‌ای نگه دار؛ برای فروش و ارتباط با مشتری، خوش‌صحبت و مشتری‌محور باش، اما فشار فروش یا ادعای بی‌پشتوانه نساز.',
+  'در موضوع‌های حسابداری و مدیریت سایت یا فروشگاه، واژه‌های دقیق و آشنای حوزه را به‌کار ببر؛ مثل فاکتور، مانده‌حساب، دریافت، پرداخت، تسویه، مغایرت، چک، موجودی، سفارش، محصول، قیمت، تأمین‌کننده، شعبه، درگاه و پنل سایت.',
+  'کدهای کالا و مدل را عدد معمولی یا مبلغ فرض نکن؛ آن‌ها را برای گفتار با تلفظ شناخته‌شده بازنویسی کن و معنا و ترتیب رقم‌ها را حفظ کن. نمونه: «KTS 1880» را «کِی‌تی‌اِس، هجده هشتاد» بنویس، نه «هزار و هشتصد و هشتاد».',
+  'برای خطا، مغایرت یا پرداخت ناموفق آرام، همدلانه و راه‌حل‌محور حرف بزن؛ برای ثبت یا پرداخت موفق لحن مثبت اما حرفه‌ای داشته باش. عددها و معنای مالی را دقیق نگه دار و هیچ اقدام حسابداری یا سایتی را انجام‌شده اعلام نکن، مگر اینکه واقعاً انجام شده باشد.',
+  'تا جای ممکن واژه‌های رایج فارسی را به‌جای عبارت‌های بیگانه به کار ببر، مگر آن‌که نام برند یا اصطلاحی باشد که باید عیناً حفظ شود.',
+  'پاسخ را به شکل گفتار پیوسته و کوتاه بنویس؛ از تیتر، فهرست شماره‌دار، بولت، Markdown، ستاره، ایموجی و نمادهای غیرگفتاری پرهیز کن، اما نشانه‌گذاری معمول فارسی را برای مکث و لحن طبیعی به‌جا به کار ببر.',
+  'الگوی سبک گفتار: «دارَم مَحصولِ کِی‌تی‌اِس، هِجده هَشتاد رو بارگذاری می‌کنم و اِطّلاعاتش رو ثَبت می‌کنم تا به فِهرِستِ محصولاتت اضافه بِشِه.» اعراب و مکث را به همین شکلِ طبیعی و خوانا رعایت کن.',
+  'معنا و واقعیت‌های پاسخ را تغییر نده و برای خوش‌آهنگ‌شدن، اطلاعات تازه یا وعدهٔ تأییدنشده اضافه نکن.',
   'فقط پاسخ نهایی و قابل‌نمایش به کاربر را برگردان؛ متن تحلیل، زنجیره‌ی استدلال، thinking یا reasoning را در پاسخ نهایی قرار نده.',
   'اگر پاسخ طولانی است، آن را مختصر و قابل‌شنیدن نگه دار.'
 ].join(' ');
 
 function normalizedBaseUrl() {
   return baseUrlInput.value.trim().replace(/\/+$/, '');
+}
+
+function ttsEngineLabel(engine) {
+  if (engine === 'moss') return 'MOSS';
+  if (engine === 'moss-realtime-cpu') return 'MOSS Realtime GGUF';
+  return 'Piper';
+}
+
+function speculativeContext() {
+  return {
+    baseUrl: normalizedBaseUrl(),
+    token: activeToken,
+    model: selectedModel(),
+    messages: conversation.map(message => ({ ...message }))
+  };
+}
+
+function speculativeContextKey(context = speculativeContext()) {
+  return JSON.stringify({
+    baseUrl: context.baseUrl,
+    token: context.token,
+    model: context.model,
+    messages: context.messages
+  });
+}
+
+async function requestSpeculativeCompletion(text, { signal, context, turnId }) {
+  if (!context?.baseUrl || !context?.token || !context?.model) throw new Error('تنظیم مدل برای پردازش احتمالی کامل نیست.');
+  publishVoiceStage('llm_speculative_start', { turnId });
+  const startedAt = performance.now();
+  const response = await fetch(`${context.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${context.token}`,
+      'Content-Type': 'application/json'
+    },
+    signal,
+    body: JSON.stringify({
+      model: context.model,
+      stream: true,
+      max_tokens: 192,
+      messages: [
+        { role: 'system', content: SYSTEM_MESSAGE },
+        ...context.messages,
+        { role: 'user', content: text }
+      ]
+    })
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/event-stream')) {
+    const payload = await response.json();
+    const answer = finalTextOnly(extractFinalAnswer(payload));
+    publishVoiceStage('llm_response_completed', { turnId, durationMs: performance.now() - startedAt });
+    return answer;
+  }
+  let answer = '';
+  for await (const payload of readOpenAiSse(response)) {
+    const choice = payload?.choices?.[0];
+    const delta = choice?.delta || (typeof choice?.text === 'string' ? { content: choice.text } : null);
+    answer += streamDeltaText(delta);
+  }
+  publishVoiceStage('llm_response_completed', { turnId, durationMs: performance.now() - startedAt });
+  return finalTextOnly(answer);
 }
 
 function setConnectionStatus(text, kind = '') {
@@ -255,26 +345,6 @@ function extractFinalAnswer(payload) {
   return answer;
 }
 
-function cleanForSpeech(rawText) {
-  let text = String(rawText || '');
-  text = text.replace(/```[\s\S]*?```/g, '');
-  text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
-  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-  text = text.replace(/https?:\/\/\S+/gi, '');
-  text = text.replace(/^\s*\[[ xX]\]\s*/gm, '');
-  text = text.replace(/^\s*(?:[-*+•‣–—]|\d+[.)])\s+/gm, '');
-  text = text.replace(/^\s{0,3}#{1,6}\s*/gm, '');
-  text = text.replace(/^\s*>\s?/gm, '');
-  text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
-  text = text.replace(/(\*|_)([^\n]*?)\1/g, '$2');
-  text = text.replace(/~~(.*?)~~/g, '$1');
-  text = text.replace(/`+/g, '');
-  text = text.replace(/[\\*_#~]/g, '');
-  text = text.replace(/\n+/g, '. ');
-  text = text.replace(/([،؛.?!])\s*\.\s*/g, '$1 ');
-  return text.replace(/\s{2,}/g, ' ').trim();
-}
-
 async function synthesizeAndPlay(text) {
   const engine = ttsEngineSelect?.value || 'piper';
   let response;
@@ -286,12 +356,19 @@ async function synthesizeAndPlay(text) {
       form.append('prompt_audio', mossReferenceInput.files[0]);
     }
     response = await fetch('/api/synthesize/moss', { method: 'POST', body: form });
+  } else if (engine === 'moss-realtime-cpu') {
+    setVoiceStatus('در حال ساخت صدای پاسخ با MOSS Realtime GGUF روی CPU…');
+    response = await fetch('/api/synthesize/moss-realtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
   } else {
     setVoiceStatus('در حال ساخت صدای پاسخ با Piper…');
     response = await fetch('/api/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, preset: piperPresetSelect?.value || 'default' })
     });
   }
   if (!response.ok) throw new Error(await readError(response));
@@ -331,9 +408,12 @@ class StreamingPcmPlayer {
     this.playbackPending = new Uint8Array(0);
     this.activeSources = new Set();
     this.stopped = false;
+    this.playbackStarted = false;
+    this.onPlaybackStarted = null;
+    this.stoppedPromise = new Promise(resolve => { this.resolveStopped = resolve; });
   }
 
-  async consume(response, onFirstAudio = null) {
+  async consume(response, onFirstAudio = null, isCurrent = () => true) {
     if (!response.body) throw new Error('مرورگر جریان صوت را دریافت نکرد.');
     const sampleRate = Number(response.headers.get('X-Audio-Sample-Rate'));
     const channels = Number(response.headers.get('X-Audio-Channels'));
@@ -358,8 +438,16 @@ class StreamingPcmPlayer {
     const playbackBlockBytes = Math.max(frameBytes, Math.floor(sampleRate * channels * 2 * 0.12 / frameBytes) * frameBytes);
 
     while (true) {
+      if (!isCurrent()) {
+        try { await reader.cancel(); } catch { /* response was already cancelled */ }
+        return false;
+      }
       const { value, done } = await reader.read();
       if (done) break;
+      if (!isCurrent()) {
+        try { await reader.cancel(); } catch { /* response was already cancelled */ }
+        return false;
+      }
       const bytes = new Uint8Array(carry.length + value.length);
       bytes.set(carry);
       bytes.set(value, carry.length);
@@ -388,7 +476,7 @@ class StreamingPcmPlayer {
       if (scheduled) notifyFirstAudio();
       this.playbackPending = new Uint8Array(0);
     }
-    if (!scheduledFrames) throw new Error('موتور صدا هیچ داده‌ای تولید نکرد.');
+    return scheduledFrames > 0;
   }
 
   #appendBytes(left, right) {
@@ -420,6 +508,10 @@ class StreamingPcmPlayer {
     const now = this.context.currentTime;
     const startAt = this.nextPlayAt > now + 0.005 ? this.nextPlayAt : now + 0.015;
     source.start(startAt);
+    if (!this.playbackStarted) {
+      this.playbackStarted = true;
+      this.onPlaybackStarted?.();
+    }
     this.nextPlayAt = startAt + audioBuffer.duration;
     return frames;
   }
@@ -468,12 +560,20 @@ class StreamingPcmPlayer {
 
   async waitForPlayback() {
     await this.resumePromise;
+    if (this.stopped) return false;
     const remaining = Math.max(0, this.nextPlayAt - this.context.currentTime);
-    if (remaining) await new Promise(resolve => setTimeout(resolve, Math.ceil(remaining * 1000)));
+    if (remaining) {
+      await Promise.race([
+        new Promise(resolve => setTimeout(resolve, Math.ceil(remaining * 1000))),
+        this.stoppedPromise
+      ]);
+    }
+    return !this.stopped;
   }
 
   async close() {
     this.stopped = true;
+    this.resolveStopped();
     if (this.ownsContext) {
       try { await this.context.close(); } catch { /* already closed */ }
     }
@@ -482,6 +582,7 @@ class StreamingPcmPlayer {
   async stop() {
     if (this.stopped) return;
     this.stopped = true;
+    this.resolveStopped();
     for (const source of this.activeSources) {
       try { source.stop(); } catch { /* the source may have finished */ }
     }
@@ -490,31 +591,6 @@ class StreamingPcmPlayer {
       try { await this.context.close(); } catch { /* already closed */ }
     }
   }
-}
-
-function nextSpeechSegments(text, flush = false) {
-  const segments = [];
-  let pending = text;
-  while (pending.trim()) {
-    let boundary = pending.search(/[.!?؟؛](?=\s|$)/);
-    if (boundary < 0 && pending.length > 88) {
-      const clause = Math.max(pending.slice(0, 105).lastIndexOf('،'), pending.slice(0, 105).lastIndexOf('؛'));
-      if (clause >= 42) boundary = clause;
-      else if (pending.length > 120) {
-        const wordBoundary = pending.slice(0, 105).lastIndexOf(' ');
-        if (wordBoundary >= 72) boundary = wordBoundary;
-      }
-    }
-    if (boundary < 0) break;
-    const end = boundary + (/[.!?؟؛،]/.test(pending[boundary]) ? 1 : 0);
-    segments.push(pending.slice(0, end));
-    pending = pending.slice(end).replace(/^\s+/, '');
-  }
-  if (flush && pending.trim()) {
-    segments.push(pending.trim());
-    pending = '';
-  }
-  return { segments, pending };
 }
 
 async function* readOpenAiSse(response) {
@@ -565,48 +641,112 @@ function streamDeltaText(delta) {
   return typeof delta.content === 'string' ? delta.content : contentAsText(delta.content);
 }
 
+async function fetchSpeechStream(form, state) {
+  for (let attempt = 0; attempt <= 1; attempt += 1) {
+    let response;
+    try {
+      response = await fetch('/api/synthesize/stream', {
+        method: 'POST',
+        body: form,
+        signal: state.signal
+      });
+    } catch (error) {
+      if (error.name === 'AbortError' || state.signal?.aborted || attempt === 1) throw error;
+      continue;
+    }
+
+    if (response.ok) return response;
+    const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+    if (retryable && attempt === 0 && !state.signal?.aborted) {
+      try { await response.body?.cancel(); } catch { /* response is already closed */ }
+      continue;
+    }
+    throw new Error(await readError(response));
+  }
+  throw new Error('درخواست TTS پس از یک تلاش مجدد هم ناموفق بود.');
+}
+
 function enqueueSpeechSegment(player, text, state) {
   const segment = text.trim();
-  if (!segment) return;
+  if (!hasSpeakableContent(segment)) return state.chain;
+  state.pendingSegments += 1;
   state.chain = state.chain.then(async () => {
-    if (state.error || state.signal?.aborted) return;
+    if (state.error || state.signal?.aborted || !state.isCurrent()) return;
     const form = new FormData();
     form.append('text', segment);
     form.append('engine', state.engine);
+    if (state.engine === 'piper') {
+      form.append('preset', state.preset);
+      form.append('delivery_profile', state.deliveryProfile);
+      form.append('session_id', state.sessionId);
+      form.append('turn_id', state.turnId);
+      form.append('generation_id', state.generationId);
+    }
     if (state.engine === 'moss' && state.referenceFile) {
       form.append('prompt_audio', state.referenceFile);
     }
-    const response = await fetch('/api/synthesize/stream', { method: 'POST', body: form, signal: state.signal });
-    if (!response.ok) throw new Error(await readError(response));
-    await player.consume(response, () => state.onFirstAudio?.());
-    // MOSS already shapes pauses from punctuation; keep only a tiny join
-    // cushion so sentence boundaries do not sound artificially separated.
-    player.addNaturalGap(state.engine === 'moss' ? 0.03 : 0.09);
+    publishVoiceStage('tts_request_started', { turnId: state.turnId, generationId: state.generationId });
+    const response = await fetchSpeechStream(form, state);
+    if (state.engine === 'piper' && (
+      response.headers.get('X-Session-ID') !== state.sessionId
+      || response.headers.get('X-Turn-ID') !== state.turnId
+      || response.headers.get('X-Generation-ID') !== state.generationId
+    )) {
+      await response.body?.cancel();
+      return;
+    }
+    if (!state.isCurrent()) return;
+    const hasAudio = await player.consume(response, () => state.onFirstAudio?.(), state.isCurrent);
+    if (!hasAudio || !state.isCurrent()) return;
+    // Piper's delivery layer chooses a bounded gap per turn. Both MOSS engines
+    // shape pauses from punctuation, so keep a tiny join cushion for them.
+    const gapHeader = response.headers.get('X-Delivery-Gap-Ms');
+    const requestedGapMs = gapHeader === null ? NaN : Number(gapHeader);
+    const gapSeconds = state.engine !== 'piper'
+      ? 0.03
+      : (Number.isFinite(requestedGapMs) ? Math.max(0, Math.min(300, requestedGapMs)) / 1000 : 0.09);
+    player.addNaturalGap(gapSeconds);
   }).catch(error => {
     if (error.name === 'AbortError' || state.signal?.aborted) return;
     state.error ||= error;
     setVoiceStatus(`متن پاسخ آماده است؛ جریان TTS متوقف شد: ${error.message}`);
+  }).finally(() => {
+    state.pendingSegments = Math.max(0, state.pendingSegments - 1);
   });
+  return state.chain;
 }
 
 function updateTtsEngineSettings() {
   const useMoss = ttsEngineSelect?.value === 'moss';
+  const useRealtimeCpu = ttsEngineSelect?.value === 'moss-realtime-cpu';
+  if (piperPresetField) piperPresetField.hidden = useMoss || useRealtimeCpu;
   if (mossReferenceField) mossReferenceField.hidden = !useMoss;
-  if (mossStatus) mossStatus.hidden = !useMoss;
+  if (mossStatus) mossStatus.hidden = !useMoss && !useRealtimeCpu;
+  if (ttsEngineHelp) {
+    ttsEngineHelp.textContent = useRealtimeCpu
+      ? 'سرویس GGUF باید روی پورت ۱۸۰۸۴ اجرا باشد. صوت PCM به‌صورت قطعه‌ای از موتور می‌رسد؛ زمان شروع و روانی آن به توان CPU وابسته است.'
+      : (useMoss
+        ? 'MOSS باید هم‌زمان روی همین دستگاه و پورت ۱۸۰۸۳ اجرا باشد.'
+        : 'Piper محلی و کم‌مصرف است؛ تنظیم لحن Piper فقط روی همین موتور اثر می‌گذارد.');
+  }
 }
 
 async function refreshMossStatus() {
-  if (!mossStatus || ttsEngineSelect?.value !== 'moss') return;
-  mossStatus.textContent = 'در حال بررسی سرویس MOSS…';
+  const engine = ttsEngineSelect?.value;
+  if (!mossStatus || (engine !== 'moss' && engine !== 'moss-realtime-cpu')) return;
+  const isRealtimeCpu = engine === 'moss-realtime-cpu';
+  mossStatus.textContent = `در حال بررسی سرویس ${isRealtimeCpu ? 'MOSS Realtime GGUF' : 'MOSS'}…`;
   mossStatus.dataset.kind = '';
   try {
     const response = await fetch('/api/status');
     if (!response.ok) throw new Error('وضعیت سرویس خوانده نشد.');
     const payload = await response.json();
-    const moss = payload.moss;
+    const moss = isRealtimeCpu ? payload.moss_realtime : payload.moss;
     if (!moss) throw new Error('وضعیت MOSS در دسترس نیست.');
     mossStatus.textContent = moss.ready
-      ? 'MOSS آماده است. صدای پیش‌فرض فارسی Mana در دسترس است.'
+      ? (isRealtimeCpu
+        ? 'سرویس MOSS Realtime GGUF آماده است. قطعه‌های PCM هنگام تولید به پخش‌کننده می‌رسند؛ زمان شروع به سرعت مدل روی CPU وابسته است.'
+        : 'MOSS آماده است. صدای پیش‌فرض فارسی Mana در دسترس است.')
       : (moss.available ? `MOSS در حال آماده‌شدن است: ${moss.status}` : moss.status);
     mossStatus.dataset.kind = moss.ready ? 'success' : (moss.available ? '' : 'error');
   } catch (error) {
@@ -654,22 +794,34 @@ function appendStreamingReplay(player) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
+async function sendMessage(rawText, { live = false, inputTiming = null, prefetchedAnswer = null } = {}) {
   const text = rawText.trim();
   if (!text || busy) return;
   if (!selectedModel() || !activeToken) {
     setConnectionStatus('ابتدا توکن را وارد کن و مدل را انتخاب کن.', 'error');
     return;
   }
+  const deliveryProfile = inferDeliveryProfile(text);
 
   busy = true;
-  const turnController = new AbortController();
-  activeTurnController = turnController;
+  await stopAssistantAudio();
+  const llmController = new AbortController();
+  const ttsController = new AbortController();
+  const conversationStart = conversation.length;
+  const turnState = {
+    llmCompleted: false,
+    invalidated: false,
+    turnId: `turn-${crypto.randomUUID()}`,
+    generationId: `generation-${++nextAudioGenerationId}`
+  };
+  activeVoiceTurn = turnState;
+  activeLlmController = llmController;
+  activeTtsController = ttsController;
   refreshControls();
-  appendMessage('user', text);
+  const userContent = appendMessage('user', text);
   conversation.push({ role: 'user', content: text });
   if (!live) messageInput.value = '';
-  setVoiceStatus('در حال دریافت پاسخ جریانی؛ صدا با رسیدن جمله‌ها شروع می‌شود…');
+  setVoiceStatus(`در حال دریافت پاسخ جریانی با لحن ${deliveryProfile.label}؛ صدا با رسیدن جمله‌ها شروع می‌شود…`);
 
   let assistantContent = null;
   let player = null;
@@ -679,27 +831,52 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
   const llmStartedAt = performance.now();
   let llmFirstTokenMs = null;
   let firstAudioMs = null;
+  let firstAudioAt = null;
   const speechState = {
     chain: Promise.resolve(),
+    pendingSegments: 0,
+    maxPendingSegments: 3,
     error: null,
     engine: ttsEngineSelect?.value || 'piper',
+    preset: piperPresetSelect?.value || 'default',
+    deliveryProfile: deliveryProfile.id,
+    sessionId: liveConversationActive && liveServerSessionId ? liveServerSessionId : clientSessionId,
+    turnId: turnState.turnId,
+    generationId: turnState.generationId,
     referenceFile: mossReferenceInput?.files?.[0] || null,
-    signal: turnController.signal,
+    signal: ttsController.signal,
+    isCurrent: () => activeVoiceTurn === turnState && !turnState.invalidated,
     onFirstAudio: () => {
       if (firstAudioMs !== null) return;
       firstAudioMs = Math.round(performance.now() - llmStartedAt);
+      firstAudioAt = performance.now();
       const fromFinalizeMs = inputTiming?.finalizing_client_at
         ? Math.round(performance.now() - inputTiming.finalizing_client_at)
         : null;
       if (live && fromFinalizeMs !== null) {
-        setVoiceStatus(`اولین صدای پاسخ آماده شد · ${formatLatency(fromFinalizeMs)} از شروع نهایی‌سازی ورودی`);
+        setVoiceStatus(`اولین صدای پاسخ آماده شد · ${formatLatency(fromFinalizeMs)} از شروع نهایی‌سازی ورودی · لحن ${deliveryProfile.label}`);
       }
+      publishVoiceStage('audio_first_playable', {
+        turnId: turnState.turnId,
+        generationId: turnState.generationId,
+        durationMs: inputTiming?.finalizing_client_at ? firstAudioAt - inputTiming.finalizing_client_at : null
+      });
+      publishRealtimeMetrics({
+        llm_first_token: llmFirstTokenMs,
+        llm_first_token_to_tts_pcm: llmFirstTokenMs === null ? null : Math.max(0, firstAudioMs - llmFirstTokenMs),
+        speech_end_to_first_audio: inputTiming?.finalizing_client_at
+          ? Math.max(0, firstAudioAt - inputTiming.finalizing_client_at) : null
+      });
     }
   };
 
   try {
     // Create and unlock audio during the user's click, before the first network wait.
     player = new StreamingPcmPlayer(liveConversationActive ? liveOutputAudioContext : null, { keepReplay: !live });
+    player.onPlaybackStarted = () => publishVoiceStage('audio_playback_started', {
+      turnId: turnState.turnId,
+      generationId: turnState.generationId
+    });
     activeStreamPlayer = player;
     const chatUrl = `${normalizedBaseUrl()}/chat/completions`;
     const chatRequest = stream => ({
@@ -714,14 +891,18 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
         messages: [{ role: 'system', content: SYSTEM_MESSAGE }, ...conversation]
       })
     });
-    let response = await fetch(chatUrl, { ...chatRequest(true), signal: turnController.signal });
-    if (!response.ok && [400, 404, 405, 422, 501].includes(response.status)) {
-      response = await fetch(chatUrl, { ...chatRequest(false), signal: turnController.signal });
+    let response = null;
+    if (!prefetchedAnswer) {
+      publishVoiceStage('llm_request_started', { turnId: turnState.turnId, generationId: turnState.generationId });
+      response = await fetch(chatUrl, { ...chatRequest(true), signal: llmController.signal });
+      if (!response.ok && [400, 404, 405, 422, 501].includes(response.status)) {
+        response = await fetch(chatUrl, { ...chatRequest(false), signal: llmController.signal });
+      }
+      if (!response.ok) throw new Error(await readError(response));
     }
-    if (!response.ok) throw new Error(await readError(response));
 
     assistantContent = appendMessage('assistant', '');
-    const updateAnswer = (flushSpeech = false) => {
+    const updateAnswer = async (flushSpeech = false) => {
       const visibleAnswer = finalTextOnly(rawAnswer);
       assistantContent.textContent = visibleAnswer || '…';
       chatLog.scrollTop = chatLog.scrollHeight;
@@ -732,10 +913,16 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
       const consumed = pending.length - ready.pending.length;
       for (const segment of ready.segments) enqueueSpeechSegment(player, segment, speechState);
       speechCursor += consumed;
+      if (speechState.pendingSegments >= speechState.maxPendingSegments) {
+        await speechState.chain;
+      }
     };
 
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/event-stream')) {
+    const contentType = response?.headers.get('content-type') || '';
+    if (prefetchedAnswer?.answer) {
+      rawAnswer = prefetchedAnswer.answer;
+      await updateAnswer(true);
+    } else if (!contentType.includes('text/event-stream')) {
       // Keep compatibility with gateways that ignore stream=true.
       const payloadText = await response.text();
       let payload;
@@ -744,7 +931,8 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
       }
       rawAnswer = extractFinalAnswer(payload);
       llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
-      updateAnswer(true);
+      publishVoiceStage('llm_first_token', { turnId: turnState.turnId, generationId: turnState.generationId, durationMs: llmFirstTokenMs });
+      await updateAnswer(true);
     } else {
       modelTextStreamed = true;
       for await (const payload of readOpenAiSse(response)) {
@@ -752,52 +940,63 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
         const delta = choice?.delta || (typeof choice?.text === 'string' ? { content: choice.text } : null);
         const deltaText = streamDeltaText(delta);
         if (!deltaText) continue;
-        if (llmFirstTokenMs === null) llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
+        if (llmFirstTokenMs === null) {
+          llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
+          publishVoiceStage('llm_first_token', { turnId: turnState.turnId, generationId: turnState.generationId, durationMs: llmFirstTokenMs });
+        }
         rawAnswer += deltaText;
-        updateAnswer(false);
+        await updateAnswer(false);
       }
-      updateAnswer(true);
+      await updateAnswer(true);
     }
 
     const finalAnswer = finalTextOnly(rawAnswer);
     if (!finalAnswer) throw new Error('مدل پاسخ نهایی قابل‌خواندن برنگرداند؛ متن reasoning پخش نشد.');
+    publishVoiceStage('llm_response_completed', { turnId: turnState.turnId, generationId: turnState.generationId, durationMs: performance.now() - llmStartedAt });
+    turnState.llmCompleted = true;
     assistantContent.textContent = finalAnswer;
     conversation.push({ role: 'assistant', content: finalAnswer });
     await speechState.chain;
-    if (turnController.signal.aborted) throw new DOMException('گفتار کاربر پاسخ را قطع کرد.', 'AbortError');
-    appendStreamingReplay(player);
+    if (llmController.signal.aborted && !turnState.llmCompleted) throw new DOMException('گفتار کاربر پاسخ را قطع کرد.', 'AbortError');
+    if (turnState.invalidated) return;
+    if (!ttsController.signal.aborted && !turnState.invalidated) appendStreamingReplay(player);
+    publishRealtimeMetrics({ llm_first_token: llmFirstTokenMs });
     const sttQueueMs = Number(inputTiming?.stt_final_queue_ms || 0);
     const liveTimingSummary = live && inputTiming
       ? ` · STT ${formatLatency(inputTiming.stt_final_ms)}${sttQueueMs ? ` (صف ${formatLatency(sttQueueMs)})` : ''} · اولین متن مدل ${formatLatency(llmFirstTokenMs)} · اولین صدا ${formatLatency(firstAudioMs)}`
       : '';
     if (speechState.error) {
       setVoiceStatus(`پاسخ متنی آماده است؛ جریان TTS اجرا نشد: ${speechState.error.message}${liveTimingSummary}`);
-      player.waitForPlayback().catch(() => {}).finally(() => {
+      player.waitForPlayback().then(completed => completed && publishVoiceStage('audio_playback_completed', {
+        turnId: turnState.turnId,
+        generationId: turnState.generationId
+      })).catch(() => {}).finally(() => {
         player.close();
         if (activeStreamPlayer === player) activeStreamPlayer = null;
       });
     } else {
       setVoiceStatus(modelTextStreamed
-        ? `متن و صدای پاسخ با ${speechState.engine === 'moss' ? 'MOSS' : 'Piper'} جریانی دریافت شد.${liveTimingSummary}`
-        : `درگاه متن را یکجا فرستاد؛ صدای پاسخ با ${speechState.engine === 'moss' ? 'MOSS' : 'Piper'} جریانی پخش شد.${liveTimingSummary}`);
-      player.waitForPlayback().catch(() => {}).finally(() => {
+        ? `متن و صدای پاسخ با ${ttsEngineLabel(speechState.engine)} جریانی دریافت شد.${liveTimingSummary}`
+        : `درگاه متن را یکجا فرستاد؛ صدای پاسخ با ${ttsEngineLabel(speechState.engine)} جریانی پخش شد.${liveTimingSummary}`);
+      player.waitForPlayback().then(completed => completed && publishVoiceStage('audio_playback_completed', {
+        turnId: turnState.turnId,
+        generationId: turnState.generationId
+      })).catch(() => {}).finally(() => {
         player.close();
         if (activeStreamPlayer === player) activeStreamPlayer = null;
       });
     }
   } catch (error) {
-    if (error.name === 'AbortError' || turnController.signal.aborted) {
-      const partialAnswer = finalTextOnly(rawAnswer);
-      if (partialAnswer) {
-        if (assistantContent) assistantContent.textContent = partialAnswer;
-        const lastMessage = conversation[conversation.length - 1];
-        if (lastMessage?.role === 'assistant') lastMessage.content = partialAnswer;
-        else conversation.push({ role: 'assistant', content: partialAnswer });
-      } else {
+    if (error.name === 'AbortError' || llmController.signal.aborted || ttsController.signal.aborted) {
+      if (!turnState.llmCompleted) {
+        conversation.splice(conversationStart);
+        userContent?.parentElement?.remove();
         assistantContent?.parentElement?.remove();
       }
       if (player) await player.stop();
-      setVoiceStatus(live ? 'صدای دستیار قطع شد؛ دارم حرف شما را می‌شنوم…' : 'پاسخ متوقف شد.');
+      if (!liveConversationActive || !liveSpeechActive) {
+        setVoiceStatus(live ? 'صدای دستیار قطع شد؛ دارم حرف شما را می‌شنوم…' : 'پاسخ متوقف شد.');
+      }
     } else {
       conversation.pop();
       assistantContent?.parentElement?.remove();
@@ -808,7 +1007,9 @@ async function sendMessage(rawText, { live = false, inputTiming = null } = {}) {
     if (activeStreamPlayer === player) activeStreamPlayer = null;
   } finally {
     busy = false;
-    if (activeTurnController === turnController) activeTurnController = null;
+    if (activeLlmController === llmController) activeLlmController = null;
+    if (activeTtsController === ttsController) activeTtsController = null;
+    if (activeVoiceTurn === turnState) activeVoiceTurn = null;
     refreshControls();
     if (!liveConversationActive) messageInput.focus();
     if (liveTurnQueue.length) dispatchLiveTurn();
@@ -922,6 +1123,7 @@ async function startLiveAudioCapture(stream, socket) {
   const audioContext = recordingAudioContext;
   await audioContext.resume();
   const source = audioContext.createMediaStreamSource(stream);
+  publishVoiceStage('audio_capture_started');
   let workletReady = false;
   if (audioContext.audioWorklet && window.AudioWorkletNode) {
     try {
@@ -981,9 +1183,10 @@ async function stopLiveAudioCapture(socketToClose = undefined) {
   }
 }
 
-function interruptLiveTurn() {
-  if (activeTurnController && !activeTurnController.signal.aborted) {
-    activeTurnController.abort();
+function stopAssistantAudio() {
+  for (const audio of chatLog.querySelectorAll('audio.reply-audio')) {
+    audio.pause();
+    try { audio.currentTime = 0; } catch { /* metadata may not be loaded yet */ }
   }
   if (activeStreamPlayer) {
     const player = activeStreamPlayer;
@@ -993,10 +1196,61 @@ function interruptLiveTurn() {
   return Promise.resolve();
 }
 
-function queueLiveTurn(text, timing = {}) {
+function interruptLiveTurn() {
+  const startedAt = performance.now();
+  const hadActivePlayback = Boolean(activeStreamPlayer)
+    || [...chatLog.querySelectorAll('audio.reply-audio')].some(audio => !audio.paused);
+  if (activeVoiceTurn || hadActivePlayback) {
+    publishVoiceStage('barge_in_detected', {
+      turnId: activeVoiceTurn?.turnId,
+      generationId: activeVoiceTurn?.generationId
+    });
+  }
+  const stopPromise = stopAssistantAudio();
+  if (hadActivePlayback) {
+    publishVoiceStage('playback_cancelled', {
+      turnId: activeVoiceTurn?.turnId,
+      generationId: activeVoiceTurn?.generationId,
+      durationMs: performance.now() - startedAt
+    });
+  }
+  if (activeVoiceTurn && liveConversationSocket?.readyState === WebSocket.OPEN && liveServerSessionId) {
+    try {
+      liveConversationSocket.send(JSON.stringify({
+        type: 'cancel_tts_generation',
+        turn_id: activeVoiceTurn.turnId,
+        generation_id: activeVoiceTurn.generationId
+      }));
+    } catch { /* the aborted HTTP stream is also cancelled independently */ }
+  }
+  if (activeVoiceTurn) activeVoiceTurn.invalidated = true;
+  if (activeTtsController && !activeTtsController.signal.aborted) activeTtsController.abort();
+  if (activeLlmController && !activeLlmController.signal.aborted) activeLlmController.abort();
+  return stopPromise.finally(() => {
+    if (hadActivePlayback) publishRealtimeMetrics({ barge_in_to_playback_stop: performance.now() - startedAt });
+  });
+}
+
+function publishRealtimeMetrics(durationsMs) {
+  if (liveConversationSocket?.readyState !== WebSocket.OPEN) return;
+  const clean = Object.fromEntries(Object.entries(durationsMs).filter(([, value]) => Number.isFinite(value) && value >= 0));
+  if (!Object.keys(clean).length) return;
+  try { liveConversationSocket.send(JSON.stringify({ type: 'voice.metrics', durations_ms: clean })); } catch { /* metrics never affect the conversation */ }
+}
+
+function publishVoiceStage(event, { turnId = '', generationId = '', durationMs = null } = {}) {
+  if (liveConversationSocket?.readyState !== WebSocket.OPEN) return;
+  const payload = { type: 'voice.event', event };
+  if (turnId) payload.turn_id = String(turnId);
+  if (generationId) payload.generation_id = String(generationId);
+  if (Number.isFinite(durationMs) && durationMs >= 0) payload.duration_ms = durationMs;
+  try { liveConversationSocket.send(JSON.stringify(payload)); } catch { /* telemetry must not block speech */ }
+}
+
+function queueLiveTurn(text, timing = {}, utteranceId = null) {
   const utterance = String(text || '').trim();
   if (!utterance || !liveConversationActive) return;
-  liveTurnQueue.push({ text: utterance, timing });
+  liveTurnQueue.push({ text: utterance, timing, utteranceId });
   dispatchLiveTurn();
 }
 
@@ -1005,7 +1259,15 @@ async function dispatchLiveTurn() {
   liveTurnDispatching = true;
   const turn = liveTurnQueue.shift();
   try {
-    await sendMessage(turn.text, { live: true, inputTiming: turn.timing });
+    const context = speculativeContext();
+    const prefetchedAnswer = turn.utteranceId === null
+      ? null
+      : speculativeLlm?.consumeFinal({
+        turnId: turn.utteranceId,
+        text: turn.text,
+        contextKey: speculativeContextKey(context)
+      });
+    await sendMessage(turn.text, { live: true, inputTiming: turn.timing, prefetchedAnswer });
   } finally {
     liveTurnDispatching = false;
     if (liveTurnQueue.length) dispatchLiveTurn();
@@ -1021,21 +1283,42 @@ async function connectLiveConversation() {
     let payload;
     try { payload = JSON.parse(event.data); } catch { return; }
     if (payload.type === 'ready') {
+      liveServerSessionId = payload.session_id || null;
       setVoiceStatus('مکالمه‌ی زنده وصل شد؛ صحبت کن. بعد از مکث کوتاه، پاسخ شروع می‌شود.');
     } else if (payload.type === 'speech_start') {
       liveSpeechActive = true;
       liveActiveUtteranceId = payload.utterance_id;
       liveLatestUtteranceId = payload.utterance_id;
       liveUtteranceTimings.set(payload.utterance_id, { speech_started_at: performance.now() });
+      liveTranscriptRevisions.set(payload.utterance_id, 0);
+      speculativeLlm?.beginTurn(payload.utterance_id, speculativeContextKey());
       clearLiveTranscriptPreview();
       interruptLiveTurn();
       setVoiceStatus('صدای شما دریافت شد؛ پاسخ قبلی قطع شد و دارم گوش می‌دهم…');
     } else if (payload.type === 'partial') {
+      const previousRevision = liveTranscriptRevisions.get(payload.utterance_id) || 0;
+      if (Number(payload.revision || 0) <= previousRevision) return;
+      liveTranscriptRevisions.set(payload.utterance_id, Number(payload.revision || previousRevision + 1));
       updateLiveTranscriptPreview(payload.text);
+      speculativeLlm?.observePartial(payload.utterance_id, payload.text);
       const previewStartedAt = liveUtteranceTimings.get(payload.utterance_id)?.speech_started_at;
       const previewDelay = previewStartedAt ? Math.round(performance.now() - previewStartedAt) : null;
       const partialStt = Number(payload.timing?.partial_stt_ms || 0);
       setVoiceStatus(`پیش‌نویس موقت · ${formatLatency(previewDelay)} از شروع گفتار · پردازش Whisper ${formatLatency(partialStt)}؛ هنوز به مدل ارسال نشده`);
+    } else if (payload.type === 'asr.stable') {
+      if (payload.invalidated) {
+        speculativeLlm?.invalidateStable(payload.utterance_id);
+        setVoiceStatus('Whisper متن پایدار را اصلاح کرد؛ پردازش احتمالی قبلی کنار گذاشته شد.');
+      } else if (payload.text) {
+        const context = speculativeContext();
+        speculativeLlm?.offerStable({
+          turnId: payload.utterance_id,
+          revision: payload.revision,
+          text: payload.text,
+          contextKey: speculativeContextKey(context),
+          context
+        });
+      }
     } else if (payload.type === 'finalizing') {
       const finalizedAt = performance.now();
       const turnTiming = liveUtteranceTimings.get(payload.utterance_id) || {};
@@ -1068,13 +1351,15 @@ async function connectLiveConversation() {
         if (isCurrentInput) {
           setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'})؛ نهایی‌سازی ${formatLatency(timing.finalization_client_ms)}. در حال پاسخ…`);
         }
-        queueLiveTurn(transcript, timing);
+        queueLiveTurn(transcript, timing, payload.utterance_id);
       } else {
+        speculativeLlm?.cancelTurn(payload.utterance_id);
         liveUtteranceTimings.delete(payload.utterance_id);
         if (isCurrentInput) setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
         dispatchLiveTurn();
       }
     } else if (payload.type === 'discarded') {
+      speculativeLlm?.cancelTurn(payload.utterance_id);
       const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
       liveUtteranceTimings.delete(payload.utterance_id);
       if (liveActiveUtteranceId === payload.utterance_id) {
@@ -1088,6 +1373,7 @@ async function connectLiveConversation() {
       dispatchLiveTurn();
     } else if (payload.type === 'error') {
       if (String(payload.stage || '').startsWith('stt_')) {
+        speculativeLlm?.cancelTurn(payload.utterance_id);
         const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
         liveUtteranceTimings.delete(payload.utterance_id);
         if (liveActiveUtteranceId === payload.utterance_id) {
@@ -1103,12 +1389,14 @@ async function connectLiveConversation() {
   socket.addEventListener('close', () => {
     if (liveConversationSocket !== socket) return;
     liveConversationSocket = null;
+    liveServerSessionId = null;
     if (liveConversationActive) {
       liveConversationActive = false;
       liveSpeechActive = false;
       liveActiveUtteranceId = null;
       liveLatestUtteranceId = null;
       liveUtteranceTimings.clear();
+      liveTranscriptRevisions.clear();
       clearLiveTranscriptPreview();
       interruptLiveTurn();
       liveTurnQueue.length = 0;
@@ -1177,6 +1465,7 @@ async function startLiveMode() {
     liveConversationStream = null;
     await stopLiveAudioCapture(liveConversationSocket);
     liveConversationSocket = null;
+    liveServerSessionId = null;
     try { await liveOutputAudioContext?.close(); } catch { /* already closed */ }
     liveOutputAudioContext = null;
     refreshControls();
@@ -1195,6 +1484,7 @@ async function stopLiveMode() {
   await interruptLiveTurn();
   const socket = liveConversationSocket;
   liveConversationSocket = null;
+  liveServerSessionId = null;
   await stopLiveAudioCapture(socket);
   liveConversationStream?.getTracks().forEach(track => track.stop());
   liveConversationStream = null;
@@ -1373,6 +1663,9 @@ document.querySelector('#settings-toggle').addEventListener('click', event => {
 fetch('/api/status')
   .then(response => response.json())
   .then(status => {
+    if (speculativeLlm) {
+      speculativeLlm.enabled = status.realtime?.speculative_llm_enabled === true;
+    }
     if (localEngineLabel) {
       localEngineLabel.textContent = `موتور محلی: ${status.stt_model || 'نامشخص'}`;
     }
@@ -1393,12 +1686,17 @@ fetch('/api/status')
     } else if (!ttsReady) {
       setVoiceStatus('نصب Piper کامل نیست؛ بسته‌ی Piper باید از مخزن کلون‌شده نصب شود.');
     }
-    if (mossStatus && status.moss) {
-      const moss = status.moss;
-      mossStatus.textContent = moss.ready
-        ? 'MOSS آماده است. صدای پیش‌فرض فارسی Mana در دسترس است.'
-        : (moss.available ? `MOSS در حال آماده‌شدن است: ${moss.status}` : moss.status);
-      mossStatus.dataset.kind = moss.ready ? 'success' : (moss.available ? '' : 'error');
+    if (mossStatus) {
+      const isRealtimeCpu = ttsEngineSelect?.value === 'moss-realtime-cpu';
+      const selectedTtsStatus = isRealtimeCpu ? status.moss_realtime : status.moss;
+      if (selectedTtsStatus) {
+        mossStatus.textContent = selectedTtsStatus.ready
+          ? (isRealtimeCpu
+            ? 'سرویس MOSS Realtime GGUF آماده است. قطعه‌های PCM هنگام تولید به پخش‌کننده می‌رسند.'
+            : 'MOSS آماده است. صدای پیش‌فرض فارسی Mana در دسترس است.')
+          : (selectedTtsStatus.available ? `سرویس در حال آماده‌شدن است: ${selectedTtsStatus.status}` : selectedTtsStatus.status);
+        mossStatus.dataset.kind = selectedTtsStatus.ready ? 'success' : (selectedTtsStatus.available ? '' : 'error');
+      }
     }
   })
   .catch(() => setVoiceStatus('سرویس محلی گفتار در دسترس نیست.'));

@@ -51,8 +51,18 @@
           <select id="tts-engine">
             <option value="piper">Piper · صدای فعلی</option>
             <option value="moss">MOSS · کلون صدای مرجع فارسی</option>
+            <option value="moss-realtime-cpu">MOSS Realtime GGUF · آزمایشی CPU</option>
           </select>
-          <small>MOSS باید هم‌زمان روی همین دستگاه و پورت ۱۸۰۸۳ اجرا باشد.</small>
+          <small id="tts-engine-help">MOSS باید هم‌زمان روی همین دستگاه و پورت ۱۸۰۸۳ اجرا باشد.</small>
+        </label>
+        <label class="field full-width" id="piper-preset-field" for="piper-preset">
+          <span>تنظیم آزمایشی گفتار Piper</span>
+          <select id="piper-preset">
+            <option value="default">پیش‌فرض مدل · انتخاب‌شده</option>
+            <option value="faster">آزمایشی · length scale ۰٫۹۴</option>
+            <option value="steadier">آزمایشی · noise پایین‌تر</option>
+          </select>
+          <small>این تنظیم‌ها کنترل مستقیم احساسات نیستند. پیش‌فرض مدل تغییر نکرده؛ برای مقایسه، خروجی‌ها را خودت بشنو.</small>
         </label>
         <label class="field full-width moss-reference-field" id="moss-reference-field" hidden>
           <span>صدای مرجع MOSS (اختیاری)</span>
@@ -108,6 +118,8 @@
 
   <footer>مکالمه‌ی زنده با STT فارسی، مدل متنی و TTS محلی اجرا می‌شود؛ شروع صحبت شما صدای پاسخ را قطع می‌کند. reasoning و thinking وارد صدا نمی‌شوند.</footer>
   </main>
+  <script src="/speech_text.js" defer></script>
+  <script src="/speculative_llm.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

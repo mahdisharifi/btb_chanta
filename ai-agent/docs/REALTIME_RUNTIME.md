@@ -4,18 +4,18 @@
 
 `ai-agent/` remains a standalone service beside the Laravel application. It does not call GPT-Live. The voice runtime composes existing providers behind replaceable adapters:
 
-- Speech recognition: the currently cloned Persian ASR / faster-whisper models.
+- Speech recognition: the currently cloned Persian ASR / faster-whisper models, serialized through one bounded ASR lane.
 - Reasoning: the user-selected OpenAI-compatible text model through Arvan.
 - Speech generation: the local MOSS or Piper service.
-- Media/session infrastructure: LiveKit is the target for WebRTC rooms, session transport, and worker dispatch. LiveKit is infrastructure; it does not replace the selected models.
+- Media/session infrastructure: the current browser WebSocket, SSE and Web Audio path. LiveKit/WebRTC is optional future infrastructure, not a requirement for this orchestration layer.
 
-Development must remain runnable without Docker. LiveKit's local server has a development mode; production deployment can add containers later.
+The service remains runnable without Docker. Alternate media transport can be evaluated later if measurements justify it.
 
 ## Current behavior
 
-The browser captures mono PCM at 16 kHz in 20 ms packets and sends it over one WebSocket. The server applies energy-based VAD. Whisper is not a native streaming recognizer in this project: provisional recognition re-decodes accumulated audio roughly every two seconds, while only the final transcript is sent to Arvan. The VAD/audio receive loop now stays live while ASR runs in one shared worker across sessions. Final transcript jobs have priority over one coalescing preview per session, and the pending final queue is bounded to eight jobs. A full queue returns a clear retry message instead of growing memory without limit. A new utterance can be captured while the prior utterance's final ASR is running. WebSocket events are serialized, and the client tracks utterance IDs so a late result cannot clear the state of a newer utterance. Arvan text is streamed, sentence-sized text is sent to MOSS/Piper, and generated PCM is played as it arrives. A new detected utterance interrupts current playback.
+The browser captures mono PCM at 16 kHz in 20 ms packets and sends it over one WebSocket. The server applies energy-based VAD. Whisper is not a native streaming recognizer: provisional recognition re-decodes accumulated audio at a configurable interval (2 seconds by default). Final transcript jobs have priority over one coalescing preview per session; pending finals are bounded to eight process-wide and two per session. A new utterance can be captured while the prior utterance's final ASR is running. ASR and Piper each have one independent worker, and their blocking inference runs outside the asyncio event loop. Piper accepts at most two pending jobs, two PCM chunks per response, and one outstanding job per session. WebSocket events are serialized, and the client tracks utterance revisions and audio generation IDs. Arvan text is streamed, safe sentence-sized text is sent to Piper, and generated PCM is played as it arrives. A new detected utterance interrupts playback and invalidates the old generation.
 
-This is a streamed, turn-based pipeline. Continuous media transport does not mean continuous ASR or full-duplex model inference. The partial transcript is preview-only and never triggers the text model.
+This is a streamed, turn-based text-model pipeline. Continuous media transport does not mean native streaming ASR or full-duplex model inference. Partial transcript is preview-only by default; optional speculative LLM processing is guarded by `ENABLE_SPECULATIVE_LLM=false` and never publishes its answer without exact final-text and context validation.
 
 ## Target runtime
 
@@ -29,11 +29,11 @@ The target pipeline separates three concerns:
 
 ## Migration sequence
 
-1. **Measure each stage.** Record packet-to-preview, endpoint wait, final STT, first LLM text, and first playable TTS audio. Do not store audio or transcript in telemetry. This is implemented in the live WebSocket path.
+1. **Measure each stage.** Record capture-to-preview, endpoint wait, final STT, first LLM text, Piper first PCM and client playback milestones. Do not store audio or transcript in telemetry. See `VOICE_BASELINE.md` and `VOICE_BENCHMARK.md` for measured and unmeasured values.
 2. **Replace repeated full-prefix preview decoding.** Integrate and benchmark an existing streaming Whisper wrapper against the current Persian model and two-core CPU. Keep final recognition as the correction path. LiveKit alone cannot make a non-streaming Whisper model stream.
-3. **Extract the session coordinator.** The current WebSocket path now keeps audio reception responsive during inference, uses one bounded ASR lane across sessions, prioritizes final work, coalesces pending previews per session, serializes outbound events, and carries utterance IDs through the browser. Next, move VAD and turn state into an explicit session object and give it explicit cancellation and reconnect lifecycle handling.
+3. **Extract the session coordinator.** The current WebSocket path uses an explicit per-session state object, bounded event bus, one bounded ASR lane, serialized outbound events, versioned transcript state, and explicit Piper cancellation identities. The event bus is in-process; multi-worker deployment requires sticky sessions or shared coordination.
 4. **Make response work concurrent.** Stream the LLM, synthesize complete clauses as they become safe to speak, and run tools on independent tasks. On barge-in, stop playback immediately and reconcile the model context with audio the user actually heard.
-5. **Add LiveKit transport without provider lock-in.** Keep the current WebSocket path available until browser, interruption, reconnect, and multi-session behavior match. Use LiveKit Agents/Server for media and worker infrastructure, not GPT-Live or LiveKit-hosted inference.
+5. **Evaluate alternate media transport only if needed.** Keep the current WebSocket path until measurements show a concrete need for WebRTC media rooms or distributed session routing. Transport does not make a non-streaming Whisper decoder natively incremental.
 6. **Scale and harden.** Add bounded session limits, lifecycle cleanup, health/readiness, structured traces, deployment configuration, and load/cancellation checks before production traffic.
 
 ## Quality gates
@@ -41,6 +41,6 @@ The target pipeline separates three concerns:
 - No partial hypothesis is silently committed as the user's final utterance.
 - A new speaker turn can interrupt generated audio without waiting for the old LLM/TTS request to finish.
 - ASR, LLM, and TTS can be changed independently.
-- Every turn exposes stage timings and a correlation ID without logging user audio or transcript.
+- Every turn exposes stage timings and a correlation ID without logging user audio, transcript, provider token or reasoning text.
 - Latency targets are set from measured Persian speech on target hardware; they are not guessed from packet size or VAD thresholds.
 - Naturalness is reviewed separately from latency. Tiny text chunks, repeated TTS prompts, or hard-coded gaps must not be introduced just to lower first-audio time.

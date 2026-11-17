@@ -10,6 +10,7 @@ import logging
 import math
 import mimetypes
 import os
+import re
 import secrets
 import sys
 import tempfile
@@ -26,10 +27,21 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, W
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from realtime_runtime.asr_scheduler import RealtimeAsrQueue
+from realtime_runtime.asr_scheduler import RealtimeAsrQueue, run_asr_with_timeout
+from realtime_runtime.metrics import ProcessResourceMetrics, RealtimeMetrics
+from realtime_runtime.piper_scheduler import PiperQueueFull, PiperStreamScheduler
+from realtime_runtime.session import ConversationSession
 from realtime_runtime.telemetry import TurnTelemetry
+from tts.persian_text import has_speakable_content, normalize_persian_for_piper
+from tts.piper_presets import (
+    PIPER_DELIVERY_PROFILES,
+    PIPER_PRESETS,
+    apply_piper_delivery_profile,
+    piper_synthesis_config,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -64,19 +76,59 @@ STT_MODEL_DIR = next(
 )
 TTS_MODEL = ROOT / "models" / "tts" / "piper-fa" / "fa_IR-mana-medium.onnx"
 MOSS_TTS_URL = os.environ.get("MOSS_TTS_URL", "http://127.0.0.1:18083").rstrip("/")
+MOSS_REALTIME_TTS_URL = os.environ.get("MOSS_REALTIME_TTS_URL", "http://127.0.0.1:18084").rstrip("/")
+_moss_realtime_tts_lock = threading.Lock()
 MOSS_REFERENCE_AUDIO = (
     ROOT / "emotional-tts" / "moss-tts-nano" / "assets" / "audio" / "fa_mana_reference.wav"
 )
 
-_realtime_asr_queue = RealtimeAsrQueue(max_pending_finals=8)
+_realtime_asr_queue = RealtimeAsrQueue(max_pending_finals=8, max_pending_finals_per_session=2)
+_realtime_metrics = RealtimeMetrics()
+_process_resources = ProcessResourceMetrics()
+_piper_scheduler: PiperStreamScheduler | None = None
+
+
+def _bounded_env_int(name: str, default: int, low: int, high: int) -> int:
+    try:
+        return min(high, max(low, int(os.environ.get(name, str(default)))))
+    except (TypeError, ValueError):
+        return default
+
+
+MOSS_REALTIME_TTS_TIMEOUT_SECONDS = _bounded_env_int("MOSS_REALTIME_TTS_TIMEOUT_SECONDS", 900, 10, 900)
+ENABLE_SPECULATIVE_LLM = os.environ.get("ENABLE_SPECULATIVE_LLM", "false").strip().lower() in {"1", "true", "yes", "on"}
+VOICE_ASR_PARTIAL_INTERVAL_MS = _bounded_env_int("VOICE_ASR_PARTIAL_INTERVAL_MS", 2000, 500, 2000)
+VOICE_ASR_REQUEST_TIMEOUT_MS = _bounded_env_int("VOICE_ASR_REQUEST_TIMEOUT_MS", 60000, 5000, 180000)
+VOICE_ASR_QUEUE_TIMEOUT_MS = _bounded_env_int("VOICE_ASR_QUEUE_TIMEOUT_MS", 30000, 1000, 120000)
+VOICE_ENDPOINT_SILENCE_MS = _bounded_env_int("VOICE_ENDPOINT_SILENCE_MS", 420, 300, 1500)
+VOICE_TTS_PENDING_LIMIT = _bounded_env_int("VOICE_TTS_PENDING_LIMIT", 2, 0, 8)
+VOICE_TTS_REQUEST_TIMEOUT_MS = _bounded_env_int("VOICE_TTS_REQUEST_TIMEOUT_MS", 60000, 5000, 180000)
+VOICE_TTS_CHUNK_TIMEOUT_MS = _bounded_env_int("VOICE_TTS_CHUNK_TIMEOUT_MS", 30000, 1000, 90000)
+VOICE_TTS_BACKPRESSURE_TIMEOUT_MS = _bounded_env_int("VOICE_TTS_BACKPRESSURE_TIMEOUT_MS", 10000, 500, 60000)
 
 
 @asynccontextmanager
 async def app_lifespan(_app: FastAPI):
+    global _realtime_asr_queue, _piper_scheduler
+    _realtime_asr_queue = RealtimeAsrQueue(max_pending_finals=8, max_pending_finals_per_session=2)
+    _piper_scheduler = PiperStreamScheduler(
+        _iter_piper_pcm,
+        max_pending=VOICE_TTS_PENDING_LIMIT,
+        max_pending_per_session=1,
+        output_chunks=2,
+        request_timeout_seconds=VOICE_TTS_REQUEST_TIMEOUT_MS / 1000,
+        chunk_timeout_seconds=VOICE_TTS_CHUNK_TIMEOUT_MS / 1000,
+        backpressure_timeout_seconds=VOICE_TTS_BACKPRESSURE_TIMEOUT_MS / 1000,
+        on_finished=_record_piper_job,
+    )
+    _piper_scheduler.start()
     worker = asyncio.create_task(_run_realtime_asr_worker(), name="realtime-asr-worker")
     try:
         yield
     finally:
+        if _piper_scheduler is not None:
+            await _piper_scheduler.close()
+            _piper_scheduler = None
         await _realtime_asr_queue.close()
         worker.cancel()
         try:
@@ -94,10 +146,91 @@ app = FastAPI(
 
 _whisper_model = None
 _piper_voice = None
+_piper_load_lock = threading.Lock()
+_piper_synthesis_lock = threading.Lock()
 _stt_inference_lock = threading.Lock()
 _reference_wav_cache: OrderedDict[str, bytes] = OrderedDict()
 _reference_wav_cache_lock = threading.Lock()
 _realtime_logger = logging.getLogger("ai_agent.realtime")
+_VOICE_STAGE_EVENTS = {
+    "audio_capture_started",
+    "speech_started",
+    "asr_partial_created",
+    "asr_partial_stabilized",
+    "asr_partial_invalidated",
+    "asr_request_timed_out",
+    "speech_end_detected",
+    "asr_final_committed",
+    "llm_request_started",
+    "llm_first_token",
+    "llm_response_completed",
+    "tts_request_started",
+    "tts_first_pcm",
+    "audio_first_playable",
+    "audio_playback_started",
+    "audio_playback_completed",
+    "barge_in_detected",
+    "playback_cancelled",
+    "llm_speculative_start",
+    "llm_speculative_cancelled",
+}
+
+
+def _log_voice_stage(
+    name: str,
+    *,
+    session_id: str,
+    turn_id: str | int | None = None,
+    generation_id: str | None = None,
+    duration_ms: float | int | None = None,
+) -> None:
+    if name not in _VOICE_STAGE_EVENTS:
+        return
+    counter_names = {
+        "llm_speculative_start": "speculative_request_count",
+        "barge_in_detected": "barge_in_count",
+        "playback_cancelled": "playback_cancel_count",
+        "asr_partial_invalidated": "asr_partial_invalidation_count",
+        "asr_request_timed_out": "asr_request_timeout_count",
+    }
+    counter_name = counter_names.get(name)
+    if counter_name:
+        _realtime_metrics.increment(counter_name)
+    duration_metrics = {
+        "llm_first_token": "client_llm_first_token",
+        "llm_response_completed": "client_llm_response_total",
+        "audio_first_playable": "client_finalizing_to_first_playable",
+    }
+    metric_name = duration_metrics.get(name)
+    if metric_name and isinstance(duration_ms, (float, int)) and duration_ms >= 0:
+        _realtime_metrics.record(metric_name, duration_ms)
+    event: dict[str, object] = {
+        "event": name,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "generation_id": generation_id,
+        "timestamp": time.perf_counter(),
+    }
+    if duration_ms is not None and isinstance(duration_ms, (float, int)) and duration_ms >= 0:
+        event["duration_ms"] = round(float(duration_ms), 1)
+    _realtime_logger.info("voice_stage_event %s", json.dumps(event, ensure_ascii=False))
+
+
+def _record_piper_job(job) -> None:
+    metrics = job.metrics
+    if "scheduler_started_at" not in metrics:
+        return
+    started_at = float(metrics.get("request_started_at", job.queued_at))
+    finished_at = float(metrics.get("finished_at", time.perf_counter()))
+    queue_wait = float(metrics.get("scheduler_queue_wait_seconds", 0.0))
+    lock_wait = metrics.get("queue_wait_seconds")
+    first_pcm = metrics.get("time_to_first_pcm_seconds")
+    if isinstance(first_pcm, (float, int)):
+        _realtime_metrics.record("tts_first_pcm", float(first_pcm) * 1000.0)
+    _realtime_metrics.record("tts_scheduler_queue_wait", queue_wait * 1000.0)
+    if isinstance(lock_wait, (float, int)):
+        _realtime_metrics.record("tts_runtime_lock_wait", float(lock_wait) * 1000.0)
+    _realtime_metrics.record("tts_generation_total", (finished_at - started_at) * 1000.0)
 
 
 def _taraneh_files_present() -> bool:
@@ -160,6 +293,98 @@ def _moss_status() -> dict[str, object]:
             "ready": False,
             "status": "سرویس MOSS اجرا نیست؛ آن را روی پورت ۱۸۰۸۳ اجرا کن.",
         }
+
+
+def _moss_realtime_status() -> dict[str, object]:
+    request = urllib.request.Request(f"{MOSS_REALTIME_TTS_URL}/v1/audio/voices", method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=1.0) as response:
+            response.read(1024)
+        return {
+            "available": True,
+            "ready": True,
+            "status": "MOSS Realtime GGUF آماده است؛ PCM هم‌زمان با تولید به سرویس وب منتقل می‌شود.",
+        }
+    except Exception:
+        return {
+            "available": False,
+            "ready": False,
+            "status": f"سرویس MOSS Realtime روی {MOSS_REALTIME_TTS_URL} در دسترس نیست.",
+        }
+
+
+def _synthesize_with_moss_realtime_gguf(text: str) -> tuple[bytes, int, int, int]:
+    if not _moss_realtime_tts_lock.acquire(timeout=2.0):
+        raise RuntimeError("موتور MOSS Realtime در حال تولید صدای درخواست دیگری است؛ کمی بعد دوباره تلاش کن.")
+
+    try:
+        request_body = json.dumps(
+            {"model": "tts", "input": text, "response_format": "wav"},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{MOSS_REALTIME_TTS_URL}/v1/audio/speech",
+            data=request_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=MOSS_REALTIME_TTS_TIMEOUT_SECONDS) as response:
+                wav_bytes = response.read()
+        except urllib.error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"MOSS Realtime GGUF خطا داد: {details[:1000]}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"اتصال به MOSS Realtime برقرار نشد ({MOSS_REALTIME_TTS_URL}). سرویس tts-server را اجرا کن."
+            ) from exc
+
+        try:
+            with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
+                channels = wav_file.getnchannels()
+                sample_width = wav_file.getsampwidth()
+                sample_rate = wav_file.getframerate()
+                pcm = wav_file.readframes(wav_file.getnframes())
+        except (wave.Error, EOFError) as exc:
+            raise RuntimeError("MOSS Realtime پاسخ WAV معتبر برنگرداند.") from exc
+
+        if sample_width != 2 or channels not in (1, 2) or not pcm:
+            raise RuntimeError("قالب صوت MOSS Realtime پشتیبانی نمی‌شود یا پاسخ خالی است.")
+        return wav_bytes, pcm, sample_rate, channels
+    finally:
+        _moss_realtime_tts_lock.release()
+
+
+def _open_moss_realtime_gguf_stream(text: str):
+    """Open the upstream raw-PCM stream without blocking the ASGI event loop."""
+    if not _moss_realtime_tts_lock.acquire(timeout=2.0):
+        raise RuntimeError("موتور MOSS Realtime در حال تولید صدای درخواست دیگری است؛ کمی بعد دوباره تلاش کن.")
+
+    request_body = json.dumps(
+        {"model": "tts", "input": text, "response_format": "pcm"},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"{MOSS_REALTIME_TTS_URL}/v1/audio/speech",
+        data=request_body,
+        headers={"Content-Type": "application/json", "Accept": "application/octet-stream"},
+        method="POST",
+    )
+    try:
+        return urllib.request.urlopen(request, timeout=MOSS_REALTIME_TTS_TIMEOUT_SECONDS)
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        exc.close()
+        _moss_realtime_tts_lock.release()
+        raise RuntimeError(f"MOSS Realtime GGUF خطا داد: {details[:1000]}") from exc
+    except urllib.error.URLError as exc:
+        _moss_realtime_tts_lock.release()
+        raise RuntimeError(
+            f"اتصال به MOSS Realtime برقرار نشد ({MOSS_REALTIME_TTS_URL}). سرویس tts-server را اجرا کن."
+        ) from exc
+    except Exception:
+        _moss_realtime_tts_lock.release()
+        raise
 
 
 def _multipart_body(
@@ -302,6 +527,8 @@ def _synthesize_with_moss(text: str, reference_audio: bytes | None, filename: st
 
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
+    preset: str = "default"
+    delivery_profile: str = "warm"
 
 
 @app.get("/")
@@ -338,7 +565,28 @@ def status() -> dict[str, object]:
         "tts_config_present": TTS_MODEL.with_suffix(TTS_MODEL.suffix + ".json").is_file(),
         "tts_espeak_bridge_present": piper_bridge_present,
         "tts_espeak_data_present": piper_espeak_data_present,
+        "tts_presets": PIPER_PRESETS,
+        "realtime": {
+            "speculative_llm_enabled": ENABLE_SPECULATIVE_LLM,
+            "asr_partial_interval_ms": VOICE_ASR_PARTIAL_INTERVAL_MS,
+            "asr_request_timeout_ms": VOICE_ASR_REQUEST_TIMEOUT_MS,
+            "asr_queue_timeout_ms": VOICE_ASR_QUEUE_TIMEOUT_MS,
+            "endpoint_silence_ms": VOICE_ENDPOINT_SILENCE_MS,
+            "metrics": _realtime_metrics.snapshot(),
+            "counters": _realtime_metrics.counter_snapshot(),
+            "process_resources": _process_resources.snapshot(),
+            "event_bus": "per-session in-process; use sticky sessions with multiple workers",
+            "asr_queue": _realtime_asr_queue.snapshot(),
+            "piper": _piper_scheduler.snapshot() if _piper_scheduler else {"workers": 0, "active": 0, "pending": 0},
+            "piper_queue_pending_limit": VOICE_TTS_PENDING_LIMIT,
+            "piper_queue_pending_per_session_limit": 1,
+            "piper_output_queue_chunks": 2,
+            "piper_request_timeout_ms": VOICE_TTS_REQUEST_TIMEOUT_MS,
+            "piper_chunk_timeout_ms": VOICE_TTS_CHUNK_TIMEOUT_MS,
+            "piper_backpressure_timeout_ms": VOICE_TTS_BACKPRESSURE_TIMEOUT_MS,
+        },
         "moss": _moss_status(),
+        "moss_realtime": _moss_realtime_status(),
         "moss_reference_audio_present": MOSS_REFERENCE_AUDIO.is_file(),
     }
 
@@ -503,17 +751,60 @@ async def _run_realtime_asr_worker() -> None:
         send_event = payload["send_event"]
         queue_wait_ms = round((time.perf_counter() - payload["queued_at"]) * 1000.0, 1)
         try:
+            if queue_wait_ms > VOICE_ASR_QUEUE_TIMEOUT_MS:
+                _realtime_metrics.record("asr_queue_timeout", queue_wait_ms)
+                await send_event({
+                    "type": "error",
+                    "session_id": job.session_id,
+                    "utterance_id": job.turn_id,
+                    "stage": f"stt_{job.kind}_queue",
+                    "message": "درخواست تشخیص گفتار در صف بیش از حد منتظر ماند؛ لطفاً جمله را دوباره بگو.",
+                })
+                continue
+
+            async def report_asr_timeout() -> None:
+                _realtime_metrics.record("asr_request_timeout", VOICE_ASR_REQUEST_TIMEOUT_MS)
+                _log_voice_stage("asr_request_timed_out", session_id=job.session_id, turn_id=job.turn_id)
+                sent = await send_event({
+                    "type": "error",
+                    "session_id": job.session_id,
+                    "utterance_id": job.turn_id,
+                    "stage": f"stt_{job.kind}_timeout",
+                    "message": "تبدیل گفتار بیش از زمان مجاز طول کشید؛ نتیجه‌ی دیررس نادیده گرفته می‌شود.",
+                })
+                if not sent:
+                    await _realtime_asr_queue.discard_session(job.session_id)
+
             if job.kind == "partial":
                 trace.start("stt_partial")
                 partial_started_at = time.perf_counter()
-                partial_text = await run_in_threadpool(_transcribe_partial_samples, payload["samples"])
+                partial_text, timed_out = await run_asr_with_timeout(
+                    _transcribe_partial_samples,
+                    payload["samples"],
+                    timeout_seconds=VOICE_ASR_REQUEST_TIMEOUT_MS / 1000,
+                    on_timeout=report_asr_timeout,
+                )
+                if timed_out:
+                    trace.finish("stt_partial")
+                    continue
                 partial_stt_ms = trace.finish("stt_partial")
+                _realtime_metrics.record("asr_partial_compute", partial_stt_ms)
                 if payload["is_current"]() and partial_text:
+                    revision = payload["transcript_state"].observe(partial_text)
+                    if revision is None:
+                        continue
+                    if not payload["transcript_state"].first_partial_emitted:
+                        _realtime_metrics.record(
+                            "capture_to_first_partial",
+                            (time.perf_counter() - payload["speech_started_at"]) * 1000.0,
+                        )
+                        payload["transcript_state"].first_partial_emitted = True
                     sent = await send_event({
                         "type": "partial",
                         "session_id": job.session_id,
                         "utterance_id": job.turn_id,
-                        "text": partial_text,
+                        "revision": revision.revision,
+                        "text": revision.text,
                         "timing": trace.snapshot(
                             partial_audio_ms=payload["partial_audio_ms"],
                             partial_stt_ms=partial_stt_ms,
@@ -523,23 +814,63 @@ async def _run_realtime_asr_worker() -> None:
                     })
                     if not sent:
                         await _realtime_asr_queue.discard_session(job.session_id)
+                        continue
+                    _log_voice_stage(
+                        "asr_partial_created",
+                        session_id=job.session_id,
+                        turn_id=job.turn_id,
+                        duration_ms=partial_stt_ms,
+                    )
+                    if revision.stable_changed:
+                        await send_event({
+                            "type": "asr.stable",
+                            "session_id": job.session_id,
+                            "utterance_id": job.turn_id,
+                            "revision": revision.revision,
+                            "text": revision.stable_text,
+                            "invalidated": revision.stable_invalidated,
+                        })
+                        _log_voice_stage(
+                            "asr_partial_invalidated" if revision.stable_invalidated else "asr_partial_stabilized",
+                            session_id=job.session_id,
+                            turn_id=job.turn_id,
+                        )
                 continue
 
             base_measurements = payload["base_measurements"]
             trace.start("stt_final")
-            result = await run_in_threadpool(_transcribe_live_samples, payload["samples"])
+            result, timed_out = await run_asr_with_timeout(
+                _transcribe_live_samples,
+                payload["samples"],
+                timeout_seconds=VOICE_ASR_REQUEST_TIMEOUT_MS / 1000,
+                on_timeout=report_asr_timeout,
+            )
+            if timed_out:
+                trace.finish("stt_final")
+                continue
+            if payload["session"].closed:
+                continue
             stt_final_ms = trace.finish("stt_final")
+            _realtime_metrics.record("asr_final_compute", stt_final_ms)
+            _realtime_metrics.record("asr_final_queue", queue_wait_ms)
+            _realtime_metrics.record(
+                "speech_end_to_final_asr",
+                (time.perf_counter() - payload["speech_ended_at"]) * 1000.0,
+            )
             timing = trace.snapshot(
                 **base_measurements,
                 stt_final_ms=stt_final_ms,
                 stt_final_queue_ms=queue_wait_ms,
             )
             result["timing"] = timing
+            revision = payload["session"].finish_utterance(job.turn_id, str(result.get("text", "")))
             _realtime_logger.info("voice_turn_metrics %s", json.dumps(timing, ensure_ascii=False))
+            _log_voice_stage("asr_final_committed", session_id=job.session_id, turn_id=job.turn_id, duration_ms=stt_final_ms)
             sent = await send_event({
                 "type": "final",
                 "session_id": job.session_id,
                 "utterance_id": job.turn_id,
+                "revision": revision,
                 **result,
             })
             if not sent:
@@ -559,11 +890,46 @@ async def _run_realtime_asr_worker() -> None:
                 await _realtime_asr_queue.discard_session(job.session_id)
 
 
-def _iter_piper_pcm(text: str):
+def _iter_piper_pcm(text: str, syn_config=None, metrics: dict[str, object] | None = None):
     """Yield Piper's sentence-sized PCM chunks without building a whole WAV."""
+    request_started_at = (
+        float(metrics.setdefault("request_started_at", time.perf_counter()))
+        if metrics is not None
+        else time.perf_counter()
+    )
     voice = _get_piper_voice()
-    for audio_chunk in voice.synthesize(text):
-        yield audio_chunk.audio_int16_bytes
+    normalized_text = normalize_persian_for_piper(text)
+    if not has_speakable_content(normalized_text):
+        if metrics is not None:
+            metrics["finished_at"] = time.perf_counter()
+        return
+    iterator = iter(voice.synthesize(normalized_text, syn_config=syn_config))
+    while True:
+        lock_wait_started = time.perf_counter()
+        _piper_synthesis_lock.acquire()
+        lock_acquired_at = time.perf_counter()
+        try:
+            if metrics is not None and "queue_wait_seconds" not in metrics:
+                metrics["queue_wait_seconds"] = lock_acquired_at - lock_wait_started
+            try:
+                audio_chunk = next(iterator)
+            except StopIteration:
+                if metrics is not None:
+                    metrics["finished_at"] = time.perf_counter()
+                return
+        finally:
+            _piper_synthesis_lock.release()
+        pcm = audio_chunk.audio_int16_bytes
+        if pcm:
+            if metrics is not None:
+                chunks = metrics.setdefault("chunks", [])
+                if isinstance(chunks, list):
+                    chunks.append({
+                        "bytes": len(pcm),
+                        "ready_seconds": time.perf_counter() - request_started_at,
+                    })
+                metrics.setdefault("time_to_first_pcm_seconds", time.perf_counter() - request_started_at)
+            yield pcm
 
 
 def _prepare_moss_reference(reference_audio: bytes | None, filename: str) -> tuple[bytes, str, str]:
@@ -729,18 +1095,29 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
     import numpy as np
 
     await websocket.accept()
-    session_id = secrets.token_hex(8)
-    send_lock = asyncio.Lock()
+    session = ConversationSession()
+    session_id = session.session_id
     active_utterance_id: int | None = None
 
     async def send_event(payload: dict[str, object]) -> bool:
-        async with send_lock:
-            try:
-                await websocket.send_json(payload)
-            except (WebSocketDisconnect, RuntimeError):
-                return False
-        return True
+        event = dict(payload)
+        event.setdefault("session_id", session_id)
+        event.setdefault("turn_id", event.get("utterance_id"))
+        event.setdefault("revision", 0)
+        return await session.events.publish(event)
 
+    async def write_events() -> None:
+        while True:
+            event = await session.events.get()
+            if event is None:
+                return
+            try:
+                await websocket.send_json(event)
+            except (WebSocketDisconnect, RuntimeError):
+                await session.events.close(discard_pending=True)
+                return
+
+    event_writer = asyncio.create_task(write_events(), name=f"voice-events-{session_id}")
     await send_event({"type": "ready", "session_id": session_id, "sample_rate": 16000, "channels": 1})
     sample_rate = 16000
     pre_roll: deque[np.ndarray] = deque(maxlen=20)  # 400 ms, independent of WebSocket packet size.
@@ -754,12 +1131,14 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
     minimum_voiced_samples = int(0.22 * sample_rate)
     # 420 ms is a latency/turn-boundary compromise: shorter can split natural
     # Persian pauses, while longer makes the text-model pipeline feel sluggish.
-    end_silence_samples = int(0.42 * sample_rate)
+    end_silence_samples = round(VOICE_ENDPOINT_SILENCE_MS * sample_rate / 1000)
     trailing_context_samples = int(0.12 * sample_rate)
     noise_floor = 0.002
     in_speech = False
     utterance_id = 0
     turn_trace: TurnTelemetry | None = None
+    speech_started_at = 0.0
+    partial_interval_samples = round(VOICE_ASR_PARTIAL_INTERVAL_MS * sample_rate / 1000)
 
     def final_utterance_audio() -> np.ndarray:
         audio = np.concatenate(utterance_frames).astype(np.float32, copy=False)
@@ -781,11 +1160,19 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
         else:
             final_samples = final_utterance_audio()
             endpoint_wait_ms = round(consecutive_silence_samples * 1000.0 / sample_rate, 1)
+            speech_ended_at = time.perf_counter()
+            _log_voice_stage(
+                "speech_end_detected",
+                session_id=session_id,
+                turn_id=utterance_id,
+                duration_ms=endpoint_wait_ms,
+            )
             base_measurements = {
                 "utterance_audio_ms": round(final_samples.size * 1000.0 / sample_rate, 1),
                 "endpoint_wait_ms": endpoint_wait_ms,
             }
             trace = turn_trace or TurnTelemetry(session_id, utterance_id)
+            _realtime_metrics.record("endpoint_silence_wait", endpoint_wait_ms)
             await send_event({
                 "type": "finalizing",
                 "session_id": session_id,
@@ -795,8 +1182,10 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
             accepted = await _realtime_asr_queue.submit_final(session_id, utterance_id, {
                 "samples": final_samples.copy(),
                 "trace": trace,
+                "session": session,
                 "base_measurements": base_measurements,
                 "queued_at": time.perf_counter(),
+                "speech_ended_at": speech_ended_at,
                 "send_event": send_event,
             })
             if not accepted:
@@ -819,6 +1208,7 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
         voiced_samples = 0
         turn_trace = None
         active_utterance_id = None
+        session.capture.active_utterance_id = None
         in_speech = False
 
     try:
@@ -829,6 +1219,7 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
 
             packet = message.get("bytes")
             if packet:
+                session.capture.received_audio_frames += 1
                 even_length = len(packet) - (len(packet) % 2)
                 if even_length <= 0:
                     continue
@@ -848,9 +1239,10 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                             noise_floor = min(0.018, noise_floor * (1.0 - alpha) + rms * alpha)
                     if consecutive_voice_samples >= onset_required_samples:
                         in_speech = True
-                        utterance_id += 1
+                        utterance_id = session.begin_utterance()
                         active_utterance_id = utterance_id
                         turn_trace = TurnTelemetry(session_id, utterance_id)
+                        speech_started_at = time.perf_counter()
                         utterance_frames = list(pre_roll)
                         utterance_samples = sum(int(frame.size) for frame in utterance_frames)
                         partial_at_samples = utterance_samples
@@ -861,6 +1253,7 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                             "session_id": session_id,
                             "utterance_id": utterance_id,
                         })
+                        _log_voice_stage("speech_started", session_id=session_id, turn_id=utterance_id)
                     continue
 
                 utterance_frames.append(samples)
@@ -871,15 +1264,18 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                     consecutive_silence_samples = 0
                     voiced_samples += int(samples.size)
 
-                if utterance_samples - partial_at_samples >= 2 * 16000 and utterance_samples >= 32000:
+                if utterance_samples - partial_at_samples >= partial_interval_samples and utterance_samples >= partial_interval_samples:
                     partial_samples = np.concatenate(utterance_frames).astype(np.float32, copy=False)
                     await _realtime_asr_queue.submit_partial(session_id, utterance_id, {
                         "samples": partial_samples,
                         "trace": turn_trace,
+                        "transcript_state": session.transcript(utterance_id),
+                        "speech_started_at": speech_started_at,
                         "partial_audio_ms": round(utterance_samples * 1000.0 / sample_rate, 1),
                         "queued_at": time.perf_counter(),
                         "send_event": send_event,
-                        "is_current": lambda turn_id=utterance_id: active_utterance_id == turn_id,
+                    "session": session,
+                    "is_current": lambda turn_id=utterance_id: not session.closed and active_utterance_id == turn_id,
                     })
                     partial_at_samples = utterance_samples
 
@@ -897,10 +1293,43 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
                     if in_speech and utterance_frames:
                         await finalize_utterance()
                     break
+                if control.get("type") == "voice.metrics":
+                    measurements = control.get("durations_ms")
+                    if isinstance(measurements, dict):
+                        allowed = {
+                            "llm_first_token_to_tts_pcm",
+                            "speech_end_to_first_audio",
+                            "barge_in_to_playback_stop",
+                        }
+                        for name, value in measurements.items():
+                            if name in allowed and isinstance(value, (float, int)):
+                                _realtime_metrics.record(f"client_{name}", value)
+                if control.get("type") == "voice.event":
+                    name = str(control.get("event", ""))
+                    duration_ms = control.get("duration_ms")
+                    _log_voice_stage(
+                        name,
+                        session_id=session_id,
+                        turn_id=str(control.get("turn_id", "")) or None,
+                        generation_id=str(control.get("generation_id", "")) or None,
+                        duration_ms=duration_ms if isinstance(duration_ms, (float, int)) else None,
+                    )
+                if control.get("type") == "cancel_tts_generation" and _piper_scheduler is not None:
+                    turn_id = str(control.get("turn_id", ""))
+                    generation_id = str(control.get("generation_id", ""))
+                    await _piper_scheduler.cancel_generation(session_id, turn_id, generation_id)
     except WebSocketDisconnect:
         pass
     finally:
         await _realtime_asr_queue.discard_session(session_id)
+        if _piper_scheduler is not None:
+            await _piper_scheduler.cancel_session(session_id)
+        await session.close()
+        event_writer.cancel()
+        try:
+            await event_writer
+        except asyncio.CancelledError:
+            pass
         try:
             await websocket.close()
         except RuntimeError:
@@ -910,31 +1339,46 @@ async def live_conversation_stream(websocket: WebSocket) -> None:
 def _get_piper_voice():
     global _piper_voice
     if _piper_voice is None:
-        try:
-            import piper
-            from piper import PiperVoice
-            from piper import espeakbridge  # noqa: F401
-        except ImportError as exc:
-            raise RuntimeError(
-                "Piper's native espeak bridge is missing. From ai-agent, reinstall the cloned project with: "
-                "python -m pip uninstall -y piper-tts && python -m pip install ./piper1-gpl"
-            ) from exc
+        with _piper_load_lock:
+            if _piper_voice is not None:
+                return _piper_voice
+            try:
+                import piper
+                from piper import PiperVoice
+                from piper import espeakbridge  # noqa: F401
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Piper's native espeak bridge is missing. From ai-agent, reinstall the cloned project with: "
+                    "python -m pip uninstall -y piper-tts && python -m pip install ./piper1-gpl"
+                ) from exc
 
-        espeak_data = Path(piper.__file__).resolve().parent / "espeak-ng-data"
-        if not (espeak_data / "phontab").is_file():
-            raise RuntimeError(
-                f"Piper espeak-ng data is missing at {espeak_data}. Reinstall with: "
-                "python -m pip uninstall -y piper-tts && python -m pip install ./piper1-gpl"
-            )
+            espeak_data = Path(piper.__file__).resolve().parent / "espeak-ng-data"
+            if not (espeak_data / "phontab").is_file():
+                raise RuntimeError(
+                    f"Piper espeak-ng data is missing at {espeak_data}. Reinstall with: "
+                    "python -m pip uninstall -y piper-tts && python -m pip install ./piper1-gpl"
+                )
 
-        if not TTS_MODEL.is_file() or not TTS_MODEL.with_suffix(TTS_MODEL.suffix + ".json").is_file():
-            raise RuntimeError(f"Piper voice files were not found beside {TTS_MODEL}")
-        _piper_voice = PiperVoice.load(str(TTS_MODEL))
+            if not TTS_MODEL.is_file() or not TTS_MODEL.with_suffix(TTS_MODEL.suffix + ".json").is_file():
+                raise RuntimeError(f"Piper voice files were not found beside {TTS_MODEL}")
+            _piper_voice = PiperVoice.load(str(TTS_MODEL))
     return _piper_voice
 
 
-def _synthesize(text: str) -> bytes:
+def _synthesize(
+    text: str,
+    preset_name: str = "default",
+    delivery_profile: str = "warm",
+) -> bytes:
+    normalized_text = normalize_persian_for_piper(text)
+    if not has_speakable_content(normalized_text):
+        raise ValueError("متن برای گفتار فقط شامل نشانه‌گذاری است.")
     voice = _get_piper_voice()
+    syn_config = apply_piper_delivery_profile(
+        piper_synthesis_config(preset_name),
+        voice.config,
+        delivery_profile,
+    )
     audio = io.BytesIO()
     with wave.open(audio, "wb") as wav_file:
         # Set the header before synthesis so an earlier phonemizer error isn't
@@ -942,7 +1386,8 @@ def _synthesize(text: str) -> bytes:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(voice.config.sample_rate)
-        voice.synthesize_wav(text, wav_file, set_wav_format=False)
+        with _piper_synthesis_lock:
+            voice.synthesize_wav(normalized_text, wav_file, syn_config=syn_config, set_wav_format=False)
         if wav_file.tell() == 0:
             raise RuntimeError("Piper returned no audio chunks for the response text.")
     return audio.getvalue()
@@ -951,7 +1396,9 @@ def _synthesize(text: str) -> bytes:
 @app.post("/api/synthesize")
 def synthesize(request: SpeakRequest) -> Response:
     try:
-        audio = _synthesize(request.text)
+        audio = _synthesize(request.text, request.preset, request.delivery_profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -987,31 +1434,132 @@ async def synthesize_moss(
     return Response(content=audio, media_type="audio/wav")
 
 
+@app.post("/api/synthesize/moss-realtime")
+async def synthesize_moss_realtime(request: SpeakRequest) -> Response:
+    try:
+        wav_bytes, _, _, _ = await run_in_threadpool(_synthesize_with_moss_realtime_gguf, request.text)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"تولید صدا با MOSS Realtime ناموفق بود: {exc}") from exc
+    return Response(content=wav_bytes, media_type="audio/wav")
+
+
 @app.post("/api/synthesize/stream")
 async def synthesize_stream(
     text: str = Form(..., min_length=1, max_length=1200),
     engine: str = Form("piper"),
+    preset: str = Form("default"),
+    delivery_profile: str = Form("warm"),
+    session_id: str = Form("anonymous", min_length=1, max_length=96),
+    turn_id: str = Form("manual", min_length=1, max_length=96),
+    generation_id: str = Form("0", min_length=1, max_length=96),
     prompt_audio: UploadFile | None = File(None),
 ):
-    """Return raw PCM as it is generated by Piper or MOSS."""
+    """Return raw PCM from Piper, MOSS-Nano, or the streamed MOSS Realtime CPU server."""
     selected_engine = engine.strip().lower()
     if selected_engine == "piper":
+        normalized_text = normalize_persian_for_piper(text)
+        if not has_speakable_content(normalized_text):
+            raise HTTPException(status_code=422, detail="متن برای گفتار فقط شامل نشانه‌گذاری است.")
+        if preset not in PIPER_PRESETS:
+            raise HTTPException(status_code=422, detail=f"تنظیم TTS ناشناخته است: {preset}")
+        if delivery_profile not in PIPER_DELIVERY_PROFILES:
+            raise HTTPException(status_code=422, detail=f"حالت گفتار Piper ناشناخته است: {delivery_profile}")
+        if not all(re.fullmatch(r"[A-Za-z0-9._:-]{1,96}", value) for value in (session_id, turn_id, generation_id)):
+            raise HTTPException(status_code=422, detail="شناسه‌ی نشست یا نسل صوت معتبر نیست.")
+        scheduler = _piper_scheduler
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="Piper worker هنوز آماده نیست.")
         try:
             voice = await run_in_threadpool(_get_piper_voice)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"آماده‌سازی Piper ناموفق بود: {exc}") from exc
+        try:
+            syn_config = apply_piper_delivery_profile(
+                piper_synthesis_config(preset),
+                voice.config,
+                delivery_profile,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        try:
+            job = await scheduler.submit(
+                session_id=session_id,
+                turn_id=turn_id,
+                generation_id=generation_id,
+                text=normalized_text,
+                syn_config=syn_config,
+            )
+        except PiperQueueFull as exc:
+            raise HTTPException(status_code=429, detail="صف Piper پر است یا برای این نشست یک تولید دیگر فعال است.") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
         return StreamingResponse(
-            _iter_piper_pcm(text),
+            scheduler.stream(job),
             media_type="application/octet-stream",
             headers={
                 "X-Audio-Codec": "pcm_s16le",
                 "X-Audio-Sample-Rate": str(voice.config.sample_rate),
                 "X-Audio-Channels": "1",
+                "X-Session-ID": session_id,
+                "X-Turn-ID": turn_id,
+                "X-Generation-ID": generation_id,
+                "X-Delivery-Profile": delivery_profile,
+                "X-Delivery-Gap-Ms": str(round(float(PIPER_DELIVERY_PROFILES[delivery_profile]["gap_ms"]))),
                 "Cache-Control": "no-cache, no-store",
                 "X-Accel-Buffering": "no",
             },
+        )
+
+    if selected_engine == "moss-realtime-cpu":
+        try:
+            upstream = await run_in_threadpool(_open_moss_realtime_gguf_stream, text)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"شروع جریان MOSS Realtime ناموفق بود: {exc}") from exc
+
+        cleanup_guard = threading.Lock()
+        cleaned_up = False
+
+        async def cleanup_upstream() -> None:
+            nonlocal cleaned_up
+            with cleanup_guard:
+                if cleaned_up:
+                    return
+                cleaned_up = True
+            try:
+                await run_in_threadpool(upstream.close)
+            finally:
+                _moss_realtime_tts_lock.release()
+
+        async def relay_pcm():
+            try:
+                while True:
+                    read_audio = getattr(upstream, "read1", upstream.read)
+                    chunk = await run_in_threadpool(read_audio, 8192)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                await cleanup_upstream()
+
+        return StreamingResponse(
+            relay_pcm(),
+            media_type="application/octet-stream",
+            headers={
+                "X-Audio-Codec": "pcm_s16le",
+                "X-Audio-Sample-Rate": "24000",
+                "X-Audio-Channels": "1",
+                "X-Audio-Buffered": "false",
+                "Cache-Control": "no-cache, no-store",
+                "X-Accel-Buffering": "no",
+            },
+            background=BackgroundTask(cleanup_upstream),
         )
 
     if selected_engine != "moss":
