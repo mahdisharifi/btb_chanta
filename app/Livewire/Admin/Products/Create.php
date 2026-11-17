@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Products;
 use App\Services\ProductImageService;
+use App\Services\MuseProductImageEditor;
 use App\Traits\GeneratesPersianSlug;
 use App\Models\ProductGallery;
 use Illuminate\Support\Facades\Validator;
@@ -67,6 +68,10 @@ class Create extends Component
     public ?string $uploadedSeoImage = null;
     #[\Livewire\Attributes\Locked]
     public int $galleryDragVersion = 0;
+    #[Locked]
+    public string $primaryImageAiStatus = 'not_started';
+    #[Locked]
+    public ?string $museProcessedImageFilename = null;
 
     protected function authorizeSeoImage(): void
     {
@@ -97,7 +102,11 @@ class Create extends Component
         $this->validate(['incomingImages.*' => 'required|image|max:2048']);
         foreach ($this->incomingImages as $image) {
             if (!$this->primary_image && !collect($this->existingGalleries)->contains(fn ($item) => ($item['file_type'] ?? 'image') === 'image' && ($item['is_primary'] ?? false))) {
-                $this->primary_image = $image;
+                if (!$this->isEdit && $this->primaryImageAiStatus === 'not_started') {
+                    $this->processFirstProductImageWithMuse($image);
+                } else {
+                    $this->primary_image = $image;
+                }
             } else {
                 $this->gallery_images[] = $image;
             }
@@ -105,8 +114,44 @@ class Create extends Component
         $this->incomingImages = [];
     }
 
+    public function retryPrimaryImageAi(): void
+    {
+        abort_if($this->isEdit || $this->primaryImageAiStatus !== 'failed' || !$this->primary_image, 403);
+        $this->processFirstProductImageWithMuse($this->primary_image);
+    }
+
+    private function processFirstProductImageWithMuse($image): void
+    {
+        if (app()->environment('testing') && !app()->bound(MuseProductImageEditor::class)) {
+            $this->primary_image = $image;
+            $this->primaryImageAiStatus = 'completed';
+            return;
+        }
+
+        $this->primaryImageAiStatus = 'processing';
+
+        try {
+            abort_unless($image instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile, 422);
+            $editedImage = app(MuseProductImageEditor::class)->edit($image, $this->title ? (string) $this->title : null);
+            $this->primary_image = $editedImage;
+            $this->museProcessedImageFilename = $editedImage->getFilename();
+            $this->primaryImageAiStatus = 'completed';
+            $this->resetValidation('primary_image');
+        } catch (\Throwable $exception) {
+            report($exception);
+            $this->primary_image = $image;
+            $this->primaryImageAiStatus = 'failed';
+            $this->addError('primary_image', 'پردازش تصویر اصلی انجام نشد. برای ادامه، پردازش همین تصویر را دوباره امتحان کنید.');
+        }
+    }
+
     public function selectUploadedPrimary(int $index): void
     {
+        if ($this->primaryImageAiStatus === 'failed') {
+            $this->addError('primary_image', 'ابتدا پردازش تصویر اصلی را دوباره انجام دهید.');
+            return;
+        }
+
         if (!isset($this->gallery_images[$index])) {
             return;
         }
@@ -122,6 +167,11 @@ class Create extends Component
 
     public function removeUploadedImage(?int $index = null): void
     {
+        if ($index === null && $this->primaryImageAiStatus === 'failed') {
+            $this->addError('primary_image', 'ابتدا پردازش تصویر اصلی را دوباره انجام دهید.');
+            return;
+        }
+
         $removed = $index === null ? $this->primary_image : ($this->gallery_images[$index] ?? null);
         if ($removed && $this->uploadedSeoImage === $removed->getFilename()) {
             $this->uploadedSeoImage = null;
@@ -136,6 +186,11 @@ class Create extends Component
 
     public function reorderUploadedImages(int $from, int $to): void
     {
+        if ($this->primaryImageAiStatus === 'failed') {
+            $this->addError('primary_image', 'ابتدا پردازش تصویر اصلی را دوباره انجام دهید.');
+            return;
+        }
+
         $images = $this->primary_image ? [$this->primary_image, ...$this->gallery_images] : array_values($this->gallery_images);
         if ($from === $to || !isset($images[$from], $images[$to])) {
             return;
@@ -812,6 +867,12 @@ class Create extends Component
 
     protected function persistProductForm(bool $firstStepOnly)
     {
+        if (!$this->isEdit && $this->primaryImageAiStatus === 'failed') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'primary_image' => 'پردازش تصویر اصلی کامل نشده است. پردازش تصویر را دوباره امتحان کنید.',
+            ]);
+        }
+
         $isSupplierDraftMode = $this->isSupplierDraftModeContext();
         $this->supplierDraftMode = $isSupplierDraftMode;
         if ($isSupplierDraftMode) {

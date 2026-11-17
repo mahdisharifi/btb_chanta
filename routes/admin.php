@@ -24,6 +24,7 @@ use App\Livewire\Admin\Geography\Manager as GeographyManager;
 use App\Livewire\Admin\Categories\Create;
 
 use App\Livewire\Supplier\Catalog\Preview as CatalogPreview;
+use App\Http\Controllers\Admin\AiImageStudioController;
 
 Route::middleware(['auth', 'role:super_admin'])->prefix('admin')->name('admin.')->group(function () {
     // استفاده از همان کامپوننت تامین‌کننده برای ادمین
@@ -100,6 +101,17 @@ Route::middleware(['auth', 'role:super_admin'])
             Route::get('/{flowchart}/edit', Form::class)->name('edit');
         });
         Route::get('/system/terminal', ArtisanRunner::class)->name('system.terminal');
+        Route::get('/ai-image-studio', [AiImageStudioController::class, 'index'])->name('ai-image-studio');
+        Route::get('/ai-image-studio/app', [AiImageStudioController::class, 'studioApp'])->name('ai-image-studio.app');
+        Route::get('/ai-image-studio/assets/{asset}', [AiImageStudioController::class, 'asset'])
+            ->whereIn('asset', ['app.js', 'styles.css'])
+            ->name('ai-image-studio.asset');
+        Route::prefix('/ai-image-studio/api')->name('ai-image-studio.api.')->group(function (): void {
+            Route::get('/session', [AiImageStudioController::class, 'session'])->name('session');
+            Route::get('/config', [AiImageStudioController::class, 'configuration'])->name('config');
+            Route::post('/config', [AiImageStudioController::class, 'saveConfiguration'])->name('config.save');
+            Route::post('/edit', [AiImageStudioController::class, 'edit'])->middleware('throttle:6,1')->name('edit');
+        });
         Route::get('/system/error-preview/{status}', function (int $status) {
             abort_unless($status >= 400 && $status <= 599, 404);
 
