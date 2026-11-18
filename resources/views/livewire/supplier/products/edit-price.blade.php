@@ -61,6 +61,24 @@
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
             محصول: <span class="font-semibold text-gray-600 dark:text-gray-300">{{ $product->title }}</span>
         </p>
+        @if($productSupplier->supplier?->usesPrimaryPricing())
+            @if($productSupplier->is_branch_pricing_independent)
+                <section class="mt-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-900 dark:bg-emerald-950/30">
+                    <div>
+                        <h2 class="font-semibold text-emerald-900 dark:text-emerald-100">قیمت این محصول مستقل از شعبهٔ اصلی است</h2>
+                        <p class="mt-1 text-sm leading-6 text-emerald-800 dark:text-emerald-200">قیمت‌ها و گارانتی این محصول فقط در همین شعبه ذخیره می‌شوند.</p>
+                    </div>
+                    <button type="button" wire:click="changeBranchProductPricingMode('percentage')" wire:loading.attr="disabled" wire:target="changeBranchProductPricingMode"
+                        class="min-h-11 shrink-0 rounded-lg border border-emerald-400 bg-white px-4 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-700 dark:bg-gray-800 dark:text-emerald-100 dark:hover:bg-emerald-900/40">
+                        اتصال دوباره به قیمت شعبهٔ اصلی
+                    </button>
+                </section>
+            @elseif(!$isBranchCopy)
+                <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                    هنوز قیمت مبنایی در شعبهٔ اصلی برای این محصول وجود ندارد. قیمت‌هایی که اینجا ثبت کنید مستقل می‌مانند و با ذخیره، این محصول از همگام‌سازی خودکار خارج می‌شود.
+                </div>
+            @endif
+        @endif
         @if(empty($quantityTiers))
             <div class="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
                 <div class="flex items-start gap-3">

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>ویرایش عکس محصول | BTB Chanta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="BTB Chanta">
+        <span class="brand-mark">BTB</span>
+        <span class="brand-copy"><strong>چنتا</strong><small>ابزار آماده‌سازی تصویر</small></span>
+      </a>
+      <div class="topbar-actions">
+        <button id="openSettings" class="settings-toggle" type="button"><span aria-hidden="true">⚙</span> تنظیمات درگاه</button>
+        <span class="environment"><i></i> محیط آزمایشی</span>
+      </div>
+    </header>
+
+    <section class="intro">
+      <div class="eyebrow"><span class="sparkle">✦</span> استودیوی تصویر محصول</div>
+      <h1>عکس محصولت را آمادهٔ فروشگاه کن</h1>
+      <p>عکس محصول را با مدل مورد تأیید و دستور ثابت ویرایش کن و هزینه را کنار خروجی ببین.</p>
+    </section>
+
+    <section id="settingsPanel" class="settings-panel" hidden aria-labelledby="settingsTitle">
+      <div class="settings-title-row">
+          <div><span class="settings-kicker">اتصال درگاه و حسابداری</span><h2 id="settingsTitle">تنظیمات اتصال آوال‌ای‌آی</h2></div>
+        <button id="closeSettings" class="icon-button close-settings" type="button" aria-label="بستن تنظیمات">×</button>
+      </div>
+      <p class="settings-description">کلید در سرور ذخیره می‌شود و دوباره در صفحه نمایش داده نمی‌شود؛ هزینهٔ واقعی هر درخواست از حساب آوال‌ای‌آی خوانده خواهد شد.</p>
+      <div class="settings-grid">
+        <section class="avalai-settings-card" aria-labelledby="avalaiSettingsTitle">
+          <h3 id="avalaiSettingsTitle">آوال‌ای‌آی</h3>
+          <div class="settings-field">
+            <label class="field-label" for="avalaiUrl">آدرس API</label>
+            <input id="avalaiUrl" class="text-input" type="url" inputmode="url" placeholder="https://api.avalai.ir" autocomplete="url">
+            <small>آدرس پایهٔ آوال‌ای‌آی؛ مسیر Image API به‌صورت خودکار اضافه می‌شود.</small>
+          </div>
+          <div class="settings-field">
+            <label class="field-label" for="avalaiToken">کلید API آوال‌ای‌آی</label>
+            <div class="token-wrap">
+              <input id="avalaiToken" class="text-input" type="password" placeholder="کلید را وارد کن" autocomplete="new-password">
+              <button id="toggleAvalAiToken" type="button" class="token-toggle" aria-label="نمایش یا پنهان‌کردن کلید">نمایش</button>
+            </div>
+            <small id="avalaiTokenStatus">کلید را وارد کن تا ذخیره شود.</small>
+          </div>
+          <div class="settings-field">
+            <label class="field-label" for="creditToToman">ارزش هر اعتبار (تومان)</label>
+            <input id="creditToToman" class="text-input numeric-input" type="number" min="0" step="1" inputmode="numeric">
+          </div>
+          <small class="image-rate-note">تعرفهٔ تصویر شامل ۰٫۰۱ اعتبار قیمت پایه و ۱۵٪ کارمزد آوال‌ای‌آی است؛ جمع ۰٫۰۱۱۵ اعتبار برای هر تصویر.</small>
+        </section>
+      </div>
+      <div class="settings-footer">
+        <p id="settingsMessage" class="settings-message" role="status"></p>
+        <button id="saveSettings" class="save-settings" type="button">ذخیرهٔ تنظیمات</button>
+      </div>
+    </section>
+
+    <div id="setupNotice" class="notice setup-notice" hidden>
+      <span class="notice-icon">!</span>
+      <div><strong>اتصال آوال‌ای‌آی آماده نیست</strong><p>کلید API را از تنظیمات بالای صفحه وارد کن.</p></div>
+    </div>
+
+    <section class="workspace" aria-label="ابزار ویرایش عکس محصول">
+      <div class="panel upload-panel">
+        <div class="section-heading">
+          <span class="step">۱</span>
+          <div><h2 id="sourceTitle">تصویر مرجع</h2><p id="sourceHint">عکس واضحی که محصول و اقلام همراهش در آن کامل دیده می‌شوند.</p></div>
+        </div>
+
+        <div id="referenceFields">
+          <label class="dropzone" id="dropzone" for="imageInput">
+            <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <span class="upload-icon" aria-hidden="true">
+              <svg viewBox="0 0 48 48" fill="none"><path d="M24 31V9m0 0-8 8m8-8 8 8M9 29v8a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3v-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <strong>عکس را اینجا رها کن</strong>
+            <span class="drop-subtitle">یا برای انتخاب فایل کلیک کن</span>
+            <span class="file-types">JPG، PNG یا WebP <b>·</b> حداکثر <span id="maxUpload">15</span> مگابایت</span>
+          </label>
+
+          <div id="fileMeta" class="file-meta" hidden>
+            <span class="file-check">✓</span>
+            <div class="file-meta-copy"><strong id="fileName"></strong><small id="fileSize"></small></div>
+            <button id="removeFile" class="icon-button" type="button" aria-label="حذف تصویر">×</button>
+          </div>
+        </div>
+
+        <div id="productNameField">
+          <label class="field-label" for="productName">نام محصول <span>اختیاری</span></label>
+          <input id="productName" class="text-input" type="text" maxlength="160" placeholder="مثلاً جامپ‌استارتر و کمپرسور هوا">
+        </div>
+
+        <div class="fixed-model-card"><span>ویرایش تصویر محصول</span><strong>مدل تنظیم‌شده در سرویس</strong><small>با دستور ثابت آماده‌سازی محصول</small></div>
+
+        <button id="editButton" class="primary-button" type="button" disabled>
+          <span class="button-label">ویرایش عکس محصول</span>
+          <span class="button-arrow" aria-hidden="true">←</span>
+        </button>
+        <p class="privacy-note"><span aria-hidden="true">◈</span> عکس مرجع فقط برای ویرایش همین درخواست به درگاه ارسال می‌شود.</p>
+      </div>
+
+      <div class="panel result-panel">
+        <div class="section-heading result-heading">
+          <span class="step step-muted">۲</span>
+          <div><h2 id="resultTitle">نتیجهٔ ویرایش</h2><p id="resultHint">پیش‌نمایش تصویر ویرایش‌شده اینجا نمایش داده می‌شود.</p></div>
+        </div>
+
+        <div id="emptyResult" class="empty-result">
+          <div class="empty-art" aria-hidden="true">
+            <span class="art-frame art-back"></span>
+            <span class="art-frame art-front"><span class="art-mountain"></span><span class="art-sun"></span></span>
+            <span class="art-spark art-spark-one">✦</span><span class="art-spark art-spark-two">✧</span>
+          </div>
+          <strong>هنوز تصویری ویرایش نشده</strong>
+          <span>بعد از ارسال عکس، نتیجه در این بخش می‌آید.</span>
+        </div>
+
+        <div id="loadingResult" class="loading-result" hidden>
+          <div class="loader-ring"></div>
+          <strong id="loadingLabel">در حال پردازش تصویر...</strong>
+          <span>ممکن است پردازش مدل کمی زمان ببرد.</span>
+        </div>
+
+        <div id="errorResult" class="notice error-notice" hidden>
+          <span class="notice-icon">!</span>
+          <div><strong>ویرایش انجام نشد</strong><p id="errorText"></p></div>
+        </div>
+
+        <div id="comparison" class="comparison" hidden>
+          <figure id="sourceCard" class="preview-card">
+            <figcaption><span>تصویر ورودی</span><small>مرجع</small></figcaption>
+            <div class="image-stage"><img id="sourcePreview" alt="تصویر محصول ورودی"></div>
+          </figure>
+          <figure class="preview-card output-card">
+            <figcaption><span>تصویر خروجی</span><small id="modelResult" class="success-badge">آمادهٔ بررسی</small></figcaption>
+            <div class="image-stage"><img id="resultPreview" alt="تصویر ویرایش‌شدهٔ محصول"></div>
+            <div class="result-actions">
+              <a id="downloadLink" class="download-button" href="#" download="product-edited-1200x1200.png">
+                <span aria-hidden="true">↓</span> دریافت تصویر
+              </a>
+              <span class="output-size" id="outputSize">۱۲۰۰ × ۱۲۰۰ پیکسل</span>
+            </div>
+          </figure>
+        </div>
+
+        <section id="costSummary" class="cost-summary" hidden aria-live="polite" aria-label="گزارش هزینهٔ پردازش">
+          <div class="cost-heading"><div><h3>گزارش مصرف و هزینه</h3><p id="costStatus">برآورد بر اساس تعرفه‌های تنظیم‌شده</p></div><span id="costBadge" class="cost-badge">تخمینی</span></div>
+          <div class="cost-stats">
+            <div><small>قیمت پایه</small><strong id="inputTokensValue">۰٫۰۱</strong></div>
+            <div><small>کارمزد</small><strong id="outputTokensValue">۱۵٪</strong></div>
+            <div><small>هزینهٔ اعتبار</small><strong id="creditCostValue">—</strong></div>
+            <div class="cost-toman"><small>هزینهٔ تقریبی تومان</small><strong id="tomanCostValue">—</strong></div>
+          </div>
+          <p id="costBreakdown" class="cost-breakdown"></p>
+        </section>
+      </div>
+    </section>
+
+    <footer class="footer"><span>BTB Chanta</span><span>نسخهٔ آزمایشی ابزار ویرایش تصویر</span></footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

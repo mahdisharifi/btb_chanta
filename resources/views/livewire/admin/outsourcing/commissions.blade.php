@@ -106,6 +106,38 @@
         </select>
     </div>
 
+    <div class="mb-4 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-4">
+        <label class="text-sm">جستجوی کالا یا شناسه پورسانت / تسک
+            <input type="search" wire:model.live.debounce.300ms="search" class="mt-1 w-full rounded-lg border-slate-300" placeholder="نام کالا یا شناسه">
+        </label>
+        <label class="text-sm">همکار
+            <select wire:model.live="filterUserId" class="mt-1 w-full rounded-lg border-slate-300">
+                <option value="">همه همکاران</option>
+                @foreach($filterContractors as $contractor)<option value="{{ $contractor->id }}">{{ $contractor->name }}</option>@endforeach
+            </select>
+        </label>
+        <label class="text-sm">نوع تسک
+            <select wire:model.live="filterTaskType" class="mt-1 w-full rounded-lg border-slate-300">
+                <option value="">همه انواع</option>
+                @foreach($taskTypes as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
+            </select>
+        </label>
+        <label class="text-sm">وضعیت صورتحساب
+            <select wire:model.live="settlementFilter" class="mt-1 w-full rounded-lg border-slate-300">
+                <option value="">همه موارد</option><option value="unreserved">بدون صورتحساب</option><option value="reserved">دارای صورتحساب</option>
+            </select>
+        </label>
+        <x-jalali-date-picker id="commission-date-from" model="dateFrom" label="تاریخ محاسبه از" />
+        <x-jalali-date-picker id="commission-date-to" model="dateTo" label="تاریخ محاسبه تا" />
+        <label class="text-sm">تعداد در صفحه
+            <select wire:model.live="perPage" class="mt-1 w-full rounded-lg border-slate-300">
+                @foreach([10, 20, 50, 100] as $size)<option value="{{ $size }}">{{ $size }} مورد</option>@endforeach
+            </select>
+        </label>
+        <div class="flex items-end"><button type="button" wire:click="resetFilters" class="rounded-lg border px-3 py-2 text-sm">پاک کردن فیلترها</button></div>
+        <p class="flex items-end text-sm text-slate-600">{{ number_format($commissions->total()) }} پورسانت مطابق فیلترها</p>
+    </div>
+
     @if($approvedTasks->isNotEmpty())
         <section class="mb-6 space-y-3" aria-label="تسک‌های تأییدشده در انتظار محاسبه">
             <h2 class="text-lg font-bold">تسک‌های تأییدشده بازبین در انتظار محاسبه</h2>
@@ -126,9 +158,29 @@
         </section>
     @endif
 
+    @can('outsourcing.approve_commission')
+        <div class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border bg-white p-4">
+            <button type="button" wire:click="selectPage('approve')" wire:loading.attr="disabled" class="rounded-lg border px-3 py-2 text-sm">انتخاب قابل تأییدهای این صفحه</button>
+            <button type="button" wire:click="selectPage('payable')" wire:loading.attr="disabled" class="rounded-lg border px-3 py-2 text-sm">انتخاب تأییدشده‌های این صفحه</button>
+            <button type="button" wire:click="selectAllPages('approve')" wire:loading.attr="disabled" class="rounded-lg border border-indigo-300 px-3 py-2 text-sm text-indigo-700">انتخاب قابل تأییدهای تمام صفحات</button>
+            <button type="button" wire:click="selectAllPages('payable')" wire:loading.attr="disabled" class="rounded-lg border border-emerald-300 px-3 py-2 text-sm text-emerald-700">انتخاب تأییدشده‌های تمام صفحات</button>
+            <button type="button" wire:click="clearCommissionSelection" class="rounded-lg border px-3 py-2 text-sm">پاک کردن انتخاب</button>
+            <span class="text-sm">{{ $selection['count'] }} مورد انتخاب شده</span>
+            @if($allPagesSelected)<span class="rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-800">انتخاب از تمام صفحات مطابق فیلترها</span>@endif
+            @foreach($selection['totals'] as $currency => $total)<span class="text-sm font-semibold">جمع: {{ number_format((float) $total, 2) }} {{ $currency }}</span>@endforeach
+            <button type="button" wire:click="processSelected('approve')" wire:confirm="{{ $selection['count'] }} پورسانت انتخاب‌شده{{ $allPagesSelected ? ' از تمام صفحات' : '' }} تأیید مالی شوند؟" wire:loading.attr="disabled" @disabled($selection['count'] === 0 || $selection['approvable'] !== $selection['count']) class="rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white disabled:opacity-50">تأیید گروهی</button>
+            <button type="button" wire:click="processSelected('payable')" wire:confirm="{{ $selection['count'] }} پورسانت انتخاب‌شده{{ $allPagesSelected ? ' از تمام صفحات' : '' }} قابل پرداخت شوند؟" wire:loading.attr="disabled" @disabled($selection['count'] === 0 || $selection['payable'] !== $selection['count']) class="rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50">قابل پرداخت گروهی</button>
+            <p class="w-full text-xs text-slate-500">برای تأیید، موارد محاسبه‌شده یا در حال بررسی و برای قابل پرداخت کردن، موارد تأییدشده را انتخاب کنید. انتخاب تمام صفحات مطابق فیلترهای فعلی است و با جابه‌جایی صفحات حفظ می‌شود. تغییر فیلترها انتخاب را پاک می‌کند.</p>
+        </div>
+    @endcan
+
     <div class="space-y-4">
         @forelse($commissions as $commission)
-            <article class="rounded-xl border bg-white p-4">
+            <article wire:key="commission-{{ $commission->public_id }}" class="rounded-xl border bg-white p-4">
+                @if(auth()->user()->can('approveCommission', $commission) || auth()->user()->can('markPayable', $commission))
+                    <label class="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" wire:model.live="selectedCommissions" value="{{ $commission->public_id }}" class="rounded border-slate-300"> انتخاب پورسانت</label>
+                @endif
+                <p class="mb-2 text-xs text-slate-500">شناسه: {{ $commission->public_id }} | تاریخ محاسبه (شمسی): <bdi>{{ $commission->calculated_at ? \Morilog\Jalali\CalendarUtils::convertNumbers(jdate($commission->calculated_at->copy()->timezone('Asia/Tehran'))->format('Y/m/d H:i')) : '—' }}</bdi></p>
                 <div class="grid gap-3 md:grid-cols-4">
                     <div><p class="text-xs text-slate-500">پیمانکار</p><p class="font-semibold">{{ $commission->user?->name }}</p></div>
                     <div><p class="text-xs text-slate-500">محصول</p><p class="font-semibold">{{ $commission->task?->product?->title }}</p></div>

@@ -15,7 +15,11 @@ use App\Models\User;
 use App\Services\ProductCompletionCommissionRuleChangeService;
 use App\Services\ProductCompletionCommissionService;
 use App\Services\ProductCompletionFinalizationService;
+use App\Support\SettlementDisplay;
 use Brick\Math\BigDecimal;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +34,25 @@ class Commissions extends Component
     use WithPagination;
 
     public string $status = '';
+
+    public string $filterUserId = '';
+
+    public string $filterTaskType = '';
+
+    public string $dateFrom = '';
+
+    public string $dateTo = '';
+
+    public string $search = '';
+
+    public string $settlementFilter = '';
+
+    public array $selectedCommissions = [];
+
+    public int $perPage = 20;
+
+    #[Locked]
+    public bool $allPagesSelected = false;
 
     public array $bonusAmounts = [];
 
@@ -65,14 +88,18 @@ class Commissions extends Component
         Gate::authorize('viewAny', ProductCompletionCommission::class);
     }
 
-    public function updatedStatus(): void
-    {
-        $this->resetPage();
-        $this->resetPage('approvedTasksPage');
-    }
-
     public function updated(string $property): void
     {
+        if (in_array($property, ['status', 'filterUserId', 'filterTaskType', 'dateFrom', 'dateTo', 'search', 'settlementFilter'], true)) {
+            $this->clearCommissionSelection();
+            $this->resetPage();
+            $this->resetPage('approvedTasksPage');
+        }
+        if ($property === 'perPage') {
+            $this->validate(['perPage' => ['required', 'integer', Rule::in([10, 20, 50, 100])]]);
+            $this->resetPage();
+            $this->resetPage('approvedTasksPage');
+        }
         if (in_array($property, ['bulkUserId', 'bulkTaskType', 'bulkSourceRuleId', 'bulkRuleId'], true)) {
             $this->bulkPreview = [];
             $this->bulkSelected = [];
@@ -225,32 +252,180 @@ class Commissions extends Component
         $service->markPayable(auth()->user(), $this->commission($publicId));
     }
 
+    public function selectPage(string $action): void
+    {
+        Gate::authorize('outsourcing.view_all_commissions');
+        Gate::authorize('outsourcing.approve_commission');
+        abort_unless(in_array($action, ['approve', 'payable'], true), 404);
+        $ability = $action === 'approve' ? 'approveCommission' : 'markPayable';
+        $this->allPagesSelected = false;
+        $this->selectedCommissions = $this->commissionQuery()->paginate($this->pageSize())->getCollection()
+            ->filter(fn ($commission) => Gate::allows($ability, $commission))
+            ->pluck('public_id')->all();
+    }
+
+    public function selectAllPages(string $action): void
+    {
+        Gate::authorize('outsourcing.view_all_commissions');
+        Gate::authorize('outsourcing.approve_commission');
+        abort_unless(in_array($action, ['approve', 'payable'], true), 404);
+
+        $statuses = $action === 'approve'
+            ? [ProductCompletionCommissionStatus::CALCULATED, ProductCompletionCommissionStatus::UNDER_REVIEW]
+            : [ProductCompletionCommissionStatus::APPROVED];
+
+        $this->selectedCommissions = $this->commissionQuery()
+            ->whereNull('settlement_id')->whereIn('status', $statuses)
+            ->pluck('public_id')->all();
+        $this->allPagesSelected = true;
+    }
+
+    public function clearCommissionSelection(): void
+    {
+        $this->selectedCommissions = [];
+        $this->allPagesSelected = false;
+    }
+
+    public function resetFilters(): void
+    {
+        $this->reset('status', 'filterUserId', 'filterTaskType', 'dateFrom', 'dateTo', 'search', 'settlementFilter');
+        $this->clearCommissionSelection();
+        $this->resetPage();
+        $this->resetPage('approvedTasksPage');
+    }
+
+    public function updatingPaginators(): void
+    {
+        if (! $this->allPagesSelected) {
+            $this->selectedCommissions = [];
+        }
+    }
+
+    public function processSelected(string $action, ProductCompletionCommissionService $service): void
+    {
+        Gate::authorize('outsourcing.view_all_commissions');
+        Gate::authorize('outsourcing.approve_commission');
+        $this->validate([
+            'selectedCommissions' => ['required', 'array', 'min:1'],
+            'selectedCommissions.*' => ['required', 'string', 'distinct'],
+        ]);
+        if (! in_array($action, ['approve', 'payable'], true)) {
+            abort(404);
+        }
+
+        $ids = $this->selectedCommissions;
+        DB::transaction(function () use ($ids, $action, $service): void {
+            $rows = ProductCompletionCommission::query()->whereHas('task')
+                ->whereIn('public_id', $ids)->orderBy('id')->lockForUpdate()->get();
+            $ability = $action === 'approve' ? 'approveCommission' : 'markPayable';
+            if ($rows->count() !== count($ids) || $rows->contains(fn ($row) => Gate::denies($ability, $row))) {
+                throw ValidationException::withMessages(['selectedCommissions' => 'وضعیت یا دسترسی یک یا چند پورسانت تغییر کرده است. فهرست را بررسی و دوباره انتخاب کنید.']);
+            }
+            foreach ($rows as $row) {
+                if ($action === 'approve') {
+                    $service->approve(auth()->user(), $row);
+                } else {
+                    $service->markPayable(auth()->user(), $row);
+                }
+            }
+        }, 3);
+        $count = count($ids);
+        $this->clearCommissionSelection();
+        $this->dispatch('notify', message: "عملیات برای {$count} پورسانت انجام شد.", type: 'success');
+    }
+
+    private function pageSize(): int
+    {
+        return in_array($this->perPage, [10, 20, 50, 100], true) ? $this->perPage : 20;
+    }
+
+    private function commissionQuery(): Builder
+    {
+        $dates = $this->dateBounds();
+
+        return ProductCompletionCommission::query()->whereHas('task')
+            ->with(['user:id,name', 'task:id,public_id,product_id,reviewer_id,commission_rate_percentage,task_type,commission_rule_id', 'task.product:id,title', 'commissionRule:id,name,version'])
+            ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
+            ->when($this->filterUserId !== '', fn ($query) => $query->where('user_id', $this->filterUserId))
+            ->when($this->filterTaskType !== '', fn ($query) => $query->whereHas('task', fn ($task) => $task->where('task_type', $this->filterTaskType)))
+            ->when($dates === null, fn ($query) => $query->whereRaw('1 = 0'))
+            ->when($dates['from'] ?? null, fn ($query, $from) => $query->where('calculated_at', '>=', $from))
+            ->when($dates['until'] ?? null, fn ($query, $until) => $query->where('calculated_at', '<', $until))
+            ->when($this->settlementFilter === 'unreserved', fn ($query) => $query->whereNull('settlement_id'))
+            ->when($this->settlementFilter === 'reserved', fn ($query) => $query->whereNotNull('settlement_id'))
+            ->when(trim($this->search) !== '', fn ($query) => $query->where(fn ($search) => $search
+                ->where('public_id', 'like', '%'.trim($this->search).'%')
+                ->orWhereHas('task', fn ($task) => $task->where('public_id', 'like', '%'.trim($this->search).'%')
+                    ->orWhereHas('product', fn ($product) => $product->where('title', 'like', '%'.trim($this->search).'%')))))
+            ->orderBy('calculated_at')->orderBy('id');
+    }
+
+    private function dateBounds(): ?array
+    {
+        $this->resetValidation(['dateFrom', 'dateTo']);
+        $dates = [];
+        foreach (['dateFrom', 'dateTo'] as $field) {
+            if (trim($this->{$field}) === '') {
+                $dates[$field] = null;
+
+                continue;
+            }
+            try {
+                $dates[$field] = SettlementDisplay::gregorian($this->{$field}, $field);
+            } catch (ValidationException $exception) {
+                $this->addError($field, $exception->errors()[$field][0]);
+            }
+        }
+        if (count($dates) !== 2) {
+            return null;
+        }
+        if ($dates['dateFrom'] !== null && $dates['dateTo'] !== null && $dates['dateFrom'] > $dates['dateTo']) {
+            $this->addError('dateTo', 'تاریخ پایان باید برابر یا بعد از تاریخ شروع باشد.');
+
+            return null;
+        }
+
+        return [
+            'from' => $dates['dateFrom'] === null ? null : CarbonImmutable::parse($dates['dateFrom'], 'Asia/Tehran')
+                ->startOfDay()->setTimezone(config('app.timezone')),
+            'until' => $dates['dateTo'] === null ? null : CarbonImmutable::parse($dates['dateTo'], 'Asia/Tehran')
+                ->startOfDay()->addDay()->setTimezone(config('app.timezone')),
+        ];
+    }
+
     public function render()
     {
         Gate::authorize('outsourcing.view_all_commissions');
 
+        $selectedRows = ProductCompletionCommission::query()->whereHas('task')->whereIn('public_id', $this->selectedCommissions)->get();
+        $selection = [
+            'count' => $selectedRows->count(),
+            'approvable' => $selectedRows->filter(fn ($row) => Gate::allows('approveCommission', $row))->count(),
+            'payable' => $selectedRows->filter(fn ($row) => Gate::allows('markPayable', $row))->count(),
+            'totals' => $selectedRows->groupBy('currency')->map(fn ($rows) => (string) $rows->reduce(
+                fn (BigDecimal $total, $row) => $total->plus($row->total_amount), BigDecimal::zero())),
+        ];
+
         return view('livewire.admin.outsourcing.commissions', [
-            'commissions' => ProductCompletionCommission::query()
-                ->whereHas('task')
-                ->with([
-                    'user:id,name',
-                    'task:id,public_id,product_id,reviewer_id,commission_rate_percentage,task_type,commission_rule_id',
-                    'task.product:id,title',
-                    'commissionRule:id,name,version',
-                ])
-                ->when($this->status !== '', fn ($query) => $query->where('status', $this->status))
-                ->orderBy('calculated_at')
-                ->orderBy('id')
-                ->paginate(20),
+            'selection' => $selection,
+            'commissions' => $this->commissionQuery()->paginate($this->pageSize()),
+            'filterContractors' => User::query()->whereIn('id', ProductCompletionCommission::query()->select('user_id')->whereHas('task'))->orderBy('name')->get(['id', 'name']),
             'approvedTasks' => ProductCompletionTask::query()
                 ->with(['product:id,title', 'assignee:id,name', 'reviewer:id,name'])
                 ->where('status', ProductCompletionTaskStatus::APPROVED)
                 ->whereHas('lastSubmission', fn ($query) => $query->where('status', ProductCompletionSubmissionStatus::APPROVED))
                 ->whereDoesntHave('commission')
+                ->when($this->filterUserId !== '', fn ($query) => $query->where('assigned_to', $this->filterUserId))
+                ->when($this->filterTaskType !== '', fn ($query) => $query->where('task_type', $this->filterTaskType))
+                ->when($this->dateFrom !== '' || $this->dateTo !== '', fn ($query) => $query->whereRaw('1 = 0'))
+                ->when($this->settlementFilter !== '', fn ($query) => $query->whereRaw('1 = 0'))
+                ->when(trim($this->search) !== '', fn ($query) => $query->where(fn ($search) => $search
+                    ->where('public_id', 'like', '%'.trim($this->search).'%')
+                    ->orWhereHas('product', fn ($product) => $product->where('title', 'like', '%'.trim($this->search).'%'))))
                 ->when(! in_array($this->status, ['', ProductCompletionCommissionStatus::PENDING->value], true), fn ($query) => $query->whereRaw('1 = 0'))
                 ->orderBy('approved_at')
                 ->orderBy('id')
-                ->paginate(20, ['*'], 'approvedTasksPage'),
+                ->paginate($this->pageSize(), ['*'], 'approvedTasksPage'),
             'statuses' => ProductCompletionCommissionStatus::options(),
             'canChangeRules' => Gate::allows('changeRules', ProductCompletionCommission::class),
             'contractors' => Gate::allows('changeRules', ProductCompletionCommission::class)

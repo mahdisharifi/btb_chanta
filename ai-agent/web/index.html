@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101723">
+  <title>دستیار صوتی</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">نمونه‌ی محلی · موتورهای گفتار روی همین دستگاه</p>
+        <h1>دستیار صوتی</h1>
+      </div>
+      <span class="local-badge"><span class="dot"></span><span id="local-engine-label">موتورهای گفتار محلی</span></span>
+    </header>
+
+    <section class="settings card" aria-labelledby="settings-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">اتصال مدل متنی</p>
+          <h2 id="settings-title">تنظیمات API</h2>
+        </div>
+        <button id="settings-toggle" class="quiet-button" type="button" aria-expanded="true">جمع‌کردن</button>
+      </div>
+
+      <div id="settings-body" class="settings-grid">
+        <label class="field full-width">
+          <span>نشانی API</span>
+          <input id="base-url" type="url" value="https://api.arvancloudai.ir/v1" spellcheck="false" autocomplete="url">
+        </label>
+        <label class="field token-field full-width">
+          <span>توکن آزمایشی</span>
+          <input id="api-token" type="password" placeholder="توکن را اینجا وارد کن" autocomplete="off" spellcheck="false">
+          <small>توکن در صفحه ذخیره نمی‌شود و فقط برای درخواست به API استفاده می‌شود.</small>
+        </label>
+        <div class="model-row full-width">
+          <label class="field model-field">
+            <span>مدل</span>
+            <select id="model-select" disabled>
+              <option value="">ابتدا فهرست مدل‌ها را بگیر</option>
+            </select>
+          </label>
+          <button id="load-models" class="primary-button" type="button">گرفتن فهرست مدل‌ها</button>
+        </div>
+        <p id="connection-status" class="status full-width" role="status" aria-live="polite">توکن را وارد کن و فهرست مدل‌ها را بگیر.</p>
+        <label class="field full-width" for="tts-engine">
+          <span>موتور صدای پاسخ</span>
+          <select id="tts-engine">
+            <option value="piper">Piper · صدای فعلی</option>
+            <option value="moss">MOSS · کلون صدای مرجع فارسی</option>
+            <option value="moss-realtime-cpu">MOSS Realtime GGUF · آزمایشی CPU</option>
+          </select>
+          <small id="tts-engine-help">MOSS باید هم‌زمان روی همین دستگاه و پورت ۱۸۰۸۳ اجرا باشد.</small>
+        </label>
+        <label class="field full-width" id="piper-preset-field" for="piper-preset">
+          <span>تنظیم آزمایشی گفتار Piper</span>
+          <select id="piper-preset">
+            <option value="default">پیش‌فرض مدل · انتخاب‌شده</option>
+            <option value="faster">آزمایشی · length scale ۰٫۹۴</option>
+            <option value="steadier">آزمایشی · noise پایین‌تر</option>
+          </select>
+          <small>این تنظیم‌ها کنترل مستقیم احساسات نیستند. پیش‌فرض مدل تغییر نکرده؛ برای مقایسه، خروجی‌ها را خودت بشنو.</small>
+        </label>
+        <label class="field full-width moss-reference-field" id="moss-reference-field" hidden>
+          <span>صدای مرجع MOSS (اختیاری)</span>
+          <input id="moss-reference-audio" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg">
+          <small>اگر فایلی انتخاب نکنی، از نمونه‌ی مصنوعی Mana استفاده می‌شود و ممکن است تُن رباتی داشته باشد. برای صدای طبیعی‌تر، یک ضبط انسانیِ فارسیِ تمیز و بدون موسیقی، حدود ۸ تا ۱۵ ثانیه، انتخاب کن؛ نمونه‌ای با لحن دلخواهت نتیجه‌ی بهتری می‌دهد.</small>
+        </label>
+        <p id="moss-status" class="status full-width moss-status" role="status" aria-live="polite" hidden></p>
+      </div>
+    </section>
+
+    <section class="chat card" aria-label="گفت‌وگو با مدل">
+      <div class="chat-heading">
+        <div>
+          <p class="eyebrow">گفت‌وگوی صوتی جریانی</p>
+          <h2 id="active-model">مدلی انتخاب نشده</h2>
+        </div>
+        <button id="clear-chat" class="quiet-button" type="button">گفت‌وگوی تازه</button>
+      </div>
+
+      <div id="chat-log" class="chat-log" aria-live="polite">
+        <div class="welcome" id="welcome-message">
+          <div class="welcome-mark">آ</div>
+          <h3>آماده‌ایم</h3>
+          <p>مدل را وصل کن و «شروع مکالمه‌ی زنده» را بزن؛ بدون نگه‌داشتن دکمه حرف بزن و پاسخ را جریانی بشنو.</p>
+        </div>
+      </div>
+
+      <div class="composer">
+        <label class="sr-only" for="message-input">پیام</label>
+        <textarea id="message-input" rows="2" placeholder="پیامت را بنویس یا متن تشخیص‌داده‌شده را اصلاح کن…" disabled></textarea>
+        <div id="live-transcript-preview" class="live-transcript-preview" hidden aria-live="polite">
+          <span class="live-transcript-label">پیش‌نویس موقت گفتار؛ ممکن است اصلاح شود</span>
+          <span id="live-transcript-text" dir="auto"></span>
+        </div>
+        <div class="mic-settings">
+          <label class="mic-select-field" for="microphone-select">ورودی میکروفن
+            <select id="microphone-select"><option value="">میکروفون پیش‌فرض</option></select>
+          </label>
+          <label class="mic-enhancement"><input id="mic-enhancement" type="checkbox" checked> کاهش نویز و تنظیم خودکار میکروفون</label>
+        </div>
+        <div class="composer-actions">
+          <span id="voice-status" class="voice-status" role="status" aria-live="polite">متن موقت جدا از کادر پیام نشان داده می‌شود؛ فقط متن نهایی گفتار به مدل ارسال می‌شود.</span>
+          <div class="action-buttons">
+            <button id="live-mode-button" class="live-button" type="button" disabled>شروع مکالمه‌ی زنده</button>
+            <button id="record-button" class="mic-button" type="button" title="ضبط پیام صوتی" aria-label="ضبط پیام صوتی" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14.5a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 0 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3m-4 0h8"/></svg>
+            </button>
+            <button id="send-button" class="send-button" type="button" disabled>ارسال <span aria-hidden="true">←</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  <footer>مکالمه‌ی زنده با STT فارسی، مدل متنی و TTS محلی اجرا می‌شود؛ شروع صحبت شما صدای پاسخ را قطع می‌کند. reasoning و thinking وارد صدا نمی‌شوند.</footer>
+  </main>
+  <script src="/speech_text.js" defer></script>
+  <script src="/speculative_llm.js" defer></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

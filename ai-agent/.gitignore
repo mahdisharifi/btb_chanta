@@ -1,0 +1,16 @@
+.venv*/
+__pycache__/
+*.py[cod]
+/models/
+/emotional-tts/models/
+/.env
+/.env.*
+*.key
+
+# Cloned runtime dependencies are versioned in their upstream repositories.
+/faster-whisper/
+/piper1-gpl/
+/taraneh-asr/
+/emotional-tts/chatterbox/
+/emotional-tts/voxcpm/
+/emotional-tts/moss-tts-nano/

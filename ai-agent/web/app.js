@@ -1,0 +1,1713 @@
+const baseUrlInput = document.querySelector('#base-url');
+const tokenInput = document.querySelector('#api-token');
+const modelSelect = document.querySelector('#model-select');
+const connectionStatus = document.querySelector('#connection-status');
+const activeModelLabel = document.querySelector('#active-model');
+const chatLog = document.querySelector('#chat-log');
+const welcomeMessage = document.querySelector('#welcome-message');
+const messageInput = document.querySelector('#message-input');
+const sendButton = document.querySelector('#send-button');
+const recordButton = document.querySelector('#record-button');
+const liveModeButton = document.querySelector('#live-mode-button');
+const liveTranscriptPreview = document.querySelector('#live-transcript-preview');
+const liveTranscriptText = document.querySelector('#live-transcript-text');
+const voiceStatus = document.querySelector('#voice-status');
+const micEnhancement = document.querySelector('#mic-enhancement');
+const microphoneSelect = document.querySelector('#microphone-select');
+const localEngineLabel = document.querySelector('#local-engine-label');
+const ttsEngineSelect = document.querySelector('#tts-engine');
+const ttsEngineHelp = document.querySelector('#tts-engine-help');
+const piperPresetSelect = document.querySelector('#piper-preset');
+const piperPresetField = document.querySelector('#piper-preset-field');
+const mossReferenceInput = document.querySelector('#moss-reference-audio');
+const mossReferenceField = document.querySelector('#moss-reference-field');
+const mossStatus = document.querySelector('#moss-status');
+const {
+  cleanForSpeech,
+  hasSpeakableContent,
+  inferDeliveryProfile,
+  nextSpeechSegments
+} = window.PersianSpeechText;
+const speculativeLlm = window.SpeculativeLlm?.SpeculativeLlmCoordinator
+  ? new window.SpeculativeLlm.SpeculativeLlmCoordinator({ request: requestSpeculativeCompletion })
+  : null;
+
+let conversation = [];
+let activeToken = '';
+let busy = false;
+let recorder = null;
+let recordingStream = null;
+let recordingMicrophoneLabel = '';
+let audioChunks = [];
+let liveTranscriptionSocket = null;
+let liveConversationSocket = null;
+let liveServerSessionId = null;
+let liveConversationStream = null;
+let liveConversationActive = false;
+let liveSpeechActive = false;
+let liveActiveUtteranceId = null;
+let liveLatestUtteranceId = null;
+const liveUtteranceTimings = new Map();
+const liveTranscriptRevisions = new Map();
+let liveTurnDispatching = false;
+let activeLlmController = null;
+let activeTtsController = null;
+let activeVoiceTurn = null;
+let activeStreamPlayer = null;
+let liveOutputAudioContext = null;
+const liveTurnQueue = [];
+let previousLivePartialWords = [];
+let recordingAudioContext = null;
+let recordingAudioProcessor = null;
+let recordingAudioSilenceGain = null;
+const audioUrls = new Set();
+const clientSessionId = `client-${crypto.randomUUID()}`;
+let nextAudioGenerationId = 0;
+
+const SYSTEM_MESSAGE = [
+  'همیشه پاسخ را به فارسی روان، محاوره‌ای و گوش‌نواز بنویس؛ متن باید از ابتدا برای بلندخوانی با صدای طبیعی آماده باشد.',
+  'اعراب‌گذاریِ گفتار فارسی الزامی است: پیش از پاسخ، متن را برای تلفظ بلندخوانی آماده کن و روی واکه‌های کوتاهِ مبهم، اضافه‌ها و فعل‌های محاوره‌ای اعرابِ راهنما بگذار؛ متن فارسیِ گفتاری را کاملاً بی‌اعراب نفرست. اعراب را هدفمند نگه دار و روی همه‌ی حروف علامت نگذار.',
+  'برای انتقال لحن و مکث، نشانه‌گذاری طبیعی و دقیق مثل ویرگول، سه‌نقطه یا علامت تعجب را فقط در جای مناسب به کار ببر؛ نشانه‌ها را تکرار نکن، بین هر عبارت مکث نساز و احساسات را تصنعی یا اغراق‌آمیز نشان نده.',
+  'لحن را صمیمی، زنده و محاوره‌ای نگه دار؛ برای فروش و ارتباط با مشتری، خوش‌صحبت و مشتری‌محور باش، اما فشار فروش یا ادعای بی‌پشتوانه نساز.',
+  'در موضوع‌های حسابداری و مدیریت سایت یا فروشگاه، واژه‌های دقیق و آشنای حوزه را به‌کار ببر؛ مثل فاکتور، مانده‌حساب، دریافت، پرداخت، تسویه، مغایرت، چک، موجودی، سفارش، محصول، قیمت، تأمین‌کننده، شعبه، درگاه و پنل سایت.',
+  'کدهای کالا و مدل را عدد معمولی یا مبلغ فرض نکن؛ آن‌ها را برای گفتار با تلفظ شناخته‌شده بازنویسی کن و معنا و ترتیب رقم‌ها را حفظ کن. نمونه: «KTS 1880» را «کِی‌تی‌اِس، هجده هشتاد» بنویس، نه «هزار و هشتصد و هشتاد».',
+  'برای خطا، مغایرت یا پرداخت ناموفق آرام، همدلانه و راه‌حل‌محور حرف بزن؛ برای ثبت یا پرداخت موفق لحن مثبت اما حرفه‌ای داشته باش. عددها و معنای مالی را دقیق نگه دار و هیچ اقدام حسابداری یا سایتی را انجام‌شده اعلام نکن، مگر اینکه واقعاً انجام شده باشد.',
+  'تا جای ممکن واژه‌های رایج فارسی را به‌جای عبارت‌های بیگانه به کار ببر، مگر آن‌که نام برند یا اصطلاحی باشد که باید عیناً حفظ شود.',
+  'پاسخ را به شکل گفتار پیوسته و کوتاه بنویس؛ از تیتر، فهرست شماره‌دار، بولت، Markdown، ستاره، ایموجی و نمادهای غیرگفتاری پرهیز کن، اما نشانه‌گذاری معمول فارسی را برای مکث و لحن طبیعی به‌جا به کار ببر.',
+  'الگوی سبک گفتار: «دارَم مَحصولِ کِی‌تی‌اِس، هِجده هَشتاد رو بارگذاری می‌کنم و اِطّلاعاتش رو ثَبت می‌کنم تا به فِهرِستِ محصولاتت اضافه بِشِه.» اعراب و مکث را به همین شکلِ طبیعی و خوانا رعایت کن.',
+  'معنا و واقعیت‌های پاسخ را تغییر نده و برای خوش‌آهنگ‌شدن، اطلاعات تازه یا وعدهٔ تأییدنشده اضافه نکن.',
+  'فقط پاسخ نهایی و قابل‌نمایش به کاربر را برگردان؛ متن تحلیل، زنجیره‌ی استدلال، thinking یا reasoning را در پاسخ نهایی قرار نده.',
+  'اگر پاسخ طولانی است، آن را مختصر و قابل‌شنیدن نگه دار.'
+].join(' ');
+
+function normalizedBaseUrl() {
+  return baseUrlInput.value.trim().replace(/\/+$/, '');
+}
+
+function ttsEngineLabel(engine) {
+  if (engine === 'moss') return 'MOSS';
+  if (engine === 'moss-realtime-cpu') return 'MOSS Realtime GGUF';
+  return 'Piper';
+}
+
+function speculativeContext() {
+  return {
+    baseUrl: normalizedBaseUrl(),
+    token: activeToken,
+    model: selectedModel(),
+    messages: conversation.map(message => ({ ...message }))
+  };
+}
+
+function speculativeContextKey(context = speculativeContext()) {
+  return JSON.stringify({
+    baseUrl: context.baseUrl,
+    token: context.token,
+    model: context.model,
+    messages: context.messages
+  });
+}
+
+async function requestSpeculativeCompletion(text, { signal, context, turnId }) {
+  if (!context?.baseUrl || !context?.token || !context?.model) throw new Error('تنظیم مدل برای پردازش احتمالی کامل نیست.');
+  publishVoiceStage('llm_speculative_start', { turnId });
+  const startedAt = performance.now();
+  const response = await fetch(`${context.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${context.token}`,
+      'Content-Type': 'application/json'
+    },
+    signal,
+    body: JSON.stringify({
+      model: context.model,
+      stream: true,
+      max_tokens: 192,
+      messages: [
+        { role: 'system', content: SYSTEM_MESSAGE },
+        ...context.messages,
+        { role: 'user', content: text }
+      ]
+    })
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/event-stream')) {
+    const payload = await response.json();
+    const answer = finalTextOnly(extractFinalAnswer(payload));
+    publishVoiceStage('llm_response_completed', { turnId, durationMs: performance.now() - startedAt });
+    return answer;
+  }
+  let answer = '';
+  for await (const payload of readOpenAiSse(response)) {
+    const choice = payload?.choices?.[0];
+    const delta = choice?.delta || (typeof choice?.text === 'string' ? { content: choice.text } : null);
+    answer += streamDeltaText(delta);
+  }
+  publishVoiceStage('llm_response_completed', { turnId, durationMs: performance.now() - startedAt });
+  return finalTextOnly(answer);
+}
+
+function setConnectionStatus(text, kind = '') {
+  connectionStatus.textContent = text;
+  connectionStatus.dataset.kind = kind;
+}
+
+function setVoiceStatus(text) {
+  voiceStatus.textContent = text;
+}
+
+function formatLatency(milliseconds) {
+  if (milliseconds === null || milliseconds === undefined || milliseconds === '') return '—';
+  const value = Number(milliseconds);
+  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)}s` : '—';
+}
+
+function clearLiveTranscriptPreview() {
+  previousLivePartialWords = [];
+  if (liveTranscriptText) liveTranscriptText.textContent = '';
+  if (liveTranscriptPreview) liveTranscriptPreview.hidden = true;
+}
+
+function updateLiveTranscriptPreview(rawText) {
+  const words = String(rawText || '').trim().split(/\s+/).filter(Boolean);
+  const stableWords = [];
+  const length = Math.min(previousLivePartialWords.length, words.length);
+  for (let index = 0; index < length; index += 1) {
+    const previous = previousLivePartialWords[index].replace(/[.,!?؟،؛:…]+$/g, '');
+    const current = words[index].replace(/[.,!?؟،؛:…]+$/g, '');
+    if (previous !== current) break;
+    stableWords.push(words[index]);
+  }
+  previousLivePartialWords = words;
+  const stableText = stableWords.join(' ');
+  if (!stableText || !liveTranscriptPreview || !liveTranscriptText) {
+    clearLiveTranscriptPreview();
+    previousLivePartialWords = words;
+    return;
+  }
+  liveTranscriptText.textContent = stableText;
+  liveTranscriptPreview.hidden = false;
+}
+
+function selectedModel() {
+  return modelSelect.value.trim();
+}
+
+function refreshControls() {
+  const ready = Boolean(selectedModel() && activeToken);
+  messageInput.disabled = !ready || busy;
+  sendButton.disabled = !ready || busy;
+  recordButton.disabled = !ready || busy || liveConversationActive || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder;
+  if (liveModeButton) {
+    liveModeButton.disabled = liveConversationActive
+      ? false
+      : (!ready || busy || !navigator.mediaDevices?.getUserMedia);
+    liveModeButton.classList.toggle('active', liveConversationActive);
+    liveModeButton.textContent = liveConversationActive ? 'پایان مکالمه‌ی زنده' : 'شروع مکالمه‌ی زنده';
+  }
+  if (ttsEngineSelect) ttsEngineSelect.disabled = busy;
+  if (mossReferenceInput) mossReferenceInput.disabled = busy;
+  modelSelect.disabled = modelSelect.options.length === 0 || !modelSelect.options[0].value;
+  activeModelLabel.textContent = selectedModel() || 'مدلی انتخاب نشده';
+}
+
+function appendMessage(role, text, isError = false) {
+  chatLog.querySelector('#welcome-message')?.remove();
+  const message = document.createElement('article');
+  message.className = `message ${isError ? 'error' : role}`;
+  if (!isError) {
+    const label = document.createElement('span');
+    label.className = 'message-label';
+    label.textContent = role === 'user' ? 'شما' : 'دستیار';
+    message.append(label);
+  }
+  const content = document.createElement('span');
+  content.textContent = text;
+  message.append(content);
+  chatLog.append(message);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return content;
+}
+
+async function readError(response) {
+  const body = await response.text();
+  try {
+    const parsed = JSON.parse(body);
+    return parsed?.error?.message || parsed?.detail || parsed?.message || body || `HTTP ${response.status}`;
+  } catch {
+    return body || `HTTP ${response.status}`;
+  }
+}
+
+async function loadModels() {
+  const base = normalizedBaseUrl();
+  const token = tokenInput.value.trim();
+  if (!base || !token) {
+    setConnectionStatus('نشانی API و توکن را وارد کن.', 'error');
+    return;
+  }
+
+  activeToken = token;
+  setConnectionStatus('در حال گرفتن فهرست مدل‌ها…');
+  modelSelect.disabled = true;
+  document.querySelector('#load-models').disabled = true;
+
+  try {
+    const response = await fetch(`${base}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${activeToken}` }
+    });
+    if (!response.ok) throw new Error(await readError(response));
+    const payload = await response.json();
+    const rawModels = Array.isArray(payload) ? payload : (payload.data || payload.models || []);
+    const models = rawModels
+      .map(item => typeof item === 'string' ? { id: item } : item)
+      .filter(item => item && (item.id || item.name || item.model))
+      .map(item => ({
+        id: String(item.id || item.model || item.name),
+        label: String(item.name || item.display_name || item.id || item.model)
+      }));
+
+    if (!models.length) throw new Error('پاسخ API فهرست مدلی نداشت.');
+
+    modelSelect.replaceChildren();
+    for (const item of models) {
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = item.label === item.id ? item.id : `${item.label} — ${item.id}`;
+      modelSelect.append(option);
+    }
+    modelSelect.disabled = false;
+    setConnectionStatus(`${models.length} مدل دریافت شد. مدل موردنظرت را انتخاب کن.`, 'success');
+    refreshControls();
+  } catch (error) {
+    modelSelect.replaceChildren(new Option('فهرست مدل‌ها دریافت نشد', ''));
+    activeToken = '';
+    setConnectionStatus(`گرفتن مدل‌ها ناموفق بود: ${error.message}`, 'error');
+    refreshControls();
+  } finally {
+    document.querySelector('#load-models').disabled = false;
+  }
+}
+
+function contentAsText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter(part => {
+      if (!part || /^(analysis|reasoning|thinking|internal_reasoning)$/i.test(String(part.type || ''))) return false;
+      return part.type === 'text' || (!part.type && typeof part.text === 'string');
+    })
+    .map(part => part.text || '')
+    .join('\n');
+}
+
+function finalTextOnly(rawText) {
+  let text = String(rawText || '');
+
+  // Models that put internal reasoning in tagged blocks must not have those blocks spoken.
+  text = text.replace(/<(think|analysis|reasoning|scratchpad)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
+  text = text.replace(/<(think|analysis|reasoning|scratchpad)\b[^>]*>[\s\S]*$/gi, '');
+  for (const tag of ['think', 'analysis', 'reasoning', 'scratchpad']) {
+    const closeTag = new RegExp(`<\\/${tag}\\s*>`, 'ig');
+    let lastClose = -1;
+    for (const match of text.matchAll(closeTag)) lastClose = match.index + match[0].length;
+    if (lastClose >= 0 && !new RegExp(`<${tag}\\b`, 'i').test(text)) text = text.slice(lastClose);
+  }
+
+  const finalHeading = text.match(/(?:^|\n)\s*(?:final(?:\s+answer)?|پاسخ\s+نهایی)\s*[:：]\s*/i);
+  if (finalHeading) text = text.slice(finalHeading.index + finalHeading[0].length);
+
+  // If a provider puts an unclosed analysis channel directly in content, fail closed.
+  if (/^\s*(?:analysis|reasoning|thinking)\s*[:：]/i.test(text)) return '';
+
+  text = text.replace(/<\|(?:analysis|reasoning|think|final)\|>/gi, '');
+  const finalChannel = text.match(/<\|channel\|>\s*final\b([\s\S]*)$/i);
+  if (finalChannel) text = finalChannel[1];
+  else if (/<\|channel\|>\s*(?:analysis|reasoning|thinking)\b/i.test(text)) return '';
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+}
+
+function extractFinalAnswer(payload) {
+  const message = payload?.choices?.[0]?.message;
+  if (!message) throw new Error('پاسخ API قالب گفت‌وگوی قابل‌شناسایی نداشت.');
+
+  const channel = String(message.channel || message.type || '').toLowerCase();
+  if (/(analysis|reasoning|thinking)/.test(channel) || message.is_reasoning === true) {
+    throw new Error('این بخش از پاسخ reasoning است؛ برای جلوگیری از خواندن آن، صدا ساخته نشد.');
+  }
+
+  // Deliberately read only message.content. Fields such as reasoning_content/reasoning are ignored.
+  const answer = finalTextOnly(contentAsText(message.content));
+  if (!answer) throw new Error('مدل پاسخ نهایی در content برنگرداند؛ reasoning خوانده نمی‌شود.');
+  return answer;
+}
+
+async function synthesizeAndPlay(text) {
+  const engine = ttsEngineSelect?.value || 'piper';
+  let response;
+  if (engine === 'moss') {
+    setVoiceStatus('در حال ساخت صدای پاسخ با MOSS؛ روی CPU ممکن است طول بکشد…');
+    const form = new FormData();
+    form.append('text', text);
+    if (mossReferenceInput?.files?.[0]) {
+      form.append('prompt_audio', mossReferenceInput.files[0]);
+    }
+    response = await fetch('/api/synthesize/moss', { method: 'POST', body: form });
+  } else if (engine === 'moss-realtime-cpu') {
+    setVoiceStatus('در حال ساخت صدای پاسخ با MOSS Realtime GGUF روی CPU…');
+    response = await fetch('/api/synthesize/moss-realtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+  } else {
+    setVoiceStatus('در حال ساخت صدای پاسخ با Piper…');
+    response = await fetch('/api/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, preset: piperPresetSelect?.value || 'default' })
+    });
+  }
+  if (!response.ok) throw new Error(await readError(response));
+  const audioBlob = await response.blob();
+  const objectUrl = URL.createObjectURL(audioBlob);
+  audioUrls.add(objectUrl);
+  const player = document.createElement('div');
+  player.className = 'audio-wrap';
+  const audio = document.createElement('audio');
+  audio.className = 'reply-audio';
+  audio.controls = true;
+  audio.src = objectUrl;
+  audio.preload = 'auto';
+  player.append(audio);
+  chatLog.append(player);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  try {
+    await audio.play();
+    setVoiceStatus(`پاسخ نهایی با صدای ${engine === 'moss' ? 'MOSS' : 'Piper'} پخش می‌شود.`);
+  } catch {
+    setVoiceStatus('صدای پاسخ آماده است؛ برای پخش، دکمه‌ی پلیر را بزن.');
+  }
+}
+
+class StreamingPcmPlayer {
+  constructor(sharedContext = null, { keepReplay = true } = {}) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('مرورگر پخش صوت جریانی را پشتیبانی نمی‌کند.');
+    this.context = sharedContext || new AudioContextClass();
+    this.ownsContext = !sharedContext;
+    this.keepReplay = keepReplay;
+    this.nextPlayAt = 0;
+    this.resumePromise = this.context.resume();
+    this.format = null;
+    this.audioParts = [];
+    this.audioByteLength = 0;
+    this.playbackPending = new Uint8Array(0);
+    this.activeSources = new Set();
+    this.stopped = false;
+    this.playbackStarted = false;
+    this.onPlaybackStarted = null;
+    this.stoppedPromise = new Promise(resolve => { this.resolveStopped = resolve; });
+  }
+
+  async consume(response, onFirstAudio = null, isCurrent = () => true) {
+    if (!response.body) throw new Error('مرورگر جریان صوت را دریافت نکرد.');
+    const sampleRate = Number(response.headers.get('X-Audio-Sample-Rate'));
+    const channels = Number(response.headers.get('X-Audio-Channels'));
+    if (!sampleRate || !channels || response.headers.get('X-Audio-Codec') !== 'pcm_s16le') {
+      throw new Error('قالب جریان صوت از سرویس شناخته نشد.');
+    }
+    if (this.format && (this.format.sampleRate !== sampleRate || this.format.channels !== channels)) {
+      throw new Error('قالب صوت بین بخش‌های پاسخ تغییر کرد.');
+    }
+    this.format = { sampleRate, channels };
+    await this.resumePromise;
+    const reader = response.body.getReader();
+    const frameBytes = channels * 2;
+    let carry = new Uint8Array(0);
+    let scheduledFrames = 0;
+    let firstAudioNotified = false;
+    const notifyFirstAudio = () => {
+      if (firstAudioNotified) return;
+      firstAudioNotified = true;
+      onFirstAudio?.();
+    };
+    const playbackBlockBytes = Math.max(frameBytes, Math.floor(sampleRate * channels * 2 * 0.12 / frameBytes) * frameBytes);
+
+    while (true) {
+      if (!isCurrent()) {
+        try { await reader.cancel(); } catch { /* response was already cancelled */ }
+        return false;
+      }
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!isCurrent()) {
+        try { await reader.cancel(); } catch { /* response was already cancelled */ }
+        return false;
+      }
+      const bytes = new Uint8Array(carry.length + value.length);
+      bytes.set(carry);
+      bytes.set(value, carry.length);
+      const completeLength = Math.floor(bytes.length / frameBytes) * frameBytes;
+      carry = bytes.slice(completeLength);
+      const frames = completeLength / frameBytes;
+      if (!frames) continue;
+      const completePcm = bytes.slice(0, completeLength);
+      if (this.keepReplay) {
+        this.audioParts.push(completePcm);
+        this.audioByteLength += completePcm.length;
+      }
+      this.playbackPending = this.#appendBytes(this.playbackPending, completePcm);
+      while (this.playbackPending.length >= playbackBlockBytes) {
+        const playbackBlock = this.playbackPending.slice(0, playbackBlockBytes);
+        this.playbackPending = this.playbackPending.slice(playbackBlockBytes);
+        const scheduled = this.#schedulePcm(playbackBlock, sampleRate, channels);
+        scheduledFrames += scheduled;
+        if (scheduled) notifyFirstAudio();
+      }
+    }
+    if (carry.length) throw new Error('جریان صوت در میانه‌ی نمونه قطع شد.');
+    if (this.playbackPending.length) {
+      const scheduled = this.#schedulePcm(this.playbackPending, sampleRate, channels);
+      scheduledFrames += scheduled;
+      if (scheduled) notifyFirstAudio();
+      this.playbackPending = new Uint8Array(0);
+    }
+    return scheduledFrames > 0;
+  }
+
+  #appendBytes(left, right) {
+    const merged = new Uint8Array(left.length + right.length);
+    merged.set(left);
+    merged.set(right, left.length);
+    return merged;
+  }
+
+  #schedulePcm(pcmBytes, sampleRate, channels) {
+    if (this.stopped) return 0;
+    const frameBytes = channels * 2;
+    const frames = Math.floor(pcmBytes.length / frameBytes);
+    if (!frames) return 0;
+    const audioBuffer = this.context.createBuffer(channels, frames, sampleRate);
+    const channelViews = Array.from({ length: channels }, (_, channel) => audioBuffer.getChannelData(channel));
+    const data = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, frames * frameBytes);
+    for (let frame = 0; frame < frames; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) {
+        channelViews[channel][frame] = data.getInt16((frame * channels + channel) * 2, true) / 32768;
+      }
+    }
+
+    const source = this.context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(this.context.destination);
+    this.activeSources.add(source);
+    source.addEventListener('ended', () => this.activeSources.delete(source), { once: true });
+    const now = this.context.currentTime;
+    const startAt = this.nextPlayAt > now + 0.005 ? this.nextPlayAt : now + 0.015;
+    source.start(startAt);
+    if (!this.playbackStarted) {
+      this.playbackStarted = true;
+      this.onPlaybackStarted?.();
+    }
+    this.nextPlayAt = startAt + audioBuffer.duration;
+    return frames;
+  }
+
+  addNaturalGap(seconds = 0.09) {
+    if (this.format && this.keepReplay) {
+      const silenceBytes = Math.round(this.format.sampleRate * seconds) * this.format.channels * 2;
+      if (silenceBytes > 0) {
+        this.audioParts.push(new Uint8Array(silenceBytes));
+        this.audioByteLength += silenceBytes;
+      }
+    }
+    const now = this.context.currentTime;
+    this.nextPlayAt = (this.nextPlayAt > now ? this.nextPlayAt : now + 0.015) + seconds;
+  }
+
+  toWavBlob() {
+    if (!this.format || !this.audioByteLength) return null;
+    const { sampleRate, channels } = this.format;
+    const wav = new ArrayBuffer(44 + this.audioByteLength);
+    const view = new DataView(wav);
+    const writeAscii = (offset, value) => {
+      for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+    };
+    writeAscii(0, 'RIFF');
+    view.setUint32(4, 36 + this.audioByteLength, true);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * channels * 2, true);
+    view.setUint16(32, channels * 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(36, 'data');
+    view.setUint32(40, this.audioByteLength, true);
+    const pcm = new Uint8Array(wav, 44);
+    let offset = 0;
+    for (const part of this.audioParts) {
+      pcm.set(part, offset);
+      offset += part.length;
+    }
+    return new Blob([wav], { type: 'audio/wav' });
+  }
+
+  async waitForPlayback() {
+    await this.resumePromise;
+    if (this.stopped) return false;
+    const remaining = Math.max(0, this.nextPlayAt - this.context.currentTime);
+    if (remaining) {
+      await Promise.race([
+        new Promise(resolve => setTimeout(resolve, Math.ceil(remaining * 1000))),
+        this.stoppedPromise
+      ]);
+    }
+    return !this.stopped;
+  }
+
+  async close() {
+    this.stopped = true;
+    this.resolveStopped();
+    if (this.ownsContext) {
+      try { await this.context.close(); } catch { /* already closed */ }
+    }
+  }
+
+  async stop() {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.resolveStopped();
+    for (const source of this.activeSources) {
+      try { source.stop(); } catch { /* the source may have finished */ }
+    }
+    this.activeSources.clear();
+    if (this.ownsContext) {
+      try { await this.context.close(); } catch { /* already closed */ }
+    }
+  }
+}
+
+async function* readOpenAiSse(response) {
+  if (!response.body) throw new Error('مدل جریان پاسخ را برنگرداند.');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finished = false;
+
+  while (!finished) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    buffer = buffer.replace(/\r\n/g, '\n');
+    let boundary;
+    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const data = block.split('\n')
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart())
+        .join('\n');
+      if (!data) continue;
+      if (data === '[DONE]') {
+        finished = true;
+        break;
+      }
+      try { yield JSON.parse(data); } catch { /* Ignore non-JSON keepalive events. */ }
+    }
+    if (done) {
+      if (buffer.trim()) {
+        const data = buffer.split('\n')
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trimStart())
+          .join('\n');
+        if (data && data !== '[DONE]') {
+          try { yield JSON.parse(data); } catch { /* Ignore an incomplete final event. */ }
+        }
+      }
+      break;
+    }
+  }
+}
+
+function streamDeltaText(delta) {
+  if (!delta || typeof delta !== 'object') return '';
+  const channel = String(delta.channel || delta.type || '').toLowerCase();
+  if (/(analysis|reasoning|thinking|internal_reasoning)/.test(channel) || delta.is_reasoning === true) return '';
+  return typeof delta.content === 'string' ? delta.content : contentAsText(delta.content);
+}
+
+async function fetchSpeechStream(form, state) {
+  for (let attempt = 0; attempt <= 1; attempt += 1) {
+    let response;
+    try {
+      response = await fetch('/api/synthesize/stream', {
+        method: 'POST',
+        body: form,
+        signal: state.signal
+      });
+    } catch (error) {
+      if (error.name === 'AbortError' || state.signal?.aborted || attempt === 1) throw error;
+      continue;
+    }
+
+    if (response.ok) return response;
+    const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+    if (retryable && attempt === 0 && !state.signal?.aborted) {
+      try { await response.body?.cancel(); } catch { /* response is already closed */ }
+      continue;
+    }
+    throw new Error(await readError(response));
+  }
+  throw new Error('درخواست TTS پس از یک تلاش مجدد هم ناموفق بود.');
+}
+
+function enqueueSpeechSegment(player, text, state) {
+  const segment = text.trim();
+  if (!hasSpeakableContent(segment)) return state.chain;
+  state.pendingSegments += 1;
+  state.chain = state.chain.then(async () => {
+    if (state.error || state.signal?.aborted || !state.isCurrent()) return;
+    const form = new FormData();
+    form.append('text', segment);
+    form.append('engine', state.engine);
+    if (state.engine === 'piper') {
+      form.append('preset', state.preset);
+      form.append('delivery_profile', state.deliveryProfile);
+      form.append('session_id', state.sessionId);
+      form.append('turn_id', state.turnId);
+      form.append('generation_id', state.generationId);
+    }
+    if (state.engine === 'moss' && state.referenceFile) {
+      form.append('prompt_audio', state.referenceFile);
+    }
+    publishVoiceStage('tts_request_started', { turnId: state.turnId, generationId: state.generationId });
+    const response = await fetchSpeechStream(form, state);
+    if (state.engine === 'piper' && (
+      response.headers.get('X-Session-ID') !== state.sessionId
+      || response.headers.get('X-Turn-ID') !== state.turnId
+      || response.headers.get('X-Generation-ID') !== state.generationId
+    )) {
+      await response.body?.cancel();
+      return;
+    }
+    if (!state.isCurrent()) return;
+    const hasAudio = await player.consume(response, () => state.onFirstAudio?.(), state.isCurrent);
+    if (!hasAudio || !state.isCurrent()) return;
+    // Piper's delivery layer chooses a bounded gap per turn. Both MOSS engines
+    // shape pauses from punctuation, so keep a tiny join cushion for them.
+    const gapHeader = response.headers.get('X-Delivery-Gap-Ms');
+    const requestedGapMs = gapHeader === null ? NaN : Number(gapHeader);
+    const gapSeconds = state.engine !== 'piper'
+      ? 0.03
+      : (Number.isFinite(requestedGapMs) ? Math.max(0, Math.min(300, requestedGapMs)) / 1000 : 0.09);
+    player.addNaturalGap(gapSeconds);
+  }).catch(error => {
+    if (error.name === 'AbortError' || state.signal?.aborted) return;
+    state.error ||= error;
+    setVoiceStatus(`متن پاسخ آماده است؛ جریان TTS متوقف شد: ${error.message}`);
+  }).finally(() => {
+    state.pendingSegments = Math.max(0, state.pendingSegments - 1);
+  });
+  return state.chain;
+}
+
+function updateTtsEngineSettings() {
+  const useMoss = ttsEngineSelect?.value === 'moss';
+  const useRealtimeCpu = ttsEngineSelect?.value === 'moss-realtime-cpu';
+  if (piperPresetField) piperPresetField.hidden = useMoss || useRealtimeCpu;
+  if (mossReferenceField) mossReferenceField.hidden = !useMoss;
+  if (mossStatus) mossStatus.hidden = !useMoss && !useRealtimeCpu;
+  if (ttsEngineHelp) {
+    ttsEngineHelp.textContent = useRealtimeCpu
+      ? 'سرویس GGUF باید روی پورت ۱۸۰۸۴ اجرا باشد. صوت PCM به‌صورت قطعه‌ای از موتور می‌رسد؛ زمان شروع و روانی آن به توان CPU وابسته است.'
+      : (useMoss
+        ? 'MOSS باید هم‌زمان روی همین دستگاه و پورت ۱۸۰۸۳ اجرا باشد.'
+        : 'Piper محلی و کم‌مصرف است؛ تنظیم لحن Piper فقط روی همین موتور اثر می‌گذارد.');
+  }
+}
+
+async function refreshMossStatus() {
+  const engine = ttsEngineSelect?.value;
+  if (!mossStatus || (engine !== 'moss' && engine !== 'moss-realtime-cpu')) return;
+  const isRealtimeCpu = engine === 'moss-realtime-cpu';
+  mossStatus.textContent = `در حال بررسی سرویس ${isRealtimeCpu ? 'MOSS Realtime GGUF' : 'MOSS'}…`;
+  mossStatus.dataset.kind = '';
+  try {
+    const response = await fetch('/api/status');
+    if (!response.ok) throw new Error('وضعیت سرویس خوانده نشد.');
+    const payload = await response.json();
+    const moss = isRealtimeCpu ? payload.moss_realtime : payload.moss;
+    if (!moss) throw new Error('وضعیت MOSS در دسترس نیست.');
+    mossStatus.textContent = moss.ready
+      ? (isRealtimeCpu
+        ? 'سرویس MOSS Realtime GGUF آماده است. قطعه‌های PCM هنگام تولید به پخش‌کننده می‌رسند؛ زمان شروع به سرعت مدل روی CPU وابسته است.'
+        : 'MOSS آماده است. صدای پیش‌فرض فارسی Mana در دسترس است.')
+      : (moss.available ? `MOSS در حال آماده‌شدن است: ${moss.status}` : moss.status);
+    mossStatus.dataset.kind = moss.ready ? 'success' : (moss.available ? '' : 'error');
+  } catch (error) {
+    mossStatus.textContent = error.message || 'وضعیت MOSS دریافت نشد.';
+    mossStatus.dataset.kind = 'error';
+  }
+}
+
+function appendRecordedAudio(blob) {
+  chatLog.querySelector('#welcome-message')?.remove();
+  const objectUrl = URL.createObjectURL(blob);
+  audioUrls.add(objectUrl);
+  const player = document.createElement('div');
+  player.className = 'audio-wrap user-audio-wrap';
+  const label = document.createElement('span');
+  label.className = 'audio-label';
+  label.textContent = 'صدای ضبط‌شده‌ی شما';
+  const audio = document.createElement('audio');
+  audio.className = 'reply-audio';
+  audio.controls = true;
+  audio.src = objectUrl;
+  audio.preload = 'metadata';
+  player.append(label, audio);
+  chatLog.append(player);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function appendStreamingReplay(player) {
+  const audioBlob = player.toWavBlob();
+  if (!audioBlob) return;
+  const objectUrl = URL.createObjectURL(audioBlob);
+  audioUrls.add(objectUrl);
+  const playerElement = document.createElement('div');
+  playerElement.className = 'audio-wrap';
+  const label = document.createElement('span');
+  label.className = 'audio-label';
+  label.textContent = 'تکرار صدای پاسخ';
+  const audio = document.createElement('audio');
+  audio.className = 'reply-audio';
+  audio.controls = true;
+  audio.src = objectUrl;
+  audio.preload = 'metadata';
+  playerElement.append(label, audio);
+  chatLog.append(playerElement);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+async function sendMessage(rawText, { live = false, inputTiming = null, prefetchedAnswer = null } = {}) {
+  const text = rawText.trim();
+  if (!text || busy) return;
+  if (!selectedModel() || !activeToken) {
+    setConnectionStatus('ابتدا توکن را وارد کن و مدل را انتخاب کن.', 'error');
+    return;
+  }
+  const deliveryProfile = inferDeliveryProfile(text);
+
+  busy = true;
+  await stopAssistantAudio();
+  const llmController = new AbortController();
+  const ttsController = new AbortController();
+  const conversationStart = conversation.length;
+  const turnState = {
+    llmCompleted: false,
+    invalidated: false,
+    turnId: `turn-${crypto.randomUUID()}`,
+    generationId: `generation-${++nextAudioGenerationId}`
+  };
+  activeVoiceTurn = turnState;
+  activeLlmController = llmController;
+  activeTtsController = ttsController;
+  refreshControls();
+  const userContent = appendMessage('user', text);
+  conversation.push({ role: 'user', content: text });
+  if (!live) messageInput.value = '';
+  setVoiceStatus(`در حال دریافت پاسخ جریانی با لحن ${deliveryProfile.label}؛ صدا با رسیدن جمله‌ها شروع می‌شود…`);
+
+  let assistantContent = null;
+  let player = null;
+  let rawAnswer = '';
+  let modelTextStreamed = false;
+  let speechCursor = 0;
+  const llmStartedAt = performance.now();
+  let llmFirstTokenMs = null;
+  let firstAudioMs = null;
+  let firstAudioAt = null;
+  const speechState = {
+    chain: Promise.resolve(),
+    pendingSegments: 0,
+    maxPendingSegments: 3,
+    error: null,
+    engine: ttsEngineSelect?.value || 'piper',
+    preset: piperPresetSelect?.value || 'default',
+    deliveryProfile: deliveryProfile.id,
+    sessionId: liveConversationActive && liveServerSessionId ? liveServerSessionId : clientSessionId,
+    turnId: turnState.turnId,
+    generationId: turnState.generationId,
+    referenceFile: mossReferenceInput?.files?.[0] || null,
+    signal: ttsController.signal,
+    isCurrent: () => activeVoiceTurn === turnState && !turnState.invalidated,
+    onFirstAudio: () => {
+      if (firstAudioMs !== null) return;
+      firstAudioMs = Math.round(performance.now() - llmStartedAt);
+      firstAudioAt = performance.now();
+      const fromFinalizeMs = inputTiming?.finalizing_client_at
+        ? Math.round(performance.now() - inputTiming.finalizing_client_at)
+        : null;
+      if (live && fromFinalizeMs !== null) {
+        setVoiceStatus(`اولین صدای پاسخ آماده شد · ${formatLatency(fromFinalizeMs)} از شروع نهایی‌سازی ورودی · لحن ${deliveryProfile.label}`);
+      }
+      publishVoiceStage('audio_first_playable', {
+        turnId: turnState.turnId,
+        generationId: turnState.generationId,
+        durationMs: inputTiming?.finalizing_client_at ? firstAudioAt - inputTiming.finalizing_client_at : null
+      });
+      publishRealtimeMetrics({
+        llm_first_token: llmFirstTokenMs,
+        llm_first_token_to_tts_pcm: llmFirstTokenMs === null ? null : Math.max(0, firstAudioMs - llmFirstTokenMs),
+        speech_end_to_first_audio: inputTiming?.finalizing_client_at
+          ? Math.max(0, firstAudioAt - inputTiming.finalizing_client_at) : null
+      });
+    }
+  };
+
+  try {
+    // Create and unlock audio during the user's click, before the first network wait.
+    player = new StreamingPcmPlayer(liveConversationActive ? liveOutputAudioContext : null, { keepReplay: !live });
+    player.onPlaybackStarted = () => publishVoiceStage('audio_playback_started', {
+      turnId: turnState.turnId,
+      generationId: turnState.generationId
+    });
+    activeStreamPlayer = player;
+    const chatUrl = `${normalizedBaseUrl()}/chat/completions`;
+    const chatRequest = stream => ({
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${activeToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: selectedModel(),
+        stream,
+        messages: [{ role: 'system', content: SYSTEM_MESSAGE }, ...conversation]
+      })
+    });
+    let response = null;
+    if (!prefetchedAnswer) {
+      publishVoiceStage('llm_request_started', { turnId: turnState.turnId, generationId: turnState.generationId });
+      response = await fetch(chatUrl, { ...chatRequest(true), signal: llmController.signal });
+      if (!response.ok && [400, 404, 405, 422, 501].includes(response.status)) {
+        response = await fetch(chatUrl, { ...chatRequest(false), signal: llmController.signal });
+      }
+      if (!response.ok) throw new Error(await readError(response));
+    }
+
+    assistantContent = appendMessage('assistant', '');
+    const updateAnswer = async (flushSpeech = false) => {
+      const visibleAnswer = finalTextOnly(rawAnswer);
+      assistantContent.textContent = visibleAnswer || '…';
+      chatLog.scrollTop = chatLog.scrollHeight;
+      const speechText = cleanForSpeech(visibleAnswer);
+      if (speechText.length < speechCursor) return;
+      const pending = speechText.slice(speechCursor);
+      const ready = nextSpeechSegments(pending, flushSpeech);
+      const consumed = pending.length - ready.pending.length;
+      for (const segment of ready.segments) enqueueSpeechSegment(player, segment, speechState);
+      speechCursor += consumed;
+      if (speechState.pendingSegments >= speechState.maxPendingSegments) {
+        await speechState.chain;
+      }
+    };
+
+    const contentType = response?.headers.get('content-type') || '';
+    if (prefetchedAnswer?.answer) {
+      rawAnswer = prefetchedAnswer.answer;
+      await updateAnswer(true);
+    } else if (!contentType.includes('text/event-stream')) {
+      // Keep compatibility with gateways that ignore stream=true.
+      const payloadText = await response.text();
+      let payload;
+      try { payload = JSON.parse(payloadText); } catch {
+        throw new Error('درگاه API پاسخ را با قالب جریانی یا JSON برنگرداند.');
+      }
+      rawAnswer = extractFinalAnswer(payload);
+      llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
+      publishVoiceStage('llm_first_token', { turnId: turnState.turnId, generationId: turnState.generationId, durationMs: llmFirstTokenMs });
+      await updateAnswer(true);
+    } else {
+      modelTextStreamed = true;
+      for await (const payload of readOpenAiSse(response)) {
+        const choice = payload?.choices?.[0];
+        const delta = choice?.delta || (typeof choice?.text === 'string' ? { content: choice.text } : null);
+        const deltaText = streamDeltaText(delta);
+        if (!deltaText) continue;
+        if (llmFirstTokenMs === null) {
+          llmFirstTokenMs = Math.round(performance.now() - llmStartedAt);
+          publishVoiceStage('llm_first_token', { turnId: turnState.turnId, generationId: turnState.generationId, durationMs: llmFirstTokenMs });
+        }
+        rawAnswer += deltaText;
+        await updateAnswer(false);
+      }
+      await updateAnswer(true);
+    }
+
+    const finalAnswer = finalTextOnly(rawAnswer);
+    if (!finalAnswer) throw new Error('مدل پاسخ نهایی قابل‌خواندن برنگرداند؛ متن reasoning پخش نشد.');
+    publishVoiceStage('llm_response_completed', { turnId: turnState.turnId, generationId: turnState.generationId, durationMs: performance.now() - llmStartedAt });
+    turnState.llmCompleted = true;
+    assistantContent.textContent = finalAnswer;
+    conversation.push({ role: 'assistant', content: finalAnswer });
+    await speechState.chain;
+    if (llmController.signal.aborted && !turnState.llmCompleted) throw new DOMException('گفتار کاربر پاسخ را قطع کرد.', 'AbortError');
+    if (turnState.invalidated) return;
+    if (!ttsController.signal.aborted && !turnState.invalidated) appendStreamingReplay(player);
+    publishRealtimeMetrics({ llm_first_token: llmFirstTokenMs });
+    const sttQueueMs = Number(inputTiming?.stt_final_queue_ms || 0);
+    const liveTimingSummary = live && inputTiming
+      ? ` · STT ${formatLatency(inputTiming.stt_final_ms)}${sttQueueMs ? ` (صف ${formatLatency(sttQueueMs)})` : ''} · اولین متن مدل ${formatLatency(llmFirstTokenMs)} · اولین صدا ${formatLatency(firstAudioMs)}`
+      : '';
+    if (speechState.error) {
+      setVoiceStatus(`پاسخ متنی آماده است؛ جریان TTS اجرا نشد: ${speechState.error.message}${liveTimingSummary}`);
+      player.waitForPlayback().then(completed => completed && publishVoiceStage('audio_playback_completed', {
+        turnId: turnState.turnId,
+        generationId: turnState.generationId
+      })).catch(() => {}).finally(() => {
+        player.close();
+        if (activeStreamPlayer === player) activeStreamPlayer = null;
+      });
+    } else {
+      setVoiceStatus(modelTextStreamed
+        ? `متن و صدای پاسخ با ${ttsEngineLabel(speechState.engine)} جریانی دریافت شد.${liveTimingSummary}`
+        : `درگاه متن را یکجا فرستاد؛ صدای پاسخ با ${ttsEngineLabel(speechState.engine)} جریانی پخش شد.${liveTimingSummary}`);
+      player.waitForPlayback().then(completed => completed && publishVoiceStage('audio_playback_completed', {
+        turnId: turnState.turnId,
+        generationId: turnState.generationId
+      })).catch(() => {}).finally(() => {
+        player.close();
+        if (activeStreamPlayer === player) activeStreamPlayer = null;
+      });
+    }
+  } catch (error) {
+    if (error.name === 'AbortError' || llmController.signal.aborted || ttsController.signal.aborted) {
+      if (!turnState.llmCompleted) {
+        conversation.splice(conversationStart);
+        userContent?.parentElement?.remove();
+        assistantContent?.parentElement?.remove();
+      }
+      if (player) await player.stop();
+      if (!liveConversationActive || !liveSpeechActive) {
+        setVoiceStatus(live ? 'صدای دستیار قطع شد؛ دارم حرف شما را می‌شنوم…' : 'پاسخ متوقف شد.');
+      }
+    } else {
+      conversation.pop();
+      assistantContent?.parentElement?.remove();
+      appendMessage('assistant', `درخواست ناموفق بود: ${error.message}`, true);
+      setVoiceStatus('دریافت پاسخ یا شروع پخش جریانی ناموفق بود.');
+      if (player) await player.close();
+    }
+    if (activeStreamPlayer === player) activeStreamPlayer = null;
+  } finally {
+    busy = false;
+    if (activeLlmController === llmController) activeLlmController = null;
+    if (activeTtsController === ttsController) activeTtsController = null;
+    if (activeVoiceTurn === turnState) activeVoiceTurn = null;
+    refreshControls();
+    if (!liveConversationActive) messageInput.focus();
+    if (liveTurnQueue.length) dispatchLiveTurn();
+  }
+}
+
+async function transcribeRecording(blob) {
+  const form = new FormData();
+  const mime = blob.type || 'audio/webm';
+  const extension = mime.includes('mp4') ? 'm4a' : (mime.includes('wav') ? 'wav' : 'webm');
+  form.append('file', blob, `speech.${extension}`);
+
+  const response = await fetch('/api/transcribe', { method: 'POST', body: form });
+  if (!response.ok) throw new Error(await readError(response));
+  const result = await response.json();
+  return {
+    text: String(result.text || '').trim(),
+    model: String(result.model || 'Whisper'),
+    audio: result.audio || {}
+  };
+}
+
+function describeRecordingQuality(audio) {
+  const duration = Number(audio.duration_seconds || 0).toLocaleString('fa-IR', { maximumFractionDigits: 1 });
+  const level = Number(audio.active_level_dbfs ?? -120);
+  const quietPercent = Number(audio.quiet_percent || 0);
+  const notes = [];
+  if (audio.clipped) notes.push('صدا احتمالاً بریده/اعوجاج‌دار ضبط شده');
+  if (level < -42) notes.push('بلندی صدای گفتار کم است؛ فاصله از میکروفن را کمتر کن یا تقویت خودکار را مقایسه کن');
+  if (quietPercent > 65) notes.push('بخش زیادی از ضبط سکوت است؛ ضبط را نزدیک‌تر به شروع و پایان گفتار متوقف کن');
+  if (!notes.length) notes.push('سطح ضبط مناسب به نظر می‌رسد');
+  return `مدت ${duration} ثانیه؛ ${notes.join('؛ ')}`;
+}
+
+class StreamingPcm16Resampler {
+  constructor(inputRate) {
+    this.ratio = inputRate / 16000;
+    this.carry = new Float32Array(0);
+    this.position = 0;
+  }
+
+  process(input) {
+    const data = new Float32Array(this.carry.length + input.length);
+    data.set(this.carry);
+    data.set(input, this.carry.length);
+    const output = [];
+    let cursor = this.position;
+    while (cursor + this.ratio <= data.length) {
+      const end = cursor + this.ratio;
+      let weightedSum = 0;
+      let totalWeight = 0;
+      for (let source = Math.floor(cursor); source < Math.ceil(end); source += 1) {
+        const weight = Math.max(0, Math.min(end, source + 1) - Math.max(cursor, source));
+        weightedSum += data[source] * weight;
+        totalWeight += weight;
+      }
+      const sample = totalWeight ? weightedSum / totalWeight : 0;
+      output.push(Math.round(Math.max(-1, Math.min(1, sample)) * 32767));
+      cursor = end;
+    }
+    const consumed = Math.floor(cursor);
+    this.position = cursor - consumed;
+    this.carry = data.slice(consumed);
+    return Int16Array.from(output);
+  }
+}
+
+async function connectLiveTranscription() {
+  const socketScheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = new WebSocket(`${socketScheme}//${location.host}/api/transcribe/stream`);
+  socket.binaryType = 'arraybuffer';
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error('اتصال زنده‌ی تشخیص گفتار دیر پاسخ داد.'));
+    }, 5000);
+    socket.addEventListener('open', () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+    socket.addEventListener('error', () => {
+      clearTimeout(timeout);
+      reject(new Error('اتصال زنده‌ی تشخیص گفتار برقرار نشد.'));
+    }, { once: true });
+  });
+  liveTranscriptionSocket = socket;
+  socket.addEventListener('message', event => {
+    let payload;
+    try { payload = JSON.parse(event.data); } catch { return; }
+    if (payload.type === 'partial' && payload.text) {
+      updateLiveTranscriptPreview(payload.text);
+      setVoiceStatus('در حال تشخیص گفتار؛ پیش‌نویس موقت است و متن نهایی بعد از توقف می‌آید.');
+    } else if (payload.type === 'error') {
+      setVoiceStatus(`پیش‌نمایش زنده قطع شد؛ متن نهایی بعد از توقف تشخیص داده می‌شود: ${payload.message}`);
+    }
+  });
+  socket.addEventListener('close', () => {
+    if (liveTranscriptionSocket === socket) liveTranscriptionSocket = null;
+    if (recorder?.state === 'recording') {
+      setVoiceStatus('پیش‌نمایش زنده قطع شد؛ متن نهایی بعد از توقف ضبط همچنان انجام می‌شود.');
+    }
+  });
+  return socket;
+}
+
+async function startLiveAudioCapture(stream, socket) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error('مرورگر ورودی صوت زنده را پشتیبانی نمی‌کند.');
+  if (socket.readyState !== WebSocket.OPEN) throw new Error('اتصال مکالمه‌ی زنده پیش از فعال‌شدن میکروفون قطع شد.');
+  recordingAudioContext = new AudioContextClass();
+  const audioContext = recordingAudioContext;
+  await audioContext.resume();
+  const source = audioContext.createMediaStreamSource(stream);
+  publishVoiceStage('audio_capture_started');
+  let workletReady = false;
+  if (audioContext.audioWorklet && window.AudioWorkletNode) {
+    try {
+      const processorUrl = new URL('audio-capture-worklet.js', document.baseURI);
+      await audioContext.audioWorklet.addModule(processorUrl.href);
+      recordingAudioProcessor = new AudioWorkletNode(audioContext, 'live-pcm-capture', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1]
+      });
+      recordingAudioProcessor.port.onmessage = event => {
+        if (socket.readyState === WebSocket.OPEN && event.data instanceof ArrayBuffer) {
+          socket.send(event.data);
+        }
+      };
+      recordingAudioProcessor.onprocessorerror = () => {
+        setVoiceStatus('پردازشگر صوت مرورگر متوقف شد؛ اتصال میکروفون را دوباره شروع کن.');
+      };
+      workletReady = true;
+    } catch (error) {
+      setVoiceStatus(`AudioWorklet آماده نشد؛ ضبط با مسیر سازگار ادامه می‌یابد: ${error.message}`);
+    }
+  }
+
+  if (!workletReady) {
+    const resampler = new StreamingPcm16Resampler(audioContext.sampleRate);
+    recordingAudioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    recordingAudioProcessor.onaudioprocess = event => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      const pcm = resampler.process(event.inputBuffer.getChannelData(0));
+      if (pcm.length) socket.send(pcm.buffer);
+    };
+  }
+
+  recordingAudioSilenceGain = audioContext.createGain();
+  recordingAudioSilenceGain.gain.value = 0;
+  source.connect(recordingAudioProcessor);
+  recordingAudioProcessor.connect(recordingAudioSilenceGain);
+  recordingAudioSilenceGain.connect(recordingAudioContext.destination);
+}
+
+async function stopLiveAudioCapture(socketToClose = undefined) {
+  recordingAudioProcessor?.disconnect();
+  recordingAudioSilenceGain?.disconnect();
+  recordingAudioProcessor = null;
+  recordingAudioSilenceGain = null;
+  if (recordingAudioContext) {
+    try { await recordingAudioContext.close(); } catch { /* already closed */ }
+    recordingAudioContext = null;
+  }
+  const socket = socketToClose === undefined ? liveTranscriptionSocket : socketToClose;
+  if (socket === liveTranscriptionSocket) liveTranscriptionSocket = null;
+  if (socket === liveConversationSocket) liveConversationSocket = null;
+  if (socket && socket.readyState < WebSocket.CLOSING) {
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'stop' }));
+    socket.close();
+  }
+}
+
+function stopAssistantAudio() {
+  for (const audio of chatLog.querySelectorAll('audio.reply-audio')) {
+    audio.pause();
+    try { audio.currentTime = 0; } catch { /* metadata may not be loaded yet */ }
+  }
+  if (activeStreamPlayer) {
+    const player = activeStreamPlayer;
+    activeStreamPlayer = null;
+    return player.stop().catch(() => {});
+  }
+  return Promise.resolve();
+}
+
+function interruptLiveTurn() {
+  const startedAt = performance.now();
+  const hadActivePlayback = Boolean(activeStreamPlayer)
+    || [...chatLog.querySelectorAll('audio.reply-audio')].some(audio => !audio.paused);
+  if (activeVoiceTurn || hadActivePlayback) {
+    publishVoiceStage('barge_in_detected', {
+      turnId: activeVoiceTurn?.turnId,
+      generationId: activeVoiceTurn?.generationId
+    });
+  }
+  const stopPromise = stopAssistantAudio();
+  if (hadActivePlayback) {
+    publishVoiceStage('playback_cancelled', {
+      turnId: activeVoiceTurn?.turnId,
+      generationId: activeVoiceTurn?.generationId,
+      durationMs: performance.now() - startedAt
+    });
+  }
+  if (activeVoiceTurn && liveConversationSocket?.readyState === WebSocket.OPEN && liveServerSessionId) {
+    try {
+      liveConversationSocket.send(JSON.stringify({
+        type: 'cancel_tts_generation',
+        turn_id: activeVoiceTurn.turnId,
+        generation_id: activeVoiceTurn.generationId
+      }));
+    } catch { /* the aborted HTTP stream is also cancelled independently */ }
+  }
+  if (activeVoiceTurn) activeVoiceTurn.invalidated = true;
+  if (activeTtsController && !activeTtsController.signal.aborted) activeTtsController.abort();
+  if (activeLlmController && !activeLlmController.signal.aborted) activeLlmController.abort();
+  return stopPromise.finally(() => {
+    if (hadActivePlayback) publishRealtimeMetrics({ barge_in_to_playback_stop: performance.now() - startedAt });
+  });
+}
+
+function publishRealtimeMetrics(durationsMs) {
+  if (liveConversationSocket?.readyState !== WebSocket.OPEN) return;
+  const clean = Object.fromEntries(Object.entries(durationsMs).filter(([, value]) => Number.isFinite(value) && value >= 0));
+  if (!Object.keys(clean).length) return;
+  try { liveConversationSocket.send(JSON.stringify({ type: 'voice.metrics', durations_ms: clean })); } catch { /* metrics never affect the conversation */ }
+}
+
+function publishVoiceStage(event, { turnId = '', generationId = '', durationMs = null } = {}) {
+  if (liveConversationSocket?.readyState !== WebSocket.OPEN) return;
+  const payload = { type: 'voice.event', event };
+  if (turnId) payload.turn_id = String(turnId);
+  if (generationId) payload.generation_id = String(generationId);
+  if (Number.isFinite(durationMs) && durationMs >= 0) payload.duration_ms = durationMs;
+  try { liveConversationSocket.send(JSON.stringify(payload)); } catch { /* telemetry must not block speech */ }
+}
+
+function queueLiveTurn(text, timing = {}, utteranceId = null) {
+  const utterance = String(text || '').trim();
+  if (!utterance || !liveConversationActive) return;
+  liveTurnQueue.push({ text: utterance, timing, utteranceId });
+  dispatchLiveTurn();
+}
+
+async function dispatchLiveTurn() {
+  if (!liveConversationActive || liveSpeechActive || busy || liveTurnDispatching || !liveTurnQueue.length) return;
+  liveTurnDispatching = true;
+  const turn = liveTurnQueue.shift();
+  try {
+    const context = speculativeContext();
+    const prefetchedAnswer = turn.utteranceId === null
+      ? null
+      : speculativeLlm?.consumeFinal({
+        turnId: turn.utteranceId,
+        text: turn.text,
+        contextKey: speculativeContextKey(context)
+      });
+    await sendMessage(turn.text, { live: true, inputTiming: turn.timing, prefetchedAnswer });
+  } finally {
+    liveTurnDispatching = false;
+    if (liveTurnQueue.length) dispatchLiveTurn();
+  }
+}
+
+async function connectLiveConversation() {
+  const socketScheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = new WebSocket(`${socketScheme}//${location.host}/api/conversation/stream`);
+  socket.binaryType = 'arraybuffer';
+  liveConversationSocket = socket;
+  socket.addEventListener('message', event => {
+    let payload;
+    try { payload = JSON.parse(event.data); } catch { return; }
+    if (payload.type === 'ready') {
+      liveServerSessionId = payload.session_id || null;
+      setVoiceStatus('مکالمه‌ی زنده وصل شد؛ صحبت کن. بعد از مکث کوتاه، پاسخ شروع می‌شود.');
+    } else if (payload.type === 'speech_start') {
+      liveSpeechActive = true;
+      liveActiveUtteranceId = payload.utterance_id;
+      liveLatestUtteranceId = payload.utterance_id;
+      liveUtteranceTimings.set(payload.utterance_id, { speech_started_at: performance.now() });
+      liveTranscriptRevisions.set(payload.utterance_id, 0);
+      speculativeLlm?.beginTurn(payload.utterance_id, speculativeContextKey());
+      clearLiveTranscriptPreview();
+      interruptLiveTurn();
+      setVoiceStatus('صدای شما دریافت شد؛ پاسخ قبلی قطع شد و دارم گوش می‌دهم…');
+    } else if (payload.type === 'partial') {
+      const previousRevision = liveTranscriptRevisions.get(payload.utterance_id) || 0;
+      if (Number(payload.revision || 0) <= previousRevision) return;
+      liveTranscriptRevisions.set(payload.utterance_id, Number(payload.revision || previousRevision + 1));
+      updateLiveTranscriptPreview(payload.text);
+      speculativeLlm?.observePartial(payload.utterance_id, payload.text);
+      const previewStartedAt = liveUtteranceTimings.get(payload.utterance_id)?.speech_started_at;
+      const previewDelay = previewStartedAt ? Math.round(performance.now() - previewStartedAt) : null;
+      const partialStt = Number(payload.timing?.partial_stt_ms || 0);
+      setVoiceStatus(`پیش‌نویس موقت · ${formatLatency(previewDelay)} از شروع گفتار · پردازش Whisper ${formatLatency(partialStt)}؛ هنوز به مدل ارسال نشده`);
+    } else if (payload.type === 'asr.stable') {
+      if (payload.invalidated) {
+        speculativeLlm?.invalidateStable(payload.utterance_id);
+        setVoiceStatus('Whisper متن پایدار را اصلاح کرد؛ پردازش احتمالی قبلی کنار گذاشته شد.');
+      } else if (payload.text) {
+        const context = speculativeContext();
+        speculativeLlm?.offerStable({
+          turnId: payload.utterance_id,
+          revision: payload.revision,
+          text: payload.text,
+          contextKey: speculativeContextKey(context),
+          context
+        });
+      }
+    } else if (payload.type === 'finalizing') {
+      const finalizedAt = performance.now();
+      const turnTiming = liveUtteranceTimings.get(payload.utterance_id) || {};
+      turnTiming.finalizing_client_at = finalizedAt;
+      liveUtteranceTimings.set(payload.utterance_id, turnTiming);
+      if (liveActiveUtteranceId === payload.utterance_id) {
+        liveSpeechActive = false;
+        liveActiveUtteranceId = null;
+      }
+      setVoiceStatus('پایان گفتار تشخیص داده شد؛ در حال نهایی‌کردن متن…');
+    } else if (payload.type === 'final') {
+      const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
+      if (liveActiveUtteranceId === payload.utterance_id) {
+        liveSpeechActive = false;
+        liveActiveUtteranceId = null;
+      }
+      if (isCurrentInput) clearLiveTranscriptPreview();
+      const transcript = String(payload.text || '').trim();
+      if (transcript) {
+        const turnTiming = liveUtteranceTimings.get(payload.utterance_id) || {};
+        liveUtteranceTimings.delete(payload.utterance_id);
+        const timing = {
+          ...(payload.timing || {}),
+          finalization_client_ms: turnTiming.finalizing_client_at
+            ? Math.round(performance.now() - turnTiming.finalizing_client_at) : null,
+          finalizing_client_at: turnTiming.finalizing_client_at || null,
+          utterance_client_ms: turnTiming.speech_started_at && turnTiming.finalizing_client_at
+            ? Math.round(turnTiming.finalizing_client_at - turnTiming.speech_started_at) : null,
+        };
+        if (isCurrentInput) {
+          setVoiceStatus(`گفتار تشخیص داده شد (${payload.model || 'STT'})؛ نهایی‌سازی ${formatLatency(timing.finalization_client_ms)}. در حال پاسخ…`);
+        }
+        queueLiveTurn(transcript, timing, payload.utterance_id);
+      } else {
+        speculativeLlm?.cancelTurn(payload.utterance_id);
+        liveUtteranceTimings.delete(payload.utterance_id);
+        if (isCurrentInput) setVoiceStatus('گفتاری تشخیص داده نشد؛ دوباره بگو.');
+        dispatchLiveTurn();
+      }
+    } else if (payload.type === 'discarded') {
+      speculativeLlm?.cancelTurn(payload.utterance_id);
+      const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
+      liveUtteranceTimings.delete(payload.utterance_id);
+      if (liveActiveUtteranceId === payload.utterance_id) {
+        liveSpeechActive = false;
+        liveActiveUtteranceId = null;
+      }
+      if (isCurrentInput) {
+        clearLiveTranscriptPreview();
+        setVoiceStatus('صدای کوتاه یا نویز به‌عنوان گفتار نادیده گرفته شد؛ ادامه بده.');
+      }
+      dispatchLiveTurn();
+    } else if (payload.type === 'error') {
+      if (String(payload.stage || '').startsWith('stt_')) {
+        speculativeLlm?.cancelTurn(payload.utterance_id);
+        const isCurrentInput = liveLatestUtteranceId === payload.utterance_id;
+        liveUtteranceTimings.delete(payload.utterance_id);
+        if (liveActiveUtteranceId === payload.utterance_id) {
+          liveSpeechActive = false;
+          liveActiveUtteranceId = null;
+        }
+        dispatchLiveTurn();
+        if (!isCurrentInput) return;
+      }
+      setVoiceStatus(`تشخیص زنده گفتار خطا داد: ${payload.message}`);
+    }
+  });
+  socket.addEventListener('close', () => {
+    if (liveConversationSocket !== socket) return;
+    liveConversationSocket = null;
+    liveServerSessionId = null;
+    if (liveConversationActive) {
+      liveConversationActive = false;
+      liveSpeechActive = false;
+      liveActiveUtteranceId = null;
+      liveLatestUtteranceId = null;
+      liveUtteranceTimings.clear();
+      liveTranscriptRevisions.clear();
+      clearLiveTranscriptPreview();
+      interruptLiveTurn();
+      liveTurnQueue.length = 0;
+      liveConversationStream?.getTracks().forEach(track => track.stop());
+      liveConversationStream = null;
+      stopLiveAudioCapture(null).catch(() => {});
+      liveOutputAudioContext?.close().catch(() => {});
+      liveOutputAudioContext = null;
+      setVoiceStatus('اتصال مکالمه‌ی زنده قطع شد؛ دوباره شروعش کن.');
+      refreshControls();
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error('اتصال مکالمه‌ی زنده دیر پاسخ داد.'));
+    }, 5000);
+    socket.addEventListener('open', () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+    socket.addEventListener('error', () => {
+      clearTimeout(timeout);
+      reject(new Error('اتصال مکالمه‌ی زنده برقرار نشد.'));
+    }, { once: true });
+    socket.addEventListener('close', () => {
+      clearTimeout(timeout);
+      reject(new Error('سرور اتصال مکالمه‌ی زنده را بست.'));
+    }, { once: true });
+  });
+  return socket;
+}
+
+async function startLiveMode() {
+  try {
+    clearLiveTranscriptPreview();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('مرورگر پخش صوت زنده را پشتیبانی نمی‌کند.');
+    liveOutputAudioContext = new AudioContextClass();
+    const outputReady = liveOutputAudioContext.resume();
+    liveConversationStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        ...(microphoneSelect.value ? { deviceId: { exact: microphoneSelect.value } } : {}),
+        channelCount: 1,
+        echoCancellation: micEnhancement.checked,
+        noiseSuppression: micEnhancement.checked,
+        autoGainControl: micEnhancement.checked
+      }
+    });
+    const audioTrack = liveConversationStream.getAudioTracks()[0];
+    await refreshMicrophoneOptions(audioTrack?.getSettings?.().deviceId || '');
+    const socket = await connectLiveConversation();
+    liveConversationActive = true;
+    liveSpeechActive = false;
+    liveActiveUtteranceId = null;
+    liveLatestUtteranceId = null;
+    liveUtteranceTimings.clear();
+    await outputReady;
+    await startLiveAudioCapture(liveConversationStream, socket);
+    refreshControls();
+    setVoiceStatus('مکالمه‌ی زنده فعال است؛ صحبت کن. برای پایان، همین دکمه را بزن.');
+  } catch (error) {
+    liveConversationActive = false;
+    liveConversationStream?.getTracks().forEach(track => track.stop());
+    liveConversationStream = null;
+    await stopLiveAudioCapture(liveConversationSocket);
+    liveConversationSocket = null;
+    liveServerSessionId = null;
+    try { await liveOutputAudioContext?.close(); } catch { /* already closed */ }
+    liveOutputAudioContext = null;
+    refreshControls();
+    setVoiceStatus(`شروع مکالمه‌ی زنده ناموفق بود: ${error.message}`);
+  }
+}
+
+async function stopLiveMode() {
+  liveConversationActive = false;
+  liveSpeechActive = false;
+  liveActiveUtteranceId = null;
+  liveLatestUtteranceId = null;
+  liveUtteranceTimings.clear();
+  clearLiveTranscriptPreview();
+  liveTurnQueue.length = 0;
+  await interruptLiveTurn();
+  const socket = liveConversationSocket;
+  liveConversationSocket = null;
+  liveServerSessionId = null;
+  await stopLiveAudioCapture(socket);
+  liveConversationStream?.getTracks().forEach(track => track.stop());
+  liveConversationStream = null;
+  try { await liveOutputAudioContext?.close(); } catch { /* already closed */ }
+  liveOutputAudioContext = null;
+  refreshControls();
+  setVoiceStatus('مکالمه‌ی زنده پایان یافت.');
+}
+
+async function toggleLiveMode() {
+  if (liveConversationActive) await stopLiveMode();
+  else await startLiveMode();
+}
+
+async function refreshMicrophoneOptions(activeDeviceId = '') {
+  if (!navigator.mediaDevices?.enumerateDevices || !microphoneSelect) return;
+  try {
+    const devices = (await navigator.mediaDevices.enumerateDevices())
+      .filter(device => device.kind === 'audioinput' && device.deviceId);
+    const selectedDeviceId = activeDeviceId || microphoneSelect.value;
+    microphoneSelect.replaceChildren(new Option('میکروفون پیش‌فرض', ''));
+    devices.forEach((device, index) => {
+      const label = device.label || `میکروفون ${index + 1}`;
+      microphoneSelect.add(new Option(label, device.deviceId));
+    });
+    if (devices.some(device => device.deviceId === selectedDeviceId)) {
+      microphoneSelect.value = selectedDeviceId;
+    }
+    microphoneSelect.disabled = devices.length <= 1;
+  } catch {
+    microphoneSelect.disabled = true;
+  }
+}
+
+async function toggleRecording() {
+  if (recorder?.state === 'recording') {
+    recorder.stop();
+    recordButton.classList.remove('recording');
+    recordButton.setAttribute('aria-label', 'ضبط پیام صوتی');
+    busy = true;
+    refreshControls();
+    setVoiceStatus('ضبط تمام شد؛ متن نهایی با موتور تشخیص دقیق می‌شود…');
+    return;
+  }
+
+  try {
+    clearLiveTranscriptPreview();
+    recordingStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        ...(microphoneSelect.value ? { deviceId: { exact: microphoneSelect.value } } : {}),
+        channelCount: 1,
+        echoCancellation: micEnhancement.checked,
+        noiseSuppression: micEnhancement.checked,
+        autoGainControl: micEnhancement.checked
+      }
+    });
+    const audioTrack = recordingStream.getAudioTracks()[0];
+    recordingMicrophoneLabel = audioTrack?.label || microphoneSelect.selectedOptions[0]?.textContent || 'میکروفون پیش‌فرض';
+    await refreshMicrophoneOptions(audioTrack?.getSettings?.().deviceId || '');
+    let liveSocket = null;
+    try {
+      liveSocket = await connectLiveTranscription();
+    } catch (error) {
+      setVoiceStatus(`${error.message} ضبط ادامه دارد و متن بعد از توقف تبدیل می‌شود.`);
+    }
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : undefined;
+    recorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : undefined);
+    audioChunks = [];
+    recorder.addEventListener('dataavailable', event => {
+      if (event.data?.size) audioChunks.push(event.data);
+    });
+    recorder.addEventListener('stop', async () => {
+      await stopLiveAudioCapture();
+      clearLiveTranscriptPreview();
+      recordingStream?.getTracks().forEach(track => track.stop());
+      recordingStream = null;
+      recordButton.classList.remove('recording');
+      recordButton.setAttribute('aria-label', 'ضبط پیام صوتی');
+      const audioBlob = new Blob(audioChunks, { type: recorder.mimeType || 'audio/webm' });
+      audioChunks = [];
+      if (!audioBlob.size) {
+        setVoiceStatus('صدایی ضبط نشد. دوباره تلاش کن.');
+        busy = false;
+        refreshControls();
+        return;
+      }
+      appendRecordedAudio(audioBlob);
+      busy = true;
+      refreshControls();
+      setVoiceStatus('در حال نهایی‌کردن متن گفتار فارسی…');
+      try {
+        const recognition = await transcribeRecording(audioBlob);
+        if (!recognition.text) throw new Error('گفتاری تشخیص داده نشد.');
+        messageInput.value = recognition.text;
+        busy = false;
+        refreshControls();
+        const quality = describeRecordingQuality(recognition.audio);
+        setVoiceStatus(`با ${recognition.model} تشخیص داده شد؛ ورودی: ${recordingMicrophoneLabel}. ${quality}. متن را بررسی/اصلاح کن و بعد «ارسال» را بزن.`);
+        messageInput.focus();
+      } catch (error) {
+        clearLiveTranscriptPreview();
+        appendMessage('assistant', `تبدیل گفتار ناموفق بود: ${error.message}`, true);
+        setVoiceStatus('صدای ضبط‌شده را در بالا گوش کن؛ گفتار به مدل ارسال نشد.');
+        busy = false;
+        refreshControls();
+      }
+    }, { once: true });
+    recorder.start();
+    if (liveSocket) {
+      try {
+        await startLiveAudioCapture(recordingStream, liveSocket);
+      } catch (error) {
+        setVoiceStatus(`پیش‌نمایش زنده فعال نشد؛ تشخیص نهایی بعد از توقف انجام می‌شود: ${error.message}`);
+      }
+    }
+    messageInput.disabled = true;
+    sendButton.disabled = true;
+    recordButton.classList.add('recording');
+    recordButton.setAttribute('aria-label', 'پایان ضبط');
+    if (liveSocket?.readyState === WebSocket.OPEN) {
+      setVoiceStatus('در حال ضبط؛ پیش‌نمایش متن حین صحبت ظاهر می‌شود. برای پایان دوباره دکمه را بزن.');
+    } else {
+      setVoiceStatus('در حال ضبط؛ برای پایان دوباره دکمه را بزن.');
+    }
+  } catch (error) {
+    clearLiveTranscriptPreview();
+    await stopLiveAudioCapture();
+    recordingStream?.getTracks().forEach(track => track.stop());
+    recordingStream = null;
+    refreshControls();
+    setVoiceStatus(`دسترسی به میکروفون ممکن نشد: ${error.message}`);
+  }
+}
+
+document.querySelector('#load-models').addEventListener('click', loadModels);
+modelSelect.addEventListener('change', refreshControls);
+tokenInput.addEventListener('input', () => {
+  activeToken = '';
+  refreshControls();
+});
+baseUrlInput.addEventListener('input', () => {
+  activeToken = '';
+  setConnectionStatus('نشانی API تغییر کرد؛ دوباره فهرست مدل‌ها را بگیر.');
+  refreshControls();
+});
+document.querySelector('#send-button').addEventListener('click', () => sendMessage(messageInput.value));
+messageInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    sendMessage(messageInput.value);
+  }
+});
+recordButton.addEventListener('click', toggleRecording);
+liveModeButton?.addEventListener('click', toggleLiveMode);
+microphoneSelect.addEventListener('change', () => {
+  const name = microphoneSelect.selectedOptions[0]?.textContent || 'میکروفون پیش‌فرض';
+  setVoiceStatus(`ورودی ضبط بعدی: ${name}.`);
+});
+document.querySelector('#clear-chat').addEventListener('click', () => {
+  conversation = [];
+  for (const url of audioUrls) URL.revokeObjectURL(url);
+  audioUrls.clear();
+  chatLog.replaceChildren(welcomeMessage.cloneNode(true));
+  setVoiceStatus('گفت‌وگو پاک شد.');
+});
+document.querySelector('#settings-toggle').addEventListener('click', event => {
+  const body = document.querySelector('#settings-body');
+  const expanded = event.currentTarget.getAttribute('aria-expanded') === 'true';
+  event.currentTarget.setAttribute('aria-expanded', String(!expanded));
+  body.hidden = expanded;
+  event.currentTarget.textContent = expanded ? 'بازکردن' : 'جمع‌کردن';
+});
+
+fetch('/api/status')
+  .then(response => response.json())
+  .then(status => {
+    if (speculativeLlm) {
+      speculativeLlm.enabled = status.realtime?.speculative_llm_enabled === true;
+    }
+    if (localEngineLabel) {
+      localEngineLabel.textContent = `موتور محلی: ${status.stt_model || 'نامشخص'}`;
+    }
+    const sttReady = status.stt_engine === 'taraneh' || (
+      status.stt_model_present
+      && status.stt_config_present
+      && status.stt_tokenizer_present
+      && status.stt_vocabulary_present
+    );
+    const ttsReady = status.tts_model_present
+      && status.tts_config_present
+      && status.tts_espeak_bridge_present
+      && status.tts_espeak_data_present;
+    if (!sttReady) {
+      setVoiceStatus('فایل‌های مدل گفتار کامل نیستند.');
+    } else if (status.taraneh_model_present && !status.taraneh_dependencies_present) {
+      setVoiceStatus('وزن Taraneh پیدا شد، اما بسته‌های اختیاری آن نصب نیست؛ فعلاً Whisper اجرا می‌شود.');
+    } else if (!ttsReady) {
+      setVoiceStatus('نصب Piper کامل نیست؛ بسته‌ی Piper باید از مخزن کلون‌شده نصب شود.');
+    }
+    if (mossStatus) {
+      const isRealtimeCpu = ttsEngineSelect?.value === 'moss-realtime-cpu';
+      const selectedTtsStatus = isRealtimeCpu ? status.moss_realtime : status.moss;
+      if (selectedTtsStatus) {
+        mossStatus.textContent = selectedTtsStatus.ready
+          ? (isRealtimeCpu
+            ? 'سرویس MOSS Realtime GGUF آماده است. قطعه‌های PCM هنگام تولید به پخش‌کننده می‌رسند.'
+            : 'MOSS آماده است. صدای پیش‌فرض فارسی Mana در دسترس است.')
+          : (selectedTtsStatus.available ? `سرویس در حال آماده‌شدن است: ${selectedTtsStatus.status}` : selectedTtsStatus.status);
+        mossStatus.dataset.kind = selectedTtsStatus.ready ? 'success' : (selectedTtsStatus.available ? '' : 'error');
+      }
+    }
+  })
+  .catch(() => setVoiceStatus('سرویس محلی گفتار در دسترس نیست.'));
+
+ttsEngineSelect?.addEventListener('change', () => {
+  updateTtsEngineSettings();
+  refreshMossStatus();
+});
+updateTtsEngineSettings();
+refreshControls();
+
+window.addEventListener('beforeunload', () => {
+  for (const url of audioUrls) URL.revokeObjectURL(url);
+});

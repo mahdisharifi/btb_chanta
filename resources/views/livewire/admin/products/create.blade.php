@@ -1,4 +1,4 @@
-<div x-data @product-form-step-changed.window="$el.scrollIntoView({ behavior: 'smooth', block: 'start' })" data-product-create-guide data-product-tour-media-required="{{ $supplierDraftMode ? 'true' : 'false' }}" data-product-tour-welcome-description="{{ $supplierDraftMode ? 'ابتدا سه تصویر محصول را اضافه می‌کنیم و جابه‌جایی آن‌ها با کشیدن و رهاکردن را تمرین می‌کنیم؛ سپس به مشخصات محصول، دسته‌بندی و ادامه فرم می‌رویم.' : '' }}">
+<div x-data data-product-create-guide @product-form-step-changed.window="$el.scrollIntoView({ behavior: 'smooth', block: 'start' })" data-product-tour-media-required="{{ $supplierDraftMode ? 'true' : 'false' }}" data-product-tour-welcome-description="{{ $supplierDraftMode ? 'ابتدا سه تصویر محصول را اضافه می‌کنیم و جابه‌جایی آن‌ها با کشیدن و رهاکردن را تمرین می‌کنیم؛ سپس به مشخصات محصول، دسته‌بندی و ادامه فرم می‌رویم.' : '' }}">
     {{-- عنوان و breadcrumb وابسته به حالت --}}
     @unless($supplierDraftMode)
         <x-admin.subheader
@@ -122,7 +122,9 @@
                 <div x-data="{ dragged: null }" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-3">
                     @foreach(collect($existingGalleries)->where('file_type', 'image')->values() as $index => $gallery)
                     <div wire:key="sortable-existing-{{ $gallery['id'] }}" draggable="true" @dragstart.stop="dragged = {{ $index }}; $event.dataTransfer.setData('text/plain', '{{ $index }}'); $event.dataTransfer.effectAllowed = 'move'" @dragend.stop="dragged = null" @dragover.prevent="$event.dataTransfer.dropEffect = 'move'" @drop.prevent.stop="if (dragged !== null) { $wire.reorderExistingImages(dragged, {{ $index }}); dragged = null }" :class="dragged === {{ $index }} ? 'opacity-40' : ''" class="relative group cursor-grab active:cursor-grabbing rounded-lg overflow-hidden border-2 {{ $gallery['is_primary'] ? 'border-[#d4af37]' : ($gallery['is_seo_image'] ? 'border-blue-500' : 'border-white/10') }}">
-                        <img src="{{ $gallery['full_url'] }}" class="w-full h-28 object-cover">
+                        <button type="button" onclick="event.stopPropagation(); const root = this.closest('[data-product-create-guide]'); const dialog = root.querySelector('[data-product-image-dialog]'); const preview = dialog.querySelector('img'); preview.src = this.dataset.previewSrc; preview.alt = this.dataset.previewAlt || 'تصویر محصول'; dialog.showModal();" data-preview-src="{{ $gallery['full_url'] }}" data-preview-alt="تصویر محصول" aria-label="بزرگ‌نمایی تصویر محصول" class="block w-full cursor-zoom-in bg-transparent p-0">
+                            <img src="{{ $gallery['full_url'] }}" alt="تصویر محصول" class="w-full h-28 object-cover">
+                        </button>
 
                         {{-- برچسب تصویر اصلی --}}
                         @if($gallery['is_primary'])
@@ -201,7 +203,7 @@
                             <label for="product_images" class="flex min-h-28 sm:min-h-32 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 p-2 sm:p-3 text-indigo-600 hover:bg-indigo-50 dark:border-gray-600 dark:hover:bg-gray-700/50 focus-within:ring-2 focus-within:ring-indigo-500">
                                 <svg aria-hidden="true" class="h-7 w-7 sm:h-9 sm:w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></svg>
                                 <span class="text-xs sm:text-sm text-center">افزودن تصاویر</span>
-                                <input id="product_images" type="file" wire:model="incomingImages" multiple accept="image/*" class="sr-only">
+                                <input id="product_images" type="file" wire:model="incomingImages" multiple accept="image/*" wire:loading.attr="disabled" wire:target="incomingImages" class="sr-only">
                             </label>
                         </div>
 
@@ -227,7 +229,9 @@
                     <div data-product-gallery-sortable x-data="{ dragged: null }" class="mt-4 flex flex-wrap gap-3 scroll-mt-6">
                         @if($primary_image)
                         <div wire:key="uploaded-primary-{{ $primary_image->getFilename() }}" draggable="true" @dragstart.stop="dragged = 0; $event.dataTransfer.setData('text/plain', '0'); $event.dataTransfer.effectAllowed = 'move'" @dragend.stop="dragged = null" @dragover.prevent="$event.dataTransfer.dropEffect = 'move'" @drop.prevent.stop="if (dragged !== null) { $wire.reorderUploadedImages(dragged, 0); dragged = null }" :class="dragged === 0 ? 'opacity-40' : ''" class="relative w-32 cursor-grab active:cursor-grabbing rounded-xl border-2 border-indigo-500 overflow-hidden">
-                            <img src="{{ $primary_image->temporaryUrl() }}" alt="تصویر اصلی محصول" class="h-32 w-full object-cover">
+                            <button type="button" onclick="event.stopPropagation(); const root = this.closest('[data-product-create-guide]'); const dialog = root.querySelector('[data-product-image-dialog]'); const preview = dialog.querySelector('img'); preview.src = this.dataset.previewSrc; preview.alt = this.dataset.previewAlt || 'تصویر محصول'; dialog.showModal();" data-preview-src="{{ $primary_image->temporaryUrl() }}" data-preview-alt="تصویر اصلی محصول" aria-label="بزرگ‌نمایی تصویر اصلی محصول" class="block w-full cursor-zoom-in bg-transparent p-0">
+                                <img src="{{ $primary_image->temporaryUrl() }}" alt="تصویر اصلی محصول" class="h-32 w-full object-cover">
+                            </button>
                             <span class="block bg-indigo-600 text-white text-xs text-center py-2">تصویر اصلی</span>
                             @unless($supplierDraftMode)
                             <button type="button" wire:click="toggleUploadedSeoImage('{{ $primary_image->getFilename() }}')" aria-pressed="{{ $effectiveUploadedSeoImage === $primary_image->getFilename() ? 'true' : 'false' }}" class="w-full py-2 text-xs {{ $effectiveUploadedSeoImage === $primary_image->getFilename() ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700' }}">{{ $effectiveUploadedSeoImage === $primary_image->getFilename() ? '✓ تصویر ویژه سئو' : 'انتخاب برای سئو' }}</button>
@@ -237,7 +241,9 @@
                         @endif
                         @foreach($gallery_images as $index => $image)
                         <div wire:key="uploaded-gallery-{{ $image->getFilename() }}" draggable="true" @dragstart.stop="dragged = {{ $index + ($primary_image ? 1 : 0) }}; $event.dataTransfer.setData('text/plain', '{{ $index + ($primary_image ? 1 : 0) }}'); $event.dataTransfer.effectAllowed = 'move'" @dragend.stop="dragged = null" @dragover.prevent="$event.dataTransfer.dropEffect = 'move'" @drop.prevent.stop="if (dragged !== null) { $wire.reorderUploadedImages(dragged, {{ $index + ($primary_image ? 1 : 0) }}); dragged = null }" :class="dragged === {{ $index + ($primary_image ? 1 : 0) }} ? 'opacity-40' : ''" class="relative w-32 cursor-grab active:cursor-grabbing rounded-xl border border-gray-300 overflow-hidden">
-                            <img src="{{ $image->temporaryUrl() }}" alt="تصویر محصول" class="h-32 w-full object-cover">
+                            <button type="button" onclick="event.stopPropagation(); const root = this.closest('[data-product-create-guide]'); const dialog = root.querySelector('[data-product-image-dialog]'); const preview = dialog.querySelector('img'); preview.src = this.dataset.previewSrc; preview.alt = this.dataset.previewAlt || 'تصویر محصول'; dialog.showModal();" data-preview-src="{{ $image->temporaryUrl() }}" data-preview-alt="تصویر محصول" aria-label="بزرگ‌نمایی تصویر محصول" class="block w-full cursor-zoom-in bg-transparent p-0">
+                                <img src="{{ $image->temporaryUrl() }}" alt="تصویر محصول" class="h-32 w-full object-cover">
+                            </button>
                             <button type="button" wire:click="selectUploadedPrimary({{ $index }})" class="w-full bg-indigo-50 text-indigo-700 text-xs py-2">انتخاب به‌عنوان تصویر اصلی</button>
                             @unless($supplierDraftMode)
                             <button type="button" wire:click="toggleUploadedSeoImage('{{ $image->getFilename() }}')" aria-pressed="{{ $effectiveUploadedSeoImage === $image->getFilename() ? 'true' : 'false' }}" class="w-full py-2 text-xs {{ $effectiveUploadedSeoImage === $image->getFilename() ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700' }}">{{ $effectiveUploadedSeoImage === $image->getFilename() ? '✓ تصویر ویژه سئو' : 'انتخاب برای سئو' }}</button>
@@ -246,7 +252,20 @@
                         </div>
                         @endforeach
                     </div>
-                    <div wire:loading wire:target="incomingImages" role="status" class="text-sm text-indigo-600 mt-2">در حال بارگذاری تصاویر...</div>
+                    @if($primaryImageAiStatus === 'failed' && $primary_image)
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+                        <span>تصویر اصلی هنوز ویرایش نشده است؛ برای ذخیرهٔ محصول ابتدا دوباره تلاش کنید.</span>
+                        <button type="button" wire:click="retryPrimaryImageAi" wire:loading.attr="disabled" wire:target="retryPrimaryImageAi" class="rounded-md bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">تلاش دوباره</button>
+                        <span wire:loading wire:target="retryPrimaryImageAi" class="w-full text-xs text-indigo-700">در حال ویرایش تصویر اصلی...</span>
+                    </div>
+                    @endif
+                    <div wire:loading wire:target="incomingImages" role="status" class="text-sm text-indigo-600 mt-2">
+                        @if(!$isEdit && $primaryImageAiStatus === 'not_started')
+                            در حال پردازش تصویر اول و افزودن بقیه به گالری...
+                        @else
+                            در حال افزودن تصاویر به گالری...
+                        @endif
+                    </div>
                     @error('incomingImages.*') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     @error('primary_image') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
                     @error('gallery_images') <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span> @enderror
@@ -790,5 +809,11 @@
     </form>
     @endif
 
+    <dialog data-product-image-dialog aria-label="پیش‌نمایش بزرگ تصویر محصول" onclick="if (event.target === this) this.close();" class="m-auto h-screen w-screen max-h-none max-w-none border-0 bg-transparent p-4 backdrop:bg-black/80">
+        <div class="relative flex h-full w-full items-center justify-center">
+            <button type="button" onclick="this.closest('dialog').close();" aria-label="بستن پیش‌نمایش تصویر" class="absolute right-2 top-2 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white text-2xl text-gray-800 shadow-lg hover:bg-gray-100">×</button>
+            <img alt="پیش‌نمایش تصویر محصول" class="max-h-[88vh] max-w-[94vw] rounded-lg bg-white object-contain shadow-2xl">
+        </div>
+    </dialog>
 
 </div>
